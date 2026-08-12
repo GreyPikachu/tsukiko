@@ -101,6 +101,10 @@ class DictationController extends ChangeNotifier {
   }
 
   Future<void> _apply() async {
+    // Приложение всегда стартует со значком в Dock: LSUIElement в Info.plist
+    // спрятал бы его навсегда, а настройка должна переключаться на лету.
+    // Значит спрятать его может только Dart, и как можно раньше.
+    await platform.setDockIcon((Settings.load()['dockIcon'] as bool?) ?? true);
     await platform.bind(hold: settings.hold, toggle: settings.toggle);
     accessibility = await platform.accessibilityGranted();
     notifyListeners();

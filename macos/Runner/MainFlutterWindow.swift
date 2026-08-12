@@ -15,6 +15,12 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: macOSWindowUtilsViewController.flutterViewController)
 
+    // Инспектор тоже говорит с прослойкой — например, чтобы убрать значок
+    // из Dock. Своего движка у него нет общего с панелью, поэтому канал
+    // вешаем и сюда.
+    DictationBridge.shared.attach(
+      messenger: macOSWindowUtilsViewController.flutterViewController.engine.binaryMessenger)
+
     super.awakeFromNib()
 
     self.title = "tsukiko"

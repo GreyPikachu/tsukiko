@@ -83,6 +83,10 @@ final class DictationBridge: NSObject {
   private var channel: FlutterMethodChannel?
   private var engine: FlutterEngine?
 
+  /// Тот же канал на движке главного окна. Обработчик один на приложение,
+  /// но инспектор живёт в другом изоляте и до движка панели не достаёт.
+  private var mainChannel: FlutterMethodChannel?
+
   private var hold = HotkeySpec()
   private var toggle = HotkeySpec()
   private var holdDown = false
@@ -139,6 +143,16 @@ final class DictationBridge: NSObject {
     }
   }
 
+  /// Подключить тот же обработчик к движку главного окна: инспектор просит
+  /// убрать значок из Dock, а его изолят движка панели не видит.
+  func attach(messenger: FlutterBinaryMessenger) {
+    let extra = FlutterMethodChannel(name: "tsukiko/dictation", binaryMessenger: messenger)
+    extra.setMethodCallHandler { [weak self] call, reply in
+      self?.handle(call, reply)
+    }
+    mainChannel = extra
+  }
+
   private func handle(_ call: FlutterMethodCall, _ reply: @escaping FlutterResult) {
     let args = call.arguments as? [String: Any]
     switch call.method {
@@ -183,6 +197,10 @@ final class DictationBridge: NSObject {
     case "openMainWindow":
       panel.hide()
       DictationBridge.showMainWindow()
+      reply(nil)
+    case "dockIcon":
+      NSApp.setActivationPolicy(
+        (args?["visible"] as? Bool) ?? true ? .regular : .accessory)
       reply(nil)
     default:
       reply(FlutterMethodNotImplemented)
@@ -434,8 +452,12 @@ final class DictationBridge: NSObject {
 
   // MARK: главное окно
 
+  /// Политику активации здесь не трогаем: без значка в Dock приложение
+  /// живёт в .accessory, и вернуть .regular значило бы отменять настройку
+  /// каждым открытием окна. Окно в .accessory показывается и становится
+  /// ключевым, но только после явной активации — сам по себе фоновый
+  /// процесс на передний план не выходит.
   static func showMainWindow() {
-    NSApp.setActivationPolicy(.regular)
     NSApp.activate(ignoringOtherApps: true)
     if let window = NSApp.windows.first(where: { $0 is MainFlutterWindow }) {
       window.makeKeyAndOrderFront(nil)
