@@ -19,9 +19,23 @@ class MainFlutterWindow: NSWindow {
 
     self.title = "tsukiko"
 
+    // Окно можно закрыть и открыть заново из строки меню — значит его
+    // нельзя освобождать при закрытии.
+    self.isReleasedWhenClosed = false
+
     // Три панели (очередь · текст · настройки) в 800×600 не помещаются.
     self.minSize = NSSize(width: 900, height: 560)
     self.setContentSize(NSSize(width: 1180, height: 760))
     self.center()
+
+    // Переопределения жизненного цикла в наследнике FlutterAppDelegate
+    // до нас не доходят, поэтому подписываемся на уведомление сами.
+    // Раньше запуска приложения нельзя: значок в строке меню, созданный
+    // до него, система не рисует.
+    NotificationCenter.default.addObserver(
+      forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
+    ) { _ in
+      DictationBridge.shared.start()
+    }
   }
 }

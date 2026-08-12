@@ -30,5 +30,7 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Микрофон нужен для диктовки: речь распознаётся на этом компьютере и никуда не отправляется.</string>
 </dict>
 </plist>
