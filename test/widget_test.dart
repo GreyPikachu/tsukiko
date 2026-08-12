@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tsukiko/dictation.dart';
 import 'package:tsukiko/engine.dart';
 
 void main() {
@@ -295,4 +296,89 @@ void main() {
     expect(File(out).lengthSync() > 1000, isTrue);
     File(out).deleteSync();
   });
+
+  // ── диктовка ──────────────────────────────────────────────────────────────
+
+  test('расшифровку фразы склеиваем в строку, а галлюцинации отбрасываем', () {
+    // сервер отдаёт текст сегментами, в поле ввода это должно попасть одной фразой
+    expect(tidyDictated(' раз\n два  три \n'), 'раз два три');
+    expect(tidyDictated(''), '');
+    // на тишине whisper сочиняет — всё, что целиком в скобках, не речь
+    expect(tidyDictated(' [BLANK_AUDIO] '), '');
+    expect(tidyDictated('(музыка)'), '');
+    expect(tidyDictated('*звук двигателя*'), '');
+    // а скобки внутри фразы — обычный текст
+    expect(tidyDictated('привет (кажется)'), 'привет (кажется)');
+  });
+
+  test('подписи сочетаний читаются как в системе', () {
+    expect(Hotkey.holdDefault.label, 'fn + ⌃');
+    expect(Hotkey.toggleDefault.label, 'fn + Пробел');
+    expect(const Hotkey([], key: 'f13').label, 'F13');
+    expect(const Hotkey([]).label, 'Не назначено');
+    // круг через JSON ничего не теряет
+    final back = Hotkey.fromJson(Hotkey.toggleDefault.toJson(), Hotkey.holdDefault);
+    expect(back.label, Hotkey.toggleDefault.label);
+    // мусор в файле настроек не должен ронять диктовку
+    expect(Hotkey.fromJson('чепуха', Hotkey.holdDefault).label, 'fn + ⌃');
+  });
+
+  test('быстрая и точная модели выбираются по весу файла', () {
+    final dir = Directory.systemTemp.createTempSync('tsukiko_models');
+    File('${dir.path}/ggml-small.bin').writeAsBytesSync(List.filled(2048, 0));
+    File('${dir.path}/ggml-large.bin').writeAsBytesSync(List.filled(9000, 0));
+    final pair = modelPair([
+      '${dir.path}/ggml-large.bin',
+      '${dir.path}/ggml-small.bin',
+      '/нет/такой.bin',
+    ]);
+    expect(pair.fast.endsWith('small.bin'), isTrue);
+    expect(pair.accurate.endsWith('large.bin'), isTrue);
+    // одна модель на всю систему — обе половинки указывают на неё
+    final one = modelPair(['${dir.path}/ggml-large.bin']);
+    expect(one.fast, one.accurate);
+    expect(modelPair(const []).fast, '');
+    dir.deleteSync(recursive: true);
+  });
+
+  test('свободный порт достаётся от ядра и повторно не выдаётся', () async {
+    final a = await freePort(), b = await freePort();
+    expect(a, greaterThan(1024));
+    expect(a, isNot(b));
+  });
+
+  test('whisper-server держит модель и распознаёт фразу за доли секунды',
+      () async {
+    // Это единственный тест, который поднимает настоящий сервер: без него
+    // проверить главную идею (модель живёт между фразами) нечем.
+    final models = findModels();
+    if (findWhisperServer() == null || models.isEmpty) return;
+
+    final wav = '${Directory.systemTemp.path}/tsukiko_dictation.wav';
+    await toWav('/System/Library/Sounds/Ping.aiff', wav);
+
+    final server = WhisperServer(idleTimeout: const Duration(seconds: 30));
+    try {
+      await server.ensureUp(RunOptions(
+          model: models.first, lang: 'ru', threads: 4, punctuate: false));
+      expect(server.up, isTrue);
+      expect(await server.waitReady(timeout: const Duration(seconds: 60)), isTrue);
+
+      // Модель в памяти — значит процесс весит как она сама, а не как заглушка.
+      expect(await server.footprintMb(), greaterThan(200));
+
+      // Первая фраза уже на прогретой модели: секунда с запасом.
+      final started = DateTime.now();
+      await server.transcribe(wav, lang: 'ru');
+      expect(DateTime.now().difference(started).inSeconds, lessThan(10));
+
+      // Таймер простоя сдвигается каждым обращением.
+      expect(server.untilUnload!.inSeconds, greaterThan(25));
+    } finally {
+      server.shutdown();
+      File(wav).deleteSync();
+    }
+    expect(server.up, isFalse);
+    expect(server.untilUnload, isNull);
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }
