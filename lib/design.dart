@@ -1,0 +1,332 @@
+import 'dart:math' as math;
+
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/physics.dart';
+import 'package:macos_ui/macos_ui.dart';
+
+/// Пружины и типографика по формулировкам Apple: не «длительность и кривая»,
+/// а «отклик» (за сколько дойти) и «затухание» (насколько перелетит).
+
+class SpringCurve extends Curve {
+  SpringCurve({required this.duration, double response = 0.4, double dampingRatio = 1.0})
+      : _sim = SpringSimulation(
+          SpringDescription.withDampingRatio(
+            mass: 1,
+            stiffness: math.pow(2 * math.pi / response, 2).toDouble(),
+            ratio: dampingRatio,
+          ),
+          0,
+          1,
+          0,
+        );
+
+  final Duration duration;
+  final SpringSimulation _sim;
+
+  @override
+  double transformInternal(double t) {
+    if (t >= 1) return 1;
+    return _sim.x(t * duration.inMicroseconds / Duration.microsecondsPerSecond);
+  }
+}
+
+class Motion {
+  /// Перемещение и раскрытие: критическое затухание, без перелёта.
+  static const settle = Duration(milliseconds: 380);
+  static final settleCurve = SpringCurve(duration: settle, response: 0.4);
+
+  /// Быстрый отклик на наведение и нажатие.
+  static const quick = Duration(milliseconds: 220);
+  static final quickCurve = SpringCurve(duration: quick, response: 0.25);
+
+  /// Перелёт разрешён только там, где жесту предшествовал импульс —
+  /// перетаскивание файла в окно.
+  static const toss = Duration(milliseconds: 340);
+  static final tossCurve =
+      SpringCurve(duration: toss, response: 0.3, dampingRatio: 0.72);
+
+  /// Нажатие подсвечивается мгновенно — задержка убивает ощущение прямоты.
+  static const press = Duration(milliseconds: 90);
+
+  static bool reduced(BuildContext context) =>
+      MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+
+  /// При «уменьшить движение» остаётся мягкое затухание, а не пустота.
+  static Duration dur(BuildContext context, Duration d) =>
+      reduced(context) ? const Duration(milliseconds: 150) : d;
+
+  static Curve curve(BuildContext context, Curve c) =>
+      reduced(context) ? Curves.easeOut : c;
+
+  static double slide(BuildContext context, double px) => reduced(context) ? 0 : px;
+}
+
+/// Размер, насыщенность и межбуквенное — единым набором.
+/// Крупному тексту трекинг отрицательный, мелкому — положительный.
+class Type {
+  static const navTitle = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.2,
+  );
+
+  static const emptyTitle = TextStyle(
+    fontSize: 17,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.35,
+    height: 1.2,
+  );
+
+  static const sectionHeader = TextStyle(
+    fontSize: 10.5,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.65,
+  );
+
+  static const body = TextStyle(
+    fontSize: 13.5,
+    height: 1.55,
+    letterSpacing: 0,
+  );
+
+  static const control = TextStyle(fontSize: 12.5, letterSpacing: 0.1);
+
+  static const fileName = TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w500,
+    letterSpacing: -0.1,
+  );
+
+  static const caption = TextStyle(fontSize: 11.5, letterSpacing: 0.2);
+
+  static const timestamp = TextStyle(
+    fontSize: 11.5,
+    letterSpacing: 0.2,
+    fontFeatures: [FontFeature.tabularFigures()],
+  );
+}
+
+/// Материалы. Крупная поверхность читается плотнее мелкой, светлое
+/// полупрозрачное не кладётся на светлое полупрозрачное.
+class Surface {
+  static bool isDark(BuildContext context) =>
+      MacosTheme.of(context).brightness == Brightness.dark;
+
+  static Color chrome(BuildContext context) => isDark(context)
+      ? const Color(0xE6202023)
+      : const Color(0xE6F7F7F9);
+
+  static Color hairline(BuildContext context) => isDark(context)
+      ? const Color(0x2BFFFFFF)
+      : const Color(0x1A000000);
+
+  static Color hover(BuildContext context) =>
+      isDark(context) ? const Color(0x14FFFFFF) : const Color(0x0D000000);
+
+  static Color pressed(BuildContext context) =>
+      isDark(context) ? const Color(0x24FFFFFF) : const Color(0x17000000);
+
+  static Color secondaryText(BuildContext context) =>
+      isDark(context) ? const Color(0x99FFFFFF) : const Color(0x8C000000);
+}
+
+// ── контекстное меню ────────────────────────────────────────────────────────
+//
+// В macos_ui меню умеют только кнопки, а по правому щелчку в macOS меню есть
+// у всего. Панель берём готовую — MacosOverlayFilter, тот же материал, что
+// у выпадающих списков, — своим остаётся только раскладка и попадание в экран.
+
+class MenuAction {
+  const MenuAction(this.label, {this.onSelected, this.shortcut});
+
+  /// Разделитель: собственной надписи и действия у него нет.
+  const MenuAction.separator() : label = '', onSelected = null, shortcut = null;
+
+  final String label;
+  final VoidCallback? onSelected;
+  final String? shortcut;
+
+  bool get isSeparator => label.isEmpty;
+  bool get enabled => onSelected != null;
+}
+
+/// Меню у точки щелчка. Пункты без действия показываются серыми — как в
+/// системе, где недоступная команда остаётся на своём месте.
+Future<void> showContextMenu(
+  BuildContext context,
+  Offset globalPosition,
+  List<MenuAction> actions,
+) {
+  if (actions.every((a) => a.isSeparator || !a.enabled)) return Future.value();
+  return Navigator.of(context, rootNavigator: true).push(
+    _ContextMenuRoute(
+      at: globalPosition,
+      actions: actions,
+      theme: MacosTheme.of(context),
+    ),
+  );
+}
+
+class _ContextMenuRoute extends PopupRoute<void> {
+  _ContextMenuRoute({required this.at, required this.actions, required this.theme});
+
+  final Offset at;
+  final List<MenuAction> actions;
+  final MacosThemeData theme;
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  bool get barrierDismissible => true;
+
+  @override
+  String get barrierLabel => 'Закрыть меню';
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 120);
+
+  @override
+  Widget buildPage(BuildContext context, Animation<double> a, Animation<double> _) {
+    return MacosTheme(
+      data: theme,
+      child: CustomSingleChildLayout(
+        delegate: _MenuLayout(at),
+        child: FadeTransition(
+          opacity: CurvedAnimation(parent: a, curve: Curves.easeOutCubic),
+          child: _ContextMenuPanel(actions: actions),
+        ),
+      ),
+    );
+  }
+}
+
+/// Меню открывается вправо-вниз от курсора и разворачивается в другую сторону,
+/// если там край экрана.
+class _MenuLayout extends SingleChildLayoutDelegate {
+  const _MenuLayout(this.at);
+  final Offset at;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints c) =>
+      BoxConstraints.loose(Size(c.maxWidth - 16, c.maxHeight - 16));
+
+  @override
+  Offset getPositionForChild(Size size, Size child) {
+    final x = at.dx + child.width > size.width - 8
+        ? math.max(8.0, at.dx - child.width)
+        : at.dx;
+    final y = at.dy + child.height > size.height - 8
+        ? math.max(8.0, at.dy - child.height)
+        : at.dy;
+    return Offset(x, y);
+  }
+
+  @override
+  bool shouldRelayout(_MenuLayout old) => old.at != at;
+}
+
+class _ContextMenuPanel extends StatelessWidget {
+  const _ContextMenuPanel({required this.actions});
+  final List<MenuAction> actions;
+
+  @override
+  Widget build(BuildContext context) => IntrinsicWidth(
+        child: MacosOverlayFilter(
+          borderRadius: BorderRadius.circular(7),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 5),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final a in actions)
+                  if (a.isSeparator)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+                      child: Container(height: 1, color: Surface.hairline(context)),
+                    )
+                  else
+                    _ContextMenuRow(action: a),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+class _ContextMenuRow extends StatefulWidget {
+  const _ContextMenuRow({required this.action});
+  final MenuAction action;
+
+  @override
+  State<_ContextMenuRow> createState() => _ContextMenuRowState();
+}
+
+class _ContextMenuRowState extends State<_ContextMenuRow> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final a = widget.action;
+    final accent = MacosTheme.of(context).primaryColor;
+    final lit = _hover && a.enabled;
+    final fg = !a.enabled
+        ? Surface.secondaryText(context).withValues(alpha: 0.5)
+        : lit
+            ? MacosColors.white
+            : null;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: a.enabled
+            ? () {
+                Navigator.of(context).pop();
+                a.onSelected!();
+              }
+            : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: lit ? accent : MacosColors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            children: [
+              Text(a.label, style: Type.control.copyWith(color: fg)),
+              if (a.shortcut != null) ...[
+                const SizedBox(width: 28),
+                const Spacer(),
+                Text(
+                  a.shortcut!,
+                  style: Type.control.copyWith(
+                    color: fg ?? Surface.secondaryText(context),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Правый щелчок (он же двумя пальцами по трекпаду). Собственный обработчик
+/// нажатия у ребёнка не трогаем — это разные кнопки мыши.
+class ContextMenuRegion extends StatelessWidget {
+  const ContextMenuRegion({super.key, required this.actions, required this.child});
+
+  final List<MenuAction> Function() actions;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapUp: (d) => showContextMenu(context, d.globalPosition, actions()),
+        child: child,
+      );
+}
