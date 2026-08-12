@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:macos_ui/macos_ui.dart';
 
 import 'design.dart';
+import 'dictation.dart' show ourServerPid;
 import 'engine.dart';
 import 'mascot.dart';
 import 'panel.dart' show runPanel;

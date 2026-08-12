@@ -26,11 +26,32 @@ extension _Transcribe on _HomePageState {
     await _start();
   }
 
+  /// Модель держит наш же сервер диктовки — уступать себе бессмысленно.
+  /// Гасим его и работаем: на следующей диктовке он поднимется заново
+  /// за 0,6 с. Чужого соседа это не касается — ему по-прежнему уступаем.
+  void _freeOwnServer() {
+    if (!_modelUse.busy) return;
+    final ours = ourServerPid();
+    if (ours == null || ours != _modelUse.pid) return;
+    try {
+      Process.killPid(ours, ProcessSignal.sigterm);
+    } catch (_) {
+      return;
+    }
+    // Занятость опрашивается раз в 700 мс, а состояние уже известно: без
+    // этого очередь стояла бы, ожидая процесс, которого больше нет.
+    _set(() {
+      _modelUse = const ModelUse(ModelState.free);
+      _status = 'Освободили модель от диктовки';
+    });
+  }
+
   /// Пока модель занята кем-то другим — стоим и не поднимаем свою.
   /// Состояние берём у общего опросчика: он и так обновляется каждые 700 мс,
   /// второй такой же опрос рядом только жёг бы процессор.
   /// Возвращает false, если ожидание прервали кнопкой «Остановить».
   Future<bool> _yieldWhileBusy(Job job) async {
+    _freeOwnServer();
     var waited = false;
     while (_yieldBusyModel && !_stopRequested && _modelUse.busy) {
       if (!waited || job.state != JobState.waiting) {
@@ -70,6 +91,7 @@ extension _Transcribe on _HomePageState {
     }
     if (!_hasPending) return;
 
+    _freeOwnServer();
     if (!_yieldBusyModel && _modelUse.busy) {
       final go = await _confirm(
         'Модель уже занята',

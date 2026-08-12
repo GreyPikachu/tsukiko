@@ -347,6 +347,7 @@ class ModelUse {
   const ModelUse(
     this.state, {
     this.by = '',
+    this.pid = 0,
     this.rssKb = 0,
     this.share = 0,
     this.learned = const {},
@@ -355,6 +356,11 @@ class ModelUse {
 
   final ModelState state;
   final String by;
+
+  /// Кто именно занял модель. Имя процесса для этого не годится: у соседа
+  /// может работать свой whisper-server, а гасить нам можно только свой.
+  final int pid;
+
   final int rssKb;
 
   /// Сколько ядер процесс занимал между двумя последними опросами.
@@ -455,7 +461,10 @@ Future<ModelUse> modelUsage({
     final names = {...learned};
     for (final p in paths) {
       final owner = ownerFromModelPath(p);
-      if (owner != null) names.add(owner);
+      // Скачанные модели лежат в нашей же папке, и владельцем по пути
+      // угадываемся мы сами. Себя в соседи записывать нельзя: вторая копия
+      // и так не запускается, а первая — это мы.
+      if (owner != null && owner != appName) names.add(owner);
     }
 
     final holders = probeHolders ? await _pids('lsof', ['-t', ...paths]) : const <int>[];
@@ -513,20 +522,22 @@ Future<ModelUse> modelUsage({
         if (score > bestScore) {
           bestScore = score;
           best = ModelUse(ModelState.busy,
-              by: name, rssKb: rss, share: share, learned: seen);
+              by: name, pid: procPid, rssKb: rss, share: share, learned: seen);
         }
         continue;
       }
 
       // Файл открыт прямо сейчас, а работы ещё не видно — читают модель.
       if (holders.contains(procPid) && bestScore <= 0) {
-        best = ModelUse(ModelState.loading, by: name, rssKb: rss, learned: seen);
+        best = ModelUse(ModelState.loading,
+            by: name, pid: procPid, rssKb: rss, learned: seen);
       }
     }
 
     final cpu = CpuSample(now, sampled);
     return ModelUse(best.state,
         by: best.by,
+        pid: best.pid,
         rssKb: best.rssKb,
         share: best.share,
         learned: seen,

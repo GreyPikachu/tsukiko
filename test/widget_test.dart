@@ -223,6 +223,20 @@ void main() {
     expect(self.busy, isFalse);
   });
 
+  test('сами себе не сосед: своя папка моделей не делает нас занявшим', () async {
+    // Скачанные модели лежат в нашей же папке, и владельцем по пути
+    // угадываемся мы сами.
+    expect(ownerFromModelPath(vadModelPath), appName);
+    final models = findModels();
+    if (models.isEmpty) return;
+    // Поэтому своё имя в кандидаты не берётся: иначе запущенное приложение
+    // считалось бы соседом, занявшим модель, и очередь ждала бы саму себя.
+    final use = await modelUsage(modelPath: models.first, probeHolders: false);
+    expect(use.by, isNot(appName));
+    // Свободная модель никем не занята — и гасить по этому pid нечего.
+    if (!use.busy) expect(use.pid, 0);
+  });
+
   test('числительные согласуются с числом', () {
     expect(segmentsLabel(1), '1 фрагмент');
     expect(segmentsLabel(3), '3 фрагмента');
