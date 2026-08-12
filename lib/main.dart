@@ -13,6 +13,13 @@ import 'package:macos_ui/macos_ui.dart';
 import 'design.dart';
 import 'engine.dart';
 import 'mascot.dart';
+import 'panel.dart' show runPanel;
+
+/// Точка входа второго движка Flutter — того, что рисует панель у строки
+/// меню и ведёт диктовку. Она обязана лежать именно здесь: FlutterEngine
+/// на macOS ищет точку входа только в корневой библиотеке приложения.
+@pragma('vm:entry-point')
+void panelMain() => runPanel();
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
