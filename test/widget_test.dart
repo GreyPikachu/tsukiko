@@ -213,6 +213,10 @@ void main() {
   test('чужой процесс с большим RSS считается занявшим модель', () async {
     final models = findModels();
     if (models.isEmpty) return;
+    // Тест исходит из того, что рядом ничего не распознаётся. Если идёт
+    // диктовка — проверять нечего: детектор обязан показать «занято». Раньше
+    // тест на этом падал у любого, кто запускал его во время диктовки.
+    if ((await Process.run('pgrep', ['-f', 'whisper'])).exitCode == 0) return;
     // Собственный процесс исключается из проверки: очередь не должна
     // уступать сама себе.
     final self = await modelUsage(modelPath: models.first, ignorePid: pid);
