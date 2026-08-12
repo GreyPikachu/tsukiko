@@ -31,23 +31,27 @@ String? findWhisperServer() {
 /// на диск, и следующий запуск добивает того, кто пережил падение.
 File get _pidFile => File('$supportDir/whisper-server.pid');
 
-/// Один и тот же процесс мог перезапуститься, а pid — достаться другому.
-/// Убиваем только если по этому pid действительно whisper-server.
-void killStaleServer() {
+/// Pid нашего whisper-server, если он жив. Отличать своего от чужого можно
+/// только так: у пользователя рядом может работать чужой whisper-server,
+/// и по имени процесса они неразличимы. Один и тот же pid система могла
+/// успеть отдать другому — поэтому сверяемся с именем процесса.
+int? ourServerPid() {
   try {
-    final raw = _pidFile.readAsStringSync().trim();
-    final pid = int.tryParse(raw);
-    if (pid == null) return;
+    final pid = int.tryParse(_pidFile.readAsStringSync().trim());
+    if (pid == null) return null;
     final comm = Process.runSync('ps', ['-o', 'comm=', '-p', '$pid']);
-    if ((comm.stdout as String).contains('whisper-server')) {
-      Process.killPid(pid, ProcessSignal.sigterm);
-    }
+    return (comm.stdout as String).contains('whisper-server') ? pid : null;
   } catch (_) {
-  } finally {
-    try {
-      _pidFile.deleteSync();
-    } catch (_) {}
+    return null;
   }
+}
+
+void killStaleServer() {
+  final pid = ourServerPid();
+  if (pid != null) Process.killPid(pid, ProcessSignal.sigterm);
+  try {
+    _pidFile.deleteSync();
+  } catch (_) {}
 }
 
 /// Запись диктовки ложится во временную папку и стирается сразу после
