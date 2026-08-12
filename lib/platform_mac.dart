@@ -163,6 +163,12 @@ class MacPlatform
   Future<bool> insert(String text) async =>
       await _channel.invokeMethod<bool>('paste', {'text': text}) ?? false;
 
+  /// Значок в Dock. Выключенный переводит приложение в .accessory: оно
+  /// пропадает и из Dock, и из ⌘Tab, а строка меню остаётся. Меняется
+  /// на лету, перезапуск не нужен.
+  Future<void> setDockIcon(bool visible) =>
+      _channel.invokeMethod('dockIcon', {'visible': visible});
+
   @override
   Future<void> hidePanel() => _channel.invokeMethod('hidePanel');
 

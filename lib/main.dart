@@ -15,6 +15,7 @@ import 'dictation.dart' show ourServerPid;
 import 'engine.dart';
 import 'mascot.dart';
 import 'panel.dart' show runPanel;
+import 'platform_mac.dart' show MacPlatform;
 
 part 'job.dart';
 part 'home_queue.dart';
@@ -127,6 +128,10 @@ class _HomePageState extends State<HomePage> {
 
   // Настройки самого приложения — они не бывают «своими у записи».
   bool _timestamps = true, _yieldBusyModel = true, _saveNextToSource = false;
+  bool _dockIcon = true;
+
+  /// Единственное, за чем главное окно ходит в macOS напрямую.
+  late final _mac = MacPlatform();
   bool _toLibrary = true;
   String _libraryPath = defaultLibraryPath;
   List<String> _libraryFormats = const ['txt'];
@@ -159,6 +164,7 @@ class _HomePageState extends State<HomePage> {
     _yieldBusyModel =
         (s['yieldBusyModel'] as bool?) ?? (s['yieldDictara'] as bool?) ?? true;
     _saveNextToSource = (s['saveNextToSource'] as bool?) ?? false;
+    _dockIcon = (s['dockIcon'] as bool?) ?? true;
     _toLibrary = (s['toLibrary'] as bool?) ?? true;
     _libraryPath = (s['libraryPath'] as String?) ?? defaultLibraryPath;
     _copyFormat = _knownFormat(s['copyFormat'], formatPlainText.id);
@@ -244,6 +250,7 @@ class _HomePageState extends State<HomePage> {
         'yieldBusyModel': _yieldBusyModel,
         'modelUsers': _modelUsers.toList(),
         'saveNextToSource': _saveNextToSource,
+        'dockIcon': _dockIcon,
         'toLibrary': _toLibrary,
         'libraryPath': _libraryPath,
         'libraryFormats': _libraryFormats,
@@ -1042,6 +1049,13 @@ class _HomePageState extends State<HomePage> {
         }),
         const _Hint('Пока модель держит другая программа — диктовка, ещё один whisper — '
             'очередь стоит и не отбирает у неё память и GPU.'),
+        _Check('Показывать значок в Dock', _dockIcon, (v) {
+          setState(() => _dockIcon = v);
+          _persist();
+          _mac.setDockIcon(v);
+        }),
+        const _Hint('Без значка tsukiko исчезает из Dock и из ⌘Tab и живёт '
+            'только в строке меню. Окно оттуда же и открывается.'),
         const SizedBox(height: 20),
         Text(
           _whisper == null ? 'whisper-cli не найден' : 'Локально · whisper.cpp',
