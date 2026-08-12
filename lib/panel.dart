@@ -60,6 +60,11 @@ class DictationController extends ChangeNotifier {
   /// Идёт загрузка модели тишины. Пока она идёт, диктовка работает без VAD.
   Download? vadDownload;
 
+  /// Почему модель тишины так и не приехала. Сеть могла лежать ровно в те
+  /// секунды, когда приложение стартовало, — второго шанса без кнопки
+  /// не было бы до следующего запуска.
+  String? vadError;
+
   String? _wav;
   DateTime? _startedAt;
   Timer? _meter;
@@ -91,14 +96,20 @@ class DictationController extends ChangeNotifier {
   /// диктуем без неё: галлюцинации на тишине хуже, чем ничего, но молчащая
   /// диктовка хуже вдвойне.
   Future<void> _ensureVad() async {
-    if (File(vadModelPath).existsSync()) return;
+    if (File(vadModelPath).existsSync() || vadDownload != null) return;
     final d = Download(vadModelUrl, vadModelPath);
     vadDownload = d;
+    vadError = null;
     notifyListeners();
-    await d.run(onProgress: notifyListeners);
+    final path = await d.run(onProgress: notifyListeners);
     vadDownload = null;
+    vadError = path == null ? d.error : null;
     notifyListeners();
   }
+
+  /// Повтор после неудачи. Недокачанное лежит в «.part», так что второй
+  /// заход продолжит с того же места, а не начнёт сначала.
+  Future<void> retryVad() => _ensureVad();
 
   Future<void> _apply() async {
     // Приложение всегда стартует со значком в Dock: LSUIElement в Info.plist
@@ -327,6 +338,15 @@ class _Panel extends StatelessWidget {
           Text(
             'Загружаем распознавание тишины · ${c.vadDownload!.progressLabel}',
             style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+          ),
+        ] else if (c.vadError != null) ...[
+          const SizedBox(height: 8),
+          _Warning(
+            'Распознавание тишины не загрузилось: ${c.vadError}. '
+            'Диктовать можно и так, но на паузах модель дописывает лишнее. '
+            'Проверьте связь и попробуйте ещё раз.',
+            button: 'Попробовать ещё раз',
+            onPressed: c.retryVad,
           ),
         ],
         const SizedBox(height: 12),
@@ -797,8 +817,9 @@ class _Segmented extends StatelessWidget {
 }
 
 class _Warning extends StatelessWidget {
-  const _Warning(this.text, {required this.onPressed});
+  const _Warning(this.text, {required this.onPressed, this.button = 'Открыть настройки'});
   final String text;
+  final String button;
   final VoidCallback onPressed;
 
   @override
@@ -817,7 +838,7 @@ class _Warning extends StatelessWidget {
               controlSize: ControlSize.small,
               secondary: true,
               onPressed: onPressed,
-              child: const Text('Открыть настройки'),
+              child: Text(button),
             ),
           ],
         ),
