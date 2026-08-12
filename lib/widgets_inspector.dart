@@ -166,6 +166,68 @@ class _LibraryPathState extends State<_LibraryPath> {
   }
 }
 
+/// Загрузчик моделей. Без него новый человек упирается в тупик: ggml-файл
+/// брать неоткуда, а без файла приложение ничего не распознаёт.
+class _ModelDownload extends StatelessWidget {
+  const _ModelDownload({
+    required this.active,
+    required this.onPick,
+    required this.onCancel,
+  });
+
+  final Download? active;
+  final ValueChanged<ModelOffer> onPick;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final d = active;
+    if (d == null) {
+      return MacosPulldownButton(
+        title: 'Загрузить модель…',
+        items: [
+          for (final m in modelCatalog)
+            MacosPulldownMenuItem(
+              enabled: !m.present,
+              label: m.title,
+              onTap: () => onPick(m),
+              title: Text(m.present
+                  ? '${m.title} · уже загружена'
+                  : '${m.title} · ${m.size} · ${m.about}'),
+            ),
+        ],
+      );
+    }
+    // Пока идёт загрузка, кнопки нет: вторая полуторагиговая качка рядом
+    // с первой только замедлит обе.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Загружаем ${d.title}', style: Type.control),
+        const SizedBox(height: 7),
+        ProgressBar(value: d.percent.toDouble()),
+        const SizedBox(height: 7),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                d.progressLabel,
+                style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+              ),
+            ),
+            PushButton(
+              controlSize: ControlSize.small,
+              secondary: true,
+              onPressed: onCancel,
+              child: const Text('Отменить'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.text);
   final String text;

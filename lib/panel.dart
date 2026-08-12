@@ -668,31 +668,44 @@ class _Models extends StatelessWidget {
   Widget build(BuildContext context) {
     final pair = modelPair(c.models);
     if (pair.fast.isEmpty) {
-      return Text('Модели не найдены',
-          style: Type.caption.copyWith(color: Surface.secondaryText(context)));
-    }
-    final current = c.settings.model.isNotEmpty ? c.settings.model : c.options.model;
-    final same = pair.fast == pair.accurate;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _Segmented(
-          options: [
-            (pair.fast, 'Быстрая · ${modelSizeLabel(pair.fast)}'),
-            (pair.accurate, 'Точная · ${modelSizeLabel(pair.accurate)}'),
-          ],
-          value: current == pair.accurate ? pair.accurate : pair.fast,
-          onChanged: same ? null : c.setModel,
-        ),
-        if (same) ...[
-          const SizedBox(height: 6),
-          Text(
-            'Найдена одна модель. Вторую можно добавить в главном окне.',
-            style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-          ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Модель не найдена — распознавать нечем',
+              style: Type.caption.copyWith(color: Surface.secondaryText(context))),
+          const SizedBox(height: 4),
+          _Link('Загрузить модель…', c.openMainWindow),
         ],
+      );
+    }
+
+    // Модель одна — переключать нечего, и мёртвый переключатель только врёт,
+    // будто выбор есть. Показываем, что нашлось, и путь за второй моделью.
+    if (pair.fast == pair.accurate) {
+      return Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${modelShortName(pair.fast)} · ${modelSizeLabel(pair.fast)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Type.control,
+            ),
+          ),
+          const SizedBox(width: 8),
+          _Link('Загрузить другую…', c.openMainWindow),
+        ],
+      );
+    }
+
+    final current = c.settings.model.isNotEmpty ? c.settings.model : c.options.model;
+    return _Segmented(
+      options: [
+        (pair.fast, 'Быстрая · ${modelShortName(pair.fast)}'),
+        (pair.accurate, 'Точная · ${modelShortName(pair.accurate)}'),
       ],
+      value: current == pair.accurate ? pair.accurate : pair.fast,
+      onChanged: c.setModel,
     );
   }
 }

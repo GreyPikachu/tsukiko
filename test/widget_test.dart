@@ -359,6 +359,26 @@ void main() {
     expect(looksLikeSpeechModel('заметки.txt'), isFalse);
   });
 
+  test('каталог моделей: ссылки в один репозиторий, файлы в свою папку', () {
+    expect(modelCatalog.length, 5);
+    for (final m in modelCatalog) {
+      expect(looksLikeSpeechModel(m.file), isTrue, reason: m.file);
+      // Ложится в папку, которую findModels() уже просматривает, — иначе
+      // скачанное не появится в списке.
+      expect(m.path, '$supportDir/models/${m.file}');
+      expect(m.url, 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${m.file}');
+      expect(m.mb, greaterThan(0));
+      expect(m.about, isNotEmpty);
+    }
+    // Имена не повторяются: иначе две строки каталога боролись бы за один файл.
+    expect(modelCatalog.map((m) => m.file).toSet().length, modelCatalog.length);
+    // Размер читается человеком: мегабайты до гигабайта, дальше гигабайты.
+    expect(modelCatalog.first.size, '74 МБ');
+    expect(sizeLabelMb(1549), '1,5 ГБ');
+    // Имя для панели — как его называют люди.
+    expect(modelShortName('/x/ggml-large-v3-turbo.bin'), 'large-v3-turbo');
+  });
+
   test('загрузка не выдаёт недокачанное за готовый файл', () async {
     final dir = Directory.systemTemp.createTempSync('tsukiko_dl');
     final dest = '${dir.path}/ggml-tiny.bin';

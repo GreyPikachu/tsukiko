@@ -164,25 +164,35 @@ extension _Export on _HomePageState {
 
   /// Один загрузчик на все файлы: ход виден в строке состояния и в инспекторе,
   /// оттуда же его можно отменить. Возвращает путь или null.
-  Future<String?> _runDownload(Download d, String what) async {
+  Future<String?> _runDownload(Download d) async {
     if (_download != null) return null;
     _set(() {
       _download = d;
-      _status = 'Загружаем $what…';
+      _status = 'Загружаем ${d.title}…';
     });
     final path = await d.run(
-        onProgress: () => _set(() => _status = 'Загружаем $what · ${d.progressLabel}'));
+        onProgress: () =>
+            _set(() => _status = 'Загружаем ${d.title} · ${d.progressLabel}'));
     if (!mounted) return path;
     _set(() {
       _download = null;
       _status = path != null
-          ? 'Загружено: $what'
+          ? 'Загружено: ${d.title}'
           : d.cancelled
               ? 'Загрузка отменена'
-              : 'Не удалось загрузить $what';
+              : 'Не удалось загрузить: ${d.title}';
       if (path != null) _rescanModels();
     });
     return path;
+  }
+
+  /// Скачать модель распознавания. Первая в системе сразу становится
+  /// выбранной: иначе человек скачал файл и всё равно видит «Не выбрана».
+  /// Пропавший с диска файл — то же самое, что и не выбранный.
+  Future<void> _downloadModel(ModelOffer m) async {
+    final wasEmpty = _shown.model.isEmpty || !File(_shown.model).existsSync();
+    final path = await _runDownload(Download(m.url, m.path, title: m.title));
+    if (path != null && wasEmpty) _edit((o) => o.copyWith(model: path));
   }
 
   /// Галка VAD включена, а файла модели ещё нет. Диктовка качает его сама
@@ -194,7 +204,7 @@ extension _Export on _HomePageState {
       return;
     }
     final path = await _runDownload(
-        Download(vadModelUrl, vadModelPath), 'распознавание пауз');
+        Download(vadModelUrl, vadModelPath, title: 'распознавание пауз'));
     if (path != null) {
       _edit((o) => o.copyWith(vadModel: path, vad: true));
       return;

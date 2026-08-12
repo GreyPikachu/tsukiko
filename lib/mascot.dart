@@ -223,11 +223,16 @@ class MascotPlaceholder extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.height = 138,
+    this.action,
   });
 
   final Mood mood;
   final String title, subtitle;
   final double height;
+
+  /// Кнопка под подписью: пустой экран, из которого ничего нельзя сделать, —
+  /// тупик, а не подсказка.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -247,6 +252,10 @@ class MascotPlaceholder extends StatelessWidget {
                 height: 1.5,
               ),
             ),
+            if (action != null) ...[
+              const SizedBox(height: 16),
+              SizedBox(width: 260, child: action),
+            ],
           ],
         ),
       );

@@ -199,12 +199,14 @@ class _HomePageState extends State<HomePage> {
 
   /// Перечитать модели с диска: скачанное ложится в папку, которую
   /// findModels() и так просматривает. Выбранный вручную файл из чужой папки
-  /// в список дописываем — иначе он исчез бы из выпадающего списка.
+  /// дописываем — иначе он исчез бы из списка. Пропавший файл не дописываем:
+  /// список из одной мёртвой строки выглядит так, будто модель есть.
   void _rescanModels() {
     final found = findModels();
-    _models = _defaults.model.isEmpty || found.contains(_defaults.model)
+    final own = _defaults.model;
+    _models = own.isEmpty || found.contains(own) || !File(own).existsSync()
         ? found
-        : [...found, _defaults.model];
+        : [...found, own];
   }
 
   String _knownFormat(Object? id, String fallback) =>
@@ -719,7 +721,19 @@ class _HomePageState extends State<HomePage> {
     final job = _job;
 
     Widget content;
-    if (job == null) {
+    if (job == null && _models.isEmpty) {
+      // Пустее пустого: распознавать нечем. Пока модели нет, разговор про
+      // перетаскивание файлов бессмыслен.
+      content = Center(
+        child: MascotPlaceholder(
+          mood: _mood(job),
+          title: 'Нужна модель распознавания',
+          subtitle: 'Она работает на этом компьютере, поэтому её надо один раз\n'
+              'загрузить. Tiny — просто попробовать, Large v3 turbo — точность.',
+          action: _modelDownload(),
+        ),
+      );
+    } else if (job == null) {
       content = Center(
         child: MascotPlaceholder(
           mood: _mood(job),
@@ -873,6 +887,14 @@ class _HomePageState extends State<HomePage> {
 
   // ── инспектор ─────────────────────────────────────────────────────────────
 
+  /// Один и тот же загрузчик стоит в инспекторе и в пустом экране: когда
+  /// моделей нет вовсе, вести человека надо оттуда, где он смотрит.
+  Widget _modelDownload() => _ModelDownload(
+        active: _download,
+        onPick: _downloadModel,
+        onCancel: () => setState(() => _download?.cancel()),
+      );
+
   Widget _inspector(ScrollController controller) {
     final o = _shown;
     final own = _lead?.overrides;
@@ -904,6 +926,8 @@ class _HomePageState extends State<HomePage> {
           onPressed: _pickModel,
           child: const Text('Выбрать другой файл…'),
         ),
+        const SizedBox(height: 8),
+        _modelDownload(),
         const _SectionTitle('Язык речи'),
         MacosPopupButton<String>(
           value: o.lang,
