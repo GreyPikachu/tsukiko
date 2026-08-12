@@ -397,8 +397,24 @@ void main() {
     final dir = Directory.systemTemp.createTempSync('tsukiko_dl');
     final dest = '${dir.path}/ggml-tiny.bin';
     // В сеть не ходим: закрытый порт проходит тот же путь, что и обрыв связи.
-    expect(await Download('http://127.0.0.1:9/нет.bin', dest).run(), isNull);
+    final failed = Download('http://127.0.0.1:9/нет.bin', dest);
+    expect(await failed.run(), isNull);
     expect(File(dest).existsSync(), isFalse);
+    // Кнопка повтора без объяснения бесполезна: причина нужна словами,
+    // а не текстом исключения.
+    expect(failed.error, 'нет связи с 127.0.0.1');
+
+    // Ответ сервера — совсем другая беда, и звучать должна иначе.
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((r) {
+      r.response.statusCode = 404;
+      r.response.close();
+    });
+    final missing = Download('http://127.0.0.1:${server.port}/нет.bin', dest);
+    expect(await missing.run(), isNull);
+    expect(missing.error, '127.0.0.1 ответил 404');
+    await server.close(force: true);
+
     // Уже готовый файл повторно не качается.
     File(dest).writeAsStringSync('уже есть');
     expect(await Download('http://127.0.0.1:9/нет.bin', dest).run(), dest);

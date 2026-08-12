@@ -237,6 +237,10 @@ class Download {
   int got = 0, total = 0;
   bool cancelled = false;
 
+  /// Почему не вышло — человеческими словами, для показа на экране.
+  /// Пусто, пока всё идёт хорошо или пока загрузку отменили сами.
+  String? error;
+
   int get percent => total > 0 ? (got * 100 ~/ total).clamp(0, 100) : 0;
 
   String get progressLabel {
@@ -253,21 +257,25 @@ class Download {
   /// заход продолжит с того же места.
   Future<String?> run({void Function()? onProgress}) async {
     if (File(dest).existsSync()) return dest;
+    error = null;
+    final uri = Uri.parse(url);
     final part = File('$dest.part');
     try {
       part.parent.createSync(recursive: true);
     } catch (_) {
+      error = 'некуда положить файл: папка ${part.parent.path} недоступна';
       return null;
     }
     var have = part.existsSync() ? part.lengthSync() : 0;
 
     final client = HttpClient();
     try {
-      final req = await client.getUrl(Uri.parse(url));
+      final req = await client.getUrl(uri);
       if (have > 0) req.headers.set(HttpHeaders.rangeHeader, 'bytes=$have-');
       final res = await req.close();
       if (res.statusCode != HttpStatus.ok &&
           res.statusCode != HttpStatus.partialContent) {
+        error = '${uri.host} ответил ${res.statusCode}';
         return null;
       }
       // Докачку не поняли — начинаем сначала, это дороже, но верно.
@@ -292,10 +300,18 @@ class Download {
       } finally {
         sink.closeSync();
       }
-      if (total > 0 && got < total) return null;
+      if (total > 0 && got < total) {
+        error = 'связь оборвалась на $percent %';
+        return null;
+      }
       part.renameSync(dest);
       return dest;
-    } catch (_) {
+    } catch (e) {
+      // Текст исключения показывать нельзя: он английский и про сокеты.
+      // Человеку важно другое — сеть или сервер, и что делать дальше.
+      error = e is SocketException
+          ? 'нет связи с ${uri.host}'
+          : 'не удалось скачать с ${uri.host}';
       return null;
     } finally {
       client.close(force: true);
