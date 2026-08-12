@@ -26,8 +26,12 @@ final class PanelController: NSObject, NSWindowDelegate {
     self.onShown = onShown
 
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    if let icon = NSImage(systemSymbolName: "waveform", accessibilityDescription: "tsukiko") {
+    // Свой силуэт вместо системного символа. Картинка шаблонная: чёрный
+    // и альфа, всё остальное система рисует сама — под светлую и тёмную
+    // строку меню и под выделение.
+    if let icon = NSImage(named: "MenuBarIcon") {
       icon.isTemplate = true
+      icon.accessibilityDescription = "tsukiko"
       item.button?.image = icon
     } else {
       // Без картинки и без заголовка кнопка нулевой ширины, и значка
