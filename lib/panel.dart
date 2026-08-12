@@ -19,6 +19,7 @@ void runPanel() {
   // Сервер мог пережить падение приложения: полтора гигабайта, которые
   // иначе не вернёт никто.
   killStaleServer();
+  sweepRecordings();
   runApp(PanelApp(DictationController(MacPlatform())));
 }
 
@@ -31,6 +32,8 @@ class DictationController extends ChangeNotifier {
       onChanged: _onServerChanged,
     );
     platform.events.listen(_onHotkey);
+    // Кнопки плавающей панели — те же два действия, что и клавиши.
+    platform.hudActions.listen((a) => a == 'cancel' ? cancel() : stop());
     platform.panelShown.listen((_) => _refresh());
     _apply();
 
@@ -118,6 +121,7 @@ class DictationController extends ChangeNotifier {
     _wav = path;
     _startedAt = DateTime.now();
     phase = Phase.recording;
+    unawaited(platform.hud(HudState.recording));
     elapsed = Duration.zero;
     _meter = Timer.periodic(const Duration(milliseconds: 100), (_) async {
       level = await platform.level();
@@ -129,26 +133,52 @@ class DictationController extends ChangeNotifier {
 
   Future<void> stop() async {
     if (phase != Phase.recording) return;
-    _meter?.cancel();
-    _meter = null;
-    level = 0;
+    _stopMeter();
     phase = Phase.transcribing;
+    unawaited(platform.hud(HudState.transcribing));
     notifyListeners();
 
     final path = await platform.stopRecording() ?? _wav;
     _wav = null;
+    var ok = false;
     if (path != null) {
       final text = await server.transcribe(path, lang: settings.lang);
-      try {
-        File(path).deleteSync();
-      } catch (_) {}
+      _discard(path);
       if (text.isNotEmpty) {
         last = text;
-        await platform.insert(text);
+        ok = await platform.insert(text);
       }
     }
+    // Панель уходит с подтверждением, только если было что вставлять:
+    // галочка после тишины была бы неправдой.
+    await platform.hud(ok ? HudState.done : HudState.hidden);
     phase = Phase.idle;
     notifyListeners();
+  }
+
+  /// Передумал. Записанное выбрасываем, ничего не распознаём и не
+  /// вставляем — молча, как будто ничего и не начиналось.
+  Future<void> cancel() async {
+    if (phase != Phase.recording) return;
+    _stopMeter();
+    phase = Phase.idle;
+    unawaited(platform.hud(HudState.hidden));
+    notifyListeners();
+    _discard(await platform.stopRecording() ?? _wav);
+    _wav = null;
+  }
+
+  void _stopMeter() {
+    _meter?.cancel();
+    _meter = null;
+    level = 0;
+  }
+
+  void _discard(String? path) {
+    if (path == null) return;
+    try {
+      File(path).deleteSync();
+    } catch (_) {}
   }
 
   // ── правки из панели ──────────────────────────────────────────────────────
@@ -160,7 +190,7 @@ class DictationController extends ChangeNotifier {
 
   void setEnabled(bool v) {
     settings.enabled = v;
-    if (!v && phase == Phase.recording) stop();
+    if (!v && phase == Phase.recording) cancel();
     _save();
   }
 

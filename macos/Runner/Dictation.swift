@@ -98,6 +98,16 @@ final class DictationBridge: NSObject {
 
   private lazy var panel = PanelController()
 
+  /// Плавающая панель записи. Отмена и остановка мышью — это те же
+  /// два действия, что и с клавиатуры, поэтому уходят они в тот же Dart.
+  private lazy var hud: RecordingHUD = {
+    let hud = RecordingHUD(
+      onCancel: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "cancel") },
+      onStop: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "stop") })
+    hud.levelSource = { [weak self] in self?.currentLevel() ?? 0 }
+    return hud
+  }()
+
   // MARK: запуск
 
   func start() {
@@ -159,6 +169,14 @@ final class DictationBridge: NSObject {
     case "paste":
       paste((args?["text"] as? String) ?? "")
       reply(true)
+    case "hud":
+      switch (args?["state"] as? String) ?? "" {
+      case "recording": hud.show()
+      case "transcribing": hud.transcribing()
+      case "done": hud.finish()
+      default: hud.hide()
+      }
+      reply(nil)
     case "hidePanel":
       panel.hide()
       reply(nil)
@@ -354,9 +372,12 @@ final class DictationBridge: NSObject {
   private func currentLevel() -> Double {
     guard let rec = recorder, rec.isRecording else { return 0 }
     rec.updateMeters()
-    let db = Double(rec.averagePower(forChannel: 0))
-    // −60 дБ — тишина, 0 дБ — предел. Ниже порога индикатор просто спит.
-    return max(0, min(1, (db + 60) / 60))
+    // Шкала в децибелах почти не шевелится: замер этой комнаты дал −33 дБ
+    // в тишине и −18 дБ на речи, то есть 0,55 против 0,7 по прямой шкале.
+    // Считаем по амплитуде и вычитаем шум комнаты — тогда индикатор
+    // отвечает на голос, а не на вентилятор.
+    let amplitude = pow(10, Double(rec.averagePower(forChannel: 0)) / 20)
+    return max(0, min(1, (amplitude - 0.015) / 0.15))
   }
 
   // MARK: вставка текста
