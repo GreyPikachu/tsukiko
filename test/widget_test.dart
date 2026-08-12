@@ -345,6 +345,32 @@ void main() {
     dir.deleteSync(recursive: true);
   });
 
+  test('VAD-модель качается из своего репозитория и не путается с речевой', () {
+    // В ggerganov/whisper.cpp файла silero нет вовсе — оттуда приходит 404.
+    expect(vadModelUrl, contains('ggml-org/whisper-vad'));
+    expect(vadModelUrl.endsWith(vadModelFile), isTrue);
+    // Ложится туда же, куда смотрит findModels(), — иначе её нечем подхватить.
+    expect(vadModelPath, '$supportDir/models/$vadModelFile');
+    // Но в списке моделей распознавания ей не место: выбрав её, человек
+    // получил бы пустую расшифровку.
+    expect(looksLikeSpeechModel(vadModelFile), isFalse);
+    expect(looksLikeSpeechModel('ggml-large-v3-turbo.bin'), isTrue);
+    expect(looksLikeSpeechModel('ggml-tiny.bin.part'), isFalse);
+    expect(looksLikeSpeechModel('заметки.txt'), isFalse);
+  });
+
+  test('загрузка не выдаёт недокачанное за готовый файл', () async {
+    final dir = Directory.systemTemp.createTempSync('tsukiko_dl');
+    final dest = '${dir.path}/ggml-tiny.bin';
+    // В сеть не ходим: закрытый порт проходит тот же путь, что и обрыв связи.
+    expect(await Download('http://127.0.0.1:9/нет.bin', dest).run(), isNull);
+    expect(File(dest).existsSync(), isFalse);
+    // Уже готовый файл повторно не качается.
+    File(dest).writeAsStringSync('уже есть');
+    expect(await Download('http://127.0.0.1:9/нет.bin', dest).run(), dest);
+    dir.deleteSync(recursive: true);
+  });
+
   test('свободный порт достаётся от ядра и повторно не выдаётся', () async {
     final a = await freePort(), b = await freePort();
     expect(a, greaterThan(1024));

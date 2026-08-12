@@ -161,4 +161,44 @@ extension _Export on _HomePageState {
     }
     _edit((o) => o.copyWith(vadModel: f.path, vad: true));
   }
+
+  /// Один загрузчик на все файлы: ход виден в строке состояния и в инспекторе,
+  /// оттуда же его можно отменить. Возвращает путь или null.
+  Future<String?> _runDownload(Download d, String what) async {
+    if (_download != null) return null;
+    _set(() {
+      _download = d;
+      _status = 'Загружаем $what…';
+    });
+    final path = await d.run(
+        onProgress: () => _set(() => _status = 'Загружаем $what · ${d.progressLabel}'));
+    if (!mounted) return path;
+    _set(() {
+      _download = null;
+      _status = path != null
+          ? 'Загружено: $what'
+          : d.cancelled
+              ? 'Загрузка отменена'
+              : 'Не удалось загрузить $what';
+      if (path != null) _rescanModels();
+    });
+    return path;
+  }
+
+  /// Галка VAD включена, а файла модели ещё нет. Диктовка качает его сама
+  /// в ту же папку — если она уже это сделала, спрашивать нечего. Не вышло
+  /// скачать — остаётся выбрать файл руками.
+  Future<void> _enableVad() async {
+    if (File(vadModelPath).existsSync()) {
+      _edit((o) => o.copyWith(vadModel: vadModelPath, vad: true));
+      return;
+    }
+    final path = await _runDownload(
+        Download(vadModelUrl, vadModelPath), 'распознавание пауз');
+    if (path != null) {
+      _edit((o) => o.copyWith(vadModel: path, vad: true));
+      return;
+    }
+    await _pickVadModel();
+  }
 }
