@@ -120,6 +120,10 @@ class _HomePageState extends State<HomePage> {
   List<String> _models = [];
   late RunOptions _defaults;
 
+  /// Идущая загрузка модели. Одна на всё окно: сеть общая, а два полуторагиговых
+  /// файла разом просто мешают друг другу.
+  Download? _download;
+
   // Настройки самого приложения — они не бывают «своими у записи».
   bool _timestamps = true, _yieldBusyModel = true, _saveNextToSource = false;
   bool _toLibrary = true;
@@ -149,9 +153,7 @@ class _HomePageState extends State<HomePage> {
         threads: threads,
       ),
     );
-    if (_defaults.model.isNotEmpty && !_models.contains(_defaults.model)) {
-      _models = [..._models, _defaults.model];
-    }
+    _rescanModels();
     _timestamps = (s['timestamps'] as bool?) ?? true;
     _yieldBusyModel =
         (s['yieldBusyModel'] as bool?) ?? (s['yieldDictara'] as bool?) ?? true;
@@ -194,6 +196,16 @@ class _HomePageState extends State<HomePage> {
   /// setState помечен @protected: из вынесенных в part-файлы расширений
   /// его не вызвать напрямую, а поведение должно остаться прежним.
   void _set(VoidCallback change) => setState(change);
+
+  /// Перечитать модели с диска: скачанное ложится в папку, которую
+  /// findModels() и так просматривает. Выбранный вручную файл из чужой папки
+  /// в список дописываем — иначе он исчез бы из выпадающего списка.
+  void _rescanModels() {
+    final found = findModels();
+    _models = _defaults.model.isEmpty || found.contains(_defaults.model)
+        ? found
+        : [...found, _defaults.model];
+  }
 
   String _knownFormat(Object? id, String fallback) =>
       exportFormats.any((f) => f.id == id) ? id as String : fallback;
@@ -922,7 +934,7 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: 10),
         _Check('Резать по паузам (VAD)', o.vad, (v) {
           if (v && o.vadModel.isEmpty) {
-            _pickVadModel();
+            _enableVad();
           } else {
             _edit((x) => x.copyWith(vad: v));
           }

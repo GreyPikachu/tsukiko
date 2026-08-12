@@ -37,6 +37,8 @@ class DictationController extends ChangeNotifier {
     platform.panelShown.listen((_) => _refresh());
     _apply();
 
+    unawaited(_ensureVad());
+
     // Обратный отсчёт до выгрузки идёт на экране — секунды хватает.
     Timer.periodic(const Duration(seconds: 1), (_) => _tickServer());
     ProcessSignal.sigterm.watch().listen((_) => _bye());
@@ -55,6 +57,9 @@ class DictationController extends ChangeNotifier {
   bool accessibility = true;
   List<String> models = findModels();
 
+  /// Идёт загрузка модели тишины. Пока она идёт, диктовка работает без VAD.
+  Download? vadDownload;
+
   String? _wav;
   DateTime? _startedAt;
   Timer? _meter;
@@ -64,17 +69,35 @@ class DictationController extends ChangeNotifier {
     exit(0);
   }
 
-  /// Настройки распознавания диктовки: своё только модель и язык,
-  /// остальное — общее с очередью, включая галку VAD.
+  /// Настройки распознавания диктовки: своё только модель, язык и VAD,
+  /// остальное — общее с очередью.
   RunOptions get options {
     final base = RunOptions.fromJson(
       Settings.load(),
       const RunOptions(model: '', lang: 'auto', threads: 4),
     );
+    // На диктовке VAD включён всегда, независимо от галки в очереди: фразы
+    // короткие, и на секундах тишины whisper сочиняет «Продолжение следует…».
+    final vad = File(vadModelPath).existsSync();
     return base.copyWith(
       model: settings.model.isNotEmpty ? settings.model : base.model,
       lang: settings.lang,
+      vad: vad,
+      vadModel: vad ? vadModelPath : '',
     );
+  }
+
+  /// Модель тишины весит меньше мегабайта и качается один раз. Не вышло —
+  /// диктуем без неё: галлюцинации на тишине хуже, чем ничего, но молчащая
+  /// диктовка хуже вдвойне.
+  Future<void> _ensureVad() async {
+    if (File(vadModelPath).existsSync()) return;
+    final d = Download(vadModelUrl, vadModelPath);
+    vadDownload = d;
+    notifyListeners();
+    await d.run(onProgress: notifyListeners);
+    vadDownload = null;
+    notifyListeners();
   }
 
   Future<void> _apply() async {
@@ -295,6 +318,13 @@ class _Panel extends StatelessWidget {
         ],
         const SizedBox(height: 12),
         _Live(c),
+        if (c.vadDownload != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Загружаем распознавание тишины · ${c.vadDownload!.progressLabel}',
+            style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+          ),
+        ],
         const SizedBox(height: 12),
         _Keys(c),
         const SizedBox(height: 12),

@@ -156,6 +156,12 @@ String? findWhisper() {
   return null;
 }
 
+/// Файл модели распознавания. Имя VAD-модели устроено так же
+/// (ggml-silero-….bin), но речь она не распознаёт — в списке моделей ей
+/// не место, иначе её можно выбрать и получить пустую расшифровку.
+bool looksLikeSpeechModel(String name) =>
+    name.startsWith('ggml-') && name.endsWith('.bin') && !name.contains('silero');
+
 List<String> findModels() {
   final dirs = [
     '$home/Library/Application Support/app.dictara/models',
@@ -167,12 +173,134 @@ List<String> findModels() {
     final dir = Directory(d);
     if (!dir.existsSync()) continue;
     for (final f in dir.listSync(recursive: true)) {
-      final n = f.path.split('/').last;
-      if (f is File && n.startsWith('ggml-') && n.endsWith('.bin')) out.add(f.path);
+      if (f is File && looksLikeSpeechModel(f.path.split('/').last)) out.add(f.path);
     }
   }
   out.sort();
   return out;
+}
+
+// ── откуда берутся модели ───────────────────────────────────────────────────
+//
+// Без файла модели приложение бесполезно, а взять его новому человеку
+// неоткуда. Поэтому качаем сами — в свою папку, которую findModels() уже
+// просматривает.
+
+const _modelRepo = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
+
+/// VAD лежит в другом репозитории: в ggerganov/whisper.cpp этого файла нет,
+/// оттуда приходит 404.
+const vadModelFile = 'ggml-silero-v5.1.2.bin';
+const vadModelUrl =
+    'https://huggingface.co/ggml-org/whisper-vad/resolve/main/$vadModelFile';
+
+String modelPathFor(String file) => '$supportDir/models/$file';
+
+String get vadModelPath => modelPathFor(vadModelFile);
+
+String sizeLabelMb(int mb) => mb >= 1024
+    ? '${(mb / 1024).toStringAsFixed(1).replaceAll('.', ',')} ГБ'
+    : '$mb МБ';
+
+/// Модель, которую приложение умеет достать само. Размер записан здесь,
+/// а не спрашивается у сервера: выбирать надо до загрузки, а не после.
+class ModelOffer {
+  const ModelOffer(this.file, this.title, this.mb, this.about);
+  final String file, title, about;
+  final int mb;
+
+  String get url => '$_modelRepo/$file';
+  String get path => modelPathFor(file);
+  bool get present => File(path).existsSync();
+  String get size => sizeLabelMb(mb);
+}
+
+const modelCatalog = [
+  ModelOffer('ggml-tiny.bin', 'Tiny', 74, 'Попробовать, что всё работает'),
+  ModelOffer('ggml-base.bin', 'Base', 141, 'Быстрая, но путает слова'),
+  ModelOffer('ggml-small.bin', 'Small', 465, 'Разумный минимум для русского'),
+  ModelOffer('ggml-medium.bin', 'Medium', 1463, 'Точнее small, заметно медленнее'),
+  ModelOffer('ggml-large-v3-turbo.bin', 'Large v3 turbo', 1549,
+      'Лучшая и при этом быстрая'),
+];
+
+/// Загрузка файла с докачкой. Пишем в «.part» рядом и переименовываем только
+/// в конце: обрыв на полутора гигабайтах не должен оставить огрызок, который
+/// findModels() покажет как готовую модель.
+class Download {
+  Download(this.url, this.dest, {this.title = ''});
+
+  final String url, dest, title;
+
+  /// Байты: сколько уже есть и сколько всего. Ноль в [total] — сервер
+  /// не сказал длину, тогда процент показывать не из чего.
+  int got = 0, total = 0;
+  bool cancelled = false;
+
+  int get percent => total > 0 ? (got * 100 ~/ total).clamp(0, 100) : 0;
+
+  String get progressLabel {
+    const mb = 1024 * 1024;
+    final done = (got / mb).round();
+    return total > 0 ? '$percent % · $done из ${(total / mb).round()} МБ'
+                     : '$done МБ';
+  }
+
+  void cancel() => cancelled = true;
+
+  /// Возвращает путь к готовому файлу или null: отменили, оборвалось,
+  /// сервер ответил не тем. Недокачанное остаётся в «.part» — следующий
+  /// заход продолжит с того же места.
+  Future<String?> run({void Function()? onProgress}) async {
+    if (File(dest).existsSync()) return dest;
+    final part = File('$dest.part');
+    try {
+      part.parent.createSync(recursive: true);
+    } catch (_) {
+      return null;
+    }
+    var have = part.existsSync() ? part.lengthSync() : 0;
+
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(Uri.parse(url));
+      if (have > 0) req.headers.set(HttpHeaders.rangeHeader, 'bytes=$have-');
+      final res = await req.close();
+      if (res.statusCode != HttpStatus.ok &&
+          res.statusCode != HttpStatus.partialContent) {
+        return null;
+      }
+      // Докачку не поняли — начинаем сначала, это дороже, но верно.
+      if (res.statusCode == HttpStatus.ok) have = 0;
+      got = have;
+      total = res.contentLength > 0 ? have + res.contentLength : 0;
+
+      final sink = part.openSync(mode: have > 0 ? FileMode.append : FileMode.write);
+      var shown = -1;
+      try {
+        await for (final chunk in res) {
+          if (cancelled) return null;
+          sink.writeFromSync(chunk);
+          got += chunk.length;
+          // Кусок приходит десятками килобайт: на полутора гигабайтах это
+          // двадцать тысяч перерисовок. Дёргаем экран только на новом проценте.
+          if (percent != shown) {
+            shown = percent;
+            onProgress?.call();
+          }
+        }
+      } finally {
+        sink.closeSync();
+      }
+      if (total > 0 && got < total) return null;
+      part.renameSync(dest);
+      return dest;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
 }
 
 // ── занятость модели ────────────────────────────────────────────────────────
