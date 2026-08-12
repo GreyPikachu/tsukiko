@@ -57,7 +57,15 @@ extension _Transcribe on _HomePageState {
       return;
     }
     if (_defaults.model.isEmpty && _jobs.every((j) => _optionsFor(j).model.isEmpty)) {
-      _alert('Не выбрана модель', 'Укажите файл ggml-*.bin в настройках справа.');
+      // Моделей нет вовсе — говорить «выберите модель» некорректно: выбирать
+      // не из чего, человека надо вести в загрузчик.
+      _alert(
+        _models.isEmpty ? 'Нужна модель' : 'Не выбрана модель',
+        _models.isEmpty
+            ? 'Нажмите «Загрузить модель…» в панели справа.\n'
+                'Tiny — 74 МБ, чтобы попробовать.'
+            : 'Укажите файл ggml-*.bin в настройках справа.',
+      );
       return;
     }
     if (!_hasPending) return;
