@@ -54,7 +54,17 @@ abstract class TextInserter {
   Future<bool> insert(String text);
 }
 
+/// Что показывает плавающая панель записи.
+enum HudState { hidden, recording, transcribing, done }
+
 abstract class PanelPresenter {
+  /// Плавающая панель поверх всех окон: пока она на экране, видно,
+  /// что система слушает или считает.
+  Future<void> hud(HudState state);
+
+  /// «Отменить» и «Остановить», нажатые в ней мышью.
+  Stream<String> get hudActions;
+
   Future<void> hidePanel();
 
   /// Полноценное окно tsukiko со всей очередью и настройками.
@@ -75,6 +85,7 @@ class MacPlatform
 
   final _hotkeys = StreamController<HotkeyEvent>.broadcast();
   final _shown = StreamController<void>.broadcast();
+  final _hudActions = StreamController<String>.broadcast();
   Completer<Hotkey?>? _capture;
 
   Future<Object?> _onCall(MethodCall call) async {
@@ -94,6 +105,8 @@ class MacPlatform
         _capture = null;
       case 'panelShown':
         _shown.add(null);
+      case 'hud':
+        _hudActions.add(call.arguments as String);
     }
     return null;
   }
@@ -103,6 +116,13 @@ class MacPlatform
 
   @override
   Stream<void> get panelShown => _shown.stream;
+
+  @override
+  Stream<String> get hudActions => _hudActions.stream;
+
+  @override
+  Future<void> hud(HudState state) =>
+      _channel.invokeMethod('hud', {'state': state.name});
 
   @override
   Future<void> bind({required Hotkey hold, required Hotkey toggle}) =>

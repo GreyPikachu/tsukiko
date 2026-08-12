@@ -50,6 +50,20 @@ void killStaleServer() {
   }
 }
 
+/// Запись диктовки ложится во временную папку и стирается сразу после
+/// распознавания. Пережившие падение остаются — подметаем их на старте,
+/// иначе за месяц там наберётся сотня забытых WAV.
+void sweepRecordings() {
+  try {
+    for (final f in Directory(Directory.systemTemp.path).listSync()) {
+      final name = f.path.split('/').last;
+      if (f is File && name.startsWith('tsukiko-') && name.endsWith('.wav')) {
+        f.deleteSync();
+      }
+    }
+  } catch (_) {}
+}
+
 /// Whisper на тишине сочиняет: «(музыка)», «[BLANK_AUDIO]», «Субтитры
 /// сделал…». Всё, что целиком в скобках, — не речь, а галлюцинация.
 final _bracketed = RegExp(r'^[\[\(\*][^\]\)\*]*[\]\)\*]$');
