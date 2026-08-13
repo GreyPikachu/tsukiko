@@ -1,17 +1,24 @@
-# transcriber
+# tsukiko
 
-A new Flutter project.
+Расшифровка аудио и диктовка на macOS. Всё считается локально, whisper.cpp.
 
-## Getting Started
+## Сборка
 
-This project is a starting point for a Flutter application.
+```sh
+flutter build macos --release
+./tool/sign.sh
+```
 
-A few resources to get you started if this is your first Flutter project:
+Подпись обязательна: macOS привязывает выданные разрешения к ней, а ad-hoc
+подпись Flutter меняется с каждой сборкой — «Универсальный доступ» и
+«Мониторинг ввода» пришлось бы выдавать заново после каждой.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Разрешения
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Диктовке нужны два разных, и путать их нельзя:
+
+- **Универсальный доступ** — перехват клавиш и вставка текста в чужое окно;
+- **Мониторинг ввода** — если перехвата всё равно нет.
+
+Панель у строки меню сама скажет, чего не хватает, и откроет нужный раздел
+настроек. Перезапускать приложение после выдачи не нужно.
