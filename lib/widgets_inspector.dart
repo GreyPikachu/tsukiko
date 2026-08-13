@@ -228,6 +228,60 @@ class _ModelDownload extends StatelessWidget {
   }
 }
 
+/// Сочетание клавиш: нажатие на чип включает захват, и следующая
+/// комбинация встаёт на его место. Ждём ровно столько же, сколько ждёт
+/// сторона macOS, иначе чип завис бы в «нажмите сочетание» навсегда.
+class _HotkeyRow extends StatefulWidget {
+  const _HotkeyRow({required this.label, required this.keys, required this.onTap});
+  final String label, keys;
+  final Future<void> Function() onTap;
+
+  @override
+  State<_HotkeyRow> createState() => _HotkeyRowState();
+}
+
+class _HotkeyRowState extends State<_HotkeyRow> {
+  bool _hover = false, _waiting = false;
+
+  Future<void> _tap() async {
+    setState(() => _waiting = true);
+    await widget.onTap();
+    if (mounted) setState(() => _waiting = false);
+  }
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: _waiting ? null : _tap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Expanded(child: Text(widget.label, style: Type.control)),
+                AnimatedContainer(
+                  duration: Motion.dur(context, Motion.quick),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _hover || _waiting
+                        ? Surface.pressed(context)
+                        : Surface.hover(context),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Text(
+                    _waiting ? 'Нажмите сочетание…' : widget.keys,
+                    style: Type.control,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.text);
   final String text;

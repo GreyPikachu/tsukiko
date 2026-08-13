@@ -76,8 +76,9 @@ class DictationController extends ChangeNotifier {
     exit(0);
   }
 
-  /// Настройки распознавания диктовки: своё только модель, язык и VAD,
-  /// остальное — общее с очередью.
+  /// Настройки распознавания диктовки: своё только модель, подсказка и VAD,
+  /// остальное — общее с очередью. Язык всегда «авто»: диктуют на разных
+  /// языках вперемешку, и выбирать его руками каждый раз некому.
   RunOptions get options {
     final base = RunOptions.fromJson(
       Settings.load(),
@@ -88,7 +89,8 @@ class DictationController extends ChangeNotifier {
     final vad = File(vadModelPath).existsSync();
     return base.copyWith(
       model: settings.model.isNotEmpty ? settings.model : base.model,
-      lang: settings.lang,
+      lang: 'auto',
+      prompt: settings.prompt,
       vad: vad,
       vadModel: vad ? vadModelPath : '',
     );
@@ -114,8 +116,15 @@ class DictationController extends ChangeNotifier {
   Future<void> retryVad() => _ensureVad();
 
   Future<void> _reloadSettings() async {
+    final was = settings;
     settings = DictationSettings.load();
     server.idleTimeout = Duration(seconds: settings.idleSeconds);
+    // Подсказку и модель сервер читает при запуске — значит новые он
+    // увидит только с новым запуском. Память отдаём сразу, поднимется
+    // он снова на следующей фразе.
+    if (was.prompt != settings.prompt || was.model != settings.model) {
+      server.shutdown();
+    }
     await _apply();
   }
 
@@ -177,7 +186,7 @@ class DictationController extends ChangeNotifier {
     _wav = path;
     _startedAt = DateTime.now();
     phase = Phase.recording;
-    unawaited(platform.hud(HudState.recording));
+    if (settings.hud) unawaited(platform.hud(HudState.recording));
     elapsed = Duration.zero;
     _meter = Timer.periodic(const Duration(milliseconds: 100), (_) async {
       level = await platform.level();
@@ -191,18 +200,21 @@ class DictationController extends ChangeNotifier {
     if (phase != Phase.recording) return;
     _stopMeter();
     phase = Phase.transcribing;
-    unawaited(platform.hud(HudState.transcribing));
+    if (settings.hud) unawaited(platform.hud(HudState.transcribing));
     notifyListeners();
 
     final path = await platform.stopRecording() ?? _wav;
     _wav = null;
     var ok = false;
     if (path != null) {
-      final text = await server.transcribe(path, lang: settings.lang);
+      final text = await server.transcribe(path);
       _discard(path);
       if (text.isNotEmpty) {
         last = text;
-        ok = await platform.insert(text);
+        // «Только в буфер» — для тех, кто вставит сам и туда, куда решит.
+        ok = settings.insert
+            ? await platform.insert(text)
+            : await copyLast().then((_) => true);
       }
     }
     // Панель уходит с подтверждением, только если было что вставлять:
@@ -250,31 +262,12 @@ class DictationController extends ChangeNotifier {
     _save();
   }
 
-  void setLang(String v) {
-    settings.lang = v;
-    _save();
-  }
-
   void setModel(String path) {
     settings.model = path;
     _save();
     // Модель меняется только перезапуском сервера — но не сейчас, а на
     // следующей фразе: сегодняшнюю память отдаём сразу.
     if (server.up && server.model != path) server.shutdown();
-  }
-
-  void setIdleSeconds(int v) {
-    settings.idleSeconds = v;
-    server.idleTimeout = Duration(seconds: v);
-    _save();
-  }
-
-  Future<void> reassign(String id) async {
-    final hk = await platform.capture();
-    if (hk == null) return;
-    id == 'hold' ? settings.hold = hk : settings.toggle = hk;
-    settings.save();
-    await _apply();
   }
 
   Future<void> copyLast() async {
@@ -376,10 +369,6 @@ class _Panel extends StatelessWidget {
             onPressed: c.retryVad,
           ),
         ],
-        const SizedBox(height: 12),
-        _Keys(c),
-        const SizedBox(height: 12),
-        _Lang(c),
         const SizedBox(height: 12),
         _Last(c),
         const SizedBox(height: 12),
@@ -505,100 +494,6 @@ class _Meter extends StatelessWidget {
   }
 }
 
-class _Keys extends StatelessWidget {
-  const _Keys(this.c);
-  final DictationController c;
-
-  @override
-  Widget build(BuildContext context) => _Card(
-        child: Column(
-          children: [
-            _KeyRow(
-              'Держать и говорить',
-              c.settings.hold.label,
-              () => c.reassign('hold'),
-            ),
-            const SizedBox(height: 8),
-            _KeyRow(
-              'Нажать · ещё раз — стоп',
-              c.settings.toggle.label,
-              () => c.reassign('toggle'),
-            ),
-          ],
-        ),
-      );
-}
-
-class _KeyRow extends StatefulWidget {
-  const _KeyRow(this.label, this.keys, this.onTap);
-  final String label, keys;
-  final VoidCallback onTap;
-
-  @override
-  State<_KeyRow> createState() => _KeyRowState();
-}
-
-class _KeyRowState extends State<_KeyRow> {
-  bool _hover = false, _waiting = false;
-
-  Future<void> _tap() async {
-    setState(() => _waiting = true);
-    widget.onTap();
-    await Future<void>.delayed(const Duration(seconds: 8));
-    if (mounted) setState(() => _waiting = false);
-  }
-
-  @override
-  Widget build(BuildContext context) => MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: _waiting ? null : _tap,
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.label,
-                  style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-                ),
-              ),
-              AnimatedContainer(
-                duration: Motion.dur(context, Motion.quick),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _hover || _waiting
-                      ? Surface.pressed(context)
-                      : Surface.hover(context),
-                  borderRadius: BorderRadius.circular(5),
-                ),
-                child: Text(
-                  _waiting ? 'Нажмите сочетание…' : widget.keys,
-                  style: Type.control,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-}
-
-class _Lang extends StatelessWidget {
-  const _Lang(this.c);
-  final DictationController c;
-
-  @override
-  Widget build(BuildContext context) => _Segmented(
-        options: const [
-          ('auto', 'Авто'),
-          ('ru', 'Русский'),
-          ('en', 'English'),
-        ],
-        value: c.settings.lang,
-        onChanged: c.setLang,
-      );
-}
-
 class _Last extends StatelessWidget {
   const _Last(this.c);
   final DictationController c;
@@ -677,38 +572,10 @@ class _Memory extends StatelessWidget {
               child: const Text('Выгрузить сейчас'),
             ),
           ],
-          const SizedBox(height: 9),
-          _Idle(c),
         ],
       ),
     );
   }
-}
-
-class _Idle extends StatelessWidget {
-  const _Idle(this.c);
-  final DictationController c;
-
-  @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          Expanded(
-            child: Text('Держать в памяти',
-                style: Type.caption.copyWith(color: Surface.secondaryText(context))),
-          ),
-          MacosPopupButton<int>(
-            value: c.settings.idleSeconds,
-            items: const [
-              MacosPopupMenuItem(value: 30, child: Text('30 секунд')),
-              MacosPopupMenuItem(value: 60, child: Text('1 минуту')),
-              MacosPopupMenuItem(value: 180, child: Text('3 минуты')),
-              MacosPopupMenuItem(value: 600, child: Text('10 минут')),
-              MacosPopupMenuItem(value: 3600, child: Text('1 час')),
-            ],
-            onChanged: (v) => c.setIdleSeconds(v ?? 180),
-          ),
-        ],
-      );
 }
 
 class _Models extends StatelessWidget {

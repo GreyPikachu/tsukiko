@@ -11,7 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:macos_ui/macos_ui.dart';
 
 import 'design.dart';
-import 'dictation.dart' show ourServerPid;
+import 'dictation.dart' show DictationSettings, ourServerPid;
 import 'engine.dart';
 import 'mascot.dart';
 import 'panel.dart' show runPanel;
@@ -100,6 +100,11 @@ class _HomePageState extends State<HomePage> {
   Job? _lead;
 
   final _promptCtrl = TextEditingController();
+  final _dictPromptCtrl = TextEditingController();
+
+  /// Настройки диктовки лежат в своём файле: ведёт диктовку панель, а
+  /// правят их здесь. После правки панели говорят перечитать файл.
+  final _dictation = DictationSettings.load();
   final _searchCtrl = TextEditingController();
   final _searchFocus = FocusNode();
   final _queueFocus = FocusNode(debugLabel: 'очередь');
@@ -180,6 +185,7 @@ class _HomePageState extends State<HomePage> {
         .toList();
     if (formats != null && formats.isNotEmpty) _libraryFormats = formats;
     _promptCtrl.text = _defaults.prompt;
+    _dictPromptCtrl.text = _dictation.prompt;
 
     _transcriptScroll.addListener(() {
       final scrolled = _transcriptScroll.hasClients && _transcriptScroll.offset > 6;
@@ -227,6 +233,7 @@ class _HomePageState extends State<HomePage> {
     _tmp?.deleteSync(recursive: true);
     _writeSettings();
     _promptCtrl.dispose();
+    _dictPromptCtrl.dispose();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     _queueFocus.dispose();
@@ -258,6 +265,21 @@ class _HomePageState extends State<HomePage> {
         'saveFormat': _saveFormat,
         'recent': _recent,
       });
+
+  /// Диктовку ведёт панель на другом изоляте: пишем файл и говорим ей
+  /// перечитать его, иначе правка дойдёт только до следующего запуска.
+  void _saveDictation(VoidCallback change) {
+    setState(change);
+    _dictation.save();
+    _mac.settingsChanged();
+  }
+
+  /// Назначение сочетания: следующая нажатая комбинация становится новой.
+  Future<void> _reassign(String id) async {
+    final hk = await _mac.capture();
+    if (hk == null) return;
+    _saveDictation(() => id == 'hold' ? _dictation.hold = hk : _dictation.toggle = hk);
+  }
 
   /// Настройки, которые сейчас показывает инспектор: общие, если ничего
   /// не выбрано, иначе — настройки ведущей записи.
@@ -998,6 +1020,56 @@ class _HomePageState extends State<HomePage> {
         const _Hint('Слова из подсказки модель пишет правильнее.'),
 
         // Ниже — настройки самого приложения: они общие всегда.
+        const _SectionTitle('Диктовка'),
+        _HotkeyRow(
+          label: 'Держать и говорить',
+          keys: _dictation.hold.label,
+          onTap: () => _reassign('hold'),
+        ),
+        _HotkeyRow(
+          label: 'Нажать · ещё раз стоп',
+          keys: _dictation.toggle.label,
+          onTap: () => _reassign('toggle'),
+        ),
+        const _Hint('Нажмите на сочетание и наберите новое. Из одних '
+            'модификаторов — отпустите их вместе.'),
+        const SizedBox(height: 12),
+        MacosTextField(
+          controller: _dictPromptCtrl,
+          placeholder: 'Подсказка модели для диктовки',
+          maxLines: 2,
+          onChanged: (v) => _saveDictation(() => _dictation.prompt = v),
+        ),
+        const _Hint('Отдельная от подсказки очереди: диктуют обычно не то, '
+            'что расшифровывают.'),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const Expanded(child: Text('Держать модель в памяти', style: Type.control)),
+            MacosPopupButton<int>(
+              value: _dictation.idleSeconds,
+              items: const [
+                MacosPopupMenuItem(value: 30, child: Text('30 секунд')),
+                MacosPopupMenuItem(value: 60, child: Text('1 минуту')),
+                MacosPopupMenuItem(value: 180, child: Text('3 минуты')),
+                MacosPopupMenuItem(value: 600, child: Text('10 минут')),
+                MacosPopupMenuItem(value: 3600, child: Text('1 час')),
+              ],
+              onChanged: (v) =>
+                  _saveDictation(() => _dictation.idleSeconds = v ?? 180),
+            ),
+          ],
+        ),
+        const _Hint('Пока модель в памяти, фраза распознаётся за доли секунды. '
+            'Она занимает полтора гигабайта.'),
+        const SizedBox(height: 6),
+        _Check('Вставлять текст в активное окно', _dictation.insert,
+            (v) => _saveDictation(() => _dictation.insert = v)),
+        const _Hint('Без этого готовый текст только ложится в буфер обмена.'),
+        _Check('Показывать панель записи', _dictation.hud,
+            (v) => _saveDictation(() => _dictation.hud = v)),
+        const _Hint('Плавающая полоска поверх окон: видно, что вас слушают, '
+            'и есть чем остановить мышью.'),
         const _SectionTitle('Библиотека'),
         _LibraryPath(
           path: _libraryPath,
