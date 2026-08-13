@@ -96,6 +96,7 @@ final class DictationBridge: NSObject {
 
   private var capturing = false
   private var capturePeak = Set<String>()
+  private weak var captureChannel: FlutterMethodChannel?
 
   private var recorder: AVAudioRecorder?
   private var recordURL: URL?
@@ -123,11 +124,12 @@ final class DictationBridge: NSObject {
     RegisterGeneratedPlugins(registry: engine)
     self.engine = engine
 
-    channel = FlutterMethodChannel(
+    let channel = FlutterMethodChannel(
       name: "tsukiko/dictation", binaryMessenger: engine.binaryMessenger)
-    channel?.setMethodCallHandler { [weak self] call, reply in
-      self?.handle(call, reply)
+    channel.setMethodCallHandler { [weak self] call, reply in
+      self?.handle(call, reply, from: channel)
     }
+    self.channel = channel
 
     panel.build(engine: engine) { [weak self] in
       self?.channel?.invokeMethod("panelShown", arguments: nil)
@@ -148,12 +150,15 @@ final class DictationBridge: NSObject {
   func attach(messenger: FlutterBinaryMessenger) {
     let extra = FlutterMethodChannel(name: "tsukiko/dictation", binaryMessenger: messenger)
     extra.setMethodCallHandler { [weak self] call, reply in
-      self?.handle(call, reply)
+      self?.handle(call, reply, from: extra)
     }
     mainChannel = extra
   }
 
-  private func handle(_ call: FlutterMethodCall, _ reply: @escaping FlutterResult) {
+  private func handle(
+    _ call: FlutterMethodCall, _ reply: @escaping FlutterResult,
+    from source: FlutterMethodChannel
+  ) {
     let args = call.arguments as? [String: Any]
     switch call.method {
     case "bind":
@@ -161,19 +166,35 @@ final class DictationBridge: NSObject {
       toggle = HotkeySpec(args?["toggle"] as? [String: Any])
       reply(nil)
     case "capture":
+      // Назначенное сочетание ждёт то окно, которое его попросило:
+      // инспектор и панель живут на разных движках.
+      captureChannel = source
       capturing = true
       capturePeak = []
       reply(nil)
     case "cancelCapture":
       capturing = false
       reply(nil)
-    case "accessibility":
-      // Именно эта пара отвечает за перехват клавиш. AXIsProcessTrusted
-      // отвечает про другое разрешение и на выданном доступе врёт «нет».
-      if (args?["prompt"] as? Bool) ?? false, !CGPreflightListenEventAccess() {
-        CGRequestListenEventAccess()
-      }
-      reply(CGPreflightListenEventAccess())
+    case "settingsChanged":
+      // Настройки диктовки правит и главное окно, а ведёт диктовку панель:
+      // её изоляту нужно перечитать файл.
+      channel?.invokeMethod("reload", arguments: nil)
+      reply(nil)
+    case "permissions":
+      // Два разных разрешения, и путать их нельзя. «Мониторинг ввода» даёт
+      // event tap слышать клавиши; «Универсальный доступ» — послать ⌘V
+      // в чужое окно. Одно без другого делает диктовку наполовину мёртвой.
+      ensureTap()
+      reply([
+        "input": CGPreflightListenEventAccess(),
+        "insert": AXIsProcessTrusted(),
+      ])
+    case "openPermission":
+      openPermission((args?["which"] as? String) ?? "input")
+      reply(nil)
+    case "quit":
+      NSApp.terminate(nil)
+      reply(nil)
     case "record":
       startRecording(reply)
     case "stopRecord":
@@ -207,7 +228,41 @@ final class DictationBridge: NSObject {
     }
   }
 
+  // MARK: разрешения
+
+  /// Кнопка «Открыть настройки» обязана открывать настройки. Системный
+  /// запрос показывается один раз за всю жизнь приложения, после первого
+  /// ответа macOS его больше не покажет — значит одного запроса мало.
+  /// Запрос всё же шлём: без него приложения нет в списке и включать
+  /// нечего. Схемы проверены на macOS 26.
+  private func openPermission(_ which: String) {
+    let path: String
+    if which == "insert" {
+      if !AXIsProcessTrusted() {
+        AXIsProcessTrustedWithOptions(
+          [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+      }
+      path = "Privacy_Accessibility"
+    } else {
+      if !CGPreflightListenEventAccess() { CGRequestListenEventAccess() }
+      path = "Privacy_ListenEvent"
+    }
+    guard
+      let url = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?\(path)")
+    else { return }
+    NSWorkspace.shared.open(url)
+  }
+
   // MARK: перехват клавиш
+
+  /// Без разрешения tap не создаётся вовсе. Раньше это значило «перезапустите
+  /// приложение»: пробовали ровно один раз, на старте. Пробуем снова каждый
+  /// раз, когда о разрешениях спрашивают, — а спрашивают, пока их нет.
+  private func ensureTap() {
+    guard tap == nil else { return }
+    installTap()
+  }
 
   private func installTap() {
     let mask =
@@ -229,7 +284,7 @@ final class DictationBridge: NSObject {
         callback: callback,
         userInfo: Unmanaged.passUnretained(self).toOpaque())
     else {
-      NSLog("tsukiko: не удалось создать event tap — нет «Универсального доступа»")
+      NSLog("tsukiko: не удалось создать event tap — нет «Мониторинга ввода»")
       return
     }
     self.tap = tap
@@ -329,8 +384,9 @@ final class DictationBridge: NSObject {
   }
 
   private func sendCaptured(mods: Set<String>, key: String?) {
+    let target = captureChannel ?? channel
     DispatchQueue.main.async {
-      self.channel?.invokeMethod(
+      target?.invokeMethod(
         "captured", arguments: ["mods": Array(mods), "key": key as Any])
     }
   }

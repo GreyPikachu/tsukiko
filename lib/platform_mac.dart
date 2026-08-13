@@ -23,6 +23,16 @@ class HotkeyEvent {
   final HotkeyEdge edge;
 }
 
+/// Два разных разрешения macOS, и путать их нельзя.
+/// [input] — «Мониторинг ввода»: без него event tap не слышит клавиш.
+/// [insert] — «Универсальный доступ»: без него ⌘V не уходит в чужое окно.
+class Permissions {
+  const Permissions({this.input = true, this.insert = true});
+  final bool input, insert;
+
+  bool get ok => input && insert;
+}
+
 abstract class HotkeyBackend {
   /// Назначить сочетания. Зажатое [hold] пишет, пока держат; [toggle]
   /// включает и выключает запись нажатием.
@@ -33,8 +43,11 @@ abstract class HotkeyBackend {
   /// Поймать следующее сочетание, чтобы пользователь назначил своё.
   Future<Hotkey?> capture();
 
-  /// Без «Универсального доступа» перехват клавиш не работает вовсе.
-  Future<bool> accessibilityGranted({bool prompt = false});
+  /// Что из разрешений выдано прямо сейчас.
+  Future<Permissions> permissions();
+
+  /// Открыть нужный раздел системных настроек: 'input' или 'insert'.
+  Future<void> openPermission(String which);
 }
 
 abstract class AudioRecorder {
@@ -86,6 +99,7 @@ class MacPlatform
   final _hotkeys = StreamController<HotkeyEvent>.broadcast();
   final _shown = StreamController<void>.broadcast();
   final _hudActions = StreamController<String>.broadcast();
+  final _reload = StreamController<void>.broadcast();
   Completer<Hotkey?>? _capture;
 
   Future<Object?> _onCall(MethodCall call) async {
@@ -107,6 +121,8 @@ class MacPlatform
         _shown.add(null);
       case 'hud':
         _hudActions.add(call.arguments as String);
+      case 'reload':
+        _reload.add(null);
     }
     return null;
   }
@@ -145,9 +161,24 @@ class MacPlatform
   }
 
   @override
-  Future<bool> accessibilityGranted({bool prompt = false}) async =>
-      await _channel.invokeMethod<bool>('accessibility', {'prompt': prompt}) ??
-      false;
+  Future<Permissions> permissions() async {
+    final r = await _channel.invokeMapMethod<String, bool>('permissions');
+    return Permissions(
+      input: r?['input'] ?? false,
+      insert: r?['insert'] ?? false,
+    );
+  }
+
+  @override
+  Future<void> openPermission(String which) =>
+      _channel.invokeMethod('openPermission', {'which': which});
+
+  /// Настройки диктовки правит и главное окно — панели надо перечитать файл.
+  Future<void> settingsChanged() => _channel.invokeMethod('settingsChanged');
+
+  Stream<void> get settingsReloaded => _reload.stream;
+
+  Future<void> quit() => _channel.invokeMethod('quit');
 
   @override
   Future<String?> startRecording() => _channel.invokeMethod<String>('record');

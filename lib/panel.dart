@@ -35,6 +35,8 @@ class DictationController extends ChangeNotifier {
     // Кнопки плавающей панели — те же два действия, что и клавиши.
     platform.hudActions.listen((a) => a == 'cancel' ? cancel() : stop());
     platform.panelShown.listen((_) => _refresh());
+    // Те же настройки правит инспектор главного окна — там они и живут.
+    platform.settingsReloaded.listen((_) => _reloadSettings());
     _apply();
 
     unawaited(_ensureVad());
@@ -46,7 +48,7 @@ class DictationController extends ChangeNotifier {
   }
 
   final MacPlatform platform;
-  final DictationSettings settings = DictationSettings.load();
+  DictationSettings settings = DictationSettings.load();
   late final WhisperServer server;
 
   Phase phase = Phase.idle;
@@ -54,7 +56,7 @@ class DictationController extends ChangeNotifier {
   double level = 0;
   Duration elapsed = Duration.zero;
   int memoryMb = 0;
-  bool accessibility = true;
+  Permissions perms = const Permissions();
   List<String> models = findModels();
 
   /// Идёт загрузка модели тишины. Пока она идёт, диктовка работает без VAD.
@@ -111,19 +113,25 @@ class DictationController extends ChangeNotifier {
   /// заход продолжит с того же места, а не начнёт сначала.
   Future<void> retryVad() => _ensureVad();
 
+  Future<void> _reloadSettings() async {
+    settings = DictationSettings.load();
+    server.idleTimeout = Duration(seconds: settings.idleSeconds);
+    await _apply();
+  }
+
   Future<void> _apply() async {
     // Приложение всегда стартует со значком в Dock: LSUIElement в Info.plist
     // спрятал бы его навсегда, а настройка должна переключаться на лету.
     // Значит спрятать его может только Dart, и как можно раньше.
     await platform.setDockIcon((Settings.load()['dockIcon'] as bool?) ?? true);
     await platform.bind(hold: settings.hold, toggle: settings.toggle);
-    accessibility = await platform.accessibilityGranted();
+    perms = await platform.permissions();
     notifyListeners();
   }
 
   Future<void> _refresh() async {
     models = findModels();
-    accessibility = await platform.accessibilityGranted();
+    perms = await platform.permissions();
     notifyListeners();
   }
 
@@ -133,6 +141,16 @@ class DictationController extends ChangeNotifier {
   }
 
   Future<void> _tickServer() async {
+    // Пока разрешения не выданы, спрашиваем о них снова: человек уходит
+    // выдавать их в другое приложение и возвращается к открытой панели.
+    // Тот же вопрос заново создаёт перехват клавиш — без перезапуска.
+    if (!perms.ok) {
+      final now = await platform.permissions();
+      if (now.input != perms.input || now.insert != perms.insert) {
+        perms = now;
+        notifyListeners();
+      }
+    }
     if (!server.up) return;
     memoryMb = await server.footprintMb();
     notifyListeners();
@@ -277,10 +295,9 @@ class DictationController extends ChangeNotifier {
 
   Future<void> openMainWindow() => platform.openMainWindow();
 
-  Future<void> requestAccessibility() async {
-    await platform.accessibilityGranted(prompt: true);
-    await _refresh();
-  }
+  Future<void> openPermission(String which) => platform.openPermission(which);
+
+  Future<void> quit() => platform.quit();
 }
 
 // ── интерфейс ───────────────────────────────────────────────────────────────
@@ -324,12 +341,22 @@ class _Panel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       children: [
         _Head(c),
-        if (!c.accessibility) ...[
+        if (!c.perms.ok) ...[
           const SizedBox(height: 10),
-          _Warning(
-            'Без «Универсального доступа» клавиши не перехватываются.',
-            onPressed: c.requestAccessibility,
-          ),
+          // Разрешения выдаются по одному, и просить сразу оба — значит
+          // напугать вдвое. «Универсальный доступ» просим первым: он
+          // нужен и для вставки, и обычно открывает перехват клавиш.
+          if (!c.perms.insert)
+            _Warning(
+              'Без «Универсального доступа» tsukiko не перехватывает клавиши '
+              'и не вставляет текст в активное окно.',
+              onPressed: () => c.openPermission('insert'),
+            )
+          else
+            _Warning(
+              'Не хватает «Мониторинга ввода» — клавиши не перехватываются.',
+              onPressed: () => c.openPermission('input'),
+            ),
         ],
         const SizedBox(height: 12),
         _Live(c),
