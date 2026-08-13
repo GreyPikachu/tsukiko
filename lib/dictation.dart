@@ -316,20 +316,31 @@ class Hotkey {
 class DictationSettings {
   DictationSettings({
     this.enabled = true,
-    this.lang = 'ru',
     this.model = '',
+    this.prompt = '',
     this.hold = Hotkey.holdDefault,
     this.toggle = Hotkey.toggleDefault,
     this.idleSeconds = 180,
+    this.insert = true,
+    this.hud = true,
   });
 
   bool enabled;
-  String lang;
 
   /// Пусто — берём модель из общих настроек приложения.
   String model;
+
+  /// Подсказка модели своя: диктуют не то же, что расшифровывают.
+  String prompt;
   Hotkey hold, toggle;
   int idleSeconds;
+
+  /// Вставлять готовый текст в активное окно. Выключено — текст только
+  /// ложится в буфер обмена.
+  bool insert;
+
+  /// Плавающая панель записи поверх всех окон.
+  bool hud;
 
   static File get _file => File('$supportDir/dictation.json');
 
@@ -338,11 +349,13 @@ class DictationSettings {
       final j = jsonDecode(_file.readAsStringSync()) as Map<String, dynamic>;
       return DictationSettings(
         enabled: (j['enabled'] as bool?) ?? true,
-        lang: (j['lang'] as String?) ?? 'ru',
         model: (j['model'] as String?) ?? '',
+        prompt: (j['prompt'] as String?) ?? '',
         hold: Hotkey.fromJson(j['hold'], Hotkey.holdDefault),
         toggle: Hotkey.fromJson(j['toggle'], Hotkey.toggleDefault),
         idleSeconds: (j['idleSeconds'] as int?) ?? 180,
+        insert: (j['insert'] as bool?) ?? true,
+        hud: (j['hud'] as bool?) ?? true,
       );
     } catch (_) {
       return DictationSettings();
@@ -354,11 +367,13 @@ class DictationSettings {
       Directory(supportDir).createSync(recursive: true);
       _file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert({
         'enabled': enabled,
-        'lang': lang,
         'model': model,
+        'prompt': prompt,
         'hold': hold.toJson(),
         'toggle': toggle.toJson(),
         'idleSeconds': idleSeconds,
+        'insert': insert,
+        'hud': hud,
       }));
     } catch (_) {}
   }
