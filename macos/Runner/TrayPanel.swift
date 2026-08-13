@@ -20,7 +20,9 @@ final class PanelController: NSObject, NSWindowDelegate {
   private var controller: FlutterViewController?
   private var onShown: (() -> Void)?
 
-  private let size = NSSize(width: 320, height: 556)
+  // Панель под своё содержимое: настройки уехали в главное окно, и высота
+  // прежнего списка осталась бы наполовину пустой.
+  private let size = NSSize(width: 320, height: 430)
 
   func build(engine: FlutterEngine, onShown: @escaping () -> Void) {
     self.onShown = onShown

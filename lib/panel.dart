@@ -324,97 +324,72 @@ class PanelBody extends StatelessWidget {
       );
 }
 
+/// Поповер по образцу системных: сверху то, ради чего его открывают,
+/// в середине подробности, внизу — уход из панели. Рамок нет, области
+/// разделяют волосяные линии, фон — материал под слоем Flutter.
 class _Panel extends StatelessWidget {
   const _Panel(this.c);
   final DictationController c;
 
   @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-      children: [
-        _Head(c),
-        if (!c.perms.ok) ...[
-          const SizedBox(height: 10),
-          // Разрешения выдаются по одному, и просить сразу оба — значит
-          // напугать вдвое. «Универсальный доступ» просим первым: он
-          // нужен и для вставки, и обычно открывает перехват клавиш.
-          if (!c.perms.insert)
-            _Warning(
-              'Без «Универсального доступа» tsukiko не перехватывает клавиши '
-              'и не вставляет текст в активное окно.',
-              onPressed: () => c.openPermission('insert'),
-            )
-          else
-            _Warning(
-              'Не хватает «Мониторинга ввода» — клавиши не перехватываются.',
-              onPressed: () => c.openPermission('input'),
-            ),
-        ],
-        const SizedBox(height: 12),
-        _Live(c),
-        if (c.vadDownload != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            'Загружаем распознавание тишины · ${c.vadDownload!.progressLabel}',
-            style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-          ),
-        ] else if (c.vadError != null) ...[
-          const SizedBox(height: 8),
-          _Warning(
-            'Распознавание тишины не загрузилось: ${c.vadError}. '
-            'Диктовать можно и так, но на паузах модель дописывает лишнее. '
-            'Проверьте связь и попробуйте ещё раз.',
-            button: 'Попробовать ещё раз',
-            onPressed: c.retryVad,
-          ),
-        ],
-        const SizedBox(height: 12),
-        _Last(c),
-        const SizedBox(height: 12),
-        _Memory(c),
-        const SizedBox(height: 12),
-        _Models(c),
-        const SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _Link('Открыть tsukiko', c.openMainWindow),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-/// Крупный переключатель — единственное, ради чего панель открывают чаще
-/// всего. Поэтому он стоит первым и ничем не обвешан.
-class _Head extends StatelessWidget {
-  const _Head(this.c);
-  final DictationController c;
-
-  @override
-  Widget build(BuildContext context) => Row(
+  Widget build(BuildContext context) => Column(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 4),
               children: [
-                Text('Диктовка', style: Type.emptyTitle),
-                const SizedBox(height: 2),
-                Text(
-                  c.settings.enabled ? 'Включена' : 'Выключена',
-                  style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-                ),
+                _Header(c),
+                const _Divider(),
+                _Live(c),
+                _Notices(c),
+                const _Divider(),
+                _Last(c),
+                const _Divider(),
+                _Model(c),
               ],
             ),
           ),
-          MacosSwitch(value: c.settings.enabled, onChanged: c.setEnabled),
+          // Действия ухода живут внизу и отделены — так во всех поповерах
+          // системы: сначала состояние, в конце «закрыть за собой дверь».
+          const _Divider(),
+          _Footer(c),
         ],
       );
 }
 
-/// Живое состояние: «Готово» · «Записываю 0:04» с уровнем · «Распознаю…».
+/// Заголовок с главным выключателем. Ради него панель чаще всего и
+/// открывают, поэтому он первый и ничем не обвешан.
+class _Header extends StatelessWidget {
+  const _Header(this.c);
+  final DictationController c;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 14, 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Диктовка', style: Type.emptyTitle),
+                  const SizedBox(height: 1),
+                  Text(
+                    c.settings.enabled ? 'Включена' : 'Выключена',
+                    style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+                  ),
+                ],
+              ),
+            ),
+            MacosSwitch(value: c.settings.enabled, onChanged: c.setEnabled),
+          ],
+        ),
+      );
+}
+
+/// Крупное главное состояние: «Готово», «Записываю 0:04», «Распознаю…».
+/// Под ним — уровень сигнала во время записи и напоминание о клавишах
+/// в покое: два размера вместо рамок и подписей.
 class _Live extends StatelessWidget {
   const _Live(this.c);
   final DictationController c;
@@ -422,19 +397,20 @@ class _Live extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = MacosTheme.of(context).primaryColor;
+    final recording = c.phase == Phase.recording;
     final (title, color) = switch (c.phase) {
-      Phase.recording => (
-          'Записываю ${humanDuration(c.elapsed.inMilliseconds)}',
-          MacosColors.systemRedColor
-        ),
+      Phase.recording => ('Записываю', MacosColors.systemRedColor),
       Phase.transcribing => ('Распознаю…', accent),
       Phase.idle => (
           c.settings.enabled ? 'Готово' : 'Диктовка выключена',
-          c.settings.enabled ? MacosColors.systemGreenColor : Surface.secondaryText(context)
+          c.settings.enabled
+              ? MacosColors.systemGreenColor
+              : Surface.secondaryText(context)
         ),
     };
 
-    return _Card(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -442,23 +418,43 @@ class _Live extends StatelessWidget {
             children: [
               AnimatedContainer(
                 duration: Motion.dur(context, Motion.quick),
-                width: 8,
-                height: 8,
+                width: 9,
+                height: 9,
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 9),
               Expanded(
                 child: AnimatedSwitcher(
                   duration: Motion.dur(context, Motion.quick),
-                  child: Text(title, key: ValueKey(title), style: Type.fileName),
+                  // По умолчанию AnimatedSwitcher складывает старое и новое
+                  // по центру, и главная надпись уезжала от своей точки.
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [...previous, ?current],
+                  ),
+                  child: Text(title, key: ValueKey(title), style: Type.stateTitle),
                 ),
               ),
+              if (recording)
+                Text(
+                  humanDuration(c.elapsed.inMilliseconds),
+                  style: Type.timestamp.copyWith(color: Surface.secondaryText(context)),
+                ),
               if (c.phase == Phase.transcribing)
                 const SizedBox(width: 14, height: 14, child: ProgressCircle()),
             ],
           ),
-          const SizedBox(height: 9),
-          _Meter(level: c.phase == Phase.recording ? c.level : 0),
+          const SizedBox(height: 10),
+          if (recording)
+            _Meter(level: c.level)
+          else
+            Text(
+              '${c.settings.hold.label} — держать · '
+              '${c.settings.toggle.label} — нажать',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+            ),
         ],
       ),
     );
@@ -494,18 +490,67 @@ class _Meter extends StatelessWidget {
   }
 }
 
+/// То, что требует внимания: невыданные разрешения и модель тишины.
+/// В спокойном состоянии этого блока нет вовсе.
+class _Notices extends StatelessWidget {
+  const _Notices(this.c);
+  final DictationController c;
+
+  @override
+  Widget build(BuildContext context) {
+    final d = c.vadDownload;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      child: Column(
+        children: [
+          // Разрешения выдаются по одному, и просить сразу оба — значит
+          // напугать вдвое. «Универсальный доступ» просим первым: он нужен
+          // и для вставки, и обычно открывает перехват клавиш.
+          if (!c.perms.insert)
+            _Warning(
+              'Без «Универсального доступа» tsukiko не перехватывает клавиши '
+              'и не вставляет текст в активное окно.',
+              onPressed: () => c.openPermission('insert'),
+            )
+          else if (!c.perms.input)
+            _Warning(
+              'Не хватает «Мониторинга ввода» — клавиши не перехватываются.',
+              onPressed: () => c.openPermission('input'),
+            ),
+          if (d != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Загружаем распознавание тишины · ${d.progressLabel}',
+                style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+              ),
+            )
+          else if (c.vadError != null)
+            _Warning(
+              'Распознавание тишины не загрузилось: ${c.vadError}. '
+              'Диктовать можно и так, но на паузах модель дописывает лишнее.',
+              button: 'Попробовать ещё раз',
+              onPressed: c.retryVad,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Last extends StatelessWidget {
   const _Last(this.c);
   final DictationController c;
 
   @override
-  Widget build(BuildContext context) => _Card(
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('ПОСЛЕДНЯЯ РАСШИФРОВКА',
-                style: Type.sectionHeader.copyWith(color: Surface.secondaryText(context))),
-            const SizedBox(height: 6),
+            Text('Последняя расшифровка',
+                style: Type.caption.copyWith(color: Surface.secondaryText(context))),
+            const SizedBox(height: 5),
             Text(
               c.last.isEmpty ? 'Пока ничего не надиктовано.' : c.last,
               maxLines: 3,
@@ -514,62 +559,98 @@ class _Last extends StatelessWidget {
                   ? Type.control.copyWith(color: Surface.secondaryText(context))
                   : Type.control,
             ),
-            const SizedBox(height: 9),
-            Row(
-              children: [
-                PushButton(
-                  controlSize: ControlSize.small,
-                  secondary: true,
-                  onPressed: c.last.isEmpty ? null : c.copyLast,
-                  child: const Text('Скопировать'),
-                ),
-                const SizedBox(width: 6),
-                PushButton(
-                  controlSize: ControlSize.small,
-                  secondary: true,
-                  onPressed: c.last.isEmpty ? null : c.insertAgain,
-                  child: const Text('Вставить снова'),
-                ),
-              ],
-            ),
+            // Кнопки без текста нечего делать: пустая пара мертвецов только
+            // занимает место в и без того тесном поповере.
+            if (c.last.isNotEmpty) ...[
+              const SizedBox(height: 9),
+              Row(
+                children: [
+                  PushButton(
+                    controlSize: ControlSize.small,
+                    secondary: true,
+                    onPressed: c.copyLast,
+                    child: const Text('Скопировать'),
+                  ),
+                  const SizedBox(width: 6),
+                  PushButton(
+                    controlSize: ControlSize.small,
+                    secondary: true,
+                    onPressed: c.insertAgain,
+                    child: const Text('Вставить снова'),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       );
 }
 
-/// Память — та самая причина, по которой панель вообще нужна: видно,
-/// сколько занято и когда освободится, и можно освободить прямо сейчас.
-class _Memory extends StatelessWidget {
-  const _Memory(this.c);
+/// Модель: что загружено, сколько занимает и когда освободится. Та самая
+/// причина, по которой панель вообще нужна.
+class _Model extends StatelessWidget {
+  const _Model(this.c);
   final DictationController c;
 
   @override
   Widget build(BuildContext context) {
+    final pair = modelPair(c.models);
     final left = c.server.untilUnload;
-    final parts = [
-      'В памяти',
-      if (c.memoryMb > 0) '${(c.memoryMb / 1024).toStringAsFixed(1).replaceAll('.', ',')} ГБ',
-      if (left != null) 'освободится через ${humanDuration(left.inMilliseconds)}',
-    ];
+    final grey = Type.caption.copyWith(color: Surface.secondaryText(context));
 
-    return _Card(
+    final state = !c.server.up
+        ? 'Выгружена'
+        : [
+            if (c.memoryMb > 0)
+              '${(c.memoryMb / 1024).toStringAsFixed(1).replaceAll('.', ',')} ГБ в памяти'
+            else
+              'В памяти',
+            if (left != null) 'освободится через ${humanDuration(left.inMilliseconds)}',
+          ].join(' · ');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('МОДЕЛЬ',
-              style: Type.sectionHeader.copyWith(color: Surface.secondaryText(context))),
-          const SizedBox(height: 6),
-          Text(
-            c.server.up ? parts.join(' · ') : 'Выгружена',
-            style: Type.control,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  pair.fast.isEmpty
+                      ? 'Модель не найдена'
+                      : modelShortName(
+                          c.settings.model.isNotEmpty ? c.settings.model : c.options.model),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Type.fileName,
+                ),
+              ),
+              if (c.server.up)
+                PushButton(
+                  controlSize: ControlSize.small,
+                  secondary: true,
+                  onPressed: c.unload,
+                  child: const Text('Выгрузить'),
+                ),
+            ],
           ),
-          if (c.server.up) ...[
+          const SizedBox(height: 3),
+          Text(pair.fast.isEmpty ? 'Распознавать нечем' : state, style: grey),
+          // Переключать нечего, пока модель одна: мёртвый переключатель
+          // врёт, будто выбор есть.
+          if (pair.fast.isNotEmpty && pair.fast != pair.accurate) ...[
             const SizedBox(height: 9),
-            PushButton(
-              controlSize: ControlSize.small,
-              secondary: true,
-              onPressed: c.unload,
-              child: const Text('Выгрузить сейчас'),
+            _Segmented(
+              options: [
+                (pair.fast, 'Быстрая'),
+                (pair.accurate, 'Точная'),
+              ],
+              value: (c.settings.model.isNotEmpty ? c.settings.model : c.options.model) ==
+                      pair.accurate
+                  ? pair.accurate
+                  : pair.fast,
+              onChanged: c.setModel,
             ),
           ],
         ],
@@ -578,71 +659,85 @@ class _Memory extends StatelessWidget {
   }
 }
 
-class _Models extends StatelessWidget {
-  const _Models(this.c);
+class _Footer extends StatelessWidget {
+  const _Footer(this.c);
   final DictationController c;
 
   @override
-  Widget build(BuildContext context) {
-    final pair = modelPair(c.models);
-    if (pair.fast.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Модель не найдена — распознавать нечем',
-              style: Type.caption.copyWith(color: Surface.secondaryText(context))),
-          const SizedBox(height: 4),
-          _Link('Загрузить модель…', c.openMainWindow),
-        ],
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 5),
+        child: Column(
+          children: [
+            _MenuRow('Открыть tsukiko…', c.openMainWindow),
+            _MenuRow('Завершить tsukiko', c.quit, shortcut: '⌘Q'),
+          ],
+        ),
       );
-    }
-
-    // Модель одна — переключать нечего, и мёртвый переключатель только врёт,
-    // будто выбор есть. Показываем, что нашлось, и путь за второй моделью.
-    if (pair.fast == pair.accurate) {
-      return Row(
-        children: [
-          Expanded(
-            child: Text(
-              '${modelShortName(pair.fast)} · ${modelSizeLabel(pair.fast)}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Type.control,
-            ),
-          ),
-          const SizedBox(width: 8),
-          _Link('Загрузить другую…', c.openMainWindow),
-        ],
-      );
-    }
-
-    final current = c.settings.model.isNotEmpty ? c.settings.model : c.options.model;
-    return _Segmented(
-      options: [
-        (pair.fast, 'Быстрая · ${modelShortName(pair.fast)}'),
-        (pair.accurate, 'Точная · ${modelShortName(pair.accurate)}'),
-      ],
-      value: current == pair.accurate ? pair.accurate : pair.fast,
-      onChanged: c.setModel,
-    );
-  }
 }
 
 // ── мелочи ──────────────────────────────────────────────────────────────────
 
-class _Card extends StatelessWidget {
-  const _Card({required this.child});
-  final Widget child;
+/// Волосяная линия во всю ширину: в поповерах системы области разделяет
+/// именно она, а не рамка вокруг каждой.
+class _Divider extends StatelessWidget {
+  const _Divider();
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
-        decoration: BoxDecoration(
-          color: Surface.hover(context),
-          borderRadius: BorderRadius.circular(9),
+  Widget build(BuildContext context) =>
+      Container(height: 1, color: Surface.hairline(context));
+}
+
+/// Строка-действие как в системном меню: подсветка во всю ширину под
+/// курсором, ярлык справа.
+class _MenuRow extends StatefulWidget {
+  const _MenuRow(this.label, this.onTap, {this.shortcut});
+  final String label;
+  final VoidCallback onTap;
+  final String? shortcut;
+
+  @override
+  State<_MenuRow> createState() => _MenuRowState();
+}
+
+class _MenuRowState extends State<_MenuRow> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = MacosTheme.of(context).primaryColor;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      cursor: SystemMouseCursors.basic,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          decoration: BoxDecoration(
+            color: _hover ? accent : MacosColors.transparent,
+            borderRadius: BorderRadius.circular(5),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.label,
+                  style: Type.control.copyWith(color: _hover ? MacosColors.white : null),
+                ),
+              ),
+              if (widget.shortcut != null)
+                Text(
+                  widget.shortcut!,
+                  style: Type.control.copyWith(
+                    color: _hover ? MacosColors.white : Surface.secondaryText(context),
+                  ),
+                ),
+            ],
+          ),
         ),
-        child: child,
-      );
+      ),
+    );
+  }
 }
 
 /// Переключатель из двух-трёх равных вариантов. В macos_ui такой есть,
@@ -718,6 +813,7 @@ class _Warning extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
         decoration: BoxDecoration(
           color: MacosColors.systemOrangeColor.withValues(alpha: 0.16),
@@ -735,36 +831,6 @@ class _Warning extends StatelessWidget {
               child: Text(button),
             ),
           ],
-        ),
-      );
-}
-
-class _Link extends StatefulWidget {
-  const _Link(this.label, this.onTap);
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  State<_Link> createState() => _LinkState();
-}
-
-class _LinkState extends State<_Link> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) => MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: Text(
-            widget.label,
-            style: Type.caption.copyWith(
-              color: MacosTheme.of(context).primaryColor,
-              decoration: _hover ? TextDecoration.underline : null,
-            ),
-          ),
         ),
       );
 }

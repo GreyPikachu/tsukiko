@@ -77,6 +77,15 @@ class Type {
     height: 1.2,
   );
 
+  /// Главное состояние поповера: крупнее всего остального в нём, поэтому
+  /// трекинг уходит в минус — на этом кегле буквы иначе стоят слишком врозь.
+  static const stateTitle = TextStyle(
+    fontSize: 19,
+    fontWeight: FontWeight.w500,
+    letterSpacing: -0.4,
+    height: 1.15,
+  );
+
   static const sectionHeader = TextStyle(
     fontSize: 10.5,
     fontWeight: FontWeight.w600,
