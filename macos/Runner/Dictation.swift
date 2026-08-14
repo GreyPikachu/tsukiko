@@ -101,7 +101,6 @@ final class DictationBridge: NSObject {
 
   private var tap: CFMachPort?
   private var tapSource: CFRunLoopSource?
-  private var asked = false
 
   private var capturing = false
   private var capturePeak = Set<String>()
@@ -318,13 +317,14 @@ final class DictationBridge: NSObject {
         userInfo: Unmanaged.passUnretained(self).toOpaque())
     else {
       NSLog("tsukiko: нет «Универсального доступа» — перехват клавиш не создан")
-      // Первая неудача — она же первое знакомство с системой: просим
-      // разрешение сразу, чтобы приложение оказалось в списке
-      // «Универсального доступа» выключенным, а не искалось там руками.
-      if !asked {
-        asked = true
-        requestPermission()
-      }
+      // Диалог отсюда не показываем. На старте tapCreate не удаётся и при
+      // выданном разрешении — процесс ещё не осел в системе, — а диалог
+      // тогда всплывал каждый запуск у тех, кто всё давно разрешил.
+      // В списке «Универсального доступа» приложение появляется от самого
+      // обращения к нему, без всякого окна; спрашивать вслух будем только
+      // по кнопке «Запросить».
+      _ = AXIsProcessTrustedWithOptions(
+        [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): false] as CFDictionary)
       return
     }
     self.tap = tap

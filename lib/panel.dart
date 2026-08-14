@@ -65,6 +65,10 @@ class DictationController extends ChangeNotifier {
   Duration elapsed = Duration.zero;
   int memoryMb = 0;
   bool allowed = true;
+
+  /// Сколько раз подряд система ответила «разрешения нет».
+  int _denied = 0;
+
   List<String> models = findModels();
 
   /// Идёт загрузка модели тишины. Пока она идёт, диктовка работает без VAD.
@@ -150,13 +154,32 @@ class DictationController extends ChangeNotifier {
     // Значит спрятать его может только Dart, и как можно раньше.
     await platform.setDockIcon((Settings.load()['dockIcon'] as bool?) ?? true);
     await platform.bind(hold: settings.hold, toggle: settings.toggle);
-    allowed = await platform.permission();
+    await _checkPermission();
+    notifyListeners();
+  }
+
+  /// «Разрешения нет» — вывод не с первой попытки. Сразу после запуска
+  /// система отвечает «нет» и тем, кто всё давно разрешил: процесс ещё
+  /// не осел. Плашка на пустом месте пугает зря, поэтому верим только
+  /// нескольким отказам подряд, а любому «да» — сразу.
+  Future<void> _checkPermission() async {
+    final now = await platform.permission();
+    if (now) {
+      _denied = 0;
+      if (!allowed) {
+        allowed = true;
+        notifyListeners();
+      }
+      return;
+    }
+    if (++_denied < 3 || !allowed) return;
+    allowed = false;
     notifyListeners();
   }
 
   Future<void> _refresh() async {
     models = findModels();
-    allowed = await platform.permission();
+    await _checkPermission();
     notifyListeners();
   }
 
@@ -166,16 +189,10 @@ class DictationController extends ChangeNotifier {
   }
 
   Future<void> _tickServer() async {
-    // Пока разрешение не выдано, спрашиваем о нём снова: человек уходит
-    // выдавать его в другое приложение и возвращается к открытой панели.
-    // Тот же вопрос заново создаёт перехват клавиш — без перезапуска.
-    if (!allowed) {
-      final now = await platform.permission();
-      if (now != allowed) {
-        allowed = now;
-        notifyListeners();
-      }
-    }
+    // Спрашиваем о разрешении каждую секунду: человек уходит выдавать его
+    // в другое приложение и возвращается к открытой панели. Тот же вопрос
+    // заново создаёт перехват клавиш — без перезапуска.
+    await _checkPermission();
     if (!server.up) return;
     memoryMb = await server.footprintMb();
     notifyListeners();

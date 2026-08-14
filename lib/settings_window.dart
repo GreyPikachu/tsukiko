@@ -68,6 +68,7 @@ class _SettingsBodyState extends State<SettingsBody> {
   List<String> _models = findModels();
   Download? _download;
   bool _allowed = true;
+  int _denied = 0;
   Timer? _timer;
 
   // Настройки приложения: правит их это окно, пользуется ими главное.
@@ -89,7 +90,7 @@ class _SettingsBodyState extends State<SettingsBody> {
     unawaited(_checkPermission());
     // Разрешение выдают в другом приложении и возвращаются к этому окну:
     // спрашивать надо самим, уведомления об этом нет.
-    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _checkPermission());
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _checkPermission());
   }
 
   @override
@@ -115,9 +116,19 @@ class _SettingsBodyState extends State<SettingsBody> {
     if (formats != null && formats.isNotEmpty) _libraryFormats = formats;
   }
 
+  /// Тот же счёт отказов, что и в панели: сразу после запуска система
+  /// отвечает «нет» и тем, у кого разрешение выдано, — верить одному
+  /// ответу нельзя, иначе предупреждение мигает на ровном месте.
   Future<void> _checkPermission() async {
     final now = await _mac.permission();
-    if (mounted && now != _allowed) setState(() => _allowed = now);
+    if (!mounted) return;
+    if (now) {
+      _denied = 0;
+      if (!_allowed) setState(() => _allowed = true);
+      return;
+    }
+    if (++_denied < 3 || !_allowed) return;
+    setState(() => _allowed = false);
   }
 
   /// Одно место, где настройки уходят на диск: пишем и говорим соседним
