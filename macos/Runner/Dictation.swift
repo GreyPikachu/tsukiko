@@ -87,6 +87,14 @@ final class DictationBridge: NSObject {
   /// но инспектор живёт в другом изоляте и до движка панели не достаёт.
   private var mainChannel: FlutterMethodChannel?
 
+  private lazy var settings = SettingsWindow()
+
+  /// Все живые каналы: настройки правит одно окно, а знать о правке
+  /// должны все — у каждого своя копия в своём изоляте.
+  private var channels: [FlutterMethodChannel] {
+    [channel, mainChannel, settings.channel].compactMap { $0 }
+  }
+
   private var hold = HotkeySpec()
   private var toggle = HotkeySpec()
   private var holdDown = false
@@ -183,10 +191,17 @@ final class DictationBridge: NSObject {
       capturing = false
       reply(nil)
     case "settingsChanged":
-      // Настройки диктовки правит и главное окно, а ведёт диктовку панель:
-      // её изоляту нужно перечитать файл.
-      channel?.invokeMethod("reload", arguments: nil)
+      // Настройки правит одно окно, а живут они в трёх изолятах: каждому
+      // надо перечитать файл. Себе не шлём — правка пришла оттуда.
+      for other in channels where other !== source {
+        other.invokeMethod("reload", arguments: nil)
+      }
       reply(nil)
+    case "openSettings":
+      showSettings(tab: (args?["tab"] as? String) ?? "dictation")
+      reply(nil)
+    case "initialTab":
+      reply(settings.tab)
     case "permissions":
       // Разрешение одно: «Универсальный доступ». Наш tap поглощает события
       // (fn+пробел не должен вставить пробел в чужое поле), а такому tap'у
@@ -242,6 +257,16 @@ final class DictationBridge: NSObject {
       reply(nil)
     default:
       reply(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func showSettings(tab: String) {
+    settings.show(tab: tab) { [weak self] call, reply in
+      guard let self, let channel = self.settings.channel else {
+        reply(nil)
+        return
+      }
+      self.handle(call, reply, from: channel)
     }
   }
 

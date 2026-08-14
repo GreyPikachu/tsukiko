@@ -908,10 +908,14 @@ class Settings {
     }
   }
 
+  /// Дописываем, а не переписываем: файл правят два окна на разных
+  /// изолятах, и каждое знает только свои ключи. Целиком записанный файл
+  /// затирал бы чужие правки прошлой минуты.
   static void save(Map<String, dynamic> data) {
     try {
       Directory(supportDir).createSync(recursive: true);
-      _file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(data));
+      _file.writeAsStringSync(
+          const JsonEncoder.withIndent('  ').convert({...load(), ...data}));
     } catch (_) {}
   }
 }

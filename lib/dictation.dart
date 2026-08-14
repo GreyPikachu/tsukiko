@@ -371,6 +371,8 @@ class DictationSettings {
     this.idleSeconds = 180,
     this.insert = true,
     this.hud = true,
+    this.punctuate = true,
+    this.threads = 4,
   });
 
   bool enabled;
@@ -390,6 +392,12 @@ class DictationSettings {
   /// Плавающая панель записи поверх всех окон.
   bool hud;
 
+  /// Дальше — своё распознавание, не общее с очередью: диктуют не то же,
+  /// что расшифровывают, и общие значения устраивали бы разом обе стороны
+  /// плохо. Языка здесь нет: диктовке он всегда «авто».
+  bool punctuate;
+  int threads;
+
   static File get _file => File('$supportDir/dictation.json');
 
   static DictationSettings load() {
@@ -404,6 +412,8 @@ class DictationSettings {
         idleSeconds: (j['idleSeconds'] as int?) ?? 180,
         insert: (j['insert'] as bool?) ?? true,
         hud: (j['hud'] as bool?) ?? true,
+        punctuate: (j['punctuate'] as bool?) ?? true,
+        threads: (j['threads'] as int?) ?? 4,
       );
     } catch (_) {
       return DictationSettings();
@@ -422,6 +432,8 @@ class DictationSettings {
         'idleSeconds': idleSeconds,
         'insert': insert,
         'hud': hud,
+        'punctuate': punctuate,
+        'threads': threads,
       }));
     } catch (_) {}
   }

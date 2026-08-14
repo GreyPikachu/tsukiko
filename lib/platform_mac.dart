@@ -79,8 +79,12 @@ abstract class PanelPresenter {
   /// поповер, — иначе внизу остаётся пустота на всё, чего сейчас нет.
   Future<void> setPanelHeight(double height);
 
-  /// Полноценное окно tsukiko со всей очередью и настройками.
+  /// Полноценное окно tsukiko со всей очередью.
   Future<void> openMainWindow();
+
+  /// Окно настроек на нужной вкладке. Без значка в Dock у приложения нет
+  /// строки меню, и ⌘, туда не дойдёт — этот путь единственный.
+  Future<void> openSettings([String tab]);
 
   /// Панель выехала — самое время пересчитать всё, что в ней видно.
   Stream<void> get panelShown;
@@ -99,6 +103,7 @@ class MacPlatform
   final _shown = StreamController<void>.broadcast();
   final _hudActions = StreamController<String>.broadcast();
   final _reload = StreamController<void>.broadcast();
+  final _tab = StreamController<String>.broadcast();
   Completer<Hotkey?>? _capture;
 
   Future<Object?> _onCall(MethodCall call) async {
@@ -122,6 +127,8 @@ class MacPlatform
         _hudActions.add(call.arguments as String);
       case 'reload':
         _reload.add(null);
+      case 'tab':
+        _tab.add(call.arguments as String);
     }
     return null;
   }
@@ -207,4 +214,17 @@ class MacPlatform
 
   @override
   Future<void> openMainWindow() => _channel.invokeMethod('openMainWindow');
+
+  @override
+  Future<void> openSettings([String tab = 'dictation']) =>
+      _channel.invokeMethod('openSettings', {'tab': tab});
+
+  /// Какую вкладку показать при открытии. Окно настроек спрашивает это
+  /// само: сообщение об открытии приходит раньше, чем его изолят успевает
+  /// подписаться на канал.
+  Future<String> initialTab() async =>
+      await _channel.invokeMethod<String>('initialTab') ?? 'dictation';
+
+  /// Окно настроек уже открыто, и попросили другую вкладку.
+  Stream<String> get settingsTab => _tab.stream;
 }
