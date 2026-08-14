@@ -227,6 +227,9 @@ final class DictationBridge: NSObject {
       panel.hide()
       DictationBridge.showMainWindow()
       reply(nil)
+    case "panelHeight":
+      panel.setHeight(CGFloat((args?["height"] as? Double) ?? 0))
+      reply(nil)
     case "dockIcon":
       NSApp.setActivationPolicy(
         (args?["visible"] as? Bool) ?? true ? .regular : .accessory)
