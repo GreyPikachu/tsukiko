@@ -128,10 +128,18 @@ extension _Export on _HomePageState {
     _select(job);
   }
 
+  /// Выбранный руками файл проверяем: «.bin» лежит на чём угодно, а
+  /// whisper-cli на чужом файле падает с английской руганью про тензоры —
+  /// человеку из неё не понять, что он выбрал не то.
   Future<void> _pickModel() async {
     final f = await openFile(
         acceptedTypeGroups: const [XTypeGroup(label: 'GGML', extensions: ['bin'])]);
     if (f == null) return;
+    final problem = modelFileProblem(f.path);
+    if (problem != null) {
+      _alert('Это не модель распознавания', problem);
+      return;
+    }
     _set(() {
       if (!_models.contains(f.path)) _models = [..._models, f.path];
     });
@@ -170,6 +178,15 @@ extension _Export on _HomePageState {
       if (path != null) _rescanModels();
     });
     return path;
+  }
+
+  /// Скачать модель распознавания. Первая в системе сразу становится
+  /// выбранной: иначе человек скачал файл и всё равно видит «Не выбрана».
+  /// Пропавший с диска файл — то же самое, что и не выбранный.
+  Future<void> _downloadModel(ModelOffer m) async {
+    final wasEmpty = _shown.model.isEmpty || !File(_shown.model).existsSync();
+    final path = await _runDownload(Download(m.url, m.path, title: m.title));
+    if (path != null && wasEmpty) _edit((o) => o.copyWith(model: path));
   }
 
   /// Галка VAD включена, а файла модели ещё нет. Диктовка качает его сама

@@ -535,4 +535,44 @@ void main() {
     expect(killForSure(fake.pid), isTrue);
     expect(processAlive(fake.pid), isFalse);
   }, timeout: const Timeout(Duration(seconds: 30)));
+
+  test('в модель распознавания годится не всякий .bin', () {
+    final dir = Directory.systemTemp.createTempSync('tsukiko_model');
+    addTearDown(() => dir.deleteSync(recursive: true));
+
+    // Метка ggml на диске — «lmgg», следом размер словаря числом.
+    List<int> head(int vocab) => [
+          ...'lmgg'.codeUnits,
+          vocab & 0xFF,
+          (vocab >> 8) & 0xFF,
+          (vocab >> 16) & 0xFF,
+          (vocab >> 24) & 0xFF,
+        ];
+    File file(String name, List<int> bytes) =>
+        File('${dir.path}/$name')..writeAsBytesSync(bytes);
+
+    final junk = file('модель.bin', List.filled(30 * 1024 * 1024, 7));
+    expect(modelFileProblem(junk.path), contains('не модель распознавания'));
+
+    // Модель тишины — тоже ggml, но словарь у неё в десять слов.
+    final vad = file('ggml-silero.bin', [...head(10), ...List.filled(900000, 0)]);
+    expect(modelFileProblem(vad.path), contains('тишины'));
+
+    final tiny = file('ggml-tiny.bin', head(51865));
+    expect(modelFileProblem(tiny.path), contains('слишком мал'));
+
+    final good = file('ggml-ok.bin',
+        [...head(51865), ...List.filled(30 * 1024 * 1024, 0)]);
+    expect(modelFileProblem(good.path), isNull);
+
+    expect(modelFileProblem('${dir.path}/нет.bin'), contains('больше нет'));
+
+    // И на настоящих файлах, если они есть на этой машине.
+    for (final m in findModels()) {
+      expect(modelFileProblem(m), isNull, reason: m);
+    }
+    if (File(vadModelPath).existsSync()) {
+      expect(modelFileProblem(vadModelPath), isNotNull);
+    }
+  });
 }

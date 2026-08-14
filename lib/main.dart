@@ -954,15 +954,19 @@ class _HomePageState extends State<HomePage> {
           onMakeDefault: own == null ? null : _makeDefault,
         ),
         const SectionTitle('Модель'),
-        MacosPopupButton<String>(
-          value: _models.contains(o.model) ? o.model : null,
-          hint: const Text('Не выбрана'),
-          items: [
-            for (final m in _models)
-              MacosPopupMenuItem(value: m, child: Text(modelDisplayName(m))),
-          ],
-          onChanged: (v) => _edit((x) => x.copyWith(model: v ?? '')),
+        ModelField(
+          installed: _models,
+          value: o.model,
+          onChosen: (v) => _edit((x) => x.copyWith(model: v)),
+          onDownload: _downloadModel,
         ),
+        if (_download != null) ...[
+          const SizedBox(height: 10),
+          ModelDownload(
+            active: _download!,
+            onCancel: () => setState(() => _download?.cancel()),
+          ),
+        ],
         const SizedBox(height: 8),
         PushButton(
           controlSize: ControlSize.regular,

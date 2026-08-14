@@ -388,6 +388,61 @@ class _LibraryPathState extends State<LibraryPath> {
   }
 }
 
+/// Один список моделей вместо трёх кнопок рядом: сверху то, что уже есть
+/// на диске, ниже — то, что приложение умеет достать само, с размером.
+/// Выбор ненайденной модели начинает её загрузку.
+///
+/// Разделитель обязателен: без него «есть» и «можно скачать» сливаются
+/// в один список, и выбор молча уходит в сеть на полтора гигабайта.
+class ModelField extends StatelessWidget {
+  const ModelField({
+    super.key,
+    required this.installed,
+    required this.value,
+    required this.onChosen,
+    required this.onDownload,
+    this.hint = 'Не выбрана',
+  });
+
+  final List<String> installed;
+  final String value;
+  final ValueChanged<String> onChosen;
+  final ValueChanged<ModelOffer> onDownload;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final offers = modelCatalog.where((m) => !installed.contains(m.path)).toList();
+    return MacosPopupButton<String>(
+      value: installed.contains(value) ? value : null,
+      hint: Text(hint),
+      items: [
+        for (final m in installed)
+          MacosPopupMenuItem(value: m, child: Text(modelDisplayName(m))),
+        if (offers.isNotEmpty && installed.isNotEmpty)
+          MacosPopupMenuItem(
+            enabled: false,
+            child: Text(
+              'Можно загрузить',
+              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+            ),
+          ),
+        for (final m in offers)
+          MacosPopupMenuItem(
+            value: m.path,
+            child: Text('${m.title} · ${m.size}'),
+          ),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        if (installed.contains(v)) return onChosen(v);
+        final offer = modelCatalog.firstWhere((m) => m.path == v);
+        onDownload(offer);
+      },
+    );
+  }
+}
+
 /// Ход загрузки модели. Пока файл едет, кнопок нет: вторая полуторагиговая
 /// качка рядом с первой только замедлит обе.
 class ModelDownload extends StatelessWidget {
