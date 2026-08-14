@@ -669,7 +669,7 @@ class _Model extends StatelessWidget {
                 child: Text(
                   pair.fast.isEmpty
                       ? 'Модель не найдена'
-                      : modelShortName(
+                      : modelDisplayName(
                           c.settings.model.isNotEmpty ? c.settings.model : c.options.model),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

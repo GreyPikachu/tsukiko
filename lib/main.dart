@@ -759,7 +759,7 @@ class _HomePageState extends State<HomePage> {
           mood: _mood(job),
           title: 'Нужна модель распознавания',
           subtitle: 'Она работает на этом компьютере, поэтому её надо один раз\n'
-              'загрузить. Tiny — просто попробовать, Large v3 turbo — точность.',
+              'загрузить. Tiny — просто попробовать, Large v3 Turbo — точность.',
           action: _modelDownload(),
         ),
       );
@@ -945,7 +945,7 @@ class _HomePageState extends State<HomePage> {
           hint: const Text('Не выбрана'),
           items: [
             for (final m in _models)
-              MacosPopupMenuItem(value: m, child: Text(m.split('/').last)),
+              MacosPopupMenuItem(value: m, child: Text(modelDisplayName(m))),
           ],
           onChanged: (v) => _edit((x) => x.copyWith(model: v ?? '')),
         ),

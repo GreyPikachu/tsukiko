@@ -202,13 +202,36 @@ String sizeLabelMb(int mb) => mb >= 1024
     ? '${(mb / 1024).toStringAsFixed(1).replaceAll('.', ',')} ГБ'
     : '$mb МБ';
 
+/// Имя модели, одно на всё приложение: загрузчик, панель, переключатель,
+/// инспектор и диалоги называют «ggml-large-v3-turbo.bin» одинаково —
+/// «Large v3 Turbo». Модель может быть и не из каталога (свой файл, папка
+/// Dictara), поэтому имя разбирается из имени файла, а не ищется в списке:
+/// слова из букв — с заглавной, версии и квантование — как есть.
+String modelDisplayName(String path) {
+  final file = path.split('/').last;
+  final stem = file
+      .replaceFirst(RegExp(r'^ggml-'), '')
+      .replaceFirst(RegExp(r'\.bin$'), '')
+      .trim();
+  if (stem.isEmpty) return file;
+  return stem
+      .split(RegExp(r'[-\s.]+'))
+      .where((w) => w.isNotEmpty)
+      .map((w) => RegExp(r'^[a-zA-Zа-яА-Я]+$').hasMatch(w)
+          ? w[0].toUpperCase() + w.substring(1).toLowerCase()
+          : w)
+      .join(' ');
+}
+
 /// Модель, которую приложение умеет достать само. Размер записан здесь,
 /// а не спрашивается у сервера: выбирать надо до загрузки, а не после.
 class ModelOffer {
-  const ModelOffer(this.file, this.title, this.mb, this.about);
-  final String file, title, about;
+  const ModelOffer(this.file, this.mb, this.about);
+  final String file, about;
   final int mb;
 
+  /// Имя общее со всем приложением: отдельное поле разошлось бы с ним.
+  String get title => modelDisplayName(file);
   String get url => '$_modelRepo/$file';
   String get path => modelPathFor(file);
   bool get present => File(path).existsSync();
@@ -216,12 +239,11 @@ class ModelOffer {
 }
 
 const modelCatalog = [
-  ModelOffer('ggml-tiny.bin', 'Tiny', 74, 'Попробовать, что всё работает'),
-  ModelOffer('ggml-base.bin', 'Base', 141, 'Быстрая, но путает слова'),
-  ModelOffer('ggml-small.bin', 'Small', 465, 'Разумный минимум для русского'),
-  ModelOffer('ggml-medium.bin', 'Medium', 1463, 'Точнее small, заметно медленнее'),
-  ModelOffer('ggml-large-v3-turbo.bin', 'Large v3 turbo', 1549,
-      'Лучшая и при этом быстрая'),
+  ModelOffer('ggml-tiny.bin', 74, 'Попробовать, что всё работает'),
+  ModelOffer('ggml-base.bin', 141, 'Быстрая, но путает слова'),
+  ModelOffer('ggml-small.bin', 465, 'Разумный минимум для русского'),
+  ModelOffer('ggml-medium.bin', 1463, 'Точнее Small, заметно медленнее'),
+  ModelOffer('ggml-large-v3-turbo.bin', 1549, 'Лучшая и при этом быстрая'),
 ];
 
 /// Загрузка файла с докачкой. Пишем в «.part» рядом и переименовываем только
