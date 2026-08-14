@@ -86,7 +86,10 @@ struct HUDView: View {
         HUDButton(title: "Остановить", filled: true, action: model.onStop)
       }
     }
-    .padding(.horizontal, 14)
+    // Поля шире, чем кажется нужным: содержимое, прижатое к скруглённому
+    // краю, читается теснее, чем стоит на самом деле. Ширина панели растёт
+    // на ту же величину, чтобы поля не съели место у кнопок.
+    .padding(.horizontal, 22)
     .frame(height: 52)
     .animation(
       reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.4, dampingFraction: 1),
@@ -196,7 +199,7 @@ final class RecordingHUD {
   private var startedAt: Date?
   private var hideAfterDone: Timer?
 
-  private let size = NSSize(width: 356, height: 52)
+  private let size = NSSize(width: 372, height: 52)
 
   /// Откуда брать уровень сигнала — рекордер живёт в мосте.
   var levelSource: () -> Double = { 0 }
