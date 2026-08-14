@@ -437,11 +437,6 @@ class DictationSettings {
   return (fast: files.first, accurate: files.last);
 }
 
-/// Имя модели так, как её называют люди: «large-v3-turbo», а не
-/// «ggml-large-v3-turbo.bin».
-String modelShortName(String path) =>
-    path.split('/').last.replaceFirst('ggml-', '').replaceAll('.bin', '');
-
 String modelSizeLabel(String path) {
   try {
     final gb = File(path).lengthSync() / (1024 * 1024 * 1024);

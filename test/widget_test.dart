@@ -393,8 +393,24 @@ void main() {
     // Размер читается человеком: мегабайты до гигабайта, дальше гигабайты.
     expect(modelCatalog.first.size, '74 МБ');
     expect(sizeLabelMb(1549), '1,5 ГБ');
-    // Имя для панели — как его называют люди.
-    expect(modelShortName('/x/ggml-large-v3-turbo.bin'), 'large-v3-turbo');
+  });
+
+  test('модель везде называется одинаково', () {
+    // Каталог, панель и инспектор берут имя из одной функции.
+    expect(modelCatalog.map((m) => m.title).toList(),
+        ['Tiny', 'Base', 'Small', 'Medium', 'Large v3 Turbo']);
+    expect(modelDisplayName('/x/ggml-large-v3-turbo.bin'), 'Large v3 Turbo');
+    // Чужой файл: модель из папки Dictara и своя, выбранная руками.
+    expect(
+        modelDisplayName(
+            '/Users/x/Library/Application Support/app.dictara/models/ggml-large.bin'),
+        'Large');
+    expect(modelDisplayName('/x/ggml-small.en.bin'), 'Small En');
+    // Квантование и версии остаются как есть — их не «причёсывают».
+    expect(modelDisplayName('/x/ggml-large-v3-q5_0.bin'), 'Large v3 q5_0');
+    // Даже совсем не ggml-файл не должен показываться пустотой.
+    expect(modelDisplayName('/x/my-model.bin'), 'My Model');
+    expect(modelDisplayName('/x/ggml-.bin'), 'ggml-.bin');
   });
 
   test('загрузка не выдаёт недокачанное за готовый файл', () async {
