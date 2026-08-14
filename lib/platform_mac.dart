@@ -75,6 +75,10 @@ abstract class PanelPresenter {
 
   Future<void> hidePanel();
 
+  /// Высота содержимого панели: окно подгоняется под неё, как системный
+  /// поповер, — иначе внизу остаётся пустота на всё, чего сейчас нет.
+  Future<void> setPanelHeight(double height);
+
   /// Полноценное окно tsukiko со всей очередью и настройками.
   Future<void> openMainWindow();
 
@@ -196,6 +200,10 @@ class MacPlatform
 
   @override
   Future<void> hidePanel() => _channel.invokeMethod('hidePanel');
+
+  @override
+  Future<void> setPanelHeight(double height) =>
+      _channel.invokeMethod('panelHeight', {'height': height});
 
   @override
   Future<void> openMainWindow() => _channel.invokeMethod('openMainWindow');

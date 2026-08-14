@@ -20,9 +20,36 @@ final class PanelController: NSObject, NSWindowDelegate {
   private var controller: FlutterViewController?
   private var onShown: (() -> Void)?
 
-  // Панель под своё содержимое: настройки уехали в главное окно, и высота
-  // прежнего списка осталась бы наполовину пустой.
-  private let size = NSSize(width: 320, height: 430)
+  // Ширина поповера постоянна, высота — нет: её сообщает Flutter, померив
+  // содержимое. Здесь только первое значение, до первого замера.
+  private var size = NSSize(width: 320, height: 430)
+
+  /// Высота содержимого из Flutter. Окно растёт вниз от значка: верхний
+  /// край привязан к строке меню, и уезжать ему некуда.
+  func setHeight(_ height: CGFloat) {
+    guard let panel else { return }
+    // Выше экрана окно не имеет смысла: не влезшее прокручивается внутри.
+    let limit = (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+    let wanted = max(120, min(height, limit - 24))
+    guard abs(wanted - size.height) > 0.5 else { return }
+    size.height = wanted
+
+    guard panel.isVisible else { return }
+    let frame = panel.frame
+    let grown = NSRect(
+      x: frame.minX, y: frame.maxY - wanted, width: size.width, height: wanted)
+    if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+      panel.setFrame(grown, display: true)
+      return
+    }
+    // Предупреждение появилось или ушло — высота меняется движением,
+    // а не подменой кадра.
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = 0.22
+      context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
+      panel.animator().setFrame(grown, display: true)
+    }
+  }
 
   func build(engine: FlutterEngine, onShown: @escaping () -> Void) {
     self.onShown = onShown

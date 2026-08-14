@@ -23,6 +23,7 @@ void runPanel() {
   runApp(PanelApp(DictationController(MacPlatform())));
 }
 
+
 enum Phase { idle, recording, transcribing }
 
 class DictationController extends ChangeNotifier {
@@ -370,34 +371,53 @@ class PanelBody extends StatelessWidget {
 /// Поповер по образцу системных: сверху то, ради чего его открывают,
 /// в середине подробности, внизу — уход из панели. Рамок нет, области
 /// разделяют волосяные линии, фон — материал под слоем Flutter.
+///
+/// Высота окна — не константа, а высота этого столбца: предупреждения
+/// приходят и уходят, расшифровка бывает в три строки и в ноль, и панель
+/// с запасом «на всякий случай» зияла бы пустотой посередине. Меряем
+/// после раскладки и сообщаем macOS — окно растёт вниз от значка.
 class _Panel extends StatelessWidget {
   const _Panel(this.c);
   final DictationController c;
 
+  static final _content = GlobalKey();
+  static double _reported = 0;
+
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) {
+    // Кадр за кадром одно и то же число дёргало бы окно на каждой секунде
+    // обратного отсчёта: шлём только при настоящем изменении.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final h = _content.currentContext?.size?.height.ceilToDouble();
+      if (h == null || h == _reported) return;
+      _reported = h;
+      unawaited(c.platform.setPanelHeight(h));
+    });
+
+    return SingleChildScrollView(
+      child: Column(
+        key: _content,
+        mainAxisSize: MainAxisSize.min,
+        // Без растяжения по ширине блоки съёжились бы до своего текста
+        // и встали по центру: раньше ширину задавал ListView.
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.only(bottom: 4),
-              children: [
-                _Header(c),
-                const _Divider(),
-                _Live(c),
-                _Notices(c),
-                const _Divider(),
-                _Last(c),
-                const _Divider(),
-                _Model(c),
-              ],
-            ),
-          ),
+          _Header(c),
+          const _Divider(),
+          _Live(c),
+          _Notices(c),
+          const _Divider(),
+          _Last(c),
+          const _Divider(),
+          _Model(c),
           // Действия ухода живут внизу и отделены — так во всех поповерах
           // системы: сначала состояние, в конце «закрыть за собой дверь».
           const _Divider(),
           _Footer(c),
         ],
-      );
+      ),
+    );
+  }
 }
 
 /// Заголовок с главным выключателем. Ради него панель чаще всего и
@@ -645,6 +665,7 @@ class _Model extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pair = modelPair(c.models);
+    final chosen = c.settings.model.isNotEmpty ? c.settings.model : c.options.model;
     final left = c.server.untilUnload;
     final grey = Type.caption.copyWith(color: Surface.secondaryText(context));
 
@@ -666,8 +687,9 @@ class _Model extends StatelessWidget {
           Text(
             pair.fast.isEmpty
                 ? 'Модель не найдена'
-                : modelDisplayName(
-                    c.settings.model.isNotEmpty ? c.settings.model : c.options.model),
+                : chosen.isEmpty
+                    ? 'Модель не выбрана'
+                    : modelDisplayName(chosen),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Type.fileName,
@@ -706,10 +728,7 @@ class _Model extends StatelessWidget {
                 (pair.fast, 'Быстрая'),
                 (pair.accurate, 'Точная'),
               ],
-              value: (c.settings.model.isNotEmpty ? c.settings.model : c.options.model) ==
-                      pair.accurate
-                  ? pair.accurate
-                  : pair.fast,
+              value: chosen == pair.accurate ? pair.accurate : pair.fast,
               onChanged: c.setModel,
             ),
           ],
