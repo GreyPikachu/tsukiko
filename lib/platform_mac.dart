@@ -104,6 +104,11 @@ class MacPlatform
   final _tab = StreamController<String>.broadcast();
   Completer<Hotkey?>? _capture;
 
+  /// Спросили, можно ли забрать модель. Отвечает сторона диктовки: только
+  /// она знает, говорит ли человек прямо сейчас. Нет обработчика — значит
+  /// это не она, и отказывать некому.
+  bool Function()? onModelRequested;
+
   Future<Object?> _onCall(MethodCall call) async {
     switch (call.method) {
       case 'hotkey':
@@ -127,6 +132,8 @@ class MacPlatform
         _reload.add(null);
       case 'tab':
         _tab.add(call.arguments as String);
+      case 'yieldModel':
+        return onModelRequested?.call() ?? true;
     }
     return null;
   }
@@ -175,6 +182,11 @@ class MacPlatform
   @override
   Future<void> openPermissionSettings() =>
       _channel.invokeMethod('openPermissionSettings');
+
+  /// Попросить у диктовки модель. true — она свободна и уступила, false —
+  /// человек говорит прямо сейчас, и очереди надо подождать.
+  Future<bool> requestModel() async =>
+      await _channel.invokeMethod<bool>('requestModel') ?? true;
 
   /// Настройки диктовки правит и главное окно — панели надо перечитать файл.
   Future<void> settingsChanged() => _channel.invokeMethod('settingsChanged');

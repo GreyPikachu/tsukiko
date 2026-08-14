@@ -37,6 +37,9 @@ class DictationController extends ChangeNotifier {
     // Кнопки плавающей панели — те же два действия, что и клавиши.
     platform.hudActions.listen((a) => a == 'cancel' ? cancel() : stop());
     platform.panelShown.listen((_) => _refresh());
+    // Очередь спрашивает, можно ли забрать модель. Отвечаем мы: диктовка
+    // главнее — она короткая, а очередь подождёт и продолжит сама.
+    platform.onModelRequested = _yieldModel;
     // Те же настройки правит инспектор главного окна — там они и живут.
     platform.settingsReloaded.listen((_) => _reloadSettings());
     _apply();
@@ -345,6 +348,16 @@ class DictationController extends ChangeNotifier {
   }
 
   void unload() => server.shutdown();
+
+  /// Очередь просит модель. Пока человек говорит — не отдаём: пауза
+  /// в очереди стоит секунды, а прерванная фраза пропадает совсем.
+  /// В покое отдаём сразу: держать полтора гигабайта ради возможной
+  /// следующей фразы дороже, чем поднять сервер заново за 0,6 с.
+  bool _yieldModel() {
+    if (phase != Phase.idle) return false;
+    server.shutdown();
+    return true;
+  }
 
   void forgetSweep() {
     sweptMb = 0;
