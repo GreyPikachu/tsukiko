@@ -543,6 +543,7 @@ class _HomePageState extends State<HomePage> {
                   controller: _searchCtrl,
                   focusNode: _searchFocus,
                   placeholder: 'Найти в расшифровке',
+                  placeholderStyle: Surface.placeholder(context),
                   onChanged: (v) => setState(() => _query = v),
                 ),
               ),
@@ -1022,7 +1023,7 @@ class _HomePageState extends State<HomePage> {
           onChanged: (v) => _edit((x) => x.copyWith(threads: v ?? o.threads)),
         ),
         const SectionTitle('Подсказка модели'),
-        MacosTextField(
+        AppTextField(
           controller: _promptCtrl,
           placeholder: 'Имена, термины, названия',
           maxLines: 3,
