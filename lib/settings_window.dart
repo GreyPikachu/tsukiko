@@ -214,40 +214,30 @@ class _SettingsBodyState extends State<SettingsBody> {
         const Hint('Свои значения, не общие с очередью: диктуют не то же, '
             'что расшифровывают. Язык диктовка определяет сама.'),
         const SizedBox(height: 10),
-        Row(
-          children: [
-            const Expanded(child: Text('Модель', style: Type.control)),
-            SizedBox(
-              width: 230,
-              child: ModelField(
-                installed: _models,
-                value: _dictation.model,
-                hint: 'Как у расшифровщика',
-                onChosen: (v) => _saveDictation(() => _dictation.model = v),
-                onDownload: _fetch,
-              ),
-            ),
-          ],
+        _Field(
+          'Модель',
+          ModelField(
+            installed: _models,
+            value: _dictation.model,
+            hint: 'Как у расшифровщика',
+            onChosen: (v) => _saveDictation(() => _dictation.model = v),
+            onDownload: _fetch,
+          ),
         ),
         const SizedBox(height: 10),
-        Row(
-          children: [
-            const Expanded(child: Text('Потоки', style: Type.control)),
-            SizedBox(
-              width: 230,
-              child: MacosPopupButton<int>(
-                value: _dictation.threads,
-                items: [
-                  for (var t = 2; t <= Platform.numberOfProcessors; t += 2)
-                    MacosPopupMenuItem(
-                        value: t,
-                        child: Text('$t ${plural(t, 'поток', 'потока', 'потоков')}')),
-                ],
-                onChanged: (v) =>
-                    _saveDictation(() => _dictation.threads = v ?? _dictation.threads),
-              ),
-            ),
-          ],
+        _Field(
+          'Потоки',
+          MacosPopupButton<int>(
+            value: _dictation.threads,
+            items: [
+              for (var t = 2; t <= Platform.numberOfProcessors; t += 2)
+                MacosPopupMenuItem(
+                    value: t,
+                    child: Text('$t ${plural(t, 'поток', 'потока', 'потоков')}')),
+            ],
+            onChanged: (v) =>
+                _saveDictation(() => _dictation.threads = v ?? _dictation.threads),
+          ),
         ),
         const SizedBox(height: 10),
         Check('Ставить знаки препинания', _dictation.punctuate,
@@ -261,24 +251,19 @@ class _SettingsBodyState extends State<SettingsBody> {
         ),
         const Hint('Подсказка модели: слова из неё она пишет правильнее.'),
         const SectionTitle('Модель в памяти'),
-        Row(
-          children: [
-            const Expanded(child: Text('Держать модель', style: Type.control)),
-            SizedBox(
-              width: 230,
-              child: MacosPopupButton<int>(
-                value: _dictation.idleSeconds,
-                items: const [
-                  MacosPopupMenuItem(value: 30, child: Text('30 секунд')),
-                  MacosPopupMenuItem(value: 60, child: Text('1 минуту')),
-                  MacosPopupMenuItem(value: 180, child: Text('3 минуты')),
-                  MacosPopupMenuItem(value: 600, child: Text('10 минут')),
-                  MacosPopupMenuItem(value: 3600, child: Text('1 час')),
-                ],
-                onChanged: (v) => _saveDictation(() => _dictation.idleSeconds = v ?? 180),
-              ),
-            ),
-          ],
+        _Field(
+          'Держать модель',
+          MacosPopupButton<int>(
+            value: _dictation.idleSeconds,
+            items: const [
+              MacosPopupMenuItem(value: 30, child: Text('30 секунд')),
+              MacosPopupMenuItem(value: 60, child: Text('1 минуту')),
+              MacosPopupMenuItem(value: 180, child: Text('3 минуты')),
+              MacosPopupMenuItem(value: 600, child: Text('10 минут')),
+              MacosPopupMenuItem(value: 3600, child: Text('1 час')),
+            ],
+            onChanged: (v) => _saveDictation(() => _dictation.idleSeconds = v ?? 180),
+          ),
         ),
         const Hint('Пока модель в памяти, фраза распознаётся за доли секунды. '
             'Она занимает полтора гигабайта.'),
@@ -539,6 +524,29 @@ class _SettingsBodyState extends State<SettingsBody> {
             child: const Text('Открыть настройки системы'),
           ),
       ];
+}
+
+/// Подпись над полем, а не слева от него: выпадающий список в macOS
+/// шириной со своё самое длинное имя, и в узкой колонке он вылезал
+/// за край окна.
+class _Field extends StatelessWidget {
+  const _Field(this.label, this.child);
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: Type.caption.copyWith(color: Surface.secondaryText(context))),
+            const SizedBox(height: 5),
+            child,
+          ],
+        ),
+      );
 }
 
 /// Вкладка в полосе: значок над подписью — как в панели инструментов
