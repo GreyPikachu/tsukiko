@@ -23,16 +23,6 @@ class HotkeyEvent {
   final HotkeyEdge edge;
 }
 
-/// Два разных разрешения macOS, и путать их нельзя.
-/// [input] — «Мониторинг ввода»: без него event tap не слышит клавиш.
-/// [insert] — «Универсальный доступ»: без него ⌘V не уходит в чужое окно.
-class Permissions {
-  const Permissions({this.input = true, this.insert = true});
-  final bool input, insert;
-
-  bool get ok => input && insert;
-}
-
 abstract class HotkeyBackend {
   /// Назначить сочетания. Зажатое [hold] пишет, пока держат; [toggle]
   /// включает и выключает запись нажатием.
@@ -43,11 +33,16 @@ abstract class HotkeyBackend {
   /// Поймать следующее сочетание, чтобы пользователь назначил своё.
   Future<Hotkey?> capture();
 
-  /// Что из разрешений выдано прямо сейчас.
-  Future<Permissions> permissions();
+  /// Выдан ли «Универсальный доступ» — единственное нужное разрешение:
+  /// им живёт и перехват клавиш, и вставка текста в чужое окно.
+  Future<bool> permission();
 
-  /// Открыть нужный раздел системных настроек: 'input' или 'insert'.
-  Future<void> openPermission(String which);
+  /// Показать системный запрос. Настройки при этом не открываем: они
+  /// перекрыли бы диалог, и разрешение осталось бы неспрошенным.
+  Future<void> requestPermission();
+
+  /// Открыть раздел «Универсальный доступ» в системных настройках.
+  Future<void> openPermissionSettings();
 }
 
 abstract class AudioRecorder {
@@ -161,17 +156,16 @@ class MacPlatform
   }
 
   @override
-  Future<Permissions> permissions() async {
-    final r = await _channel.invokeMapMethod<String, bool>('permissions');
-    return Permissions(
-      input: r?['input'] ?? false,
-      insert: r?['insert'] ?? false,
-    );
-  }
+  Future<bool> permission() async =>
+      await _channel.invokeMethod<bool>('permissions') ?? false;
 
   @override
-  Future<void> openPermission(String which) =>
-      _channel.invokeMethod('openPermission', {'which': which});
+  Future<void> requestPermission() =>
+      _channel.invokeMethod('requestPermission');
+
+  @override
+  Future<void> openPermissionSettings() =>
+      _channel.invokeMethod('openPermissionSettings');
 
   /// Настройки диктовки правит и главное окно — панели надо перечитать файл.
   Future<void> settingsChanged() => _channel.invokeMethod('settingsChanged');

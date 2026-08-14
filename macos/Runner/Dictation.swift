@@ -93,6 +93,7 @@ final class DictationBridge: NSObject {
 
   private var tap: CFMachPort?
   private var tapSource: CFRunLoopSource?
+  private var asked = false
 
   private var capturing = false
   private var capturePeak = Set<String>()
@@ -181,16 +182,22 @@ final class DictationBridge: NSObject {
       channel?.invokeMethod("reload", arguments: nil)
       reply(nil)
     case "permissions":
-      // Два разных разрешения, и путать их нельзя. «Мониторинг ввода» даёт
-      // event tap слышать клавиши; «Универсальный доступ» — послать ⌘V
-      // в чужое окно. Одно без другого делает диктовку наполовину мёртвой.
+      // Разрешение одно: «Универсальный доступ». Наш tap поглощает события
+      // (fn+пробел не должен вставить пробел в чужое поле), а такому tap'у
+      // «Мониторинга ввода» мало — macOS сводит ListenEvent к
+      // Accessibility. Проверено: с одним «Универсальным доступом» tap
+      // создаётся, без него — нет.
       ensureTap()
-      reply([
-        "input": CGPreflightListenEventAccess(),
-        "insert": AXIsProcessTrusted(),
-      ])
-    case "openPermission":
-      openPermission((args?["which"] as? String) ?? "input")
+      reply(AXIsProcessTrusted())
+    case "requestPermission":
+      requestPermission()
+      reply(nil)
+    case "openPermissionSettings":
+      if let url = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+      {
+        NSWorkspace.shared.open(url)
+      }
       reply(nil)
     case "quit":
       NSApp.terminate(nil)
@@ -230,28 +237,19 @@ final class DictationBridge: NSObject {
 
   // MARK: разрешения
 
-  /// Кнопка «Открыть настройки» обязана открывать настройки. Системный
-  /// запрос показывается один раз за всю жизнь приложения, после первого
-  /// ответа macOS его больше не покажет — значит одного запроса мало.
-  /// Запрос всё же шлём: без него приложения нет в списке и включать
-  /// нечего. Схемы проверены на macOS 26.
-  private func openPermission(_ which: String) {
-    let path: String
-    if which == "insert" {
-      if !AXIsProcessTrusted() {
-        AXIsProcessTrustedWithOptions(
-          [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
-      }
-      path = "Privacy_Accessibility"
-    } else {
-      if !CGPreflightListenEventAccess() { CGRequestListenEventAccess() }
-      path = "Privacy_ListenEvent"
-    }
-    guard
-      let url = URL(
-        string: "x-apple.systempreferences:com.apple.preference.security?\(path)")
-    else { return }
-    NSWorkspace.shared.open(url)
+  /// Запрос и открытие настроек — разные действия, и делать их одним
+  /// движением нельзя: системный диалог асинхронный, а Настройки, выйдя
+  /// вперёд, хоронят его под собой. Пользователь ничего не отвечает,
+  /// macOS не заводит запись — и приложения нет в списке, включать нечего.
+  /// Поэтому диалог показываем сам по себе; в списке приложение появляется
+  /// выключенным, а «Открыть настройки» — отдельная кнопка рядом.
+  ///
+  /// Показывается диалог один раз за жизнь записи TCC: если запись уже
+  /// есть, остаётся только кнопка в настройки.
+  private func requestPermission() {
+    guard !AXIsProcessTrusted() else { return }
+    AXIsProcessTrustedWithOptions(
+      [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
   }
 
   // MARK: перехват клавиш
@@ -284,7 +282,14 @@ final class DictationBridge: NSObject {
         callback: callback,
         userInfo: Unmanaged.passUnretained(self).toOpaque())
     else {
-      NSLog("tsukiko: не удалось создать event tap — нет «Мониторинга ввода»")
+      NSLog("tsukiko: нет «Универсального доступа» — перехват клавиш не создан")
+      // Первая неудача — она же первое знакомство с системой: просим
+      // разрешение сразу, чтобы приложение оказалось в списке
+      // «Универсального доступа» выключенным, а не искалось там руками.
+      if !asked {
+        asked = true
+        requestPermission()
+      }
       return
     }
     self.tap = tap
