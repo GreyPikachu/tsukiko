@@ -96,21 +96,25 @@ class DictationController extends ChangeNotifier {
     exit(0);
   }
 
-  /// Настройки распознавания диктовки: своё только модель, подсказка и VAD,
-  /// остальное — общее с очередью. Язык всегда «авто»: диктуют на разных
-  /// языках вперемешку, и выбирать его руками каждый раз некому.
+  /// Настройки распознавания диктовки — свои целиком, не общие с очередью:
+  /// диктуют не то же, что расшифровывают, и одни значения на две стороны
+  /// устраивали бы плохо обе. Из настроек очереди берётся одно — модель,
+  /// и то лишь пока своя не выбрана: «как у расшифровщика» и обещает.
+  ///
+  /// Язык всегда «авто»: диктуют на разных языках вперемешку, и выбирать
+  /// его руками каждый раз некому. VAD включён всегда, независимо от галки
+  /// в очереди: фразы короткие, и на секундах тишины whisper сочиняет
+  /// «Продолжение следует…».
   RunOptions get options {
-    final base = RunOptions.fromJson(
-      Settings.load(),
-      const RunOptions(model: '', lang: 'auto', threads: 4),
-    );
-    // На диктовке VAD включён всегда, независимо от галки в очереди: фразы
-    // короткие, и на секундах тишины whisper сочиняет «Продолжение следует…».
     final vad = File(vadModelPath).existsSync();
-    return base.copyWith(
-      model: settings.model.isNotEmpty ? settings.model : base.model,
+    return RunOptions(
+      model: settings.model.isNotEmpty
+          ? settings.model
+          : (Settings.load()['model'] as String?) ?? '',
       lang: 'auto',
+      threads: settings.threads,
       prompt: settings.prompt,
+      punctuate: settings.punctuate,
       vad: vad,
       vadModel: vad ? vadModelPath : '',
     );
@@ -139,10 +143,13 @@ class DictationController extends ChangeNotifier {
     final was = settings;
     settings = DictationSettings.load();
     server.idleTimeout = Duration(seconds: settings.idleSeconds);
-    // Подсказку и модель сервер читает при запуске — значит новые он
+    // Всё, с чем сервер запускается, он читает один раз — значит новое
     // увидит только с новым запуском. Память отдаём сразу, поднимется
     // он снова на следующей фразе.
-    if (was.prompt != settings.prompt || was.model != settings.model) {
+    if (was.prompt != settings.prompt ||
+        was.model != settings.model ||
+        was.punctuate != settings.punctuate ||
+        was.threads != settings.threads) {
       server.shutdown();
     }
     await _apply();
