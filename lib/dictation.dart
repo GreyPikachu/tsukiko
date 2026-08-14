@@ -31,6 +31,72 @@ String? findWhisperServer() {
 /// на диск, и следующий запуск добивает того, кто пережил падение.
 File get _pidFile => File('$supportDir/whisper-server.pid');
 
+/// Метка своего сервера в аргументах процесса. Нужна затем, что pid-файл
+/// теряется: приложение падает, его убивают сигналом, файл стирают — и
+/// сервер с полутора гигабайтами становится невидимым навсегда.
+/// Аргументы процесса не теряются никогда, поэтому метка живёт в них.
+///
+/// `--tmp-dir` сервер читает только вместе с `--convert`, которого мы
+/// не просим: на поведение метка не влияет, а в `ps` она видна.
+const serverMark = '/tmp/tsukiko-whisper';
+
+/// По чему сервер узнаётся нашим. Второй признак — для серверов, поднятых
+/// прежними сборками, когда метки ещё не было: путь к нашей модели тишины
+/// они передают почти всегда. У чужого whisper-server нет ни того, ни
+/// другого, и трогать его нельзя.
+List<String> get _ourMarks => [serverMark, supportDir];
+
+bool processAlive(int pid) {
+  try {
+    final r = Process.runSync('ps', ['-o', 'pid=', '-p', '$pid']);
+    return (r.stdout as String).trim().isNotEmpty;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Погасить наверняка. whisper-server на SIGTERM не умирает — проверено:
+/// процесс жил часами с 1,7 ГБ, пока приложение считало его выгруженным.
+/// Поэтому просим вежливо, ждём, проверяем и добиваем. Возвращает true,
+/// если процесса больше нет.
+///
+/// Синхронно: её зовут и на выходе из приложения, где ждать уже некому.
+bool killForSure(int pid) {
+  bool gone() {
+    for (var i = 0; i < 6; i++) {
+      sleep(const Duration(milliseconds: 50));
+      if (!processAlive(pid)) return true;
+    }
+    return false;
+  }
+
+  try {
+    Process.killPid(pid, ProcessSignal.sigterm);
+  } catch (_) {
+    return !processAlive(pid);
+  }
+  if (gone()) return true;
+  try {
+    Process.killPid(pid, ProcessSignal.sigkill);
+  } catch (_) {}
+  return gone();
+}
+
+/// Наши серверы в выводе `ps -axo pid=,rss=,args=`. Чужие whisper-server
+/// в список не попадают: наших меток у них нет.
+List<({int pid, int rssKb})> ourServersIn(String psOutput) {
+  final out = <({int pid, int rssKb})>[];
+  for (final line in psOutput.split('\n')) {
+    final m = RegExp(r'^\s*(\d+)\s+(\d+)\s+(.*)$').firstMatch(line);
+    if (m == null) continue;
+    final args = m.group(3)!;
+    if (!args.contains('whisper-server')) continue;
+    if (!_ourMarks.any(args.contains)) continue;
+    out.add((pid: int.parse(m.group(1)!), rssKb: int.parse(m.group(2)!)));
+  }
+  return out;
+}
+
 /// Pid нашего whisper-server, если он жив. Отличать своего от чужого можно
 /// только так: у пользователя рядом может работать чужой whisper-server,
 /// и по имени процесса они неразличимы. Один и тот же pid система могла
@@ -46,12 +112,31 @@ int? ourServerPid() {
   }
 }
 
-void killStaleServer() {
-  final pid = ourServerPid();
-  if (pid != null) Process.killPid(pid, ProcessSignal.sigterm);
+/// Подобрать за собой на старте: сервер, переживший прошлый запуск,
+/// держит полтора гигабайта и никому уже не отвечает. Ищем по меткам,
+/// а не по pid-файлу: файла может не быть вовсе — именно так утечка
+/// и становилась невидимой.
+///
+/// Возвращает, сколько мегабайт вернули: молчаливая потеря такого
+/// размера должна становиться видимой человеку.
+int sweepOurServers({Set<int> keep = const {}}) {
+  var freedKb = 0;
   try {
-    _pidFile.deleteSync();
+    final ps = Process.runSync('ps', ['-axo', 'pid=,rss=,args=']);
+    for (final s in ourServersIn(ps.stdout as String)) {
+      if (s.pid == pid || keep.contains(s.pid)) continue;
+      if (killForSure(s.pid)) freedKb += s.rssKb;
+    }
   } catch (_) {}
+  // Запись стираем, только когда за ней никого не осталось: pid живого
+  // процесса — единственный способ найти его потом.
+  final left = ourServerPid();
+  if (left == null || !processAlive(left)) {
+    try {
+      _pidFile.deleteSync();
+    } catch (_) {}
+  }
+  return freedKb ~/ 1024;
 }
 
 /// Запись диктовки ложится во временную папку и стирается сразу после
@@ -184,6 +269,9 @@ class WhisperServer {
       '-t', '${o.threads}',
       '--host', '127.0.0.1',
       '--port', '$_port',
+      // Метка своего процесса в аргументах: по ней сирота узнаётся, когда
+      // pid-файла уже нет. Сервер читает её только вместе с --convert.
+      '--tmp-dir', serverMark,
       // Речь в диктовке короткая, таймкоды в ней не нужны и только мешают
       // склеивать текст.
       '-nt',
@@ -291,19 +379,23 @@ class WhisperServer {
     _idle = Timer(idleTimeout, shutdown);
   }
 
+  /// Выгрузить модель. `p.kill()` здесь недостаточно: он шлёт SIGTERM,
+  /// а whisper-server от него не умирает — панель писала «Выгружена»,
+  /// пока процесс держал полтора гигабайта. Убеждаемся, что он мёртв,
+  /// и только тогда забываем о нём.
   void shutdown() {
     _idle?.cancel();
     _idle = null;
     _deadline = null;
     final p = _proc;
     _proc = null;
-    if (p != null) {
-      p.kill();
+    if (p == null) return;
+    if (killForSure(p.pid)) {
       try {
         _pidFile.deleteSync();
       } catch (_) {}
-      onChanged?.call();
     }
+    onChanged?.call();
   }
 }
 

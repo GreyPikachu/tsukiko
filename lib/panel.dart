@@ -17,17 +17,18 @@ import 'platform_mac.dart';
 void runPanel() {
   WidgetsFlutterBinding.ensureInitialized();
   // Сервер мог пережить падение приложения: полтора гигабайта, которые
-  // иначе не вернёт никто.
-  killStaleServer();
+  // иначе не вернёт никто. Ищем по метке в аргументах — pid-файла после
+  // падения может не быть вовсе.
+  final freed = sweepOurServers();
   sweepRecordings();
-  runApp(PanelApp(DictationController(MacPlatform())));
+  runApp(PanelApp(DictationController(MacPlatform(), sweptMb: freed)));
 }
 
 
 enum Phase { idle, recording, transcribing }
 
 class DictationController extends ChangeNotifier {
-  DictationController(this.platform) {
+  DictationController(this.platform, {this.sweptMb = 0}) {
     server = WhisperServer(
       idleTimeout: Duration(seconds: settings.idleSeconds),
       onChanged: _onServerChanged,
@@ -49,6 +50,12 @@ class DictationController extends ChangeNotifier {
   }
 
   final MacPlatform platform;
+
+  /// Сколько мегабайт вернул подбор сирот на старте. Ноль — всё было
+  /// чисто. Пока не 0, панель говорит об этом вслух: полтора гигабайта,
+  /// потерянные молча, человек иначе находит только в мониторе системы.
+  int sweptMb;
+
   DictationSettings settings = DictationSettings.load();
   late final WhisperServer server;
 
@@ -79,6 +86,9 @@ class DictationController extends ChangeNotifier {
 
   Never _bye() {
     server.shutdown();
+    // Свой сервер мы только что погасили; этот проход — на случай, если
+    // рядом остался ещё один, о котором мы не знаем.
+    sweepOurServers();
     exit(0);
   }
 
@@ -320,6 +330,11 @@ class DictationController extends ChangeNotifier {
   }
 
   void unload() => server.shutdown();
+
+  void forgetSweep() {
+    sweptMb = 0;
+    notifyListeners();
+  }
 
   /// Показать спасённую запись в Finder — оттуда её перетаскивают
   /// в очередь главного окна и распознают вручную.
@@ -591,6 +606,13 @@ class _Notices extends StatelessWidget {
               c.failure!,
               button: 'Показать запись',
               onPressed: c.revealFailure,
+            ),
+          if (c.sweptMb > 0)
+            _Warning(
+              'Нашли забытый распознаватель диктовки от прошлого запуска '
+              'и выгрузили его: вернули ${sizeLabelMb(c.sweptMb)} памяти.',
+              button: 'Понятно',
+              onPressed: c.forgetSweep,
             ),
           if (d != null)
             Padding(

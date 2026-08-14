@@ -598,14 +598,34 @@ final class DictationBridge: NSObject {
   }
 
   /// Сервер держит в памяти полтора гигабайта — оставлять его сиротой
-  /// нельзя. Dart пишет pid на диск специально ради этой минуты.
+  /// нельзя. Ищем по метке в аргументах, а не по pid-файлу: файла может
+  /// не оказаться (падение, kill -9), и тогда процесс не найти уже ничем.
+  ///
+  /// SIGTERM whisper-server переживает — проверено, поэтому следом идёт
+  /// SIGKILL. Чужие whisper-server без нашей метки не трогаем.
   static func killWhisperServer() {
-    let path = NSHomeDirectory()
-      + "/Library/Application Support/app.yuko.tsukiko/whisper-server.pid"
-    guard let raw = try? String(contentsOfFile: path, encoding: .utf8),
-      let pid = pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines))
-    else { return }
-    kill(pid, SIGTERM)
-    try? FileManager.default.removeItem(atPath: path)
+    let support = NSHomeDirectory() + "/Library/Application Support/app.yuko.tsukiko"
+    let marks = ["/tmp/tsukiko-whisper", support]
+
+    let ps = Process()
+    ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+    ps.arguments = ["-axo", "pid=,args="]
+    let pipe = Pipe()
+    ps.standardOutput = pipe
+    guard (try? ps.run()) != nil else { return }
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    ps.waitUntilExit()
+
+    for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+      let text = String(line)
+      guard text.contains("whisper-server"), marks.contains(where: text.contains),
+        let first = text.trimmingCharacters(in: .whitespaces).split(separator: " ").first,
+        let pid = pid_t(first)
+      else { continue }
+      kill(pid, SIGTERM)
+      usleep(150_000)
+      if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+    }
+    try? FileManager.default.removeItem(atPath: support + "/whisper-server.pid")
   }
 }
