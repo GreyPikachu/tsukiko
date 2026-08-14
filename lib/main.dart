@@ -953,7 +953,7 @@ class _HomePageState extends State<HomePage> {
           onReset: own == null ? null : _resetOverrides,
           onMakeDefault: own == null ? null : _makeDefault,
         ),
-        const SectionTitle('Модель'),
+        const SectionTitle('Распознавание записи'),
         ModelField(
           installed: _models,
           value: o.model,
