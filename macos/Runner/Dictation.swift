@@ -240,9 +240,6 @@ final class DictationBridge: NSObject {
       default: hud.hide()
       }
       reply(nil)
-    case "hidePanel":
-      panel.hide()
-      reply(nil)
     case "openMainWindow":
       panel.hide()
       DictationBridge.showMainWindow()
