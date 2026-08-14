@@ -337,15 +337,6 @@ class DictationController extends ChangeNotifier {
     await Clipboard.setData(ClipboardData(text: last));
   }
 
-  /// Спасение, когда вставка ушла не в то окно: панель прячется, фокус
-  /// возвращается прежнему приложению, и текст идёт туда.
-  Future<void> insertAgain() async {
-    if (last.isEmpty) return;
-    await platform.hidePanel();
-    await Future<void>.delayed(const Duration(milliseconds: 220));
-    await platform.insert(last);
-  }
-
   void unload() => server.shutdown();
 
   void forgetSweep() {
@@ -675,24 +666,16 @@ class _Last extends StatelessWidget {
             ),
             // Кнопки без текста нечего делать: пустая пара мертвецов только
             // занимает место в и без того тесном поповере.
+            // «Вставить снова» здесь была и не работала: панель не помнила,
+            // куда вставляла, а ждала наугад двести миллисекунд и попадала
+            // в чужое окно. Осталось «Скопировать» и родное ⌘V.
             if (c.last.isNotEmpty) ...[
               const SizedBox(height: 9),
-              Row(
-                children: [
-                  PushButton(
-                    controlSize: ControlSize.small,
-                    secondary: true,
-                    onPressed: c.copyLast,
-                    child: const Text('Скопировать'),
-                  ),
-                  const SizedBox(width: 6),
-                  PushButton(
-                    controlSize: ControlSize.small,
-                    secondary: true,
-                    onPressed: c.insertAgain,
-                    child: const Text('Вставить снова'),
-                  ),
-                ],
+              PushButton(
+                controlSize: ControlSize.small,
+                secondary: true,
+                onPressed: c.copyLast,
+                child: const Text('Скопировать'),
               ),
             ],
           ],

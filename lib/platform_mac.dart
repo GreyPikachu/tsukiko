@@ -73,8 +73,6 @@ abstract class PanelPresenter {
   /// «Отменить» и «Остановить», нажатые в ней мышью.
   Stream<String> get hudActions;
 
-  Future<void> hidePanel();
-
   /// Высота содержимого панели: окно подгоняется под неё, как системный
   /// поповер, — иначе внизу остаётся пустота на всё, чего сейчас нет.
   Future<void> setPanelHeight(double height);
@@ -204,9 +202,6 @@ class MacPlatform
   /// на лету, перезапуск не нужен.
   Future<void> setDockIcon(bool visible) =>
       _channel.invokeMethod('dockIcon', {'visible': visible});
-
-  @override
-  Future<void> hidePanel() => _channel.invokeMethod('hidePanel');
 
   @override
   Future<void> setPanelHeight(double height) =>
