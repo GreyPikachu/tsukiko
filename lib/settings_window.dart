@@ -67,6 +67,9 @@ class _SettingsBodyState extends State<SettingsBody> {
   String _tab = 'dictation';
   List<String> _models = findModels();
   Download? _download;
+
+  /// Почему выбранный файл не годится в модель. Пусто — всё хорошо.
+  String? _problem;
   bool _allowed = true;
   int _denied = 0;
   Timer? _timer;
@@ -216,14 +219,12 @@ class _SettingsBodyState extends State<SettingsBody> {
             const Expanded(child: Text('Модель', style: Type.control)),
             SizedBox(
               width: 230,
-              child: MacosPopupButton<String>(
-                value: _models.contains(_dictation.model) ? _dictation.model : null,
-                hint: const Text('Как у расшифровщика'),
-                items: [
-                  for (final m in _models)
-                    MacosPopupMenuItem(value: m, child: Text(modelDisplayName(m))),
-                ],
-                onChanged: (v) => _saveDictation(() => _dictation.model = v ?? ''),
+              child: ModelField(
+                installed: _models,
+                value: _dictation.model,
+                hint: 'Как у расшифровщика',
+                onChosen: (v) => _saveDictation(() => _dictation.model = v),
+                onDownload: _fetch,
               ),
             ),
           ],
@@ -370,12 +371,41 @@ class _SettingsBodyState extends State<SettingsBody> {
               ],
             ),
           ),
+      const SizedBox(height: 16),
+      PushButton(
+        controlSize: ControlSize.regular,
+        secondary: true,
+        onPressed: _pickModel,
+        child: const Text('Выбрать другой файл…'),
+      ),
+      if (_problem != null) ...[
+        const SizedBox(height: 8),
+        Text(_problem!,
+            style: Type.caption.copyWith(
+                color: MacosColors.systemOrangeColor, height: 1.4)),
+      ],
       const SizedBox(height: 20),
       Text(
         'Модели лежат в ${modelPathFor('').replaceFirst(home, '~')}',
         style: Type.caption.copyWith(color: Surface.secondaryText(context)),
       ),
     ];
+  }
+
+  /// Выбранный руками файл проверяем: «.bin» бывает чем угодно, а
+  /// whisper-cli на чужом файле падает с руганью про тензоры.
+  Future<void> _pickModel() async {
+    final f = await openFile(
+        acceptedTypeGroups: const [XTypeGroup(label: 'GGML', extensions: ['bin'])]);
+    if (f == null) return;
+    final problem = modelFileProblem(f.path);
+    setState(() {
+      _problem = problem;
+      if (problem == null && !_models.contains(f.path)) {
+        _models = [..._models, f.path];
+      }
+    });
+    if (problem == null) _saveDictation(() => _dictation.model = f.path);
   }
 
   Future<void> _fetch(ModelOffer m) async {
