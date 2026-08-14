@@ -11,10 +11,11 @@ import 'package:flutter/services.dart';
 import 'package:macos_ui/macos_ui.dart';
 
 import 'design.dart';
-import 'dictation.dart' show DictationSettings, ourServerPid;
+import 'dictation.dart' show ourServerPid;
 import 'engine.dart';
 import 'mascot.dart';
 import 'panel.dart' show runPanel;
+import 'settings_window.dart' show runSettings;
 import 'platform_mac.dart' show MacPlatform;
 
 part 'job.dart';
@@ -33,6 +34,12 @@ part 'widgets_chrome.dart';
 /// на macOS ищет точку входа только в корневой библиотеке приложения.
 @pragma('vm:entry-point')
 void panelMain() => runPanel();
+
+/// Точка входа третьего движка — окна настроек. Оно открывается по ⌘,
+/// и из поповера, а в режиме без значка в Dock только из поповера:
+/// строки меню там нет вовсе.
+@pragma('vm:entry-point')
+void settingsMain() => runSettings();
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -100,11 +107,6 @@ class _HomePageState extends State<HomePage> {
   Job? _lead;
 
   final _promptCtrl = TextEditingController();
-  final _dictPromptCtrl = TextEditingController();
-
-  /// Настройки диктовки лежат в своём файле: ведёт диктовку панель, а
-  /// правят их здесь. После правки панели говорят перечитать файл.
-  final _dictation = DictationSettings.load();
   final _searchCtrl = TextEditingController();
   final _searchFocus = FocusNode();
   final _queueFocus = FocusNode(debugLabel: 'очередь');
@@ -127,13 +129,15 @@ class _HomePageState extends State<HomePage> {
   List<String> _models = [];
   late RunOptions _defaults;
 
-  /// Идущая загрузка модели. Одна на всё окно: сеть общая, а два полуторагиговых
+  /// Идущая загрузка. Одна на всё окно: сеть общая, а два полуторагиговых
   /// файла разом просто мешают друг другу.
   Download? _download;
 
-  // Настройки самого приложения — они не бывают «своими у записи».
-  bool _timestamps = true, _yieldBusyModel = true, _saveNextToSource = false;
-  bool _dockIcon = true;
+  // Настройки приложения: правят их в окне настроек, здесь ими только
+  // пользуются. Исключение — эти две, у них есть свои переключатели
+  // в меню и в строке состояния.
+  bool _timestamps = true, _yieldBusyModel = true;
+  bool _saveNextToSource = false;
 
   /// Единственное, за чем главное окно ходит в macOS напрямую.
   late final _mac = MacPlatform();
@@ -169,7 +173,6 @@ class _HomePageState extends State<HomePage> {
     _yieldBusyModel =
         (s['yieldBusyModel'] as bool?) ?? (s['yieldDictara'] as bool?) ?? true;
     _saveNextToSource = (s['saveNextToSource'] as bool?) ?? false;
-    _dockIcon = (s['dockIcon'] as bool?) ?? true;
     _toLibrary = (s['toLibrary'] as bool?) ?? true;
     _libraryPath = (s['libraryPath'] as String?) ?? defaultLibraryPath;
     _copyFormat = _knownFormat(s['copyFormat'], formatPlainText.id);
@@ -185,7 +188,10 @@ class _HomePageState extends State<HomePage> {
         .toList();
     if (formats != null && formats.isNotEmpty) _libraryFormats = formats;
     _promptCtrl.text = _defaults.prompt;
-    _dictPromptCtrl.text = _dictation.prompt;
+
+    // Настройки правят в другом окне и в другом изоляте: пока это окно
+    // открыто, оно должно узнавать о правках, а не жить со своей копией.
+    _mac.settingsReloaded.listen((_) => _reloadSettings());
 
     _transcriptScroll.addListener(() {
       final scrolled = _transcriptScroll.hasClients && _transcriptScroll.offset > 6;
@@ -233,7 +239,6 @@ class _HomePageState extends State<HomePage> {
     _tmp?.deleteSync(recursive: true);
     _writeSettings();
     _promptCtrl.dispose();
-    _dictPromptCtrl.dispose();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     _queueFocus.dispose();
@@ -251,34 +256,37 @@ class _HomePageState extends State<HomePage> {
     _saveTimer = Timer(const Duration(milliseconds: 500), _writeSettings);
   }
 
+  /// Пишем только своё: библиотеку и поведение приложения правит окно
+  /// настроек, и его ключи Settings.save оставляет в файле нетронутыми.
+  /// Иначе окно, простоявшее открытым весь сеанс, вернуло бы всё как было.
   void _writeSettings() => Settings.save({
         ..._defaults.toJson(),
         'timestamps': _timestamps,
         'yieldBusyModel': _yieldBusyModel,
         'modelUsers': _modelUsers.toList(),
-        'saveNextToSource': _saveNextToSource,
-        'dockIcon': _dockIcon,
-        'toLibrary': _toLibrary,
-        'libraryPath': _libraryPath,
-        'libraryFormats': _libraryFormats,
         'copyFormat': _copyFormat,
         'saveFormat': _saveFormat,
         'recent': _recent,
       });
 
-  /// Диктовку ведёт панель на другом изоляте: пишем файл и говорим ей
-  /// перечитать его, иначе правка дойдёт только до следующего запуска.
-  void _saveDictation(VoidCallback change) {
-    setState(change);
-    _dictation.save();
-    _mac.settingsChanged();
-  }
-
-  /// Назначение сочетания: следующая нажатая комбинация становится новой.
-  Future<void> _reassign(String id) async {
-    final hk = await _mac.capture();
-    if (hk == null) return;
-    _saveDictation(() => id == 'hold' ? _dictation.hold = hk : _dictation.toggle = hk);
+  /// Настройки поменяли в другом окне. Перечитываем то, чем это окно
+  /// пользуется, но чего больше не правит.
+  void _reloadSettings() {
+    final s = Settings.load();
+    final formats = (s['libraryFormats'] as List?)
+        ?.cast<String>()
+        .where((v) => exportFormats.any((f) => f.id == v))
+        .toList();
+    setState(() {
+      _timestamps = (s['timestamps'] as bool?) ?? _timestamps;
+      _yieldBusyModel = (s['yieldBusyModel'] as bool?) ?? _yieldBusyModel;
+      _saveNextToSource = (s['saveNextToSource'] as bool?) ?? _saveNextToSource;
+      _toLibrary = (s['toLibrary'] as bool?) ?? _toLibrary;
+      _libraryPath = (s['libraryPath'] as String?) ?? _libraryPath;
+      if (formats != null && formats.isNotEmpty) _libraryFormats = formats;
+      // Модель могли скачать в окне настроек — список файлов уже другой.
+      _rescanModels();
+    });
   }
 
   /// Настройки, которые сейчас показывает инспектор: общие, если ничего
@@ -917,14 +925,19 @@ class _HomePageState extends State<HomePage> {
 
   // ── инспектор ─────────────────────────────────────────────────────────────
 
-  /// Один и тот же загрузчик стоит в инспекторе и в пустом экране: когда
-  /// моделей нет вовсе, вести человека надо оттуда, где он смотрит.
-  Widget _modelDownload() => _ModelDownload(
-        active: _download,
-        onPick: _downloadModel,
-        onCancel: () => setState(() => _download?.cancel()),
+  /// Кнопка с пустого экрана: сами модели живут на своей вкладке
+  /// в настройках, там же их и качают.
+  Widget _modelDownload() => PushButton(
+        controlSize: ControlSize.large,
+        onPressed: () => _openSettings('models'),
+        child: const Text('Загрузить модель…'),
       );
 
+  Future<void> _openSettings([String tab = 'dictation']) => _mac.openSettings(tab);
+
+  /// В инспекторе — только то, что осмысленно менять от записи к записи.
+  /// Всё остальное (диктовка, модели, библиотека, поведение приложения)
+  /// живёт в отдельном окне настроек: инспектор принадлежит расшифровщику.
   Widget _inspector(ScrollController controller) {
     final o = _shown;
     final own = _lead?.overrides;
@@ -939,7 +952,7 @@ class _HomePageState extends State<HomePage> {
           onReset: own == null ? null : _resetOverrides,
           onMakeDefault: own == null ? null : _makeDefault,
         ),
-        const _SectionTitle('Модель'),
+        const SectionTitle('Модель'),
         MacosPopupButton<String>(
           value: _models.contains(o.model) ? o.model : null,
           hint: const Text('Не выбрана'),
@@ -951,14 +964,12 @@ class _HomePageState extends State<HomePage> {
         ),
         const SizedBox(height: 8),
         PushButton(
-          controlSize: ControlSize.small,
+          controlSize: ControlSize.regular,
           secondary: true,
           onPressed: _pickModel,
           child: const Text('Выбрать другой файл…'),
         ),
-        const SizedBox(height: 8),
-        _modelDownload(),
-        const _SectionTitle('Язык речи'),
+        const SectionTitle('Язык речи'),
         MacosPopupButton<String>(
           value: o.lang,
           items: [
@@ -967,13 +978,13 @@ class _HomePageState extends State<HomePage> {
           ],
           onChanged: (v) => _edit((x) => x.copyWith(lang: v ?? 'auto')),
         ),
-        const _Hint('На смешанной речи выберите язык вручную — так точнее.'),
-        const _SectionTitle('Пунктуация'),
-        _Check('Ставить знаки препинания', o.punctuate,
+        const Hint('На смешанной речи выберите язык вручную — так точнее.'),
+        const SectionTitle('Пунктуация'),
+        Check('Ставить знаки препинания', o.punctuate,
             (v) => _edit((x) => x.copyWith(punctuate: v))),
-        const _Hint('Без этого модель на разговорной речи пишет сплошным нижним '
+        const Hint('Без этого модель на разговорной речи пишет сплошным нижним '
             'регистром. Своя подсказка ниже заменяет режим.'),
-        const _SectionTitle('Разбивка на фрагменты'),
+        const SectionTitle('Разбивка на фрагменты'),
         MacosPopupButton<int>(
           value: o.maxLen,
           items: const [
@@ -986,7 +997,7 @@ class _HomePageState extends State<HomePage> {
           onChanged: (v) => _edit((x) => x.copyWith(maxLen: v ?? 0)),
         ),
         const SizedBox(height: 10),
-        _Check('Резать по паузам (VAD)', o.vad, (v) {
+        Check('Резать по паузам (VAD)', o.vad, (v) {
           if (v && o.vadModel.isEmpty) {
             _enableVad();
           } else {
@@ -1001,7 +1012,7 @@ class _HomePageState extends State<HomePage> {
               style: Type.caption.copyWith(color: Surface.secondaryText(context)),
             ),
           ),
-        const _SectionTitle('Скорость'),
+        const SectionTitle('Скорость'),
         MacosPopupButton<int>(
           value: o.threads,
           items: [
@@ -1010,125 +1021,25 @@ class _HomePageState extends State<HomePage> {
           ],
           onChanged: (v) => _edit((x) => x.copyWith(threads: v ?? o.threads)),
         ),
-        const _SectionTitle('Подсказка модели'),
+        const SectionTitle('Подсказка модели'),
         MacosTextField(
           controller: _promptCtrl,
           placeholder: 'Имена, термины, названия',
           maxLines: 3,
           onChanged: (v) => _edit((x) => x.copyWith(prompt: v)),
         ),
-        const _Hint('Слова из подсказки модель пишет правильнее.'),
+        const Hint('Слова из подсказки модель пишет правильнее.'),
 
-        // Ниже — настройки самого приложения: они общие всегда.
-        const _SectionTitle('Диктовка'),
-        _HotkeyRow(
-          label: 'Держать и говорить',
-          keys: _dictation.hold.label,
-          onTap: () => _reassign('hold'),
+        // Диктовка, модели, библиотека и поведение приложения переехали
+        // в своё окно. Дорога туда должна быть видна и отсюда.
+        const SizedBox(height: 22),
+        PushButton(
+          controlSize: ControlSize.regular,
+          secondary: true,
+          onPressed: () => _openSettings(),
+          child: const Text('Настройки… ⌘,'),
         ),
-        _HotkeyRow(
-          label: 'Нажать · ещё раз стоп',
-          keys: _dictation.toggle.label,
-          onTap: () => _reassign('toggle'),
-        ),
-        const _Hint('Нажмите на сочетание и наберите новое. Из одних '
-            'модификаторов — отпустите их вместе.'),
-        const SizedBox(height: 12),
-        MacosTextField(
-          controller: _dictPromptCtrl,
-          placeholder: 'Подсказка модели для диктовки',
-          maxLines: 2,
-          onChanged: (v) => _saveDictation(() => _dictation.prompt = v),
-        ),
-        const _Hint('Отдельная от подсказки очереди: диктуют обычно не то, '
-            'что расшифровывают.'),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            const Expanded(child: Text('Держать модель в памяти', style: Type.control)),
-            MacosPopupButton<int>(
-              value: _dictation.idleSeconds,
-              items: const [
-                MacosPopupMenuItem(value: 30, child: Text('30 секунд')),
-                MacosPopupMenuItem(value: 60, child: Text('1 минуту')),
-                MacosPopupMenuItem(value: 180, child: Text('3 минуты')),
-                MacosPopupMenuItem(value: 600, child: Text('10 минут')),
-                MacosPopupMenuItem(value: 3600, child: Text('1 час')),
-              ],
-              onChanged: (v) =>
-                  _saveDictation(() => _dictation.idleSeconds = v ?? 180),
-            ),
-          ],
-        ),
-        const _Hint('Пока модель в памяти, фраза распознаётся за доли секунды. '
-            'Она занимает полтора гигабайта.'),
-        const SizedBox(height: 6),
-        _Check('Вставлять текст в активное окно', _dictation.insert,
-            (v) => _saveDictation(() => _dictation.insert = v)),
-        const _Hint('Без этого готовый текст только ложится в буфер обмена.'),
-        _Check('Показывать панель записи', _dictation.hud,
-            (v) => _saveDictation(() => _dictation.hud = v)),
-        const _Hint('Плавающая полоска поверх окон: видно, что вас слушают, '
-            'и есть чем остановить мышью.'),
-        const _SectionTitle('Библиотека'),
-        _LibraryPath(
-          path: _libraryPath,
-          onReveal: () => revealInFinder(_libraryPath),
-          onChange: _pickLibrary,
-        ),
-        const SizedBox(height: 8),
-        _Check('Складывать расшифровки сюда', _toLibrary, (v) {
-          setState(() => _toLibrary = v);
-          _persist();
-        }),
-        if (_toLibrary) ...[
-          Padding(
-            padding: const EdgeInsets.only(left: 6, top: 8, bottom: 2),
-            child: Text('ФОРМАТЫ',
-                style: Type.sectionHeader.copyWith(color: Surface.secondaryText(context))),
-          ),
-          for (final f in exportFormats)
-            _Check('${f.label} · ${f.suffix}', _libraryFormats.contains(f.id), (v) {
-              setState(() {
-                final next = [..._libraryFormats];
-                v ? next.add(f.id) : next.remove(f.id);
-                // Пустой набор при включённой библиотеке означал бы тишину.
-                _libraryFormats = next.isEmpty ? [f.id] : next;
-              });
-              _persist();
-            }),
-          _Hint(_libraryFormats.length > 1
-              ? 'Файлы раскладываются по месяцам, и у каждой записи своя папка — '
-                  'форматов больше одного.'
-              : 'Файлы раскладываются по месяцам: $appName/'
-                  '${monthFolder(DateTime.now())}/'),
-        ],
-        const _SectionTitle('Вид'),
-        _Check('Показывать метки времени', _timestamps, (v) {
-          setState(() => _timestamps = v);
-          _persist();
-        }),
-        const _Hint('Только на экране. Что попадёт в файл, решает выбранный '
-            'формат, а не эта галка.'),
-        _Check('Класть текст рядом с исходником', _saveNextToSource, (v) {
-          setState(() => _saveNextToSource = v);
-          _persist();
-        }),
-        const _Hint('Чистый текст без таймкодов, имя как у аудиофайла.'),
-        _Check('Ждать, если модель занята', _yieldBusyModel, (v) {
-          setState(() => _yieldBusyModel = v);
-          _persist();
-        }),
-        const _Hint('Пока модель держит другая программа — диктовка, ещё один whisper — '
-            'очередь стоит и не отбирает у неё память и GPU.'),
-        _Check('Показывать значок в Dock', _dockIcon, (v) {
-          setState(() => _dockIcon = v);
-          _persist();
-          _mac.setDockIcon(v);
-        }),
-        const _Hint('Без значка tsukiko исчезает из Dock и из ⌘Tab и живёт '
-            'только в строке меню. Окно оттуда же и открывается.'),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         Text(
           _whisper == null ? 'whisper-cli не найден' : 'Локально · whisper.cpp',
           style: Type.caption.copyWith(color: Surface.secondaryText(context)),

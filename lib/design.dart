@@ -4,6 +4,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/physics.dart';
 import 'package:macos_ui/macos_ui.dart';
 
+import 'engine.dart';
+
 /// Пружины и типографика по формулировкам Apple: не «длительность и кривая»,
 /// а «отклик» (за сколько дойти) и «затухание» (насколько перелетит).
 
@@ -137,6 +139,289 @@ class Surface {
 
   static Color secondaryText(BuildContext context) =>
       isDark(context) ? const Color(0x99FFFFFF) : const Color(0x8C000000);
+
+  /// Цвет подсказки в пустом поле ввода. Умолчание macos_ui —
+  /// CupertinoColors.placeholderText, а он разрешается через CupertinoTheme,
+  /// которого под MacosApp нет: на тёмной теме получалось тёмное на тёмном.
+  static TextStyle placeholder(BuildContext context) =>
+      TextStyle(color: secondaryText(context));
+}
+
+// ── общие элементы настроек ─────────────────────────────────────────────────
+//
+// Одни и те же строки стоят в инспекторе главного окна и в окне настроек:
+// это разные изоляты, и без общего места они разошлись бы видом.
+
+/// Поле ввода с читаемой подсказкой на обеих темах.
+class AppTextField extends StatelessWidget {
+  const AppTextField({
+    super.key,
+    required this.controller,
+    this.placeholder,
+    this.maxLines = 1,
+    this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String? placeholder;
+  final int maxLines;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) => MacosTextField(
+        controller: controller,
+        placeholder: placeholder,
+        placeholderStyle: Surface.placeholder(context),
+        maxLines: maxLines,
+        onChanged: onChanged,
+      );
+}
+
+class SectionTitle extends StatelessWidget {
+  const SectionTitle(this.text, {super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 20, bottom: 7),
+        child: Text(
+          text.toUpperCase(),
+          style: Type.sectionHeader.copyWith(color: Surface.secondaryText(context)),
+        ),
+      );
+}
+
+class Hint extends StatelessWidget {
+  const Hint(this.text, {super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Text(
+          text,
+          style: Type.caption.copyWith(
+            color: Surface.secondaryText(context),
+            height: 1.4,
+          ),
+        ),
+      );
+}
+
+class Check extends StatefulWidget {
+  const Check(this.label, this.value, this.onChanged, {super.key});
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  State<Check> createState() => _CheckState();
+}
+
+class _CheckState extends State<Check> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () => widget.onChanged(!widget.value),
+          child: AnimatedContainer(
+            duration: Motion.dur(context, Motion.press),
+            curve: Curves.easeOut,
+            margin: const EdgeInsets.symmetric(vertical: 1),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            decoration: BoxDecoration(
+              color: _hover ? Surface.hover(context) : MacosColors.transparent,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                MacosCheckbox(value: widget.value, onChanged: widget.onChanged),
+                const SizedBox(width: 9),
+                Expanded(child: Text(widget.label, style: Type.control)),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+/// Сочетание клавиш: нажатие на чип включает захват, и следующая
+/// комбинация встаёт на его место. Ждём ровно столько же, сколько ждёт
+/// сторона macOS, иначе чип завис бы в «нажмите сочетание» навсегда.
+class HotkeyRow extends StatefulWidget {
+  const HotkeyRow({
+    super.key,
+    required this.label,
+    required this.keys,
+    required this.onTap,
+  });
+  final String label, keys;
+  final Future<void> Function() onTap;
+
+  @override
+  State<HotkeyRow> createState() => _HotkeyRowState();
+}
+
+class _HotkeyRowState extends State<HotkeyRow> {
+  bool _hover = false, _waiting = false;
+
+  Future<void> _tap() async {
+    setState(() => _waiting = true);
+    await widget.onTap();
+    if (mounted) setState(() => _waiting = false);
+  }
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: _waiting ? null : _tap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Expanded(child: Text(widget.label, style: Type.control)),
+                AnimatedContainer(
+                  duration: Motion.dur(context, Motion.quick),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _hover || _waiting
+                        ? Surface.pressed(context)
+                        : Surface.hover(context),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Text(
+                    _waiting ? 'Нажмите сочетание…' : widget.keys,
+                    style: Type.control,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+/// Путь как объект, а не как строка настройки: по нему можно щёлкнуть
+/// и попасть в саму папку.
+class LibraryPath extends StatefulWidget {
+  const LibraryPath({
+    super.key,
+    required this.path,
+    required this.onReveal,
+    required this.onChange,
+  });
+  final String path;
+  final VoidCallback onReveal, onChange;
+
+  @override
+  State<LibraryPath> createState() => _LibraryPathState();
+}
+
+class _LibraryPathState extends State<LibraryPath> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final short = widget.path.replaceFirst(home, '~');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        MacosTooltip(
+          message: 'Показать в Finder',
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _hover = true),
+            onExit: (_) => setState(() => _hover = false),
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: widget.onReveal,
+              child: AnimatedContainer(
+                duration: Motion.dur(context, Motion.quick),
+                curve: Motion.curve(context, Motion.quickCurve),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                decoration: BoxDecoration(
+                  color: _hover ? Surface.hover(context) : MacosColors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(color: Surface.hairline(context)),
+                ),
+                child: Row(
+                  children: [
+                    MacosIcon(CupertinoIcons.folder,
+                        size: 14, color: Surface.secondaryText(context)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        short,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Type.control,
+                      ),
+                    ),
+                    AnimatedOpacity(
+                      duration: Motion.dur(context, Motion.quick),
+                      opacity: _hover ? 1 : 0,
+                      child: MacosIcon(CupertinoIcons.arrow_up_right_square,
+                          size: 13, color: Surface.secondaryText(context)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        PushButton(
+          controlSize: ControlSize.regular,
+          secondary: true,
+          onPressed: widget.onChange,
+          child: const Text('Выбрать другую папку…'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Ход загрузки модели. Пока файл едет, кнопок нет: вторая полуторагиговая
+/// качка рядом с первой только замедлит обе.
+class ModelDownload extends StatelessWidget {
+  const ModelDownload({super.key, required this.active, required this.onCancel});
+
+  final Download active;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Загружаем ${active.title}', style: Type.control),
+          const SizedBox(height: 7),
+          ProgressBar(value: active.percent.toDouble()),
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  active.progressLabel,
+                  style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+                ),
+              ),
+              PushButton(
+                controlSize: ControlSize.small,
+                secondary: true,
+                onPressed: onCancel,
+                child: const Text('Отменить'),
+              ),
+            ],
+          ),
+        ],
+      );
 }
 
 // ── контекстное меню ────────────────────────────────────────────────────────

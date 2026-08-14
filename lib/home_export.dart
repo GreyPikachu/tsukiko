@@ -138,20 +138,6 @@ extension _Export on _HomePageState {
     _edit((o) => o.copyWith(model: f.path));
   }
 
-  Future<void> _pickLibrary() async {
-    final dir = await getDirectoryPath(
-      confirmButtonText: 'Выбрать',
-      initialDirectory:
-          Directory(_libraryPath).existsSync() ? _libraryPath : '$home/Documents',
-    );
-    if (dir == null) return;
-    _set(() {
-      _libraryPath = dir;
-      _status = 'Библиотека: $dir';
-    });
-    _persist();
-  }
-
   Future<void> _pickVadModel() async {
     final f = await openFile(
         acceptedTypeGroups: const [XTypeGroup(label: 'GGML VAD', extensions: ['bin'])]);
@@ -184,15 +170,6 @@ extension _Export on _HomePageState {
       if (path != null) _rescanModels();
     });
     return path;
-  }
-
-  /// Скачать модель распознавания. Первая в системе сразу становится
-  /// выбранной: иначе человек скачал файл и всё равно видит «Не выбрана».
-  /// Пропавший с диска файл — то же самое, что и не выбранный.
-  Future<void> _downloadModel(ModelOffer m) async {
-    final wasEmpty = _shown.model.isEmpty || !File(_shown.model).existsSync();
-    final path = await _runDownload(Download(m.url, m.path, title: m.title));
-    if (path != null && wasEmpty) _edit((o) => o.copyWith(model: path));
   }
 
   /// Галка VAD включена, а файла модели ещё нет. Диктовка качает его сама

@@ -330,6 +330,11 @@ class DictationController extends ChangeNotifier {
 
   Future<void> openMainWindow() => platform.openMainWindow();
 
+  /// Настройки диктовки живут в своём окне. Без значка в Dock строки меню
+  /// у приложения нет, и эта кнопка — единственная дорога туда.
+  Future<void> openSettings([String tab = 'dictation']) =>
+      platform.openSettings(tab);
+
   Future<void> requestPermission() => platform.requestPermission();
 
   Future<void> openPermissionSettings() => platform.openPermissionSettings();
@@ -705,7 +710,7 @@ class _Model extends StatelessWidget {
               PushButton(
                 controlSize: ControlSize.small,
                 secondary: true,
-                onPressed: c.openMainWindow,
+                onPressed: () => c.openSettings('models'),
                 child: const Text('Загрузить другую…'),
               ),
               if (c.server.up) ...[
@@ -747,6 +752,8 @@ class _Footer extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 5),
         child: Column(
           children: [
+            _MenuRow('Настройки диктовки…', () => c.openSettings('dictation'),
+                shortcut: '⌘,'),
             _MenuRow('Открыть tsukiko…', c.openMainWindow),
             _MenuRow('Завершить tsukiko', c.quit, shortcut: '⌘Q'),
           ],
