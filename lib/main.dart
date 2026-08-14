@@ -121,6 +121,10 @@ class _HomePageState extends State<HomePage> {
   Directory? _tmp;
   Timer? _modelTimer, _saveTimer;
   ModelUse _modelUse = const ModelUse(ModelState.free);
+
+  /// Модель занял наш же сервер диктовки. Считается раз в опрос: узнаётся
+  /// это по pid из файла, а ходить в `ps` на каждый кадр незачем.
+  bool _dictationHoldsModel = false;
   Set<String> _modelUsers = <String>{};
   CpuSample _cpu = const CpuSample.empty();
   bool _polling = false;
@@ -289,6 +293,30 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  /// Кто держит модель, человеческими словами. Своё называем по делу:
+  /// «whisper-server» — это мы сами, и человеку такое имя ничего не
+  /// говорит. Чужих соседей по-прежнему называем их именами.
+  bool get _weAreTranscribing =>
+      _running && _jobs.any((j) => j.state == JobState.transcribing);
+
+  String get _modelUseBy => _weAreTranscribing
+      ? 'расшифровка'
+      : _dictationHoldsModel
+          ? 'диктовка'
+          : _modelUse.by;
+
+  String get _modelUseLabel => _weAreTranscribing
+      ? 'Занято расшифровкой'
+      : _dictationHoldsModel
+          ? 'Занято диктовкой'
+          : _modelUse.label;
+
+  String get _modelUseDetail => _weAreTranscribing
+      ? 'Расшифровываем запись прямо сейчас.'
+      : _dictationHoldsModel
+          ? 'Диктовка держит модель в памяти. Очередь ей уступает.'
+          : _modelUse.detail;
+
   /// Настройки, которые сейчас показывает инспектор: общие, если ничего
   /// не выбрано, иначе — настройки ведущей записи.
   RunOptions get _shown => _sel.isEmpty ? _defaults : (_lead?.overrides ?? _defaults);
@@ -358,12 +386,15 @@ class _HomePageState extends State<HomePage> {
       );
       _cpu = use.cpu;
       if (!mounted) return;
+      final ours = use.busy && use.pid != 0 && use.pid == ourServerPid();
       if (use.label != _modelUse.label ||
           use.detail != _modelUse.detail ||
+          ours != _dictationHoldsModel ||
           use.learned.length != _modelUsers.length) {
         setState(() {
           _modelUse = use;
           _modelUsers = use.learned;
+          _dictationHoldsModel = ours;
         });
       }
     } finally {
@@ -449,10 +480,10 @@ class _HomePageState extends State<HomePage> {
           showLabel: false,
           tooltipMessage: _running
               ? (_waitingForModel
-                  ? 'Ждём, пока ${_modelUse.by} закончит · остановить ⌘.'
+                  ? 'Ждём, пока $_modelUseBy закончит · остановить ⌘.'
                   : 'Остановить · ⌘.')
               : _yieldBusyModel && _modelUse.busy
-                  ? 'Модель занята (${_modelUse.by}) — начнём, как только освободится · ⌘⏎'
+                  ? 'Модель занята ($_modelUseBy) — начнём, как только освободится · ⌘⏎'
                   : 'Распознать очередь · ⌘⏎',
           onPressed: _running ? _stop : (_hasPending ? _start : null),
         ),
@@ -910,6 +941,9 @@ class _HomePageState extends State<HomePage> {
                 ),
               _ModelChip(
                 info: _modelUse,
+                label: _modelUseLabel,
+                detail: _modelUseDetail,
+                busy: _modelUse.busy || _weAreTranscribing,
                 yielding: _yieldBusyModel,
                 waiting: _waitingForModel,
                 onTap: () {

@@ -30,11 +30,23 @@ class _ToolbarTitle extends StatelessWidget {
 class _ModelChip extends StatefulWidget {
   const _ModelChip({
     required this.info,
+    required this.label,
+    required this.detail,
+    required this.busy,
     required this.yielding,
     required this.waiting,
     required this.onTap,
   });
   final ModelUse info;
+
+  /// Как назвать занятость и что рассказать в подсказке. Приходят готовыми:
+  /// своё («Занято диктовкой») и чужое («Модель занята · Dictara») зовутся
+  /// по-разному, а знает об этом окно, а не значок.
+  final String label, detail;
+
+  /// Занято ли — с нашей собственной расшифровкой вместе.
+  final bool busy;
+
   final bool yielding;
 
   /// Наша очередь прямо сейчас стоит из-за этого.
@@ -50,13 +62,15 @@ class _ModelChipState extends State<_ModelChip> {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (widget.info.state) {
-      ModelState.busy => MacosColors.systemOrangeColor,
-      ModelState.loading => MacosColors.systemYellowColor,
-      ModelState.free => MacosColors.systemGreenColor,
-    };
+    final color = widget.busy && widget.info.state == ModelState.free
+        ? MacosColors.systemOrangeColor
+        : switch (widget.info.state) {
+            ModelState.busy => MacosColors.systemOrangeColor,
+            ModelState.loading => MacosColors.systemYellowColor,
+            ModelState.free => MacosColors.systemGreenColor,
+          };
     return MacosTooltip(
-      message: '${widget.info.detail}\n'
+      message: '${widget.detail}\n'
           '${widget.yielding ? 'Очередь ждёт, пока модель освободится. Нажмите, чтобы не ждать.' : 'Работаем, даже если модель занята. Нажмите, чтобы уступать.'}',
       child: MouseRegion(
         onEnter: (_) => setState(() => _hover = true),
@@ -80,7 +94,7 @@ class _ModelChipState extends State<_ModelChip> {
                 _Dot(color: color, pulsing: widget.waiting),
                 const SizedBox(width: 7),
                 Text(
-                  widget.info.label,
+                  widget.label,
                   style: Type.caption.copyWith(
                     color: Surface.secondaryText(context),
                     decoration: widget.yielding ? null : TextDecoration.lineThrough,

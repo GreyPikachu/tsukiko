@@ -73,7 +73,7 @@ extension _Transcribe on _HomePageState {
       if (!waited || job.state != JobState.waiting) {
         _set(() {
           job.state = JobState.waiting;
-          _status = 'Уступаем: ${_modelUse.by} распознаёт речь';
+          _status = 'Уступаем: $_modelUseBy распознаёт речь';
         });
       }
       waited = true;
@@ -110,7 +110,7 @@ extension _Transcribe on _HomePageState {
     if (!_yieldBusyModel && _modelUse.busy && !_busyByDictation) {
       final go = await _confirm(
         'Модель уже занята',
-        '${_modelUse.detail}\n'
+        '$_modelUseDetail\n'
         'Одновременная работа замедлит обе стороны. Продолжить?',
       );
       if (!go) return;
