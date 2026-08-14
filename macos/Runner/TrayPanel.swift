@@ -89,9 +89,11 @@ final class PanelController: NSObject, NSWindowDelegate {
     panel.animationBehavior = .utilityWindow
 
     // Настоящий материал системы под содержимым: панель должна выглядеть
-    // как поповер, а не как окно с закрашенным фоном.
+    // как поповер, а не как окно с закрашенным фоном. Материал тот же,
+    // что у панели записи: две плавающие поверхности одного приложения,
+    // и стекло у них обязано быть одним и тем же.
     let effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
-    effect.material = .popover
+    effect.material = .hudWindow
     effect.blendingMode = .behindWindow
     effect.state = .active
     effect.wantsLayer = true
