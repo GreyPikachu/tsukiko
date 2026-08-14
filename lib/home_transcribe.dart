@@ -26,24 +26,35 @@ extension _Transcribe on _HomePageState {
     await _start();
   }
 
-  /// Модель держит наш же сервер диктовки — уступать себе бессмысленно.
-  /// Гасим его и работаем: на следующей диктовке он поднимется заново
-  /// за 0,6 с. Чужого соседа это не касается — ему по-прежнему уступаем.
-  void _freeOwnServer() {
-    if (!_modelUse.busy) return;
-    final ours = ourServerPid();
-    if (ours == null || ours != _modelUse.pid) return;
-    try {
-      Process.killPid(ours, ProcessSignal.sigterm);
-    } catch (_) {
-      return;
+  /// Занята ли модель нашей же диктовкой. Своего от чужого отличаем по
+  /// pid, который сами и записали: рядом может работать чужой
+  /// whisper-server, по имени процесса они неразличимы.
+  bool get _busyByDictation =>
+      _modelUse.busy && _modelUse.pid != 0 && _modelUse.pid == ourServerPid();
+
+  /// Диктовка главнее очереди: одновременно две копии модели в память
+  /// не помещаются, а фраза длится секунды и прерванная пропадает совсем.
+  /// Поэтому очередь спрашивает разрешения у диктовки и ждёт, пока та
+  /// говорит; простаивающий сервер она отдаёт сразу.
+  ///
+  /// Текущий файл при этом дорабатывается до конца: спрашиваем перед
+  /// запуском следующего, а не посреди распознавания.
+  Future<bool> _yieldToDictation(Job job) async {
+    var paused = false;
+    while (!_stopRequested && !await _mac.requestModel()) {
+      if (!paused) {
+        _set(() {
+          job.state = JobState.waiting;
+          _status = 'Пауза — идёт диктовка';
+        });
+        paused = true;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
     }
-    // Занятость опрашивается раз в 700 мс, а состояние уже известно: без
-    // этого очередь стояла бы, ожидая процесс, которого больше нет.
-    _set(() {
-      _modelUse = const ModelUse(ModelState.free);
-      _status = 'Освободили модель от диктовки';
-    });
+    if (paused && !_stopRequested) {
+      _set(() => _status = 'Диктовка закончилась — продолжаем');
+    }
+    return !_stopRequested;
   }
 
   /// Пока модель занята кем-то другим — стоим и не поднимаем свою.
@@ -51,9 +62,14 @@ extension _Transcribe on _HomePageState {
   /// второй такой же опрос рядом только жёг бы процессор.
   /// Возвращает false, если ожидание прервали кнопкой «Остановить».
   Future<bool> _yieldWhileBusy(Job job) async {
-    _freeOwnServer();
+    if (!await _yieldToDictation(job)) return false;
     var waited = false;
-    while (_yieldBusyModel && !_stopRequested && _modelUse.busy) {
+    // Свою диктовку из этого счёта исключаем: с ней договорились выше,
+    // а опрос отстаёт на 700 мс и показывал бы уже погашенный сервер.
+    while (_yieldBusyModel &&
+        !_stopRequested &&
+        _modelUse.busy &&
+        !_busyByDictation) {
       if (!waited || job.state != JobState.waiting) {
         _set(() {
           job.state = JobState.waiting;
@@ -91,8 +107,7 @@ extension _Transcribe on _HomePageState {
     }
     if (!_hasPending) return;
 
-    _freeOwnServer();
-    if (!_yieldBusyModel && _modelUse.busy) {
+    if (!_yieldBusyModel && _modelUse.busy && !_busyByDictation) {
       final go = await _confirm(
         'Модель уже занята',
         '${_modelUse.detail}\n'

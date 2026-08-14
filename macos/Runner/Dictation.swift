@@ -196,6 +196,16 @@ final class DictationBridge: NSObject {
         other.invokeMethod("reload", arguments: nil)
       }
       reply(nil)
+    case "requestModel":
+      // Спрашивает очередь, отвечает диктовка: только её изолят знает,
+      // говорит ли человек прямо сейчас. Без панели отказывать некому.
+      guard let panel = channel else {
+        reply(true)
+        return
+      }
+      panel.invokeMethod("yieldModel", arguments: nil, result: { answer in
+        reply((answer as? Bool) ?? true)
+      })
     case "openSettings":
       showSettings(tab: (args?["tab"] as? String) ?? "dictation")
       reply(nil)
