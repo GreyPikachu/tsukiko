@@ -495,4 +495,44 @@ void main() {
     expect(server.up, isFalse);
     expect(server.untilUnload, isNull);
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('сирота узнаётся по метке в аргументах, а чужой сервер — нет', () {
+    final ps = '  501 1657392 /opt/homebrew/bin/whisper-server -m /Users/x/m.bin'
+        ' --tmp-dir /tmp/tsukiko-whisper\n'
+        '  502   42000 /opt/homebrew/bin/whisper-server -m /Users/x/чужая.bin'
+        ' --port 9000\n'
+        '  503 1600000 /opt/homebrew/bin/whisper-server -m /Users/x/m.bin -vm '
+        '$supportDir/models/silero.bin\n'
+        '  504    9000 /Applications/Dictara.app/Contents/MacOS/Dictara\n';
+    final ours = ourServersIn(ps);
+    // Свои — по новой метке и по старой, папке приложения. Чужой сервер
+    // и чужое приложение остаются нетронутыми.
+    expect(ours.map((s) => s.pid), [501, 503]);
+    expect(ours.first.rssKb, 1657392);
+  });
+
+  test('забытый сервер находится без pid-файла и гасится наверняка', () async {
+    // Настоящий whisper-server ради этого не поднимаем: проверять надо две
+    // вещи — что процесс с нашей меткой виден в ps и что упрямый процесс
+    // всё-таки гибнет. «trap "" TERM» — это и есть поведение
+    // whisper-server, из-за которого сирота жила часами.
+    final fake = await Process.start('/bin/sh', [
+      '-c',
+      'trap "" TERM; sleep 30 # whisper-server $serverMark',
+    ]);
+    addTearDown(() => Process.killPid(fake.pid, ProcessSignal.sigkill));
+
+    final ps = await Process.run('ps', ['-axo', 'pid=,rss=,args=']);
+    final found = ourServersIn(ps.stdout as String).map((s) => s.pid);
+    expect(found, contains(fake.pid), reason: 'pid-файла нет, а процесс виден');
+
+    expect(processAlive(fake.pid), isTrue);
+    // SIGTERM его не берёт — из-за этого сервер и оставался жить.
+    Process.killPid(fake.pid, ProcessSignal.sigterm);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(processAlive(fake.pid), isTrue);
+
+    expect(killForSure(fake.pid), isTrue);
+    expect(processAlive(fake.pid), isFalse);
+  }, timeout: const Timeout(Duration(seconds: 30)));
 }
