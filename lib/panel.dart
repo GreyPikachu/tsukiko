@@ -663,30 +663,40 @@ class _Model extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            pair.fast.isEmpty
+                ? 'Модель не найдена'
+                : modelDisplayName(
+                    c.settings.model.isNotEmpty ? c.settings.model : c.options.model),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Type.fileName,
+          ),
+          const SizedBox(height: 3),
+          Text(pair.fast.isEmpty ? 'Распознавать нечем' : state, style: grey),
+          // Кнопки под текстом, как в блоке последней расшифровки: два
+          // соседних блока, устроенных по-разному, читаются как два разных
+          // языка в одной панели.
+          const SizedBox(height: 9),
           Row(
             children: [
-              Expanded(
-                child: Text(
-                  pair.fast.isEmpty
-                      ? 'Модель не найдена'
-                      : modelDisplayName(
-                          c.settings.model.isNotEmpty ? c.settings.model : c.options.model),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Type.fileName,
-                ),
+              PushButton(
+                controlSize: ControlSize.small,
+                secondary: true,
+                onPressed: c.openMainWindow,
+                child: const Text('Загрузить другую…'),
               ),
-              if (c.server.up)
+              if (c.server.up) ...[
+                const SizedBox(width: 6),
                 PushButton(
                   controlSize: ControlSize.small,
                   secondary: true,
                   onPressed: c.unload,
                   child: const Text('Выгрузить'),
                 ),
+              ],
             ],
           ),
-          const SizedBox(height: 3),
-          Text(pair.fast.isEmpty ? 'Распознавать нечем' : state, style: grey),
           // Переключать нечего, пока модель одна: мёртвый переключатель
           // врёт, будто выбор есть.
           if (pair.fast.isNotEmpty && pair.fast != pair.accurate) ...[
