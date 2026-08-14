@@ -63,7 +63,7 @@ abstract class TextInserter {
 }
 
 /// Что показывает плавающая панель записи.
-enum HudState { hidden, recording, transcribing, done }
+enum HudState { hidden, recording, transcribing, done, failed }
 
 abstract class PanelPresenter {
   /// Плавающая панель поверх всех окон: пока она на экране, видно,

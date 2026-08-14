@@ -13,7 +13,7 @@ import SwiftUI
 /// перелёта не имеет: жеста, который нёс бы импульс, здесь не было.
 
 enum HUDState: String {
-  case hidden, recording, transcribing, done
+  case hidden, recording, transcribing, done, failed
 }
 
 final class HUDModel: ObservableObject {
@@ -59,6 +59,17 @@ struct HUDView: View {
           .font(.system(size: 15))
           .foregroundColor(.green)
         Text("Готово")
+          .font(.system(size: 13, weight: .medium))
+          .lineLimit(1)
+          .fixedSize()
+        Spacer(minLength: 0)
+      case .failed:
+        // Молча исчезнуть после неудачи — значит соврать, что всё в порядке.
+        // Подробности и путь к сохранённой записи ждут в панели диктовки.
+        Image(systemName: "exclamationmark.triangle.fill")
+          .font(.system(size: 15))
+          .foregroundColor(.orange)
+        Text("Не распознано · запись сохранена")
           .font(.system(size: 13, weight: .medium))
           .lineLimit(1)
           .fixedSize()
@@ -292,13 +303,25 @@ final class RecordingHUD {
 
   /// Короткое подтверждение — и уходит.
   func finish() {
+    linger(.done, seconds: 0.7)
+  }
+
+  /// Неудача висит дольше подтверждения: её надо успеть прочитать.
+  func failed() {
+    linger(.failed, seconds: 2.6)
+  }
+
+  private func linger(_ state: HUDState, seconds: TimeInterval) {
     guard panel?.isVisible == true else {
       hide()
       return
     }
-    model.state = .done
+    ticker?.invalidate()
+    ticker = nil
+    model.state = state
     hideAfterDone?.invalidate()
-    hideAfterDone = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: false) { [weak self] _ in
+    hideAfterDone = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) {
+      [weak self] _ in
       self?.hide()
     }
   }

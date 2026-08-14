@@ -68,6 +68,29 @@ void sweepRecordings() {
   } catch (_) {}
 }
 
+/// Запись, которую не удалось распознать, — единственный экземпляр
+/// сказанного, и стирать её нельзя. Уносим из временной папки (её
+/// подметает `sweepRecordings`) в библиотеку, откуда файл видно и можно
+/// перетащить в очередь. Возвращает путь или null, если и это не вышло.
+String? rescueRecording(String path) {
+  try {
+    final root =
+        (Settings.load()['libraryPath'] as String?) ?? defaultLibraryPath;
+    final dir = Directory('$root/Не распознано')..createSync(recursive: true);
+    final t = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final dest = '${dir.path}/Диктовка ${t.year}-${two(t.month)}-${two(t.day)} '
+        '${two(t.hour)}-${two(t.minute)}-${two(t.second)}.wav';
+    File(path).copySync(dest);
+    try {
+      File(path).deleteSync();
+    } catch (_) {}
+    return dest;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Whisper на тишине сочиняет: «(музыка)», «[BLANK_AUDIO]», «Субтитры
 /// сделал…». Всё, что целиком в скобках, — не речь, а галлюцинация.
 final _bracketed = RegExp(r'^[\[\(\*][^\]\)\*]*[\]\)\*]$');
@@ -105,7 +128,14 @@ class WhisperServer {
   DateTime? _deadline;
   Future<void>? _starting;
 
+  /// Незакрытые аренды. Сервер поднимается в начале записи, а работы у него
+  /// до конца фразы никакой — таймер простоя успевал догореть и выгружал
+  /// модель посреди длинной записи, после чего распознавать было нечем.
+  /// Пока аренда открыта, таймер не идёт вовсе.
+  int _holds = 0;
+
   bool get up => _proc != null;
+  bool get held => _holds > 0;
   int get port => _port;
   String get model => _model;
 
@@ -201,9 +231,12 @@ class WhisperServer {
     return false;
   }
 
-  Future<String> transcribe(String wav, {String lang = 'auto'}) async {
-    if (_proc == null) return '';
-    if (!await waitReady()) return '';
+  /// Пустая строка — человек промолчал; null — распознать не удалось.
+  /// Разница принципиальна: на молчание нечего показывать, а провал должен
+  /// быть виден, иначе запись пропадает в тишине.
+  Future<String?> transcribe(String wav, {String lang = 'auto'}) async {
+    if (_proc == null) return null;
+    if (!await waitReady()) return null;
     _touch();
 
     const boundary = '----tsukiko-dictation';
@@ -226,19 +259,34 @@ class WhisperServer {
       req.add(body.takeBytes());
       final res = await req.close();
       final text = await res.transform(utf8.decoder).join();
-      if (res.statusCode != 200) return '';
+      if (res.statusCode != 200) return null;
       final data = jsonDecode(text);
       return tidyDictated((data is Map ? data['text'] : null)?.toString() ?? '');
     } catch (_) {
-      return '';
+      return null;
     } finally {
       client.close(force: true);
       _touch();
     }
   }
 
+  /// Держать сервер живым безусловно. Освобождать обязательно — иначе
+  /// модель останется в памяти навсегда.
+  void hold() {
+    _holds++;
+    _touch();
+  }
+
+  void release() {
+    if (_holds > 0) _holds--;
+    _touch();
+  }
+
   void _touch() {
     _idle?.cancel();
+    _idle = null;
+    _deadline = null;
+    if (_proc == null || _holds > 0) return;
     _deadline = DateTime.now().add(idleTimeout);
     _idle = Timer(idleTimeout, shutdown);
   }

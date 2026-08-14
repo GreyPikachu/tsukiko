@@ -454,6 +454,20 @@ void main() {
 
       // Таймер простоя сдвигается каждым обращением.
       expect(server.untilUnload!.inSeconds, greaterThan(25));
+
+      // Главное: пока идёт запись, простой не считается вовсе. Иначе модель
+      // выгружалась посреди длинной фразы, и надиктованное пропадало.
+      server.idleTimeout = const Duration(milliseconds: 300);
+      server.hold();
+      await Future<void>.delayed(const Duration(seconds: 1));
+      expect(server.up, isTrue, reason: 'аренда обязана пережить таймаут');
+      expect(server.untilUnload, isNull);
+
+      // Отпущенная аренда возвращает всё как было: память не наша.
+      server.release();
+      expect(server.untilUnload!.inMilliseconds, lessThan(400));
+      await Future<void>.delayed(const Duration(seconds: 1));
+      expect(server.up, isFalse);
     } finally {
       server.shutdown();
       File(wav).deleteSync();

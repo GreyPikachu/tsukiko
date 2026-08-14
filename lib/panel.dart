@@ -67,6 +67,11 @@ class DictationController extends ChangeNotifier {
   /// не было бы до следующего запуска.
   String? vadError;
 
+  /// Последняя неудача распознавания и путь к спасённой записи. Висят
+  /// в панели, пока не начнётся следующая диктовка.
+  String? failure;
+  String? failurePath;
+
   String? _wav;
   DateTime? _startedAt;
   Timer? _meter;
@@ -178,11 +183,19 @@ class DictationController extends ChangeNotifier {
 
   Future<void> start() async {
     if (phase != Phase.idle) return;
+    failure = null;
+    failurePath = null;
     // Сервер поднимается параллельно записи: пока человек говорит, модель
     // успевает загрузиться, и после отпускания клавиши ждать уже нечего.
+    // Аренда держит его живым всю запись: без неё таймер простоя выгружал
+    // модель посреди длинной фразы, и распознавать было уже нечем.
+    server.hold();
     unawaited(server.ensureUp(options));
     final path = await platform.startRecording();
-    if (path == null) return;
+    if (path == null) {
+      server.release();
+      return;
+    }
     _wav = path;
     _startedAt = DateTime.now();
     phase = Phase.recording;
@@ -206,20 +219,40 @@ class DictationController extends ChangeNotifier {
     final path = await platform.stopRecording() ?? _wav;
     _wav = null;
     var ok = false;
-    if (path != null) {
-      final text = await server.transcribe(path);
-      _discard(path);
-      if (text.isNotEmpty) {
-        last = text;
-        // «Только в буфер» — для тех, кто вставит сам и туда, куда решит.
-        ok = settings.insert
-            ? await platform.insert(text)
-            : await copyLast().then((_) => true);
+    try {
+      if (path != null) {
+        final text = await server.transcribe(path);
+        if (text == null) {
+          // Распознать не удалось. Запись — единственный экземпляр
+          // сказанного, и удалять её здесь было бы потерей данных.
+          final saved = rescueRecording(path);
+          failurePath = saved ?? path;
+          failure = saved == null
+              ? 'Распознать не удалось, и сохранить запись тоже: $path'
+              : 'Распознать не удалось — модель не ответила. '
+                  'Запись сохранена: $saved';
+        } else {
+          _discard(path);
+          if (text.isNotEmpty) {
+            last = text;
+            // «Только в буфер» — для тех, кто вставит сам и туда, куда решит.
+            ok = settings.insert
+                ? await platform.insert(text)
+                : await copyLast().then((_) => true);
+          }
+        }
       }
+    } finally {
+      server.release();
     }
     // Панель уходит с подтверждением, только если было что вставлять:
-    // галочка после тишины была бы неправдой.
-    await platform.hud(ok ? HudState.done : HudState.hidden);
+    // галочка после тишины была бы неправдой. А неудача не должна уходить
+    // молча — иначе человек так и не узнает, что записи он лишился.
+    await platform.hud(ok
+        ? HudState.done
+        : failure != null
+            ? HudState.failed
+            : HudState.hidden);
     phase = Phase.idle;
     notifyListeners();
   }
@@ -234,6 +267,7 @@ class DictationController extends ChangeNotifier {
     notifyListeners();
     _discard(await platform.stopRecording() ?? _wav);
     _wav = null;
+    server.release();
   }
 
   void _stopMeter() {
@@ -285,6 +319,13 @@ class DictationController extends ChangeNotifier {
   }
 
   void unload() => server.shutdown();
+
+  /// Показать спасённую запись в Finder — оттуда её перетаскивают
+  /// в очередь главного окна и распознают вручную.
+  Future<void> revealFailure() async {
+    final p = failurePath;
+    if (p != null) await revealInFinder(p);
+  }
 
   Future<void> openMainWindow() => platform.openMainWindow();
 
@@ -516,6 +557,15 @@ class _Notices extends StatelessWidget {
               onPressed: c.requestPermission,
               second: 'Открыть настройки',
               onSecond: c.openPermissionSettings,
+            ),
+          // Молчаливая потеря записи — худшее, что может случиться:
+          // человек договорил и не получил ничего. Говорим, что случилось
+          // и где лежит запись, чтобы её можно было распознать вручную.
+          if (c.failure != null)
+            _Warning(
+              c.failure!,
+              button: 'Показать запись',
+              onPressed: c.revealFailure,
             ),
           if (d != null)
             Padding(

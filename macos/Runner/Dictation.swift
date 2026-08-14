@@ -216,6 +216,7 @@ final class DictationBridge: NSObject {
       case "recording": hud.show()
       case "transcribing": hud.transcribing()
       case "done": hud.finish()
+      case "failed": hud.failed()
       default: hud.hide()
       }
       reply(nil)
