@@ -23,8 +23,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
   func show(tab: String, handler: @escaping FlutterMethodCallHandler) {
     self.tab = tab
     if window == nil {
+      // allowHeadlessExecution обязателен: без него run(withEntrypoint:)
+      // движок не запускает — тот ждёт вид, а подключённый вид стартует его
+      // уже точкой входа по умолчанию. Окно настроек показывало содержимое
+      // главного окна именно поэтому.
       let engine = FlutterEngine(
-        name: "tsukiko-settings", project: nil, allowHeadlessExecution: false)
+        name: "tsukiko-settings", project: nil, allowHeadlessExecution: true)
       engine.run(withEntrypoint: "settingsMain")
       RegisterGeneratedPlugins(registry: engine)
       let controller = FlutterViewController(engine: engine, nibName: nil, bundle: nil)
@@ -35,6 +39,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         backing: .buffered, defer: false)
       window.title = "Настройки"
       window.contentViewController = controller
+      // contentViewController перекраивает окно под свой вид, а вид Flutter
+      // на этот момент ещё нулевой: окно схлопывалось в 0×32 — в одну
+      // титульную полосу — и настройки просто не открывались. Размер задаём
+      // после присваивания, иначе contentRect выше не значит ничего.
+      window.setContentSize(NSSize(width: 580, height: 560))
       window.isReleasedWhenClosed = false
       window.delegate = self
       window.center()
