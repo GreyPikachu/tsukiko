@@ -56,7 +56,7 @@ class DictationController extends ChangeNotifier {
   double level = 0;
   Duration elapsed = Duration.zero;
   int memoryMb = 0;
-  Permissions perms = const Permissions();
+  bool allowed = true;
   List<String> models = findModels();
 
   /// Идёт загрузка модели тишины. Пока она идёт, диктовка работает без VAD.
@@ -134,13 +134,13 @@ class DictationController extends ChangeNotifier {
     // Значит спрятать его может только Dart, и как можно раньше.
     await platform.setDockIcon((Settings.load()['dockIcon'] as bool?) ?? true);
     await platform.bind(hold: settings.hold, toggle: settings.toggle);
-    perms = await platform.permissions();
+    allowed = await platform.permission();
     notifyListeners();
   }
 
   Future<void> _refresh() async {
     models = findModels();
-    perms = await platform.permissions();
+    allowed = await platform.permission();
     notifyListeners();
   }
 
@@ -150,13 +150,13 @@ class DictationController extends ChangeNotifier {
   }
 
   Future<void> _tickServer() async {
-    // Пока разрешения не выданы, спрашиваем о них снова: человек уходит
-    // выдавать их в другое приложение и возвращается к открытой панели.
+    // Пока разрешение не выдано, спрашиваем о нём снова: человек уходит
+    // выдавать его в другое приложение и возвращается к открытой панели.
     // Тот же вопрос заново создаёт перехват клавиш — без перезапуска.
-    if (!perms.ok) {
-      final now = await platform.permissions();
-      if (now.input != perms.input || now.insert != perms.insert) {
-        perms = now;
+    if (!allowed) {
+      final now = await platform.permission();
+      if (now != allowed) {
+        allowed = now;
         notifyListeners();
       }
     }
@@ -288,7 +288,9 @@ class DictationController extends ChangeNotifier {
 
   Future<void> openMainWindow() => platform.openMainWindow();
 
-  Future<void> openPermission(String which) => platform.openPermission(which);
+  Future<void> requestPermission() => platform.requestPermission();
+
+  Future<void> openPermissionSettings() => platform.openPermissionSettings();
 
   Future<void> quit() => platform.quit();
 }
@@ -503,19 +505,17 @@ class _Notices extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
       child: Column(
         children: [
-          // Разрешения выдаются по одному, и просить сразу оба — значит
-          // напугать вдвое. «Универсальный доступ» просим первым: он нужен
-          // и для вставки, и обычно открывает перехват клавиш.
-          if (!c.perms.insert)
+          // Разрешение одно, и просят его в два приёма: сначала системный
+          // запрос — он и заводит tsukiko в списке выключенным, — а уже
+          // потом настройки, где остаётся щёлкнуть переключатель.
+          if (!c.allowed)
             _Warning(
               'Без «Универсального доступа» tsukiko не перехватывает клавиши '
               'и не вставляет текст в активное окно.',
-              onPressed: () => c.openPermission('insert'),
-            )
-          else if (!c.perms.input)
-            _Warning(
-              'Не хватает «Мониторинга ввода» — клавиши не перехватываются.',
-              onPressed: () => c.openPermission('input'),
+              button: 'Запросить',
+              onPressed: c.requestPermission,
+              second: 'Открыть настройки',
+              onSecond: c.openPermissionSettings,
             ),
           if (d != null)
             Padding(
@@ -806,10 +806,18 @@ class _Segmented extends StatelessWidget {
 }
 
 class _Warning extends StatelessWidget {
-  const _Warning(this.text, {required this.onPressed, this.button = 'Открыть настройки'});
+  const _Warning(
+    this.text, {
+    required this.onPressed,
+    this.button = 'Открыть настройки',
+    this.second,
+    this.onSecond,
+  });
   final String text;
   final String button;
   final VoidCallback onPressed;
+  final String? second;
+  final VoidCallback? onSecond;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -824,11 +832,24 @@ class _Warning extends StatelessWidget {
           children: [
             Text(text, style: Type.caption.copyWith(height: 1.35)),
             const SizedBox(height: 7),
-            PushButton(
-              controlSize: ControlSize.small,
-              secondary: true,
-              onPressed: onPressed,
-              child: Text(button),
+            Row(
+              children: [
+                PushButton(
+                  controlSize: ControlSize.small,
+                  secondary: true,
+                  onPressed: onPressed,
+                  child: Text(button),
+                ),
+                if (second != null) ...[
+                  const SizedBox(width: 6),
+                  PushButton(
+                    controlSize: ControlSize.small,
+                    secondary: true,
+                    onPressed: onSecond,
+                    child: Text(second!),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
