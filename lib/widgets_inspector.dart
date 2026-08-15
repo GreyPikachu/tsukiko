@@ -39,8 +39,7 @@ class _ScopeBanner extends StatelessWidget {
     };
 
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Surface.hover(context),
         borderRadius: BorderRadius.circular(8),
@@ -55,14 +54,14 @@ class _ScopeBanner extends StatelessWidget {
                 size: 13,
                 color: Surface.secondaryText(context),
               ),
-              const SizedBox(width: 7),
+              const SizedBox(width: Gap.inner),
               Expanded(
                 child: Text(title,
                     maxLines: 1, overflow: TextOverflow.ellipsis, style: Type.fileName),
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: Gap.hint),
           Text(
             hint,
             style: Type.caption.copyWith(
@@ -71,7 +70,7 @@ class _ScopeBanner extends StatelessWidget {
             ),
           ),
           if (onReset != null) ...[
-            const SizedBox(height: 9),
+            const SizedBox(height: Gap.item),
             Row(
               children: [
                 PushButton(
@@ -80,7 +79,7 @@ class _ScopeBanner extends StatelessWidget {
                   onPressed: onReset,
                   child: const Text('Вернуть общие'),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: Gap.inner),
                 PushButton(
                   controlSize: ControlSize.small,
                   secondary: true,

@@ -978,7 +978,8 @@ class _HomePageState extends State<HomePage> {
     final own = _lead?.overrides;
     return ListView(
       controller: controller,
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
+      padding: const EdgeInsets.fromLTRB(
+          Gap.edgeNarrow, Gap.inner, Gap.edgeNarrow, Gap.section),
       children: [
         _ScopeBanner(
           selection: _sel.length,
@@ -995,13 +996,13 @@ class _HomePageState extends State<HomePage> {
           onDownload: _downloadModel,
         ),
         if (_download != null) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: Gap.inner),
           ModelDownload(
             active: _download!,
             onCancel: () => setState(() => _download?.cancel()),
           ),
         ],
-        const SizedBox(height: 8),
+        const SizedBox(height: Gap.inner),
         PushButton(
           controlSize: ControlSize.regular,
           secondary: true,
@@ -1022,7 +1023,7 @@ class _HomePageState extends State<HomePage> {
         Check('Ставить знаки препинания', o.punctuate,
             (v) => _edit((x) => x.copyWith(punctuate: v))),
         const Hint('Без этого модель на разговорной речи пишет сплошным нижним '
-            'регистром. Своя подсказка ниже заменяет режим.'),
+            'регистром. Своя подсказка ниже заменяет режим.', under: true),
         const SectionTitle('Разбивка на фрагменты'),
         MacosPopupButton<int>(
           value: o.maxLen,
@@ -1035,7 +1036,7 @@ class _HomePageState extends State<HomePage> {
           ],
           onChanged: (v) => _edit((x) => x.copyWith(maxLen: v ?? 0)),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Gap.item),
         Check('Резать по паузам (VAD)', o.vad, (v) {
           if (v && o.vadModel.isEmpty) {
             _enableVad();
@@ -1045,7 +1046,7 @@ class _HomePageState extends State<HomePage> {
         }),
         if (o.vad)
           Padding(
-            padding: const EdgeInsets.only(left: 24, top: 2),
+            padding: const EdgeInsets.only(left: 25, top: Gap.hint),
             child: Text(
               o.vadModel.isEmpty ? 'Нужен файл модели VAD' : o.vadModel.split('/').last,
               style: Type.caption.copyWith(color: Surface.secondaryText(context)),

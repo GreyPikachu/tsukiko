@@ -89,7 +89,8 @@ struct HUDView: View {
     // Поля шире, чем кажется нужным: содержимое, прижатое к скруглённому
     // краю, читается теснее, чем стоит на самом деле. Ширина панели растёт
     // на ту же величину, чтобы поля не съели место у кнопок.
-    .padding(.horizontal, 22)
+    // Двадцать, а не двадцать два: шаг сетки во всём приложении — четыре.
+    .padding(.horizontal, 20)
     .frame(height: 52)
     .animation(
       reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.4, dampingFraction: 1),
@@ -151,8 +152,8 @@ private struct HUDButton: View {
       .lineLimit(1)
       .fixedSize()
       .foregroundColor(filled ? .white : .primary)
-      .padding(.horizontal, 10)
-      .padding(.vertical, 5)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 6)
       .background(
         RoundedRectangle(cornerRadius: 6, style: .continuous)
           .fill(background)
