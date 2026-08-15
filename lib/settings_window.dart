@@ -31,7 +31,7 @@ void runSettings() {
 const settingsTabs = [
   (id: 'dictation', label: 'Диктовка', icon: CupertinoIcons.mic),
   (id: 'models', label: 'Модели', icon: CupertinoIcons.cube_box),
-  (id: 'library', label: 'Библиотека', icon: CupertinoIcons.folder),
+  (id: 'library', label: 'Файлы', icon: CupertinoIcons.folder),
   (id: 'general', label: 'Общие', icon: CupertinoIcons.gear),
 ];
 
@@ -422,42 +422,62 @@ class _SettingsBodyState extends State<SettingsBody> {
 
   // ── библиотека ────────────────────────────────────────────────────────────
 
+  /// Вкладка отвечает на один вопрос: что происходит с текстом, когда
+  /// запись распознана. Поэтому каждая галка говорит и что делает, и что
+  /// будет, если её выключить, — иначе выключать её страшно.
   List<Widget> _libraryTab() => [
-        const SectionTitle('Папка'),
+        const SectionTitle('Сохранять расшифровки автоматически'),
+        Check('Сохранять готовый текст на диск', _toLibrary, (v) {
+          setState(() => _toLibrary = v);
+          _saveApp({'toLibrary': v});
+        }),
+        const Hint('Как только запись распознана, текст сам ложится файлом '
+            'в папку ниже. Выключено — текст остаётся только в окне tsukiko, '
+            'и сохранять его придётся вручную: «Сохранить как…» или ⌘C.',
+            under: true),
+        const SectionTitle('Куда сохранять'),
         LibraryPath(
           path: _libraryPath,
           onReveal: () => revealInFinder(_libraryPath),
           onChange: _pickLibrary,
+          hint: 'Внутри папка на каждый месяц: $appName/'
+              '${monthFolder(DateTime.now())}/. Щёлкните по пути, чтобы '
+              'открыть папку в Finder.',
         ),
-        const SizedBox(height: 10),
-        Check('Складывать расшифровки сюда', _toLibrary, (v) {
-          setState(() => _toLibrary = v);
-          _saveApp({'toLibrary': v});
-        }),
         if (_toLibrary) ...[
-          const SectionTitle('Форматы'),
+          const SectionTitle('В каком виде сохранять'),
           for (final f in exportFormats)
-            Check('${f.label} · ${f.suffix}', _libraryFormats.contains(f.id), (v) {
+            // suffix у «текста с таймкодами» начинается с пробела: он
+            // дописывается к имени файла. В подписи этот пробел — дыра.
+            Check('${f.label} · ${f.suffix.trim()}', _libraryFormats.contains(f.id),
+                (v) {
               setState(() {
                 final next = [..._libraryFormats];
                 v ? next.add(f.id) : next.remove(f.id);
-                // Пустой набор при включённой библиотеке означал бы тишину.
+                // Пустой набор при включённом сохранении означал бы тишину.
                 _libraryFormats = next.isEmpty ? [f.id] : next;
               });
               _saveApp({'libraryFormats': _libraryFormats});
             }),
-          Hint(_libraryFormats.length > 1
-              ? 'Файлы раскладываются по месяцам, и у каждой записи своя папка — '
-                  'форматов больше одного.'
-              : 'Файлы раскладываются по месяцам: $appName/'
-                  '${monthFolder(DateTime.now())}/'),
+          Hint(
+              _libraryFormats.length > 1
+                  ? 'На каждую запись сохраняется столько файлов, сколько '
+                      'форматов отмечено, и у записи появляется своя папка. '
+                      'Совсем без форматов сохранять было бы нечего, поэтому '
+                      'последний снять нельзя.'
+                  : 'Один отмеченный формат — один файл на запись. Отметьте '
+                      'больше, и рядом лягут те же слова в другом виде.',
+              under: true),
         ],
-        const SectionTitle('Рядом с исходником'),
-        Check('Класть текст рядом с исходником', _saveNextToSource, (v) {
+        const SectionTitle('Копия рядом с аудиофайлом'),
+        Check('Класть текст рядом с исходной записью', _saveNextToSource, (v) {
           setState(() => _saveNextToSource = v);
           _saveApp({'saveNextToSource': v});
         }),
-        const Hint('Чистый текст без таймкодов, имя как у аудиофайла.'),
+        const Hint('Кроме папки выше: в ту же папку, где лежит сама запись, '
+            'ляжет .txt с её именем — чистый текст без таймкодов. '
+            'Выключено — рядом с записью ничего не появляется.',
+            under: true),
       ];
 
   Future<void> _pickLibrary() async {

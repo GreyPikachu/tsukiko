@@ -349,9 +349,15 @@ class LibraryPath extends StatefulWidget {
     required this.path,
     required this.onReveal,
     required this.onChange,
+    this.hint,
   });
   final String path;
   final VoidCallback onReveal, onChange;
+
+  /// Пояснение к самому пути. Стоит между путём и кнопкой, а не после
+  /// кнопки: снаружи оно оказывалось ближе к кнопке, чем кнопка к пути,
+  /// и читалось как пояснение к ней.
+  final String? hint;
 
   @override
   State<LibraryPath> createState() => _LibraryPathState();
@@ -408,7 +414,8 @@ class _LibraryPathState extends State<LibraryPath> {
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        if (widget.hint != null) Hint(widget.hint!),
+        const SizedBox(height: Gap.item),
         PushButton(
           controlSize: ControlSize.regular,
           secondary: true,
