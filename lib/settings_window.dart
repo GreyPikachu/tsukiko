@@ -158,7 +158,9 @@ class _SettingsBodyState extends State<SettingsBody> {
             _tabs(context),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(22, 4, 22, 26),
+                // Поля слева и справа одинаковые и одни на все вкладки.
+                padding: const EdgeInsets.fromLTRB(
+                    Gap.edge, Gap.inner, Gap.edge, Gap.section),
                 children: switch (_tab) {
                   'models' => _modelsTab(),
                   'library' => _libraryTab(),
@@ -239,17 +241,22 @@ class _SettingsBodyState extends State<SettingsBody> {
                 _saveDictation(() => _dictation.threads = v ?? _dictation.threads),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Gap.item),
         Check('Ставить знаки препинания', _dictation.punctuate,
             (v) => _saveDictation(() => _dictation.punctuate = v)),
-        const SizedBox(height: 10),
-        AppTextField(
-          controller: _promptCtrl,
-          placeholder: 'Имена, термины, названия',
-          maxLines: 2,
-          onChanged: (v) => _saveDictation(() => _dictation.prompt = v),
+        const SizedBox(height: Gap.item),
+        // Подпись стоит над полем, а не под ним: под полем она читалась
+        // как пояснение ко всему разделу.
+        _Field(
+          'Подсказка модели',
+          AppTextField(
+            controller: _promptCtrl,
+            placeholder: 'Имена, термины, названия',
+            maxLines: 2,
+            onChanged: (v) => _saveDictation(() => _dictation.prompt = v),
+          ),
         ),
-        const Hint('Подсказка модели: слова из неё она пишет правильнее.'),
+        const Hint('Слова из подсказки модель пишет правильнее.'),
         const SectionTitle('Модель в памяти'),
         _Field(
           'Держать модель',
@@ -270,11 +277,13 @@ class _SettingsBodyState extends State<SettingsBody> {
         const SectionTitle('Готовый текст'),
         Check('Вставлять текст в активное окно', _dictation.insert,
             (v) => _saveDictation(() => _dictation.insert = v)),
-        const Hint('Без этого готовый текст только ложится в буфер обмена.'),
+        const Hint('Без этого готовый текст только ложится в буфер обмена.',
+            under: true),
+        const SizedBox(height: Gap.item),
         Check('Показывать панель записи', _dictation.hud,
             (v) => _saveDictation(() => _dictation.hud = v)),
         const Hint('Плавающая полоска поверх окон: видно, что вас слушают, '
-            'и есть чем остановить мышью.'),
+            'и есть чем остановить мышью.', under: true),
       ];
 
   /// Назначение сочетания: следующая нажатая комбинация становится новой.
@@ -470,20 +479,23 @@ class _SettingsBodyState extends State<SettingsBody> {
           _mac.setDockIcon(v);
         }),
         const Hint('Без значка tsukiko исчезает из Dock и из ⌘Tab и живёт '
-            'только в строке меню. Окно и настройки открываются оттуда же.'),
+            'только в строке меню. Окно и настройки открываются оттуда же.',
+            under: true),
+        const SizedBox(height: Gap.item),
         Check('Ждать, если модель занята', _yieldBusyModel, (v) {
           setState(() => _yieldBusyModel = v);
           _saveApp({'yieldBusyModel': v});
         }),
         const Hint('Пока модель держит другая программа, очередь стоит и '
             'не отбирает у неё память и GPU. Своей диктовке очередь уступает '
-            'всегда: одна фраза короче одной записи.'),
+            'всегда: одна фраза короче одной записи.', under: true),
+        const SizedBox(height: Gap.item),
         Check('Показывать метки времени', _timestamps, (v) {
           setState(() => _timestamps = v);
           _saveApp({'timestamps': v});
         }),
         const Hint('Только на экране. Что попадёт в файл, решает выбранный '
-            'формат, а не эта галка.'),
+            'формат, а не эта галка.', under: true),
         const SectionTitle('Разрешения'),
         Row(
           children: [
@@ -498,7 +510,7 @@ class _SettingsBodyState extends State<SettingsBody> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Gap.item),
         if (!_allowed)
           Row(
             children: [
@@ -535,17 +547,16 @@ class _Field extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: Type.caption.copyWith(color: Surface.secondaryText(context))),
-            const SizedBox(height: 5),
-            child,
-          ],
-        ),
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: Type.caption.copyWith(color: Surface.secondaryText(context))),
+          // Подпись прижата к своему полю, а расстояние до следующей
+          // настройки задаётся снаружи и всегда больше.
+          const SizedBox(height: Gap.hint),
+          child,
+        ],
       );
 }
 

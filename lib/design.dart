@@ -63,6 +63,29 @@ class Motion {
   static double slide(BuildContext context, double px) => reduced(context) ? 0 : px;
 }
 
+/// Шкала отступов, шаг 4: других значений в приложении нет.
+///
+/// Смысл шкалы не в числах, а в порядке: пояснение стоит к своей подписи
+/// вчетверо ближе, чем следующий блок к концу предыдущего. Пока это
+/// соотношение держится, глаз сам собирает настройку и её пояснение в одно.
+class Gap {
+  /// Подпись и её пояснение — самое тесное расстояние в приложении.
+  static const hint = 4.0;
+
+  /// Внутри одной настройки: подпись над полем, кнопка под путём.
+  static const inner = 8.0;
+
+  /// Между соседними настройками одного раздела.
+  static const item = 16.0;
+
+  /// Перед заголовком раздела.
+  static const section = 24.0;
+
+  /// Поля слева и справа: в окне настроек одно, в узких панелях другое.
+  static const edge = 20.0;
+  static const edgeNarrow = 16.0;
+}
+
 /// Размер, насыщенность и межбуквенное — единым набором.
 /// Крупному тексту трекинг отрицательный, мелкому — положительный.
 class Type {
@@ -183,7 +206,7 @@ class SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 20, bottom: 7),
+        padding: const EdgeInsets.only(top: Gap.section, bottom: 6),
         child: Text(
           text.toUpperCase(),
           style: Type.sectionHeader.copyWith(color: Surface.secondaryText(context)),
@@ -191,13 +214,20 @@ class SectionTitle extends StatelessWidget {
       );
 }
 
+/// Пояснение к тому, что стоит НАД ним, и ни к чему больше: снизу отступа
+/// нет вовсе, сверху — самый маленький в шкале. Расстояние до следующей
+/// настройки задаёт та настройка, и оно всегда больше.
+///
+/// [under] — пояснение к галке: тогда оно встаёт под её подписью, а не под
+/// самой галкой, и колонка текста не рвётся.
 class Hint extends StatelessWidget {
-  const Hint(this.text, {super.key});
+  const Hint(this.text, {super.key, this.under = false});
   final String text;
+  final bool under;
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 6),
+        padding: EdgeInsets.only(top: Gap.hint, left: under ? 25 : 0),
         child: Text(
           text,
           style: Type.caption.copyWith(
@@ -231,8 +261,10 @@ class _CheckState extends State<Check> {
           child: AnimatedContainer(
             duration: Motion.dur(context, Motion.press),
             curve: Curves.easeOut,
-            margin: const EdgeInsets.symmetric(vertical: 1),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            // Слева поля нет: подсветка начинается ровно там же, где
+            // заголовки разделов и пояснения. Иначе у каждой галки свой
+            // левый край, и колонка рассыпается.
+            padding: const EdgeInsets.fromLTRB(0, 5, 6, 5),
             decoration: BoxDecoration(
               color: _hover ? Surface.hover(context) : MacosColors.transparent,
               borderRadius: BorderRadius.circular(6),

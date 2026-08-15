@@ -476,7 +476,8 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 14, 12),
+        padding: const EdgeInsets.fromLTRB(
+            Gap.edgeNarrow, Gap.item, Gap.edgeNarrow, Gap.item),
         child: Row(
           children: [
             Expanded(
@@ -484,7 +485,7 @@ class _Header extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Диктовка', style: Type.emptyTitle),
-                  const SizedBox(height: 1),
+                  const SizedBox(height: 2),
                   Text(
                     c.settings.enabled ? 'Включена' : 'Выключена',
                     style: Type.caption.copyWith(color: Surface.secondaryText(context)),
@@ -521,7 +522,8 @@ class _Live extends StatelessWidget {
     };
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(
+          Gap.edgeNarrow, Gap.item, Gap.edgeNarrow, Gap.item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -533,7 +535,7 @@ class _Live extends StatelessWidget {
                 height: 9,
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
-              const SizedBox(width: 9),
+              const SizedBox(width: Gap.inner),
               Expanded(
                 child: AnimatedSwitcher(
                   duration: Motion.dur(context, Motion.quick),
@@ -611,7 +613,7 @@ class _Notices extends StatelessWidget {
   Widget build(BuildContext context) {
     final d = c.vadDownload;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: Gap.edgeNarrow),
       child: Column(
         children: [
           // Разрешение одно, и просят его в два приёма: сначала системный
@@ -644,7 +646,7 @@ class _Notices extends StatelessWidget {
             ),
           if (d != null)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: Gap.inner),
               child: Text(
                 'Загружаем распознавание тишины · ${d.progressLabel}',
                 style: Type.caption.copyWith(color: Surface.secondaryText(context)),
@@ -669,13 +671,14 @@ class _Last extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        padding: const EdgeInsets.symmetric(
+            horizontal: Gap.edgeNarrow, vertical: Gap.item),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Последняя расшифровка',
                 style: Type.caption.copyWith(color: Surface.secondaryText(context))),
-            const SizedBox(height: 5),
+            const SizedBox(height: Gap.hint),
             Text(
               c.last.isEmpty ? 'Пока ничего не надиктовано.' : c.last,
               maxLines: 3,
@@ -690,7 +693,7 @@ class _Last extends StatelessWidget {
             // куда вставляла, а ждала наугад двести миллисекунд и попадала
             // в чужое окно. Осталось «Скопировать» и родное ⌘V.
             if (c.last.isNotEmpty) ...[
-              const SizedBox(height: 9),
+              const SizedBox(height: Gap.item),
               PushButton(
                 controlSize: ControlSize.small,
                 secondary: true,
@@ -727,7 +730,8 @@ class _Model extends StatelessWidget {
           ].join(' · ');
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: const EdgeInsets.symmetric(
+          horizontal: Gap.edgeNarrow, vertical: Gap.item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -741,12 +745,12 @@ class _Model extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: Type.fileName,
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: Gap.hint),
           Text(pair.fast.isEmpty ? 'Распознавать нечем' : state, style: grey),
           // Кнопки под текстом, как в блоке последней расшифровки: два
           // соседних блока, устроенных по-разному, читаются как два разных
           // языка в одной панели.
-          const SizedBox(height: 9),
+          const SizedBox(height: Gap.item),
           Row(
             children: [
               PushButton(
@@ -756,7 +760,7 @@ class _Model extends StatelessWidget {
                 child: const Text('Загрузить другую…'),
               ),
               if (c.server.up) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: Gap.inner),
                 PushButton(
                   controlSize: ControlSize.small,
                   secondary: true,
@@ -769,7 +773,7 @@ class _Model extends StatelessWidget {
           // Переключать нечего, пока модель одна: мёртвый переключатель
           // врёт, будто выбор есть.
           if (pair.fast.isNotEmpty && pair.fast != pair.accurate) ...[
-            const SizedBox(height: 9),
+            const SizedBox(height: Gap.item),
             _Segmented(
               options: [
                 (pair.fast, 'Быстрая'),
@@ -949,8 +953,8 @@ class _Warning extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+        margin: const EdgeInsets.only(bottom: Gap.inner),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: MacosColors.systemOrangeColor.withValues(alpha: 0.16),
           borderRadius: BorderRadius.circular(8),
@@ -959,7 +963,7 @@ class _Warning extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(text, style: Type.caption.copyWith(height: 1.35)),
-            const SizedBox(height: 7),
+            const SizedBox(height: Gap.item),
             Row(
               children: [
                 PushButton(
@@ -969,7 +973,7 @@ class _Warning extends StatelessWidget {
                   child: Text(button),
                 ),
                 if (second != null) ...[
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Gap.inner),
                   PushButton(
                     controlSize: ControlSize.small,
                     secondary: true,
