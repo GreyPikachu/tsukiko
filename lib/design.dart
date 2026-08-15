@@ -433,22 +433,29 @@ class ModelField extends StatelessWidget {
     required this.value,
     required this.onChosen,
     required this.onDownload,
-    this.hint = 'Не выбрана',
+    this.fallback,
   });
 
   final List<String> installed;
   final String value;
   final ValueChanged<String> onChosen;
   final ValueChanged<ModelOffer> onDownload;
-  final String hint;
+
+  /// Подпись пустого выбора там, где пустой выбор что-то значит: у диктовки
+  /// это «как у расшифровщика». Она же становится первым пунктом списка —
+  /// иначе, выбрав модель однажды, вернуться к общей было бы нечем.
+  /// Пусто — модель обязана быть выбрана, и пункта нет.
+  final String? fallback;
 
   @override
   Widget build(BuildContext context) {
-    final offers = modelCatalog.where((m) => !installed.contains(m.path)).toList();
+    final offers = modelOffers(installed);
+    final f = fallback;
     return MacosPopupButton<String>(
-      value: installed.contains(value) ? value : null,
-      hint: Text(hint),
+      value: installed.contains(value) ? value : (f == null ? null : ''),
+      hint: Text(f ?? 'Не выбрана'),
       items: [
+        if (f != null) MacosPopupMenuItem(value: '', child: Text(f)),
         for (final m in installed)
           MacosPopupMenuItem(value: m, child: Text(modelDisplayName(m))),
         if (offers.isNotEmpty && installed.isNotEmpty)
@@ -467,7 +474,7 @@ class ModelField extends StatelessWidget {
       ],
       onChanged: (v) {
         if (v == null) return;
-        if (installed.contains(v)) return onChosen(v);
+        if (v.isEmpty || installed.contains(v)) return onChosen(v);
         final offer = modelCatalog.firstWhere((m) => m.path == v);
         onDownload(offer);
       },

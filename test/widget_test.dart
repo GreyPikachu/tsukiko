@@ -378,7 +378,7 @@ void main() {
   });
 
   test('каталог моделей: ссылки в один репозиторий, файлы в свою папку', () {
-    expect(modelCatalog.length, 5);
+    expect(modelCatalog.length, 6);
     for (final m in modelCatalog) {
       expect(looksLikeSpeechModel(m.file), isTrue, reason: m.file);
       // Ложится в папку, которую findModels() уже просматривает, — иначе
@@ -398,7 +398,7 @@ void main() {
   test('модель везде называется одинаково', () {
     // Каталог, панель и инспектор берут имя из одной функции.
     expect(modelCatalog.map((m) => m.title).toList(),
-        ['Tiny', 'Base', 'Small', 'Medium', 'Large v3 Turbo']);
+        ['Tiny', 'Base', 'Small', 'Medium', 'Large v3 Turbo', 'Large v3']);
     expect(modelDisplayName('/x/ggml-large-v3-turbo.bin'), 'Large v3 Turbo');
     // Чужой файл: модель из папки Dictara и своя, выбранная руками.
     expect(

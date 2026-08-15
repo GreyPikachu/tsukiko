@@ -149,10 +149,15 @@ class DictationController extends ChangeNotifier {
     // Всё, с чем сервер запускается, он читает один раз — значит новое
     // увидит только с новым запуском. Память отдаём сразу, поднимется
     // он снова на следующей фразе.
+    //
+    // Модель сравниваем не по своей настройке, а по той, с которой сервер
+    // поднят: при «как у расшифровщика» своя настройка пуста и до и после,
+    // а модель под ней сменилась в главном окне — и диктовка молча
+    // продолжала бы говорить старой.
     if (was.prompt != settings.prompt ||
-        was.model != settings.model ||
         was.punctuate != settings.punctuate ||
-        was.threads != settings.threads) {
+        was.threads != settings.threads ||
+        (server.up && server.model != options.model)) {
       server.shutdown();
     }
     await _apply();
