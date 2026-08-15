@@ -1072,14 +1072,17 @@ class _HomePageState extends State<HomePage> {
 
         // Диктовка, модели, библиотека и поведение приложения переехали
         // в своё окно. Дорога туда должна быть видна и отсюда.
-        const SizedBox(height: 22),
+        const SizedBox(height: Gap.section),
+        // Открываем «Файлы», а не «Диктовку»: из расшифровщика следующий
+        // вопрос — куда денется готовый текст, а диктовка отсюда не видна
+        // вовсе. Вкладки в окне рядом, промахнуться некуда.
         PushButton(
           controlSize: ControlSize.regular,
           secondary: true,
-          onPressed: () => _openSettings(),
+          onPressed: () => _openSettings('library'),
           child: const Text('Настройки… ⌘,'),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: Gap.item),
         Text(
           _whisper == null ? 'whisper-cli не найден' : 'Локально · whisper.cpp',
           style: Type.caption.copyWith(color: Surface.secondaryText(context)),
