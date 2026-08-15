@@ -266,6 +266,13 @@ final class DictationBridge: NSObject {
     }
   }
 
+  /// Настройки из строки меню: ⌘, в меню приложения. Кроме этого пути
+  /// туда ведут кнопка в инспекторе и пункт поповера — все три приходят
+  /// в одно место.
+  static func openSettings(tab: String) {
+    shared.showSettings(tab: tab)
+  }
+
   private func showSettings(tab: String) {
     settings.show(tab: tab) { [weak self] call, reply in
       guard let self, let channel = self.settings.channel else {
