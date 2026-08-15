@@ -3,6 +3,21 @@ import FlutterMacOS
 
 @main
 class AppDelegate: FlutterAppDelegate {
+  /// Запустила нас система при входе или человек руками. Спросить об этом
+  /// можно только в самом начале запуска: событие открытия приходит один
+  /// раз, и позже его уже не достать.
+  static private(set) var launchedAtLogin = false
+
+  override func applicationWillFinishLaunching(_ notification: Notification) {
+    super.applicationWillFinishLaunching(notification)
+    if let event = NSAppleEventManager.shared().currentAppleEvent,
+      event.eventID == kAEOpenApplication,
+      let how = event.paramDescriptor(forKeyword: keyAEPropData)
+    {
+      AppDelegate.launchedAtLogin = how.enumCodeValue == keyAELaunchedAsLogInItem
+    }
+  }
+
   // Диктовка работает в фоне, поэтому закрытое окно больше не значит
   // «выйти»: приложение остаётся в строке меню.
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

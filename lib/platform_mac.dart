@@ -215,6 +215,17 @@ class MacPlatform
   Future<void> setDockIcon(bool visible) =>
       _channel.invokeMethod('dockIcon', {'visible': visible});
 
+  /// Автозапуск при входе в систему. Состояние хранит сама macOS, поэтому
+  /// и спрашиваем его у неё: автозапуск можно выключить в Системных
+  /// настройках, и своя запись в settings.json об этом бы не узнала.
+  /// Без аргумента — только спросить, с аргументом — переключить.
+  Future<bool> loginItem([bool? enabled]) async =>
+      await _channel.invokeMethod<bool>(
+        'loginItem',
+        enabled == null ? null : {'enabled': enabled},
+      ) ??
+      false;
+
   @override
   Future<void> setPanelHeight(double height) =>
       _channel.invokeMethod('panelHeight', {'height': height});
