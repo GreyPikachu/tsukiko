@@ -215,18 +215,20 @@ class _SettingsBodyState extends State<SettingsBody> {
         const SectionTitle('Распознавание диктовки'),
         const Hint('Свои значения, не общие с очередью: диктуют не то же, '
             'что расшифровывают. Язык диктовка определяет сама.'),
-        const SizedBox(height: 10),
+        const SizedBox(height: Gap.item),
         _Field(
           'Модель',
           ModelField(
             installed: _models,
             value: _dictation.model,
-            hint: 'Как у расшифровщика',
+            fallback: 'Как у расшифровщика',
             onChosen: (v) => _saveDictation(() => _dictation.model = v),
             onDownload: _fetch,
           ),
         ),
-        const SizedBox(height: 10),
+        const Hint('«Как у расшифровщика» — брать ту же модель, что выбрана '
+            'в главном окне: меняете её там, меняется и здесь.'),
+        const SizedBox(height: Gap.item),
         _Field(
           'Потоки',
           MacosPopupButton<int>(
@@ -297,6 +299,9 @@ class _SettingsBodyState extends State<SettingsBody> {
 
   List<Widget> _modelsTab() {
     final d = _download;
+    // Предлагать к загрузке то, что уже лежит на диске, — обещать человеку
+    // полтора гигабайта работы впустую. Есть всё — раздела нет вовсе.
+    final offers = modelOffers(_models);
     return [
       const SectionTitle('Установлены'),
       if (_models.isEmpty)
@@ -305,7 +310,7 @@ class _SettingsBodyState extends State<SettingsBody> {
       else
         for (final m in _models)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5),
+            padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(
               children: [
                 Expanded(
@@ -330,13 +335,14 @@ class _SettingsBodyState extends State<SettingsBody> {
               ],
             ),
           ),
-      const SectionTitle('Можно загрузить'),
-      if (d != null)
-        ModelDownload(active: d, onCancel: () => setState(() => d.cancel()))
-      else
-        for (final m in modelCatalog)
+      if (d != null) ...[
+        const SectionTitle('Можно загрузить'),
+        ModelDownload(active: d, onCancel: () => setState(() => d.cancel())),
+      ] else if (offers.isNotEmpty) ...[
+        const SectionTitle('Можно загрузить'),
+        for (final m in offers)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5),
+            padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(
               children: [
                 Expanded(
@@ -350,22 +356,18 @@ class _SettingsBodyState extends State<SettingsBody> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 10),
-                if (m.present)
-                  Text('Загружена',
-                      style:
-                          Type.caption.copyWith(color: Surface.secondaryText(context)))
-                else
-                  PushButton(
-                    controlSize: ControlSize.regular,
-                    secondary: true,
-                    onPressed: () => _fetch(m),
-                    child: const Text('Загрузить'),
-                  ),
+                const SizedBox(width: Gap.item),
+                PushButton(
+                  controlSize: ControlSize.regular,
+                  secondary: true,
+                  onPressed: () => _fetch(m),
+                  child: const Text('Загрузить'),
+                ),
               ],
             ),
           ),
-      const SizedBox(height: 16),
+      ],
+      const SizedBox(height: Gap.section),
       PushButton(
         controlSize: ControlSize.regular,
         secondary: true,
@@ -373,12 +375,12 @@ class _SettingsBodyState extends State<SettingsBody> {
         child: const Text('Выбрать другой файл…'),
       ),
       if (_problem != null) ...[
-        const SizedBox(height: 8),
+        const SizedBox(height: Gap.inner),
         Text(_problem!,
             style: Type.caption.copyWith(
                 color: MacosColors.systemOrangeColor, height: 1.4)),
       ],
-      const SizedBox(height: 20),
+      const SizedBox(height: Gap.section),
       Text(
         'Модели лежат в ${modelPathFor('').replaceFirst(home, '~')}',
         style: Type.caption.copyWith(color: Surface.secondaryText(context)),
