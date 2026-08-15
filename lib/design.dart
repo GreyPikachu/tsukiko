@@ -282,6 +282,27 @@ class _CheckState extends State<Check> {
       );
 }
 
+/// Сочетание клавиш плашкой. Одна на всё приложение: в настройках по ней
+/// назначают новое сочетание, в поповере она просто показывает нынешнее —
+/// и там и там из вида читается, что это значение, а не подпись.
+class KeyCap extends StatelessWidget {
+  const KeyCap(this.keys, {super.key, this.lit = false});
+  final String keys;
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) => AnimatedContainer(
+        duration: Motion.dur(context, Motion.quick),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: lit ? Surface.pressed(context) : Surface.hover(context),
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: Surface.hairline(context)),
+        ),
+        child: Text(keys, style: Type.control),
+      );
+}
+
 /// Сочетание клавиш: нажатие на чип включает захват, и следующая
 /// комбинация встаёт на его место. Ждём ровно столько же, сколько ждёт
 /// сторона macOS, иначе чип завис бы в «нажмите сочетание» навсегда.
@@ -316,23 +337,13 @@ class _HotkeyRowState extends State<HotkeyRow> {
         child: GestureDetector(
           onTap: _waiting ? null : _tap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 5),
             child: Row(
               children: [
                 Expanded(child: Text(widget.label, style: Type.control)),
-                AnimatedContainer(
-                  duration: Motion.dur(context, Motion.quick),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: _hover || _waiting
-                        ? Surface.pressed(context)
-                        : Surface.hover(context),
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: Text(
-                    _waiting ? 'Нажмите сочетание…' : widget.keys,
-                    style: Type.control,
-                  ),
+                KeyCap(
+                  _waiting ? 'Нажмите сочетание…' : widget.keys,
+                  lit: _hover || _waiting,
                 ),
               ],
             ),
