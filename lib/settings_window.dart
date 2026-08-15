@@ -95,6 +95,9 @@ class _SettingsBodyState extends State<SettingsBody> {
     unawaited(_mac.initialTab().then((t) {
       if (mounted) setState(() => _tab = t);
     }));
+    unawaited(_mac.loginItem().then((on) {
+      if (mounted) setState(() => _loginItem = on);
+    }));
     unawaited(_checkPermission());
     // Разрешение выдают в другом приложении и возвращаются к этому окну:
     // спрашивать надо самим, уведомления об этом нет.
@@ -115,9 +118,6 @@ class _SettingsBodyState extends State<SettingsBody> {
     _timestamps = (s['timestamps'] as bool?) ?? true;
     _yieldBusyModel = (s['yieldBusyModel'] as bool?) ?? true;
     _dockIcon = (s['dockIcon'] as bool?) ?? true;
-    _mac.loginItem().then((on) {
-      if (mounted) setState(() => _loginItem = on);
-    });
     _libraryPath = (s['libraryPath'] as String?) ?? defaultLibraryPath;
     final formats = (s['libraryFormats'] as List?)
         ?.cast<String>()
