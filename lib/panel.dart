@@ -562,18 +562,65 @@ class _Live extends StatelessWidget {
                 const SizedBox(width: 14, height: 14, child: ProgressCircle()),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: Gap.item),
           if (recording)
             _Meter(level: c.level)
           else
-            Text(
-              '${c.settings.hold.label} — держать · '
-              '${c.settings.toggle.label} — нажать',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-            ),
+            _Keys(c),
         ],
+      ),
+    );
+  }
+}
+
+/// Чем начать диктовать: по строке на сочетание, каждое — плашкой, как
+/// в настройках. Одной строкой через точку они читались как выдуманная
+/// подпись, а не как то, что можно поменять. Щелчок ведёт туда, где их
+/// и меняют.
+class _Keys extends StatefulWidget {
+  const _Keys(this.c);
+  final DictationController c;
+
+  @override
+  State<_Keys> createState() => _KeysState();
+}
+
+class _KeysState extends State<_Keys> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.c.settings;
+    final grey = Type.caption.copyWith(color: Surface.secondaryText(context));
+    Widget row(String keys, String what) => Padding(
+          padding: const EdgeInsets.only(bottom: Gap.hint),
+          // Подпись слева, плашка справа — ровно как в настройках, где
+          // эти же сочетания и назначают.
+          child: Row(
+            children: [
+              Expanded(child: Text(what, maxLines: 2, style: grey)),
+              const SizedBox(width: Gap.inner),
+              KeyCap(keys, lit: _hover),
+            ],
+          ),
+        );
+
+    return MacosTooltip(
+      message: 'Изменить в настройках',
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () => widget.c.openSettings('dictation'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              row(s.hold.label, 'держать и говорить'),
+              row(s.toggle.label, 'нажать, ещё раз — остановить'),
+            ],
+          ),
+        ),
       ),
     );
   }

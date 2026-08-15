@@ -206,7 +206,7 @@ class _SettingsBodyState extends State<SettingsBody> {
           onTap: () => _reassign('hold'),
         ),
         HotkeyRow(
-          label: 'Нажать · ещё раз стоп',
+          label: 'Нажать, ещё раз — остановить',
           keys: _dictation.toggle.label,
           onTap: () => _reassign('toggle'),
         ),
