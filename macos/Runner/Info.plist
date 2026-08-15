@@ -3,7 +3,14 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<string>ru</string>
+	<!-- Приложение целиком по-русски. Без этого система считает его
+	     английским и подставляет свои пункты меню по-английски: рядом
+	     с «Завершить tsukiko» стоял «Quit and Keep Windows». -->
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>ru</string>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIconFile</key>
