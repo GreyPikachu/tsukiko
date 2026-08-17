@@ -1,7 +1,6 @@
 import AVFoundation
 import Cocoa
 import FlutterMacOS
-import ServiceManagement
 
 /// Прослойка диктовки: перехват клавиш, запись с микрофона, вставка текста
 /// и панель у строки меню.
@@ -262,18 +261,6 @@ final class DictationBridge: NSObject {
       NSApp.setActivationPolicy(
         (args?["visible"] as? Bool) ?? true ? .regular : .accessory)
       reply(nil)
-    case "loginItem":
-      // Состояние держит система, а не наш settings.json: автозапуск можно
-      // выключить и в Системных настройках, и галка обязана это показывать.
-      // Поэтому и на запись, и на чтение отвечает SMAppService.
-      if let on = args?["enabled"] as? Bool {
-        do {
-          try on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-        } catch {
-          NSLog("tsukiko: автозапуск не переключился — \(error.localizedDescription)")
-        }
-      }
-      reply(SMAppService.mainApp.status == .enabled)
     default:
       reply(FlutterMethodNotImplemented)
     }
