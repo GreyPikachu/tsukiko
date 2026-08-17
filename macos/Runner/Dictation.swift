@@ -129,7 +129,10 @@ final class DictationBridge: NSObject {
 
   // MARK: запуск
 
+  /// Позвать можно откуда угодно и сколько угодно раз: зовут из двух мест,
+  /// потому что одно из них может не сработать (см. MainFlutterWindow).
   func start() {
+    guard engine == nil else { return }
     let engine = FlutterEngine(
       name: "tsukiko-panel", project: nil, allowHeadlessExecution: true)
     engine.run(withEntrypoint: "panelMain")
