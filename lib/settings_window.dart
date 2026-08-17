@@ -58,7 +58,7 @@ class SettingsBody extends StatefulWidget {
   State<SettingsBody> createState() => _SettingsBodyState();
 }
 
-class _SettingsBodyState extends State<SettingsBody> {
+class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver {
   MacPlatform get _mac => widget.platform;
 
   final _dictation = DictationSettings.load();
@@ -83,6 +83,7 @@ class _SettingsBodyState extends State<SettingsBody> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _promptCtrl.text = _dictation.prompt;
     _readApp();
     _mac.settingsReloaded.listen((_) => setState(_readApp));
@@ -91,13 +92,32 @@ class _SettingsBodyState extends State<SettingsBody> {
       if (mounted) setState(() => _tab = t);
     }));
     unawaited(_checkPermission());
-    // Разрешение выдают в другом приложении и возвращаются к этому окну:
-    // спрашивать надо самим, уведомления об этом нет.
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _checkPermission());
+    _syncTimer();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => _syncTimer();
+
+  /// Окно настроек закрывается, а не размонтируется — движок живёт дальше
+  /// (см. SettingsWindow.swift). Без этого таймер тикал бы до выхода из
+  /// приложения, а не только пока окно реально на экране.
+  void _syncTimer() {
+    final visible =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    if (visible == (_timer != null)) return;
+    if (visible) {
+      // Разрешение выдают в другом приложении и возвращаются к этому окну:
+      // спрашивать надо самим, уведомления об этом нет.
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) => _checkPermission());
+    } else {
+      _timer?.cancel();
+      _timer = null;
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _promptCtrl.dispose();
     super.dispose();

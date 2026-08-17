@@ -83,18 +83,51 @@ class Mascot extends StatefulWidget {
   State<Mascot> createState() => _MascotState();
 }
 
-class _MascotState extends State<Mascot> with SingleTickerProviderStateMixin {
+class _MascotState extends State<Mascot>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _sway = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 4200),
-  )..repeat(reverse: true);
+  );
 
   /// Настроение, навязанное тычком. Живёт недолго и уступает место обычному.
   Mood? _poke;
   int _pokeToken = 0;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncSway();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => _syncSway();
+
+  /// Качание — чистая декорация, но каждый тик пересчитывает размытие под
+  /// строкой состояния на GPU. Крутить его есть смысл только пока окно
+  /// реально на экране в фокусе и «уменьшить движение» выключено — иначе
+  /// это чистый расход батареи в фоне.
+  void _syncSway() {
+    final shouldRun = WidgetsBinding.instance.lifecycleState ==
+            AppLifecycleState.resumed &&
+        !Motion.reduced(context);
+    if (shouldRun == _sway.isAnimating) return;
+    if (shouldRun) {
+      _sway.repeat(reverse: true);
+    } else {
+      _sway.stop();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sway.dispose();
     super.dispose();
   }
