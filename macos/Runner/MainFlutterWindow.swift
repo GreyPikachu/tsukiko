@@ -40,15 +40,8 @@ class MainFlutterWindow: NSWindow {
     // до него, система не рисует.
     NotificationCenter.default.addObserver(
       forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
-    ) { [weak self] _ in
+    ) { _ in
       DictationBridge.shared.start()
-
-      // Автозапуск нужен ради диктовки, а не ради расшифровщика: при входе
-      // в систему поднимаем только строку меню. Окно никуда не делось —
-      // оно откроется по значку в Dock или из поповера.
-      if AppDelegate.launchedAtLogin {
-        self?.orderOut(nil)
-      }
     }
   }
 }

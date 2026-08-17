@@ -77,11 +77,6 @@ class _SettingsBodyState extends State<SettingsBody> {
   // Настройки приложения: правит их это окно, пользуется ими главное.
   bool _toLibrary = true, _saveNextToSource = false, _timestamps = true;
   bool _yieldBusyModel = true, _dockIcon = true;
-
-  /// Автозапуск живёт в системе, а не в settings.json: его можно
-  /// выключить в Системных настройках мимо нас, поэтому при открытии
-  /// окна спрашиваем настоящее состояние.
-  bool _loginItem = false;
   String _libraryPath = defaultLibraryPath;
   List<String> _libraryFormats = const ['txt'];
 
@@ -94,9 +89,6 @@ class _SettingsBodyState extends State<SettingsBody> {
     _mac.settingsTab.listen((t) => setState(() => _tab = t));
     unawaited(_mac.initialTab().then((t) {
       if (mounted) setState(() => _tab = t);
-    }));
-    unawaited(_mac.loginItem().then((on) {
-      if (mounted) setState(() => _loginItem = on);
     }));
     unawaited(_checkPermission());
     // Разрешение выдают в другом приложении и возвращаются к этому окну:
@@ -503,16 +495,6 @@ class _SettingsBodyState extends State<SettingsBody> {
 
   List<Widget> _generalTab() => [
         const SectionTitle('Приложение'),
-        Check('Запускать при входе в систему', _loginItem, (v) async {
-          // Ответ берём у системы, а не у себя: она могла и отказать.
-          final on = await _mac.loginItem(v);
-          if (mounted) setState(() => _loginItem = on);
-        }),
-        const Hint('Диктовка поднимется сама и будет ждать в строке меню. '
-            'Окно расшифровщика при этом не открывается — оно всегда '
-            'доступно по значку в Dock.',
-            under: true),
-        const SizedBox(height: Gap.item),
         Check('Показывать значок в Dock', _dockIcon, (v) {
           setState(() => _dockIcon = v);
           _saveApp({'dockIcon': v});
