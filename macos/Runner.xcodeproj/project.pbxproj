@@ -32,6 +32,7 @@
 		A1D1C7A42C0000010000AAA1 /* RecordingHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D1C7A52C0000010000AAA1 /* RecordingHUD.swift */; };
 		A1D1C7A62C0000010000AAA1 /* SettingsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D1C7A72C0000010000AAA1 /* SettingsWindow.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
+		A1D1C7B02C0000010000AAA1 /* app.yuko.tsukiko.login-item.plist in Copy Login Agent */ = {isa = PBXBuildFile; fileRef = A1D1C7B12C0000010000AAA1 /* app.yuko.tsukiko.login-item.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,6 +63,17 @@
 			name = "Bundle Framework";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1D1C7B22C0000010000AAA1 /* Copy Login Agent */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "Contents/Library/LaunchAgents";
+			dstSubfolderSpec = 1;
+			files = (
+				A1D1C7B02C0000010000AAA1 /* app.yuko.tsukiko.login-item.plist in Copy Login Agent */,
+			);
+			name = "Copy Login Agent";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -79,6 +91,7 @@
 		A1D1C7A32C0000010000AAA1 /* TrayPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrayPanel.swift; sourceTree = "<group>"; };
 		A1D1C7A52C0000010000AAA1 /* RecordingHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingHUD.swift; sourceTree = "<group>"; };
 		A1D1C7A72C0000010000AAA1 /* SettingsWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindow.swift; sourceTree = "<group>"; };
+		A1D1C7B12C0000010000AAA1 /* app.yuko.tsukiko.login-item.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "app.yuko.tsukiko.login-item.plist"; sourceTree = "<group>"; };
 		33CEB47222A05771004F2AC0 /* Flutter-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Debug.xcconfig"; sourceTree = "<group>"; };
 		33CEB47422A05771004F2AC0 /* Flutter-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Release.xcconfig"; sourceTree = "<group>"; };
 		33CEB47722A0578A004F2AC0 /* Flutter-Generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = "Flutter-Generated.xcconfig"; path = "ephemeral/Flutter-Generated.xcconfig"; sourceTree = "<group>"; };
@@ -180,6 +193,7 @@
 				A1D1C7A32C0000010000AAA1 /* TrayPanel.swift */,
 				A1D1C7A52C0000010000AAA1 /* RecordingHUD.swift */,
 				A1D1C7A72C0000010000AAA1 /* SettingsWindow.swift */,
+				A1D1C7B12C0000010000AAA1 /* app.yuko.tsukiko.login-item.plist */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
@@ -224,6 +238,7 @@
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
+				A1D1C7B22C0000010000AAA1 /* Copy Login Agent */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 			);
 			buildRules = (
