@@ -1,6 +1,7 @@
 import AVFoundation
 import Cocoa
 import FlutterMacOS
+import ServiceManagement
 
 /// Прослойка диктовки: перехват клавиш, запись с микрофона, вставка текста
 /// и панель у строки меню.
@@ -79,6 +80,23 @@ private struct HotkeySpec {
 
 final class DictationBridge: NSObject {
   static let shared = DictationBridge()
+
+  /// Автозапуск — отдельный launch-агент, а не SMAppService.mainApp: агент
+  /// запускает тот же бинарник, но с флагом --login-item в argv, и по нему
+  /// AppDelegate узнаёт о входе в систему, не трогая Apple Event.
+  private static let loginAgent = SMAppService.agent(
+    plistName: "app.yuko.tsukiko.login-item.plist")
+
+  /// Старая регистрация через SMAppService.mainApp (до перехода на
+  /// launch-агента) указывает на путь внутри build/, который сносит
+  /// flutter clean. Снимаем её один раз при обычном запуске, чтобы
+  /// в системе не осталось мёртвой записи.
+  static func retireStaleMainAppRegistration() {
+    guard SMAppService.mainApp.status != .notRegistered else { return }
+    DispatchQueue.global(qos: .utility).async {
+      try? SMAppService.mainApp.unregister()
+    }
+  }
 
   private var channel: FlutterMethodChannel?
   private var engine: FlutterEngine?
@@ -264,6 +282,18 @@ final class DictationBridge: NSObject {
       NSApp.setActivationPolicy(
         (args?["visible"] as? Bool) ?? true ? .regular : .accessory)
       reply(nil)
+    case "loginItem":
+      // Состояние держит система, а не наш settings.json: автозапуск можно
+      // выключить и в Системных настройках, и галка обязана это показывать.
+      // Поэтому и на запись, и на чтение отвечает SMAppService.
+      if let on = args?["enabled"] as? Bool {
+        do {
+          try on ? DictationBridge.loginAgent.register() : DictationBridge.loginAgent.unregister()
+        } catch {
+          NSLog("tsukiko: автозапуск не переключился — \(error.localizedDescription)")
+        }
+      }
+      reply(DictationBridge.loginAgent.status == .enabled)
     default:
       reply(FlutterMethodNotImplemented)
     }

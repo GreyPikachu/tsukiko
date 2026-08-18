@@ -3,6 +3,12 @@ import FlutterMacOS
 
 @main
 class AppDelegate: FlutterAppDelegate {
+  /// Нас поднял вход в систему или человек руками. Флаг приходит через
+  /// argv от launch-агента (Contents/Library/LaunchAgents), а не через
+  /// чтение Apple Event — оно однажды забрало событие открытия у AppKit
+  /// и вместе с ним значок в строке меню.
+  static let launchedAtLogin = CommandLine.arguments.contains("--login-item")
+
   // Диктовка работает в фоне, поэтому закрытое окно больше не значит
   // «выйти»: приложение остаётся в строке меню.
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

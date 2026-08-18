@@ -38,17 +38,31 @@ class MainFlutterWindow: NSWindow {
     // до нас не доходят, поэтому подписываемся на уведомление сами.
     // Раньше запуска приложения нельзя: значок в строке меню, созданный
     // до него, система не рисует.
-    NotificationCenter.default.addObserver(
-      forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
-    ) { _ in
-      DictationBridge.shared.start()
-    }
-
+    //
     // Уведомление могло уже пройти: awakeFromNib окна и запуск приложения
     // идут в порядке, который нам не принадлежит, а опоздавший наблюдатель
-    // не срабатывает никогда — значка в строке меню тогда нет вовсе, и
-    // диктовки вместе с ним. Просим ещё и следующим витком цикла событий:
-    // он всё равно наступает после запуска, а start() идемпотентен.
-    DispatchQueue.main.async { DictationBridge.shared.start() }
+    // не срабатывает никогда. На практике уведомление стабильно проигрывает
+    // гонку — наблюдатель регистрируется позже, чем оно уже прошло, — так
+    // что весь запуск держится на резервном вызове следующим витком цикла
+    // событий: он наступает после запуска в любом случае, а launchOnce
+    // срабатывает только один раз, откуда бы его ни позвали.
+    var ranOnce = false
+    let launchOnce: () -> Void = { [weak self] in
+      guard !ranOnce else { return }
+      ranOnce = true
+      DictationBridge.shared.start()
+      DictationBridge.retireStaleMainAppRegistration()
+
+      // Автозапуск нужен ради диктовки, а не ради расшифровщика: при входе
+      // в систему поднимаем только строку меню. Окно никуда не делось —
+      // оно откроется по значку в Dock или из поповера.
+      if AppDelegate.launchedAtLogin {
+        self?.orderOut(nil)
+      }
+    }
+    NotificationCenter.default.addObserver(
+      forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
+    ) { _ in launchOnce() }
+    DispatchQueue.main.async { launchOnce() }
   }
 }
