@@ -83,13 +83,7 @@ class Mascot extends StatefulWidget {
   State<Mascot> createState() => _MascotState();
 }
 
-class _MascotState extends State<Mascot>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  late final AnimationController _sway = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 4200),
-  );
-
+class _MascotState extends State<Mascot> with WidgetsBindingObserver {
   /// Настроение, навязанное тычком. Живёт недолго и уступает место обычному.
   Mood? _poke;
   int _pokeToken = 0;
@@ -101,34 +95,11 @@ class _MascotState extends State<Mascot>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _syncSway();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) => _syncSway();
-
-  /// Качание — чистая декорация, но каждый тик пересчитывает размытие под
-  /// строкой состояния на GPU. Крутить его есть смысл только пока окно
-  /// реально на экране в фокусе и «уменьшить движение» выключено — иначе
-  /// это чистый расход батареи в фоне.
-  void _syncSway() {
-    final shouldRun = WidgetsBinding.instance.lifecycleState ==
-            AppLifecycleState.resumed &&
-        !Motion.reduced(context);
-    if (shouldRun == _sway.isAnimating) return;
-    if (shouldRun) {
-      _sway.repeat(reverse: true);
-    } else {
-      _sway.stop();
-    }
-  }
+  void didChangeAppLifecycleState(AppLifecycleState state) => setState(() {});
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _sway.dispose();
     super.dispose();
   }
 
@@ -146,7 +117,6 @@ class _MascotState extends State<Mascot>
   @override
   Widget build(BuildContext context) {
     final mood = _mood;
-    final reduced = Motion.reduced(context);
     final accent = MacosTheme.of(context).primaryColor;
 
     Widget cat = Image.asset(
@@ -157,87 +127,80 @@ class _MascotState extends State<Mascot>
       errorBuilder: (_, _, _) => SizedBox(height: widget.height),
     );
 
-    // Дыхание поверх кадров: кот чуть покачивается и всплывает.
-    if (!reduced) {
-      cat = AnimatedBuilder(
-        animation: _sway,
-        builder: (context, child) {
-          final t = Curves.easeInOut.transform(_sway.value);
-          return Transform.translate(
-            offset: Offset(0, -2.5 * t),
-            child: Transform.rotate(angle: (t - 0.5) * 0.018, child: child),
-          );
-        },
-        child: cat,
-      );
-    }
-
     // Ключ должен быть на самом верхнем узле, иначе AnimatedSwitcher не
     // заметит смену настроения и кроссфейда не будет.
     cat = KeyedSubtree(key: ValueKey(mood.file), child: cat);
 
-    return Semantics(
-      label: 'Маскот приложения',
-      button: widget.interactive,
-      child: MouseRegion(
-        cursor: widget.interactive
-            ? SystemMouseCursors.click
-            : MouseCursor.defer,
-        child: GestureDetector(
-          onTap: _tap,
-          behavior: HitTestBehavior.opaque,
-          child: AnimatedScale(
-            duration: Motion.dur(context, Motion.toss),
-            curve: Motion.curve(context, Motion.tossCurve),
-            scale: mood.scale,
-            child: AnimatedOpacity(
-              duration: Motion.dur(context, Motion.settle),
-              curve: Motion.curve(context, Motion.settleCurve),
-              opacity: mood.opacity,
-              child: SizedBox(
-                height: widget.height * 1.18,
-                child: Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    // Свечение живёт отдельным слоем: так его можно гасить,
-                    // не трогая прозрачность самого кота.
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: AnimatedContainer(
-                          duration: Motion.dur(context, Motion.settle),
-                          curve: Motion.curve(context, Motion.settleCurve),
-                          decoration: BoxDecoration(
-                            gradient: RadialGradient(
-                              center: const Alignment(0, 0.35),
-                              radius: 0.78,
-                              colors: [
-                                accent.withValues(alpha: mood.glow),
-                                accent.withValues(alpha: mood.glow * 0.35),
-                                accent.withValues(alpha: 0),
-                              ],
-                              stops: const [0, 0.5, 1],
+    // Кадры кота — анимированный webp: каждый новый кадр декодируется и
+    // перерисовывает окно, это около 11 % процессора без перерыва. Пока окно
+    // не в фокусе, смотреть на кота некому; Image слушает TickerMode и
+    // замирает на последнем кадре.
+    return TickerMode(
+      enabled: WidgetsBinding.instance.lifecycleState ==
+          AppLifecycleState.resumed,
+      child: Semantics(
+        label: 'Маскот приложения',
+        button: widget.interactive,
+        child: MouseRegion(
+          cursor: widget.interactive
+              ? SystemMouseCursors.click
+              : MouseCursor.defer,
+          child: GestureDetector(
+            onTap: _tap,
+            behavior: HitTestBehavior.opaque,
+            child: AnimatedScale(
+              duration: Motion.dur(context, Motion.toss),
+              curve: Motion.curve(context, Motion.tossCurve),
+              scale: mood.scale,
+              child: AnimatedOpacity(
+                duration: Motion.dur(context, Motion.settle),
+                curve: Motion.curve(context, Motion.settleCurve),
+                opacity: mood.opacity,
+                child: SizedBox(
+                  height: widget.height * 1.18,
+                  child: Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: [
+                      // Свечение живёт отдельным слоем: так его можно гасить,
+                      // не трогая прозрачность самого кота.
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: AnimatedContainer(
+                            duration: Motion.dur(context, Motion.settle),
+                            curve: Motion.curve(context, Motion.settleCurve),
+                            decoration: BoxDecoration(
+                              gradient: RadialGradient(
+                                center: const Alignment(0, 0.35),
+                                radius: 0.78,
+                                colors: [
+                                  accent.withValues(alpha: mood.glow),
+                                  accent.withValues(alpha: mood.glow * 0.35),
+                                  accent.withValues(alpha: 0),
+                                ],
+                                stops: const [0, 0.5, 1],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      child: AnimatedSwitcher(
-                        duration: Motion.dur(
-                          context,
-                          const Duration(milliseconds: 300),
+                      Positioned(
+                        bottom: 0,
+                        child: AnimatedSwitcher(
+                          duration: Motion.dur(
+                            context,
+                            const Duration(milliseconds: 300),
+                          ),
+                          switchInCurve: Curves.easeOut,
+                          switchOutCurve: Curves.easeIn,
+                          layoutBuilder: (current, previous) => Stack(
+                            alignment: Alignment.bottomCenter,
+                            children: [...previous, ?current],
+                          ),
+                          child: cat,
                         ),
-                        switchInCurve: Curves.easeOut,
-                        switchOutCurve: Curves.easeIn,
-                        layoutBuilder: (current, previous) => Stack(
-                          alignment: Alignment.bottomCenter,
-                          children: [...previous, ?current],
-                        ),
-                        child: cat,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
