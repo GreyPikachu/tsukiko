@@ -16,10 +16,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
   /// как его изолят подпишется на канал, посланное ему сообщение теряется.
   private(set) var tab = "dictation"
 
-  /// Окно закрыли — движок остаётся жить: он держит около сорока мегабайт,
+  /// Окно закрыли — движок остаётся жить: он держит около ста мегабайт,
   /// а повторное открытие тогда мгновенное.
   // engine kept alive after close; выгружать его есть смысл
-  // только если эти сорок мегабайт станут заметны рядом с моделью.
+  // только если эти сто мегабайт станут заметны рядом с моделью.
   func show(tab: String, handler: @escaping FlutterMethodCallHandler) {
     self.tab = tab
     if window == nil {
