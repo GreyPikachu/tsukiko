@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:typed_data' show BytesBuilder;
 
 import 'engine.dart';
+import 'os.dart';
+import 'settings.dart';
 
 /// Фоновая диктовка: долгоживущий whisper-server, который держит модель
 /// в памяти между фразами, и состояние самой диктовки.
@@ -14,22 +16,12 @@ import 'engine.dart';
 /// Сервер поднимается в тот момент, когда пользователь начал говорить,
 /// и успевает загрузиться, пока фраза не кончилась.
 
-const whisperServerCandidates = [
-  '/opt/homebrew/bin/whisper-server',
-  '/usr/local/bin/whisper-server',
-];
-
-String? findWhisperServer() {
-  for (final p in whisperServerCandidates) {
-    if (File(p).existsSync()) return p;
-  }
-  return null;
-}
+String? findWhisperServer() => os.findExecutable('whisper-server');
 
 /// Модель весит гигабайты, поэтому осиротевший сервер — это не «лишний
 /// процесс», а полтора гигабайта, которые никто не вернёт. Pid пишется
 /// на диск, и следующий запуск добивает того, кто пережил падение.
-File get _pidFile => File('$supportDir/whisper-server.pid');
+File get _pidFile => File(os.join(supportDir, 'whisper-server.pid'));
 
 /// Метка своего сервера в аргументах процесса. Нужна затем, что pid-файл
 /// теряется: приложение падает, его убивают сигналом, файл стирают — и
@@ -37,79 +29,81 @@ File get _pidFile => File('$supportDir/whisper-server.pid');
 /// Аргументы процесса не теряются никогда, поэтому метка живёт в них.
 ///
 /// `--tmp-dir` сервер читает только вместе с `--convert`, которого мы
-/// не просим: на поведение метка не влияет, а в `ps` она видна.
-const serverMark = '/tmp/tsukiko-whisper';
+/// не просим: на поведение метка не влияет, а в списке процессов видна.
+///
+/// Путь внутри своих же данных, а не `/tmp/…`: на Windows такой папки нет
+/// вовсе, а значение должно оставаться похожим на путь — вдруг когда-нибудь
+/// сервер начнёт его проверять.
+String get serverMark => os.join(supportDir, 'whisper-server-mark');
+
+/// Метка прежних сборок. Только для узнавания: сирота, поднятая старой
+/// версией, тоже наша, и оставлять её с полутора гигабайтами нельзя.
+const legacyServerMark = '/tmp/tsukiko-whisper';
 
 /// По чему сервер узнаётся нашим. Второй признак — для серверов, поднятых
-/// прежними сборками, когда метки ещё не было: путь к нашей модели тишины
-/// они передают почти всегда. У чужого whisper-server нет ни того, ни
-/// другого, и трогать его нельзя.
-List<String> get _ourMarks => [serverMark, supportDir];
+/// совсем старыми сборками, когда метки ещё не было: путь к нашей модели
+/// тишины они передают почти всегда. У чужого whisper-server нет ни одного
+/// из этих признаков, и трогать его нельзя.
+List<String> get ourServerMarks => [serverMark, legacyServerMark, supportDir];
 
-bool processAlive(int pid) {
-  try {
-    final r = Process.runSync('ps', ['-o', 'pid=', '-p', '$pid']);
-    return (r.stdout as String).trim().isNotEmpty;
-  } catch (_) {
-    return false;
-  }
-}
+bool processAlive(int pid) => os.isAlive(pid);
 
 /// Погасить наверняка. whisper-server на SIGTERM не умирает — проверено:
 /// процесс жил часами с 1,7 ГБ, пока приложение считало его выгруженным.
 /// Поэтому просим вежливо, ждём, проверяем и добиваем. Возвращает true,
 /// если процесса больше нет.
 ///
-/// Синхронно: её зовут и на выходе из приложения, где ждать уже некому.
-bool killForSure(int pid) {
-  bool gone() {
+/// Асинхронно: ждать приходится до 600 мс, а зовут это и по кнопке
+/// «Выгрузить», и по таймеру простоя — то есть прямо из изолята, который
+/// рисует панель. Синхронный `sleep` там просто морозил интерфейс.
+Future<bool> killForSure(int pid) async {
+  Future<bool> gone() async {
     for (var i = 0; i < 6; i++) {
-      sleep(const Duration(milliseconds: 50));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
       if (!processAlive(pid)) return true;
     }
     return false;
   }
 
-  try {
-    Process.killPid(pid, ProcessSignal.sigterm);
-  } catch (_) {
-    return !processAlive(pid);
-  }
-  if (gone()) return true;
-  try {
-    Process.killPid(pid, ProcessSignal.sigkill);
-  } catch (_) {}
+  os.signal(pid);
+  if (await gone()) return true;
+  os.signal(pid, force: true);
   return gone();
 }
 
-/// Наши серверы в выводе `ps -axo pid=,rss=,args=`. Чужие whisper-server
+/// Наши серверы среди перечисленных процессов. Чужие whisper-server
 /// в список не попадают: наших меток у них нет.
-List<({int pid, int rssKb})> ourServersIn(String psOutput) {
-  final out = <({int pid, int rssKb})>[];
-  for (final line in psOutput.split('\n')) {
-    final m = RegExp(r'^\s*(\d+)\s+(\d+)\s+(.*)$').firstMatch(line);
-    if (m == null) continue;
-    final args = m.group(3)!;
-    if (!args.contains('whisper-server')) continue;
-    if (!_ourMarks.any(args.contains)) continue;
-    out.add((pid: int.parse(m.group(1)!), rssKb: int.parse(m.group(2)!)));
+List<ProcListing> ourServersIn(List<ProcListing> processes) => [
+      for (final p in processes)
+        if (p.args.contains('whisper-server') && ourServerMarks.any(p.args.contains)) p,
+    ];
+
+/// Pid, записанный нашим сервером. Просто число из файла: ни живости,
+/// ни имени процесса не проверяет.
+///
+/// Ровно это и нужно тому, кто уже знает, что процесс жив. Опрос занятости
+/// получает pid из `ps` и спрашивает лишь «он наш?» — а чтение файла в сотню
+/// байт стоит несравнимо меньше, чем запуск ещё одного `ps` дважды в секунду
+/// на изоляте, который рисует окно.
+int? recordedServerPid() {
+  try {
+    return int.tryParse(_pidFile.readAsStringSync().trim());
+  } catch (_) {
+    return null;
   }
-  return out;
 }
 
 /// Pid нашего whisper-server, если он жив. Отличать своего от чужого можно
 /// только так: у пользователя рядом может работать чужой whisper-server,
 /// и по имени процесса они неразличимы. Один и тот же pid система могла
 /// успеть отдать другому — поэтому сверяемся с именем процесса.
+///
+/// Дорого (запуск `ps`), поэтому только для уборки за собой. Для опроса
+/// занятости есть [recordedServerPid].
 int? ourServerPid() {
-  try {
-    final pid = int.tryParse(_pidFile.readAsStringSync().trim());
-    if (pid == null) return null;
-    final comm = Process.runSync('ps', ['-o', 'comm=', '-p', '$pid']);
-    return (comm.stdout as String).contains('whisper-server') ? pid : null;
-  } catch (_) {
-    return null;
-  }
+  final pid = recordedServerPid();
+  if (pid == null) return null;
+  return os.isAlive(pid) ? pid : null;
 }
 
 /// Подобрать за собой на старте: сервер, переживший прошлый запуск,
@@ -119,15 +113,12 @@ int? ourServerPid() {
 ///
 /// Возвращает, сколько мегабайт вернули: молчаливая потеря такого
 /// размера должна становиться видимой человеку.
-int sweepOurServers({Set<int> keep = const {}}) {
+Future<int> sweepOurServers({Set<int> keep = const {}}) async {
   var freedKb = 0;
-  try {
-    final ps = Process.runSync('ps', ['-axo', 'pid=,rss=,args=']);
-    for (final s in ourServersIn(ps.stdout as String)) {
-      if (s.pid == pid || keep.contains(s.pid)) continue;
-      if (killForSure(s.pid)) freedKb += s.rssKb;
-    }
-  } catch (_) {}
+  for (final s in ourServersIn(await os.listProcesses())) {
+    if (s.pid == pid || keep.contains(s.pid)) continue;
+    if (await killForSure(s.pid)) freedKb += s.rssKb;
+  }
   // Запись стираем, только когда за ней никого не осталось: pid живого
   // процесса — единственный способ найти его потом.
   final left = ourServerPid();
@@ -139,15 +130,37 @@ int sweepOurServers({Set<int> keep = const {}}) {
   return freedKb ~/ 1024;
 }
 
-/// Запись диктовки ложится во временную папку и стирается сразу после
-/// распознавания. Пережившие падение остаются — подметаем их на старте,
-/// иначе за месяц там наберётся сотня забытых WAV.
-void sweepRecordings() {
+/// Насколько старым должен быть временный мусор, чтобы считаться забытым.
+/// Час: свои папки этого же запуска трогать нельзя, а очередь может
+/// готовить звук в соседнем изоляте прямо сейчас.
+const _staleAfter = Duration(hours: 1);
+
+/// Подмести временное от прошлых запусков.
+///
+/// Два вида мусора. Записи диктовки (`tsukiko-*.wav`) ложатся в корень
+/// временной папки и стираются сразу после распознавания. Очередь заводит
+/// себе целую папку (`tsukikoXXXXXX/`) и держит в ней подготовленный звук —
+/// час записи это больше сотни мегабайт, а удалялась она только в dispose,
+/// мимо которого проходит ⌘Q. Пережившее падение и выход остаётся тут
+/// навсегда, поэтому подметаем на старте.
+/// [where] — только для проверок: функция удаляет файлы, и проверять её
+/// на настоящей временной папке разработчика было бы невежливо.
+void sweepRecordings({Directory? where}) {
+  final now = DateTime.now();
   try {
-    for (final f in Directory(Directory.systemTemp.path).listSync()) {
-      final name = f.path.split('/').last;
-      if (f is File && name.startsWith('tsukiko-') && name.endsWith('.wav')) {
-        f.deleteSync();
+    for (final f in (where ?? Directory.systemTemp).listSync()) {
+      final name = os.basename(f.path);
+      try {
+        if (f is File && name.startsWith('tsukiko-') && name.endsWith('.wav')) {
+          f.deleteSync();
+        } else if (f is Directory && name.startsWith(appName)) {
+          // По возрасту: папка этого запуска ещё нужна своему окну.
+          if (now.difference(f.statSync().modified) > _staleAfter) {
+            f.deleteSync(recursive: true);
+          }
+        }
+      } catch (_) {
+        // Чужая папка, права, гонка с соседом — не наше дело, идём дальше.
       }
     }
   } catch (_) {}
@@ -161,11 +174,14 @@ String? rescueRecording(String path) {
   try {
     final root =
         (Settings.load()['libraryPath'] as String?) ?? defaultLibraryPath;
-    final dir = Directory('$root/Не распознано')..createSync(recursive: true);
+    final dir = Directory(os.join(root, 'Не распознано'))
+      ..createSync(recursive: true);
     final t = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
-    final dest = '${dir.path}/Диктовка ${t.year}-${two(t.month)}-${two(t.day)} '
-        '${two(t.hour)}-${two(t.minute)}-${two(t.second)}.wav';
+    final dest = os.join(
+        dir.path,
+        'Диктовка ${t.year}-${two(t.month)}-${two(t.day)} '
+        '${two(t.hour)}-${two(t.minute)}-${two(t.second)}.wav');
     File(path).copySync(dest);
     try {
       File(path).deleteSync();
@@ -270,25 +286,36 @@ class WhisperServer {
     final p = _proc;
     if (p == null) return 0;
     try {
-      final r = await Process.run('footprint', ['-p', '${p.pid}']);
-      final m = RegExp(r'phys_footprint:\s*(\d+)\s*MB').firstMatch(r.stdout as String);
-      if (m != null) return int.parse(m.group(1)!);
+      return await os.footprintMb(p.pid);
     } catch (_) {}
     return 0;
   }
 
   /// Поднять сервер под нужную модель. Возвращает сразу, если он уже
   /// поднят под неё же, — на этом и держится вся скорость.
-  Future<void> ensureUp(RunOptions o) {
+  ///
+  /// Подъёмы выстроены в очередь, а не схлопнуты в один: раньше здесь
+  /// стояло `_starting ??= _start(o)`, и запрос под другую модель молча
+  /// получал фьючер чужого подъёма — диктовка уходила говорить не в ту
+  /// модель, которую у неё попросили.
+  Future<void> ensureUp(RunOptions o) async {
+    await _starting;
     if (_proc != null && _model == o.model) {
       _touch();
-      return Future.value();
+      return;
     }
-    return _starting ??= _start(o).whenComplete(() => _starting = null);
+    await (_starting = _start(o).whenComplete(() => _starting = null));
   }
 
+  /// Дождаться идущего подъёма. Нужен тем, кто собирается говорить с
+  /// сервером: между `shutdown()` внутри `_start` и присвоением `_proc`
+  /// сервер выглядит выключенным, хотя он как раз поднимается.
+  Future<void> get ready => _starting ?? Future<void>.value();
+
   Future<void> _start(RunOptions o) async {
-    shutdown();
+    // Ждём, пока прежний действительно умрёт: два сервера разом — это
+    // три гигабайта в памяти и драка за процессор.
+    await shutdown();
     final exe = findWhisperServer();
     if (exe == null || o.model.isEmpty) return;
 
@@ -338,28 +365,50 @@ class WhisperServer {
   /// Разница принципиальна: на молчание нечего показывать, а провал должен
   /// быть виден, иначе запись пропадает в тишине.
   Future<String?> transcribe(String wav, {String lang = 'auto'}) async {
+    // Сервер поднимается параллельно записи, и короткая фраза успевает
+    // кончиться раньше, чем `Process.start` вернёт процесс. Без этого
+    // ожидания такая фраза считалась нераспознанной, а запись уезжала
+    // в «Не распознано» — при том что сервер поднялся через полсекунды.
+    await ready;
     if (_proc == null) return null;
     if (!await waitReady()) return null;
     _touch();
 
+    // Тело собирается из трёх частей, и звук в память не читается: час
+    // диктовки — это больше сотни мегабайт, которые прежде ложились
+    // в BytesBuilder, а затем копировались ещё раз в takeBytes. Длина
+    // известна заранее, поэтому файл просто утекает в сокет с диска,
+    // и расход памяти перестаёт зависеть от длины записи. Ограничивать
+    // длительность ради этого не нужно — а именно так и подмывало сделать.
     const boundary = '----tsukiko-dictation';
-    final body = BytesBuilder();
-    void field(String name, String value) => body.add(utf8.encode(
+    final head = BytesBuilder();
+    void field(String name, String value) => head.add(utf8.encode(
         '--$boundary\r\nContent-Disposition: form-data; name="$name"\r\n\r\n$value\r\n'));
     field('response_format', 'json');
     field('language', lang);
-    body.add(utf8.encode('--$boundary\r\n'
+    head.add(utf8.encode('--$boundary\r\n'
         'Content-Disposition: form-data; name="file"; filename="a.wav"\r\n'
         'Content-Type: audio/wav\r\n\r\n'));
-    body.add(await File(wav).readAsBytes());
-    body.add(utf8.encode('\r\n--$boundary--\r\n'));
+    final headBytes = head.takeBytes();
+    final tailBytes = utf8.encode('\r\n--$boundary--\r\n');
+    final file = File(wav);
+    final int audioLength;
+    try {
+      audioLength = await file.length();
+    } catch (_) {
+      return null;
+    }
 
     final client = HttpClient();
     try {
       final req = await client.post('127.0.0.1', _port, '/inference');
       req.headers.set(HttpHeaders.contentTypeHeader,
           'multipart/form-data; boundary=$boundary');
-      req.add(body.takeBytes());
+      // Без явной длины Dart перешёл бы на chunked, а сервер её ждёт.
+      req.contentLength = headBytes.length + audioLength + tailBytes.length;
+      req.add(headBytes);
+      await req.addStream(file.openRead());
+      req.add(tailBytes);
       final res = await req.close();
       final text = await res.transform(utf8.decoder).join();
       if (res.statusCode != 200) return null;
@@ -391,26 +440,29 @@ class WhisperServer {
     _deadline = null;
     if (_proc == null || _holds > 0) return;
     _deadline = DateTime.now().add(idleTimeout);
-    _idle = Timer(idleTimeout, shutdown);
+    _idle = Timer(idleTimeout, () => unawaited(shutdown()));
   }
 
   /// Выгрузить модель. `p.kill()` здесь недостаточно: он шлёт SIGTERM,
   /// а whisper-server от него не умирает — панель писала «Выгружена»,
   /// пока процесс держал полтора гигабайта. Убеждаемся, что он мёртв,
   /// и только тогда забываем о нём.
-  void shutdown() {
+  ///
+  /// Экран обновляется сразу, до ожидания: с точки зрения интерфейса
+  /// сервера уже нет, а добивание идёт в фоне и панель не морозит.
+  Future<void> shutdown() async {
     _idle?.cancel();
     _idle = null;
     _deadline = null;
     final p = _proc;
     _proc = null;
     if (p == null) return;
-    if (killForSure(p.pid)) {
+    onChanged?.call();
+    if (await killForSure(p.pid)) {
       try {
         _pidFile.deleteSync();
       } catch (_) {}
     }
-    onChanged?.call();
   }
 }
 
@@ -440,14 +492,6 @@ class Hotkey {
     return Hotkey(mods, key: raw['key'] as String?);
   }
 
-  static const _modSymbols = {
-    'fn': 'fn',
-    'ctrl': '⌃',
-    'opt': '⌥',
-    'shift': '⇧',
-    'cmd': '⌘',
-  };
-
   static const _keyNames = {
     'space': 'Пробел',
     'return': '⏎',
@@ -455,14 +499,12 @@ class Hotkey {
     'escape': '⎋',
   };
 
-  /// Подпись для панели: «fn + ⌃», «fn + Пробел».
+  /// Подпись для панели: «fn ⌃», «fn Пробел». Значки модификаторов рисует
+  /// система: на macOS это ⌘ и ⌥, на Windows — слова Ctrl и Alt.
   String get label {
     if (empty) return 'Не назначено';
-    final parts = [
-      for (final m in mods) _modSymbols[m] ?? m,
-      if (key != null) _keyNames[key!] ?? key!.toUpperCase(),
-    ];
-    return parts.join(' + ');
+    final name = key == null ? null : (_keyNames[key!] ?? key!.toUpperCase());
+    return os.shortcutLabel(mods, name);
   }
 }
 
@@ -505,7 +547,7 @@ class DictationSettings {
   bool punctuate;
   int threads;
 
-  static File get _file => File('$supportDir/dictation.json');
+  static File get _file => File(os.join(supportDir, 'dictation.json'));
 
   static DictationSettings load() {
     try {
@@ -530,7 +572,9 @@ class DictationSettings {
   void save() {
     try {
       Directory(supportDir).createSync(recursive: true);
-      _file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert({
+      // Через временный файл и переименование — как и общие настройки:
+      // падение посреди записи не должно стирать сочетания клавиш.
+      writeJsonAtomically(_file, {
         'enabled': enabled,
         'model': model,
         'prompt': prompt,
@@ -541,8 +585,10 @@ class DictationSettings {
         'hud': hud,
         'punctuate': punctuate,
         'threads': threads,
-      }));
-    } catch (_) {}
+      });
+    } catch (e) {
+      stderr.writeln('tsukiko: не удалось сохранить настройки диктовки — $e');
+    }
   }
 }
 

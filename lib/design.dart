@@ -5,6 +5,7 @@ import 'package:flutter/physics.dart';
 import 'package:macos_ui/macos_ui.dart';
 
 import 'engine.dart';
+import 'os.dart';
 
 /// Пружины и типографика по формулировкам Apple: не «длительность и кривая»,
 /// а «отклик» (за сколько дойти) и «затухание» (насколько перелетит).
@@ -384,7 +385,7 @@ class _LibraryPathState extends State<LibraryPath> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         MacosTooltip(
-          message: 'Показать в Finder',
+          message: 'Показать в ${os.fileManagerName}',
           child: MouseRegion(
             onEnter: (_) => setState(() => _hover = true),
             onExit: (_) => setState(() => _hover = false),
@@ -724,15 +725,30 @@ class _ContextMenuRowState extends State<_ContextMenuRow> {
 /// Правый щелчок (он же двумя пальцами по трекпаду). Собственный обработчик
 /// нажатия у ребёнка не трогаем — это разные кнопки мыши.
 class ContextMenuRegion extends StatelessWidget {
-  const ContextMenuRegion({super.key, required this.actions, required this.child});
+  const ContextMenuRegion({
+    super.key,
+    required this.actions,
+    required this.child,
+    this.onOpen,
+  });
 
+  /// Пункты меню. Должны только считать: щелчок — это [onOpen].
   final List<MenuAction> Function() actions;
+
+  /// Что сделать до сборки пунктов. Сюда уходит всё, что меняет состояние
+  /// (например, выделить строку под курсором), — иначе setState случался бы
+  /// посреди построения меню.
+  final VoidCallback? onOpen;
+
   final Widget child;
 
   @override
   Widget build(BuildContext context) => GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onSecondaryTapUp: (d) => showContextMenu(context, d.globalPosition, actions()),
+        onSecondaryTapUp: (d) {
+          onOpen?.call();
+          showContextMenu(context, d.globalPosition, actions());
+        },
         child: child,
       );
 }

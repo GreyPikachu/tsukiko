@@ -49,6 +49,12 @@ class MainFlutterWindow: NSWindow {
     var ranOnce = false
     let launchOnce: () -> Void = { [weak self] in
       guard !ranOnce else { return }
+      // Вторая копия уже уходит (AppDelegate.applicationWillFinishLaunching),
+      // но её очередь событий успевает провернуться до конца. Ни перехват
+      // клавиш ставить, ни движок панели поднимать ей нельзя: панель на
+      // старте подметает «осиротевшие» whisper-server — и погасила бы
+      // сервер живой первой копии.
+      guard AppDelegate.running == nil else { return }
       ranOnce = true
       DictationBridge.shared.start()
       DictationBridge.retireStaleMainAppRegistration()

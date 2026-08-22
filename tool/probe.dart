@@ -1,5 +1,5 @@
 // Ручная проверка детектора занятости: запусти рядом любое распознавание
-// (whisper-cli, диктовку в Dictara) и смотри, ловит ли его tsukiko.
+// (whisper-cli, чужой распознаватель) и смотри, ловит ли его tsukiko.
 //   dart run tool/probe.dart
 // ignore_for_file: avoid_print
 import 'package:tsukiko/engine.dart';

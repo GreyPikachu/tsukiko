@@ -60,7 +60,7 @@ extension _Export on _HomePageState {
     // Диалог мог отдать путь без расширения — дописываем сами.
     final path = _ext(loc.path) == f.ext ? loc.path : '${loc.path}${f.ext}';
     await _write(job, path, f);
-    _set(() => _status = 'Сохранено: «${path.split('/').last}»');
+    _set(() => _status = 'Сохранено: «${os.basename(path)}»');
   }
 
   Future<void> _exportAll() async {
@@ -76,12 +76,14 @@ extension _Export on _HomePageState {
     final dir = await getDirectoryPath(confirmButtonText: 'Экспортировать');
     if (dir == null) return;
     var written = 0;
+    // Свободное имя ищем сразу под все форматы. Раньше это делалось только
+    // когда формат один: экспорт текста и субтитров в папку, где такие
+    // имена уже лежали, молча затирал их.
     for (final job in jobs) {
-      final stem = formats.length == 1
-          ? freeStem(dir, _stem(job.name), formats.first.suffix)
-          : _stem(job.name);
+      final stem = freeStemFor(
+          dir, _stem(job.name), formats.map((f) => f.suffix).toList());
       for (final f in formats) {
-        await _write(job, '$dir/${f.fileName(stem)}', f);
+        await _write(job, os.join(dir, f.fileName(stem)), f);
         written++;
       }
     }
@@ -106,7 +108,18 @@ extension _Export on _HomePageState {
     }
 
     final job = Job(File(target), imported: true);
-    final text = await File(target).readAsString();
+    final String text;
+    try {
+      text = await File(target).readAsString();
+    } catch (e) {
+      // Файл не читается как текст — двоичный, чужой кодировки, исчез
+      // из-под рук. Раньше исключение улетало из незаваченного _import
+      // и приложение просто ничего не делало в ответ на перетаскивание.
+      stderr.writeln('tsukiko: «$target» не открылся — $e');
+      _set(() => _status =
+          'Не удалось открыть «${os.basename(target!)}»: это не текстовый файл');
+      return;
+    }
     // JSON, субтитры и наш «текст с таймкодами» разбираются в сегменты —
     // такую расшифровку можно пересохранить в любой другой формат.
     if (target.endsWith('.json')) {

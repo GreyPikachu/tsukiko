@@ -9,7 +9,9 @@ import 'package:macos_ui/macos_ui.dart';
 import 'design.dart';
 import 'dictation.dart';
 import 'engine.dart';
-import 'platform_mac.dart';
+import 'bridge.dart';
+import 'os.dart';
+import 'settings.dart';
 
 /// Окно настроек: своё окно с вкладками, как у всех приложений macOS.
 ///
@@ -20,12 +22,13 @@ import 'platform_mac.dart';
 /// нет вовсе, а без значка в Dock главного окна может не быть на экране.
 ///
 /// Общие настройки приложения лежат в том же settings.json, что правит
-/// главное окно. Ключи не пересекаются, Settings.save дописывает, а не
-/// переписывает, и после каждой правки оба соседних изолята получают
-/// «reload» — значит копии не расходятся.
+/// главное окно. Ключи почти не пересекаются, но «почти» здесь не работает:
+/// две галки («метки времени», «ждать занятую модель») есть и там и там.
+/// Поэтому расходиться копиям мешает не разделение ключей, а очередь
+/// записи в lib/settings.dart и «reload» соседям после каждой правки.
 void runSettings() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(SettingsApp(MacPlatform()));
+  runApp(SettingsApp(NativeBridge()));
 }
 
 const settingsTabs = [
@@ -37,7 +40,7 @@ const settingsTabs = [
 
 class SettingsApp extends StatelessWidget {
   const SettingsApp(this.platform, {super.key});
-  final MacPlatform platform;
+  final NativeBridge platform;
 
   @override
   Widget build(BuildContext context) => MacosApp(
@@ -52,14 +55,14 @@ class SettingsApp extends StatelessWidget {
 
 class SettingsBody extends StatefulWidget {
   const SettingsBody(this.platform, {super.key});
-  final MacPlatform platform;
+  final NativeBridge platform;
 
   @override
   State<SettingsBody> createState() => _SettingsBodyState();
 }
 
 class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver {
-  MacPlatform get _mac => widget.platform;
+  NativeBridge get _mac => widget.platform;
 
   final _dictation = DictationSettings.load();
   final _promptCtrl = TextEditingController();
@@ -73,6 +76,11 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   bool _allowed = true;
   int _denied = 0;
   Timer? _timer;
+
+  /// Движок окна настроек живёт и после закрытия окна (SettingsWindow.swift),
+  /// поэтому подписки надо снимать самим: иначе они будут звать setState
+  /// у состояния, снятого с дерева.
+  final _subs = <StreamSubscription<void>>[];
 
   // Настройки приложения: правит их это окно, пользуется ими главное.
   bool _toLibrary = true, _saveNextToSource = false, _timestamps = true;
@@ -91,8 +99,12 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     _promptCtrl.text = _dictation.prompt;
     _readApp();
-    _mac.settingsReloaded.listen((_) => setState(_readApp));
-    _mac.settingsTab.listen((t) => setState(() => _tab = t));
+    _subs.add(_mac.settingsReloaded.listen((_) {
+      if (mounted) setState(_readApp);
+    }));
+    _subs.add(_mac.settingsTab.listen((t) {
+      if (mounted) setState(() => _tab = t);
+    }));
     unawaited(_mac.initialTab().then((t) {
       if (mounted) setState(() => _tab = t);
     }));
@@ -123,6 +135,9 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    for (final s in _subs) {
+      s.cancel();
+    }
     _timer?.cancel();
     _promptCtrl.dispose();
     super.dispose();
@@ -165,9 +180,13 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// Одно место, где настройки уходят на диск: пишем и говорим соседним
   /// изолятам перечитать. Без второго половина правок доходила бы только
   /// до следующего запуска.
-  void _saveApp(Map<String, dynamic> data) {
-    Settings.save(data);
-    _mac.settingsChanged();
+  ///
+  /// Записи дожидаемся: соседи по «перечитать» тут же читают файл, и
+  /// сказать им об этом раньше, чем правка на диске, значит послать их
+  /// за старым значением.
+  Future<void> _saveApp(Map<String, dynamic> data) async {
+    await Settings.save(data);
+    await _mac.settingsChanged();
   }
 
   void _saveDictation(VoidCallback change) {
@@ -457,7 +476,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         const SectionTitle('Сохранять расшифровки автоматически'),
         Check('Сохранять готовый текст на диск', _toLibrary, (v) {
           setState(() => _toLibrary = v);
-          _saveApp({'toLibrary': v});
+          unawaited(_saveApp({'toLibrary': v}));
         }),
         const Hint('Как только запись распознана, текст сам ложится файлом '
             'в папку ниже. Выключено — текст остаётся только в окне tsukiko, '
@@ -470,7 +489,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           onChange: _pickLibrary,
           hint: 'Внутри папка на каждый месяц: $appName/'
               '${monthFolder(DateTime.now())}/. Щёлкните по пути, чтобы '
-              'открыть папку в Finder.',
+              'открыть папку в ${os.fileManagerName}.',
         ),
         if (_toLibrary) ...[
           const SectionTitle('В каком виде сохранять'),
@@ -485,7 +504,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                 // Пустой набор при включённом сохранении означал бы тишину.
                 _libraryFormats = next.isEmpty ? [f.id] : next;
               });
-              _saveApp({'libraryFormats': _libraryFormats});
+              unawaited(_saveApp({'libraryFormats': _libraryFormats}));
             }),
           Hint(
               _libraryFormats.length > 1
@@ -500,7 +519,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         const SectionTitle('Копия рядом с аудиофайлом'),
         Check('Класть текст рядом с исходной записью', _saveNextToSource, (v) {
           setState(() => _saveNextToSource = v);
-          _saveApp({'saveNextToSource': v});
+          unawaited(_saveApp({'saveNextToSource': v}));
         }),
         const Hint('Кроме папки выше: в ту же папку, где лежит сама запись, '
             'ляжет .txt с её именем — чистый текст без таймкодов. '
@@ -512,11 +531,11 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
     final dir = await getDirectoryPath(
       confirmButtonText: 'Выбрать',
       initialDirectory:
-          Directory(_libraryPath).existsSync() ? _libraryPath : '$home/Documents',
+          Directory(_libraryPath).existsSync() ? _libraryPath : os.documentsDir,
     );
     if (dir == null) return;
     setState(() => _libraryPath = dir);
-    _saveApp({'libraryPath': dir});
+    unawaited(_saveApp({'libraryPath': dir}));
   }
 
   // ── общие ─────────────────────────────────────────────────────────────────
@@ -535,7 +554,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         const SizedBox(height: Gap.item),
         Check('Показывать значок в Dock', _dockIcon, (v) {
           setState(() => _dockIcon = v);
-          _saveApp({'dockIcon': v});
+          unawaited(_saveApp({'dockIcon': v}));
           _mac.setDockIcon(v);
         }),
         const Hint('Без значка tsukiko исчезает из Dock и из ⌘Tab и живёт '
@@ -544,7 +563,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         const SizedBox(height: Gap.item),
         Check('Ждать, если модель занята', _yieldBusyModel, (v) {
           setState(() => _yieldBusyModel = v);
-          _saveApp({'yieldBusyModel': v});
+          unawaited(_saveApp({'yieldBusyModel': v}));
         }),
         const Hint('Пока модель держит другая программа, очередь стоит и '
             'не отбирает у неё память и GPU. Своей диктовке очередь уступает '
@@ -552,7 +571,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         const SizedBox(height: Gap.item),
         Check('Показывать метки времени', _timestamps, (v) {
           setState(() => _timestamps = v);
-          _saveApp({'timestamps': v});
+          unawaited(_saveApp({'timestamps': v}));
         }),
         const Hint('Только на экране. Что попадёт в файл, решает выбранный '
             'формат, а не эта галка.', under: true),

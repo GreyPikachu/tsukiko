@@ -29,8 +29,12 @@ extension _Transcribe on _HomePageState {
   /// Занята ли модель нашей же диктовкой. Своего от чужого отличаем по
   /// pid, который сами и записали: рядом может работать чужой
   /// whisper-server, по имени процесса они неразличимы.
+  ///
+  /// Значение готовое, из опроса. Раньше здесь запускался `ps` — и не
+  /// только на каждый кадр, но и на каждом витке ожидания в 300 мс, пока
+  /// очередь уступала диктовке.
   bool get _busyByDictation =>
-      _modelUse.busy && _modelUse.pid != 0 && _modelUse.pid == ourServerPid();
+      _modelUse.busy && _modelUse.pid != 0 && _modelUse.pid == _serverPid;
 
   /// Диктовка главнее очереди: одновременно две копии модели в память
   /// не помещаются, а фраза длится секунды и прерванная пропадает совсем.
@@ -90,7 +94,8 @@ extension _Transcribe on _HomePageState {
     final whisper = _whisper;
     if (whisper == null) {
       _alert('Не найден whisper-cli',
-          'Ожидается /opt/homebrew/bin/whisper-cli.\nУстановка: brew install whisper-cpp');
+          'Программа не нашлась ни в PATH, ни в обычных местах.\n'
+          '${os.whisperInstallHint}');
       return;
     }
     if (_defaults.model.isEmpty && _jobs.every((j) => _optionsFor(j).model.isEmpty)) {
@@ -120,100 +125,126 @@ extension _Transcribe on _HomePageState {
       _running = true;
       _stopRequested = false;
     });
-    _tmp ??= await Directory.systemTemp.createTemp(appName);
+    // Пока идёт очередь, опрос занятости нужен даже со свёрнутым окном:
+    // на него смотрит уступка занятой модели.
+    _syncPolling();
 
-    for (var i = 0; i < _jobs.length; i++) {
-      if (_stopRequested) break;
-      final job = _jobs[i];
-      if (job.done || job.imported) continue;
-      final opts = _optionsFor(job);
-      if (opts.model.isEmpty) {
-        _set(() {
-          job.state = JobState.failed;
-          job.detail = 'Не выбрана модель';
-        });
-        continue;
-      }
-
-      if (!await _yieldWhileBusy(job)) break;
-
-      _set(() {
-        job.state = JobState.converting;
-        job.startedAt = DateTime.now();
-        _lead = job;
-        if (_sel.length <= 1) {
-          _sel
-            ..clear()
-            ..add(job);
+    // Что бы ни случилось внутри — разбор битого JSON, полный диск,
+    // исчезнувший файл, — очередь обязана вернуться в состояние покоя.
+    // Без этого одно исключение оставляло «идёт распознавание» навсегда:
+    // кнопка «Распознать» серая, «Остановить» ничего не останавливает,
+    // и помогал только перезапуск.
+    try {
+      _tmp ??= await Directory.systemTemp.createTemp(appName);
+      // Очередь берётся по одной записи за раз, а не обходом по индексу:
+      // пока идёт распознавание, файлы и добавляют, и убирают, а обход
+      // по номеру на такой правке перескакивает через соседа. Список
+      // взятого нужен, чтобы неудачная запись не попалась второй раз:
+      // «не получилось» — это не «готово», и без него цикл был бы вечным.
+      final attempted = <Job>{};
+      while (!_stopRequested) {
+        Job? next;
+        for (final job in _jobs) {
+          if (!job.done && !job.imported && !attempted.contains(job)) {
+            next = job;
+            break;
+          }
         }
+        if (next == null) break;
+        attempted.add(next);
+        if (!await _runOne(next, whisper)) break;
+      }
+    } finally {
+      _proc = null;
+      _set(() {
+        _running = false;
+        _status = _stopRequested ? 'Остановлено' : 'Готово';
       });
-      _syncPromptField();
+      _syncPolling();
+      _releaseTemp();
+      _writeSettings();
+    }
+  }
 
-      final base = '${_tmp!.path}/${i.toString().padLeft(3, '0')}';
+  /// Отдать временную папку, когда очередь отработала.
+  ///
+  /// Раньше она удалялась только в dispose, мимо которого проходит ⌘Q, —
+  /// и подготовленный звук (час записи это больше сотни мегабайт) оставался
+  /// во временной папке навсегда. Файлы каждой записи убираются сразу после
+  /// неё, здесь остаётся снять пустую папку.
+  void _releaseTemp() {
+    final dir = _tmp;
+    if (dir == null) return;
+    _tmp = null;
+    try {
+      dir.deleteSync(recursive: true);
+    } catch (_) {}
+  }
+
+  /// Одна запись от начала до конца. Возвращает false, если очередь надо
+  /// остановить целиком (нажали «Остановить»); неудача самой записи —
+  /// это true: соседние файлы к ней отношения не имеют.
+  Future<bool> _runOne(Job job, String whisper) async {
+    final opts = _optionsFor(job);
+    if (opts.model.isEmpty) {
+      _set(() {
+        job.state = JobState.failed;
+        job.detail = 'Не выбрана модель';
+      });
+      return true;
+    }
+
+    if (!await _yieldWhileBusy(job)) return false;
+
+    _set(() {
+      job.state = JobState.converting;
+      job.startedAt = DateTime.now();
+      _lead = job;
+      if (_sel.length <= 1) {
+        _sel
+          ..clear()
+          ..add(job);
+      }
+    });
+    _syncPromptField();
+
+    // Имя во временной папке своё у каждого запуска, а не по месту записи
+    // в очереди. С индексом получалось так: очередь поправили, номер достался
+    // другому файлу, whisper вышел без ошибки, но json не записал — и
+    // проверка «файл на месте» проходила на json от прошлого прогона.
+    // В запись попадала чужая расшифровка.
+    final base = os.join(_tmp!.path, '${_runSeq++}');
+    final jsonFile = File('$base.json');
+    try {
       final wav = await toWav(job.file.path, '$base.wav');
 
       // Подготовка звука занимает секунды — за это время сосед мог начать
       // распознавать заново. Проверяем ещё раз вплотную к запуску.
-      if (!await _yieldWhileBusy(job)) break;
+      if (!await _yieldWhileBusy(job)) return false;
 
       _set(() {
         job.state = JobState.transcribing;
         _status = job.name;
       });
-      final proc = await Process.start(whisper, buildArgs(opts, wav, base));
-      _proc = proc;
 
-      void onLine(String line) {
-        if (!mounted) return;
-        final seg = parseSegmentLine(line);
-        if (seg != null) {
-          _set(() => job.live.add(seg));
-          _followTail();
-          return;
-        }
-        final p = RegExp(r'progress\s*=\s*(\d+)%').firstMatch(line);
-        if (p != null) {
-          _set(() => job.progress = double.parse(p.group(1)!) / 100);
-        }
-        final l = RegExp(r'auto-detected language:\s*(\w+)').firstMatch(line);
-        if (l != null) {
-          _set(() => _status = '${job.name} · ${languageName(l.group(1)!)}');
-        }
-      }
-
-      final outSub =
-          proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(onLine);
-      final errSub =
-          proc.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen(onLine);
-      final code = await proc.exitCode;
-      await outSub.cancel();
-      await errSub.cancel();
-      _proc = null;
-
+      final code = await _runWhisper(job, whisper, buildArgs(opts, wav, base));
       if (_stopRequested) {
         _set(() => job.state = JobState.cancelled);
-        break;
+        return false;
       }
-
-      final jsonFile = File('$base.json');
       if (code != 0 || !jsonFile.existsSync()) {
         _set(() {
           job.state = JobState.failed;
+          job.detail = 'whisper-cli не справился с этим файлом';
           _status = 'Не удалось распознать «${job.name}»';
         });
-        continue;
+        return true;
       }
 
       final t = parseWhisperJson(await jsonFile.readAsString());
       job.transcript = t;
 
-      if (_saveNextToSource) {
-        try {
-          final path = job.file.path;
-          await File('${path.substring(0, path.lastIndexOf('.'))}.txt')
-              .writeAsString(renderPlain(t.segments, false));
-        } catch (_) {}
-      }
+      final beside = _saveNextToSource ? await _saveBesideSource(job, t) : null;
       final placed = _toLibrary ? await _fileToLibrary(job) : null;
 
       _set(() {
@@ -223,15 +254,94 @@ extension _Transcribe on _HomePageState {
             ? null
             : DateTime.now().difference(job.startedAt!);
         job.detail = '${languageName(t.lang)} · ${segmentsLabel(t.segments.length)}';
-        if (placed != null) _status = placed;
+        // Про неудачу записи говорим громче, чем про удачу: текст есть
+        // на экране, но человек думает, что он уже на диске.
+        _status = beside ?? placed ?? _status;
       });
+      return true;
+    } catch (e) {
+      // Сюда попадает всё непредвиденное: битый JSON от whisper, файл,
+      // исчезнувший из-под рук, нехватка места. Запись помечается неудачной,
+      // очередь идёт дальше.
+      _set(() {
+        job.state = JobState.failed;
+        job.detail = 'Не удалось разобрать ответ модели';
+        _status = 'Не удалось распознать «${job.name}»';
+      });
+      stderr.writeln('tsukiko: «${job.name}» не распозналась — $e');
+      return true;
+    } finally {
+      // Временные файлы этого запуска больше не нужны ни нам, ни соседу:
+      // часовая запись оставляет после себя гигабайтный wav.
+      _discardTemp(base);
+    }
+  }
+
+  /// Запуск whisper-cli с разбором его вывода на лету. Подписки снимаются
+  /// в любом случае — оборванный процесс не должен оставлять их висеть.
+  Future<int> _runWhisper(Job job, String whisper, List<String> args) async {
+    void onLine(String line) {
+      if (!mounted) return;
+      final seg = parseSegmentLine(line);
+      if (seg != null) {
+        _set(() => job.live.add(seg));
+        _followTail();
+        return;
+      }
+      final p = RegExp(r'progress\s*=\s*(\d+)%').firstMatch(line);
+      if (p != null) {
+        _set(() => job.progress = double.parse(p.group(1)!) / 100);
+      }
+      final l = RegExp(r'auto-detected language:\s*(\w+)').firstMatch(line);
+      if (l != null) {
+        _set(() => _status = '${job.name} · ${languageName(l.group(1)!)}');
+      }
     }
 
-    _set(() {
-      _running = false;
-      _status = _stopRequested ? 'Остановлено' : 'Готово';
-    });
-    _writeSettings();
+    final proc = await Process.start(whisper, args);
+    _proc = proc;
+    final outSub =
+        proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(onLine);
+    final errSub =
+        proc.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen(onLine);
+    try {
+      return await proc.exitCode;
+    } finally {
+      await outSub.cancel();
+      await errSub.cancel();
+      _proc = null;
+    }
+  }
+
+  void _discardTemp(String base) {
+    for (final ext in const ['.wav', '.json']) {
+      try {
+        final f = File('$base$ext');
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+    }
+  }
+
+  /// Копия текста рядом с исходной записью. Возвращает строку для статуса,
+  /// если что-то пошло не так, иначе null.
+  ///
+  /// Имя выбирается один раз и запоминается за записью: повторное
+  /// распознавание обновляет свой же файл, а чужой `запись.txt`, лежавший
+  /// рядом до нас, не трогает — раньше он затирался молча.
+  Future<String?> _saveBesideSource(Job job, Transcript t) async {
+    try {
+      // Раньше здесь стояло `path.substring(0, path.lastIndexOf('.'))`:
+      // у файла без расширения lastIndexOf возвращал −1, и всё падало
+      // в пустой catch.
+      final dir = job.file.parent.path;
+      job.besideSource ??=
+          os.join(dir, '${freeStem(dir, _stem(job.name), '.txt')}.txt');
+      await File(job.besideSource!).writeAsString(renderPlain(t.segments, false));
+      return null;
+    } catch (e) {
+      stderr.writeln('tsukiko: копия рядом с записью не легла — $e');
+      return 'Не удалось положить текст рядом с записью';
+    }
   }
 
   /// Раскладка по месяцам; когда форматов больше одного — у записи своя папка.
@@ -250,7 +360,7 @@ extension _Transcribe on _HomePageState {
           ? freeStem(plan.dir, plan.stem, formats.first.suffix)
           : plan.stem;
       for (final f in formats) {
-        await _write(job, '${plan.dir}/${f.fileName(stem)}', f);
+        await _write(job, os.join(plan.dir, f.fileName(stem)), f);
       }
       final where = plan.dir.replaceFirst(_libraryPath, appName);
       return 'Сохранено в «$where»';

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/dictation.dart';
 import 'package:tsukiko/engine.dart';
+import 'package:tsukiko/os.dart';
+import 'package:tsukiko/os_macos.dart' show cpuSeconds;
 
 void main() {
   test('таймкоды', () {
@@ -152,10 +154,12 @@ void main() {
   });
 
   test('владелец модели угадывается по пути к файлу', () {
+    // Соседнее приложение держит модель у себя в данных — по такому пути
+    // оно узнаётся ещё до того, как мы увидели его процесс.
     expect(
       ownerFromModelPath(
-          '/Users/x/Library/Application Support/app.dictara/models/ggml-large.bin'),
-      'dictara',
+          '/Users/x/Library/Application Support/com.example.речь/models/ggml-large.bin'),
+      'речь',
     );
     expect(ownerFromModelPath('/Users/x/.cache/whisper/ggml-large.bin'), isNull);
   });
@@ -400,10 +404,10 @@ void main() {
     expect(modelCatalog.map((m) => m.title).toList(),
         ['Tiny', 'Base', 'Small', 'Medium', 'Large v3 Turbo', 'Large v3']);
     expect(modelDisplayName('/x/ggml-large-v3-turbo.bin'), 'Large v3 Turbo');
-    // Чужой файл: модель из папки Dictara и своя, выбранная руками.
+    // Чужой файл: модель из папки соседнего приложения.
     expect(
         modelDisplayName(
-            '/Users/x/Library/Application Support/app.dictara/models/ggml-large.bin'),
+            '/Users/x/Library/Application Support/com.example.речь/models/ggml-large.bin'),
         'Large');
     expect(modelDisplayName('/x/ggml-small.en.bin'), 'Small En');
     // Квантование и версии остаются как есть — их не «причёсывают».
@@ -489,7 +493,7 @@ void main() {
       await Future<void>.delayed(const Duration(seconds: 1));
       expect(server.up, isFalse);
     } finally {
-      server.shutdown();
+      await server.shutdown();
       File(wav).deleteSync();
     }
     expect(server.up, isFalse);
@@ -497,17 +501,36 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('сирота узнаётся по метке в аргументах, а чужой сервер — нет', () {
-    final ps = '  501 1657392 /opt/homebrew/bin/whisper-server -m /Users/x/m.bin'
-        ' --tmp-dir /tmp/tsukiko-whisper\n'
-        '  502   42000 /opt/homebrew/bin/whisper-server -m /Users/x/чужая.bin'
-        ' --port 9000\n'
-        '  503 1600000 /opt/homebrew/bin/whisper-server -m /Users/x/m.bin -vm '
-        '$supportDir/models/silero.bin\n'
-        '  504    9000 /Applications/Dictara.app/Contents/MacOS/Dictara\n';
-    final ours = ourServersIn(ps);
-    // Свои — по новой метке и по старой, папке приложения. Чужой сервер
-    // и чужое приложение остаются нетронутыми.
-    expect(ours.map((s) => s.pid), [501, 503]);
+    final processes = <ProcListing>[
+      (
+        pid: 501,
+        rssKb: 1657392,
+        args: '/opt/homebrew/bin/whisper-server -m /Users/x/m.bin '
+            '--tmp-dir $serverMark'
+      ),
+      (
+        pid: 502,
+        rssKb: 42000,
+        args: '/opt/homebrew/bin/whisper-server -m /Users/x/чужая.bin --port 9000'
+      ),
+      (
+        pid: 503,
+        rssKb: 1600000,
+        args: '/opt/homebrew/bin/whisper-server -m /Users/x/m.bin '
+            '-vm ${os.join(supportDir, 'models/silero.bin')}'
+      ),
+      (
+        pid: 504,
+        rssKb: 1500000,
+        args: '/opt/homebrew/bin/whisper-server -m /Users/x/m.bin '
+            '--tmp-dir $legacyServerMark'
+      ),
+      (pid: 505, rssKb: 9000, args: '/Applications/Чужое.app/Contents/MacOS/Чужое'),
+    ];
+    final ours = ourServersIn(processes);
+    // Свои — по нынешней метке, по папке приложения и по метке прежних
+    // сборок. Чужой whisper-server и чужое приложение остаются нетронутыми.
+    expect(ours.map((s) => s.pid), [501, 503, 504]);
     expect(ours.first.rssKb, 1657392);
   });
 
@@ -522,8 +545,7 @@ void main() {
     ]);
     addTearDown(() => Process.killPid(fake.pid, ProcessSignal.sigkill));
 
-    final ps = await Process.run('ps', ['-axo', 'pid=,rss=,args=']);
-    final found = ourServersIn(ps.stdout as String).map((s) => s.pid);
+    final found = ourServersIn(await os.listProcesses()).map((s) => s.pid);
     expect(found, contains(fake.pid), reason: 'pid-файла нет, а процесс виден');
 
     expect(processAlive(fake.pid), isTrue);
@@ -532,7 +554,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     expect(processAlive(fake.pid), isTrue);
 
-    expect(killForSure(fake.pid), isTrue);
+    expect(await killForSure(fake.pid), isTrue);
     expect(processAlive(fake.pid), isFalse);
   }, timeout: const Timeout(Duration(seconds: 30)));
 

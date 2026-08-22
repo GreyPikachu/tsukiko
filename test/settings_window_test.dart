@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tsukiko/platform_mac.dart';
+import 'package:tsukiko/bridge.dart';
 import 'package:tsukiko/settings_window.dart';
 
 /// Окно настроек живёт отдельным файлом теста намеренно: рисующий тест
@@ -11,7 +11,7 @@ void main() {
     // Размер настоящего окна: раскладка обязана сходиться именно в нём.
     await tester.binding.setSurfaceSize(const Size(580, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(SettingsApp(MacPlatform()));
+    await tester.pumpWidget(SettingsApp(NativeBridge()));
     await tester.pump();
 
     expect(find.text('Диктовка'), findsOneWidget);

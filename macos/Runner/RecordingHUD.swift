@@ -13,7 +13,7 @@ import SwiftUI
 /// перелёта не имеет: жеста, который нёс бы импульс, здесь не было.
 
 enum HUDState: String {
-  case hidden, recording, transcribing, done, failed
+  case hidden, recording, transcribing, done, failed, copied, cancelled
 }
 
 final class HUDModel: ObservableObject {
@@ -25,6 +25,10 @@ final class HUDModel: ObservableObject {
 
   var onCancel: () -> Void = {}
   var onStop: () -> Void = {}
+
+  /// Прервать распознавание. Отдельно от [onCancel]: та отменяет запись,
+  /// эта — уже идущий счёт модели.
+  var onAbort: () -> Void = {}
 
   func push(level: Double) {
     levels.removeFirst()
@@ -54,6 +58,22 @@ struct HUDView: View {
           .lineLimit(1)
           .fixedSize()
         Spacer(minLength: 0)
+        // Часовая запись считается минутами, и до этого выйти было нельзя
+        // ничем, кроме выхода из приложения. Крестик рядом с прогрессом —
+        // то же, чем отменяют загрузку в Safari и копирование в Finder:
+        // знакомый жест, который не нужно объяснять. Он у самого правого
+        // края — там же, где кончались кнопки записи, поэтому при смене
+        // фазы панель не перекраивается.
+        AbortButton(action: model.onAbort)
+      case .cancelled:
+        Image(systemName: "xmark.circle.fill")
+          .font(.system(size: 15))
+          .foregroundColor(.secondary)
+        Text("Отменено · запись сохранена")
+          .font(.system(size: 13, weight: .medium))
+          .lineLimit(1)
+          .fixedSize()
+        Spacer(minLength: 0)
       case .done:
         Image(systemName: "checkmark.circle.fill")
           .font(.system(size: 15))
@@ -70,6 +90,18 @@ struct HUDView: View {
           .font(.system(size: 15))
           .foregroundColor(.orange)
         Text("Не распознано · запись сохранена")
+          .font(.system(size: 13, weight: .medium))
+          .lineLimit(1)
+          .fixedSize()
+        Spacer(minLength: 0)
+      case .copied:
+        // Текст распознан, но в чужое окно не попал. Молчать здесь тоже
+        // нельзя: человек ждёт слов там, где стоит курсор, и не узнает,
+        // что они лежат в буфере обмена.
+        Image(systemName: "doc.on.clipboard")
+          .font(.system(size: 15))
+          .foregroundColor(.orange)
+        Text("Не вставилось · текст в буфере, ⌘V")
           .font(.system(size: 13, weight: .medium))
           .lineLimit(1)
           .fixedSize()
@@ -135,6 +167,47 @@ private struct Spinner: View {
           spin = true
         }
       }
+  }
+}
+
+/// Крестик отмены. Не кнопка с подписью: действие редкое, и громкая
+/// кнопка рядом с «Распознаю…» читалась бы как основное намерение.
+/// В покое он приглушён, под курсором проявляется вместе с круглой
+/// подложкой — есть, когда его ищут, и молчит, когда не нужен.
+private struct AbortButton: View {
+  let action: () -> Void
+
+  @State private var hover = false
+  @State private var pressed = false
+
+  var body: some View {
+    Image(systemName: "xmark")
+      .font(.system(size: 11, weight: .semibold))
+      .foregroundColor(.primary.opacity(hover ? 0.9 : 0.4))
+      .frame(width: 22, height: 22)
+      .background(
+        Circle().fill(Color.primary.opacity(hover ? 0.08 : 0))
+      )
+      .contentShape(Circle())
+      // Отклик на нажатие, а не на отпускании: задержка убивает
+      // ощущение прямоты — то же правило, что у HUDButton.
+      .scaleEffect(pressed ? 0.94 : 1)
+      .animation(.easeOut(duration: 0.09), value: pressed)
+      .animation(.easeOut(duration: 0.12), value: hover)
+      .onHover { hover = $0 }
+      .gesture(
+        DragGesture(minimumDistance: 0)
+          .onChanged { _ in pressed = true }
+          .onEnded { value in
+            pressed = false
+            // Ушли с кнопки, не отпустив, — действие отменяется.
+            let inside = abs(value.translation.width) < 20 && abs(value.translation.height) < 20
+            if inside { action() }
+          }
+      )
+      .help("Отменить распознавание")
+      .accessibilityLabel("Отменить распознавание")
+      .accessibilityAddTraits(.isButton)
   }
 }
 
@@ -205,9 +278,13 @@ final class RecordingHUD {
   /// Откуда брать уровень сигнала — рекордер живёт в мосте.
   var levelSource: () -> Double = { 0 }
 
-  init(onCancel: @escaping () -> Void, onStop: @escaping () -> Void) {
+  init(
+    onCancel: @escaping () -> Void, onStop: @escaping () -> Void,
+    onAbort: @escaping () -> Void
+  ) {
     model.onCancel = onCancel
     model.onStop = onStop
+    model.onAbort = onAbort
   }
 
   private func build() -> HUDPanel {
@@ -313,6 +390,18 @@ final class RecordingHUD {
   /// Неудача висит дольше подтверждения: её надо успеть прочитать.
   func failed() {
     linger(.failed, seconds: 2.6)
+  }
+
+  /// Текст уцелел, но остался в буфере обмена — об этом надо успеть
+  /// прочитать так же, как о потерянной записи.
+  func copied() {
+    linger(.copied, seconds: 2.6)
+  }
+
+  /// Распознавание прервали сами. Панель не исчезает молча: надо сказать,
+  /// что запись при этом сохранена, — иначе отмена читается как потеря.
+  func cancelled() {
+    linger(.cancelled, seconds: 2.2)
   }
 
   private func linger(_ state: HUDState, seconds: TimeInterval) {
