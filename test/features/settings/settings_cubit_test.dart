@@ -94,6 +94,35 @@ void main() {
       await settle();
       expect(cubit.state.problem, contains('больше нет на диске'));
     });
+
+    test('удаление снимает выбор, если убрали выбранную', () async {
+      final path = '${tmp.path}/ggml-условная.bin';
+      File(path).writeAsBytesSync(List.filled(16, 1));
+      cubit.setDictationModel(path);
+      await settle();
+      expect(cubit.state.dictationModel, path);
+
+      await cubit.deleteModel(path);
+      await settle();
+
+      // Иначе диктовка осталась бы с путём, за которым ничего нет.
+      expect(cubit.state.dictationModel, isEmpty);
+      expect(native.calls, contains('trash'));
+      // Список моделей стал другим — соседним окнам надо перечитать.
+      expect(native.calls, contains('settingsChanged'));
+    });
+
+    test('система отказала — говорим об этом, а выбор не трогаем', () async {
+      native.trashAllowed = false;
+      final path = '${tmp.path}/ggml-условная.bin';
+      File(path).writeAsBytesSync(List.filled(16, 1));
+      cubit.setDictationModel(path);
+      await settle();
+
+      await cubit.deleteModel(path);
+      expect(cubit.state.problem, contains('Корзину'));
+      expect(cubit.state.dictationModel, path, reason: 'файл на месте');
+    });
   });
 
   group('библиотека', () {
@@ -182,6 +211,7 @@ class _FakeNative {
 
   bool permitted = true;
   bool loginItemAllowed = true;
+  bool trashAllowed = true;
 
   void install() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -190,6 +220,7 @@ class _FakeNative {
       return switch (call.method) {
         'permissions' => permitted,
         'loginItem' => loginItemAllowed,
+        'trash' => trashAllowed,
         'initialTab' => 'dictation',
         _ => null,
       };

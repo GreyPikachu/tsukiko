@@ -477,7 +477,12 @@ class ModelField extends StatelessWidget {
       items: [
         if (f != null) MacosPopupMenuItem(value: '', child: Text(f)),
         for (final m in installed)
-          MacosPopupMenuItem(value: m, child: Text(modelDisplayName(m))),
+          MacosPopupMenuItem(
+            value: m,
+            // Не просто имя: две «Large v3 Turbo» из разных папок выглядели
+            // в списке одинаково, и какая выбрана — понять было нельзя.
+            child: Text(modelLabel(m, installed)),
+          ),
         if (offers.isNotEmpty && installed.isNotEmpty)
           MacosPopupMenuItem(
             enabled: false,

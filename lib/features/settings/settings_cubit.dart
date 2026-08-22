@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:bloc/bloc.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -9,6 +10,7 @@ import '../../core/settings.dart';
 import '../../core/transcript.dart';
 import '../../core/whisper_server.dart';
 import '../../platform/bridge.dart';
+import '../../platform/os.dart';
 import 'settings_state.dart';
 
 /// Окно настроек: сочетания клавиш, модели, библиотека и поведение
@@ -60,7 +62,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         .where((v) => exportFormats.any((f) => f.id == v))
         .toList();
     _emit(state.copyWith(
-      models: findModels(),
+      models: scanModels(),
       toLibrary: (s['toLibrary'] as bool?) ?? true,
       saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
       timestamps: (s['timestamps'] as bool?) ?? true,
@@ -174,11 +176,22 @@ class SettingsCubit extends Cubit<SettingsState> {
   void pickModel(String path) {
     final problem = modelFileProblem(path);
     if (problem != null) return _emit(state.copyWith(problem: problem));
+    // Файл мог лежать за пределами обеих наших папок — тогда обход его
+    // не найдёт, и в списке он появится только так.
+    final known = state.models.any((m) => m.path == path);
     _emit(state.copyWith(
       clearProblem: true,
-      models: state.models.contains(path)
+      models: known
           ? state.models
-          : [...state.models, path],
+          : [
+              ...state.models,
+              InstalledModel(
+                path: path,
+                sizeBytes: File(path).existsSync() ? File(path).lengthSync() : 0,
+                problem: null,
+                ours: false,
+              ),
+            ],
     ));
     setDictationModel(path);
   }
@@ -201,7 +214,7 @@ class SettingsCubit extends Cubit<SettingsState> {
     _download = null;
     _emit(state.copyWith(
       clearDownload: true,
-      models: path != null ? findModels() : null,
+      models: path != null ? scanModels() : null,
     ));
     // Список моделей стал другим — соседним окнам надо его перечитать.
     if (path != null) unawaited(bridge.settingsChanged());
@@ -257,6 +270,32 @@ class SettingsCubit extends Cubit<SettingsState> {
     _emit(state.copyWith(libraryFormats: formats));
     unawaited(_saveApp({'libraryFormats': formats}));
   }
+
+  /// Убрать модель в Корзину.
+  ///
+  /// Не `unlink`: полтора гигабайта, стёртые по промаху, качать заново.
+  /// Из Корзины файл возвращается средствами самой системы.
+  ///
+  /// Спрашивать здесь нечего — вопрос задаёт окно, кубит получает уже
+  /// принятое решение.
+  Future<void> deleteModel(String path) async {
+    final gone = await bridge.trash(path);
+    if (!gone) {
+      return _emit(state.copyWith(
+          problem: 'Не удалось убрать модель в Корзину: $path'));
+    }
+    // Выбранной эта модель быть больше не может.
+    if (_dictation.model == path) {
+      _saveDictation((d) => d.model = '');
+    }
+    _emit(state.copyWith(clearProblem: true, models: scanModels()));
+    // Список моделей стал другим — соседним окнам надо его перечитать.
+    unawaited(bridge.settingsChanged());
+  }
+
+  /// Показать папку моделей в проводнике: где они лежат, из интерфейса
+  /// иначе не узнать.
+  Future<void> revealModelsFolder() => revealInFinder(os.modelsDir);
 
   Future<void> reveal(String path) => revealInFinder(path);
 

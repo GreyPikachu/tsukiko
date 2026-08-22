@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 
+import '../../core/models.dart';
 import '../../core/whisper_server.dart' show Hotkey;
 
 /// Всё, что видно в окне настроек, — одним неизменяемым снимком.
@@ -41,7 +42,12 @@ class SettingsState extends Equatable {
   /// открыться сразу на «Моделях».
   final String tab;
 
-  final List<String> models;
+  /// Что лежит на диске: со своим размером и с отметкой, цел ли файл.
+  final List<InstalledModel> models;
+
+  /// Пути годных моделей — для выпадающих списков.
+  List<String> get usable =>
+      [for (final m in models) if (!m.broken) m.path];
 
   /// Идущая загрузка модели: подпись, ход строкой и процент. Самого
   /// загрузчика здесь нет — он меняется внутри себя.
@@ -82,7 +88,7 @@ class SettingsState extends Equatable {
 
   SettingsState copyWith({
     String? tab,
-    List<String>? models,
+    List<InstalledModel>? models,
     String? downloadTitle,
     String? downloadProgress,
     int? downloadPercent,

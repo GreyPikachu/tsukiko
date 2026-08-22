@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:equatable/equatable.dart';
+
 import '../platform/os.dart';
 
 /// Модели распознавания: где их искать, что из них годится, как они
@@ -11,17 +13,94 @@ import '../platform/os.dart';
 bool looksLikeSpeechModel(String name) =>
     name.startsWith('ggml-') && name.endsWith('.bin') && !name.contains('silero');
 
-List<String> findModels() {
-  final out = <String>[];
+/// Модель, лежащая на диске, со всем, что о ней надо знать до выбора.
+///
+/// Раньше список моделей был просто списком путей, и из него нельзя было
+/// понять ни размера, ни того, цел ли файл: битую или недокачанную модель
+/// показывали наравне с рабочей, и узнавалось это только при запуске
+/// распознавания — руганью whisper про тензоры.
+/// Сравнивается по значениям: обход диска каждый раз создаёт новые
+/// объекты, и без этого список выглядел бы изменившимся на каждом опросе.
+class InstalledModel extends Equatable {
+  const InstalledModel({
+    required this.path,
+    required this.sizeBytes,
+    required this.problem,
+    required this.ours,
+  });
+
+  final String path;
+
+  /// Размер файла. Ноль — прочитать не удалось.
+  final int sizeBytes;
+
+  /// Почему файл не годится в модель распознавания. Пусто — годится.
+  final String? problem;
+
+  /// Лежит в нашей папке моделей, а не в общем кеше whisper.cpp.
+  /// Чужую папку делят с другими программами, и трогать её надо осторожнее.
+  final bool ours;
+
+  String get name => modelDisplayName(path);
+  String get folder => os.dirname(path);
+  bool get broken => problem != null;
+
+  String get sizeLabel =>
+      sizeBytes <= 0 ? '' : sizeLabelMb(sizeBytes ~/ (1024 * 1024));
+
+  @override
+  List<Object?> get props => [path, sizeBytes, problem, ours];
+}
+
+/// Что лежит на диске — с проверкой каждого файла.
+///
+/// Проверка стоит чтения восьми байт и размера, то есть ничего: моделей
+/// единицы, а показать битую как рабочую дороже.
+List<InstalledModel> scanModels() {
+  final out = <InstalledModel>[];
+  final seen = <String>{};
   for (final d in [os.modelsDir, ...os.sharedModelDirs]) {
     final dir = Directory(d);
     if (!dir.existsSync()) continue;
     for (final f in dir.listSync(recursive: true)) {
-      if (f is File && looksLikeSpeechModel(os.basename(f.path))) out.add(f.path);
+      if (f is! File || !looksLikeSpeechModel(os.basename(f.path))) continue;
+      if (!seen.add(f.path)) continue;
+      var size = 0;
+      try {
+        size = f.lengthSync();
+      } catch (_) {}
+      out.add(InstalledModel(
+        path: f.path,
+        sizeBytes: size,
+        problem: modelFileProblem(f.path),
+        ours: f.path.startsWith(os.modelsDir),
+      ));
     }
   }
-  out.sort();
+  out.sort((a, b) => a.path.compareTo(b.path));
   return out;
+}
+
+/// Только пути и только годных: тому, кто собирается распознавать, битая
+/// модель в списке ни к чему.
+List<String> findModels() =>
+    [for (final m in scanModels()) if (!m.broken) m.path];
+
+/// Подпись, по которой две модели не спутать.
+///
+/// Имя собирается из имени файла, поэтому одна и та же «Large v3 Turbo»
+/// в разных папках выглядела в списке двумя одинаковыми строками, и какая
+/// из них выбрана — понять было нельзя. Когда имя не одно, дописываем папку.
+String modelLabel(String path, List<String> all) {
+  final name = modelDisplayName(path);
+  final sameName =
+      all.where((p) => modelDisplayName(p) == name).length > 1;
+  if (!sameName) return name;
+  final dir = os.dirname(path);
+  final where = dir.startsWith(os.modelsDir)
+      ? appName
+      : os.basename(dir).replaceFirst(RegExp(r'^\.'), '');
+  return '$name · $where';
 }
 
 // ── откуда берутся модели ───────────────────────────────────────────────────
