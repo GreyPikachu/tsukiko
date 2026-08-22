@@ -284,9 +284,13 @@ final class DictationBridge: NSObject {
       }
       NSWorkspace.shared.recycle([URL(fileURLWithPath: path)]) { _, error in
         if let error {
-          NSLog("tsukiko: не удалось убрать запись в Корзину — \(error.localizedDescription)")
+          NSLog("tsukiko: не удалось убрать в Корзину — \(error.localizedDescription)")
         }
-        reply(error == nil)
+        // Строго с главного потока: completion у recycle приходит с той
+        // очереди, с какой ему удобно, а FlutterResult оттуда звать нельзя —
+        // канал после этого перестаёт доставлять сообщения вовсе, и окно
+        // молча каменеет.
+        DispatchQueue.main.async { reply(error == nil) }
       }
     case "quit":
       NSApp.terminate(nil)

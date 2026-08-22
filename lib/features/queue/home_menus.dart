@@ -103,14 +103,16 @@ extension _Menus on _HomeViewState {
             PlatformMenuItem(
               label: 'Показать библиотеку в ${os.fileManagerName}',
               shortcut: const SingleActivator(LogicalKeyboardKey.keyR, meta: true, shift: true),
-              onSelected: () => revealInFinder(s.libraryPath),
+              onSelected: () =>
+                  revealInFinder(s.libraryPath, createIfMissing: true),
             ),
           ]),
           PlatformMenuItemGroup(members: [
             PlatformMenuItem(
-              label: 'Показать исходный файл в Finder',
+              label: 'Показать исходный файл в ${os.fileManagerName}',
               shortcut: const SingleActivator(LogicalKeyboardKey.keyR, meta: true),
-              onSelected: s.lead == null ? null : () => revealInFinder(s.lead!.file.path),
+              onSelected:
+                  s.lead == null ? null : () => _revealSource(s.lead!.path),
             ),
           ]),
         ],
@@ -223,7 +225,8 @@ extension _Menus on _HomeViewState {
         menus: [
           PlatformMenuItem(
             label: 'Где лежат расшифровки',
-            onSelected: () => revealInFinder(s.libraryPath),
+            onSelected: () =>
+                revealInFinder(s.libraryPath, createIfMissing: true),
           ),
           PlatformMenuItem(label: 'О программе $appName', onSelected: _about),
         ],
