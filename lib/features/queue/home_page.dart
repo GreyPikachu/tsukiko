@@ -1,6 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show Platform;
 import 'dart:ui' show ImageFilter;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -9,146 +8,87 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart' show SelectableText;
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
-import '../../design/design.dart';
-import '../../core/whisper_server.dart' show recordedServerPid;
 import '../../core/library.dart';
 import '../../core/models.dart';
-import '../../core/model_usage.dart';
 import '../../core/text.dart';
 import '../../core/transcript.dart';
-import '../../core/whisper.dart';
+import '../../design/design.dart';
 import '../../design/mascot.dart';
+import '../../platform/bridge.dart';
 import '../../platform/os.dart';
-import '../../core/settings.dart';
-import '../../platform/bridge.dart' show NativeBridge;
+import 'job.dart';
+import 'queue_bloc.dart';
+import 'queue_event.dart';
+import 'queue_state.dart';
+import 'widgets/chrome.dart';
+import 'widgets/queue_row.dart';
+import 'widgets/scope_banner.dart';
+import 'widgets/segment_row.dart';
 
-part 'job.dart';
-part 'home_queue.dart';
-part 'home_transcribe.dart';
-part 'home_export.dart';
-part 'home_dialogs.dart';
 part 'home_menus.dart';
-part 'widgets_queue.dart';
-part 'widgets_transcript.dart';
-part 'widgets_inspector.dart';
-part 'widgets_chrome.dart';
 
-class HomePage extends StatefulWidget {
+/// Главное окно: очередь, расшифровка и инспектор.
+///
+/// Состоянием владеет [QueueBloc]; здесь остаётся только то, что относится
+/// к самому окну, — фокусы, прокрутка, перетаскивание и панель поиска.
+/// Всё, что меняет очередь, уходит событием.
+class HomePage extends StatelessWidget {
   const HomePage({super.key, this.initialFiles = const []});
   final Iterable<String> initialFiles;
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  Widget build(BuildContext context) => BlocProvider(
+        create: (_) => QueueBloc(NativeBridge())
+          ..add(const QueueOpened())
+          ..add(FilesAdded(initialFiles)),
+        child: const _HomeView(),
+      );
 }
 
-class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
-  final _jobs = <Job>[];
-  final _sel = <Job>{};
-  Job? _lead;
+class _HomeView extends StatefulWidget {
+  const _HomeView();
 
+  @override
+  State<_HomeView> createState() => _HomeViewState();
+}
+
+class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
+  // Только про окно: очередь, настройки и распознавание живут в блоке.
   final _promptCtrl = TextEditingController();
   final _searchCtrl = TextEditingController();
   final _searchFocus = FocusNode();
   final _queueFocus = FocusNode(debugLabel: 'очередь');
   final _transcriptScroll = ScrollController();
-  final _whisper = findWhisper();
 
-  bool _running = false, _stopRequested = false, _dragging = false, _scrolled = false;
-  bool _findOpen = false;
-  String _status = 'Готово';
+  bool _dragging = false, _scrolled = false, _findOpen = false;
   String _query = '';
-  Process? _proc;
-  Directory? _tmp;
 
-  /// Номер следующего запуска whisper-cli. Растёт и не сбрасывается: имена
-  /// временных файлов должны быть новыми даже после правки очереди.
-  int _runSeq = 0;
-  Timer? _modelTimer, _saveTimer;
-  ModelUse _modelUse = const ModelUse(ModelState.free);
+  /// Подсказка модели правится полем ввода, а приходит из состояния:
+  /// синхронизируем только когда они разошлись, иначе курсор прыгал бы
+  /// на каждую букву.
+  String _promptShown = '';
 
-  /// Модель занял наш же сервер диктовки. Считается раз в опрос: узнаётся
-  /// это по pid из файла, а ходить в `ps` на каждый кадр незачем.
-  bool _dictationHoldsModel = false;
-
-  /// Pid сервера диктовки, каким его записала панель. Обновляется тем же
-  /// опросом; читатели берут готовое значение и в систему не ходят.
-  int? _serverPid;
-  Set<String> _modelUsers = <String>{};
-  CpuSample _cpu = const CpuSample.empty();
-  bool _polling = false;
-  int _tick = 0;
-
-  List<String> _models = [];
-  late RunOptions _defaults;
-
-  /// Идущая загрузка. Одна на всё окно: сеть общая, а два полуторагиговых
-  /// файла разом просто мешают друг другу.
-  Download? _download;
-
-  // Настройки приложения: правят их в окне настроек, здесь ими только
-  // пользуются. Исключение — эти две, у них есть свои переключатели
-  // в меню и в строке состояния.
-  bool _timestamps = true, _yieldBusyModel = true;
-  bool _saveNextToSource = false;
-
-  /// Единственное, за чем главное окно ходит в macOS напрямую.
-  late final _mac = NativeBridge();
-  StreamSubscription<void>? _settingsSub;
-  bool _toLibrary = true;
-  String _libraryPath = defaultLibraryPath;
-  List<String> _libraryFormats = const ['txt'];
-
-  // Приложение помнит, чем вы пользуетесь: кнопка повторяет прошлый выбор,
-  // а стрелка рядом позволяет его сменить.
-  String _copyFormat = formatPlainText.id;
-  String _saveFormat = formatPlainText.id;
-  List<String> _recent = const [];
+  QueueBloc get _bloc => context.read<QueueBloc>();
+  void _send(QueueEvent e) => _bloc.add(e);
+  void _sendAll() => _send(const AllSelected());
+  void _sendDeselect() => _send(const SelectionCleared());
+  void _sendRemove() => _send(const SelectedRemoved());
+  void _sendClearFinished() => _send(const FinishedCleared());
+  void _sendStart() => _send(const RunRequested());
+  void _sendRetry() => _send(const RetryRequested());
+  void _sendStop() => _send(const StopRequested());
+  void _sendResetOverrides() => _send(const OverridesReset());
+  void _sendMakeDefault() => _send(const LeadOptionsMadeDefault());
+  void _sendDownload(ModelOffer m) => _send(ModelDownloadRequested(m));
+  void _sendEnableVad() => _send(const VadRequested(true));
 
   @override
   void initState() {
     super.initState();
-    _models = findModels();
-
-    var threads = (Platform.numberOfProcessors ~/ 2).clamp(2, 16);
-    if (threads.isOdd) threads -= 1;
-
-    final s = Settings.load();
-    _defaults = RunOptions.fromJson(
-      s,
-      RunOptions(
-        model: _models.isNotEmpty ? _models.first : '',
-        lang: 'auto',
-        threads: threads,
-      ),
-    );
-    _rescanModels();
-    _timestamps = (s['timestamps'] as bool?) ?? true;
-    _yieldBusyModel = (s['yieldBusyModel'] as bool?) ?? true;
-    _saveNextToSource = (s['saveNextToSource'] as bool?) ?? false;
-    _toLibrary = (s['toLibrary'] as bool?) ?? true;
-    _libraryPath = (s['libraryPath'] as String?) ?? defaultLibraryPath;
-    _copyFormat = _knownFormat(s['copyFormat'], formatPlainText.id);
-    _saveFormat = _knownFormat(s['saveFormat'], formatPlainText.id);
-    _recent = ((s['recent'] as List?)?.cast<String>() ?? const [])
-        .where((p) => File(p).existsSync())
-        .toList();
-    // Раньше форматы хранились расширениями («.txt») — переводим в имена.
-    final formats = (s['libraryFormats'] as List?)
-        ?.cast<String>()
-        .map((v) => v.startsWith('.') ? v.substring(1) : v)
-        .where((v) => exportFormats.any((f) => f.id == v))
-        .toList();
-    if (formats != null && formats.isNotEmpty) _libraryFormats = formats;
-    _promptCtrl.text = _defaults.prompt;
-
-    // Настройки правят в другом окне и в другом изоляте: пока это окно
-    // открыто, оно должно узнавать о правках, а не жить со своей копией.
-    // Подписку держим в поле: движок переживает закрытие окна, и без
-    // отмены она звала бы setState у снятого с дерева состояния.
-    _settingsSub = _mac.settingsReloaded.listen((_) => _reloadSettings());
-
+    WidgetsBinding.instance.addObserver(this);
     _transcriptScroll.addListener(() {
       final scrolled = _transcriptScroll.hasClients && _transcriptScroll.offset > 6;
       if (scrolled != _scrolled) setState(() => _scrolled = scrolled);
@@ -156,72 +96,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _searchCtrl.addListener(() {
       if (_searchCtrl.text != _query) setState(() => _query = _searchCtrl.text);
     });
-
-    WidgetsBinding.instance.addObserver(this);
-    _syncPolling();
-
-    if (widget.initialFiles.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _addPaths(widget.initialFiles));
-    }
   }
-
-  /// setState помечен @protected: из вынесенных в part-файлы расширений
-  /// его не вызвать напрямую, а поведение должно остаться прежним.
-  void _set(VoidCallback change) => setState(change);
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) => _syncPolling();
-
-  /// Опрос занятости модели — самая дорогая мелочь в простое: каждый заход
-  /// это `pgrep` и `ps`, а каждый третий ещё и `lsof` на 150 мс. Смысл
-  /// у него ровно один — показать значок в строке состояния, поэтому пока
-  /// окно не на виду, опрашивать некого и не для кого.
-  ///
-  /// Исключение — идущая расшифровка: очередь уступает занятой модели,
-  /// глядя на тот же `_modelUse`, и с замороженным опросом она встала бы
-  /// на устаревшем ответе.
-  void _syncPolling() {
-    final needed = _running ||
-        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-    if (needed == (_modelTimer != null)) return;
-    if (!needed) {
-      _modelTimer?.cancel();
-      _modelTimer = null;
-      return;
-    }
-    // Возвращаемся к окну — показанное состояние может быть минутной
-    // давности, поэтому сразу спрашиваем заново.
-    _pollModel();
-    // Диктовка короткая: между «отпустил клавишу» и «текст готов» проходит
-    // пара секунд. Реже чем раз в 700 мс её просто не видно.
-    _modelTimer =
-        Timer.periodic(const Duration(milliseconds: 700), (_) => _pollModel());
-  }
-
-  /// Перечитать модели с диска: скачанное ложится в папку, которую
-  /// findModels() и так просматривает. Выбранный вручную файл из чужой папки
-  /// дописываем — иначе он исчез бы из списка. Пропавший файл не дописываем:
-  /// список из одной мёртвой строки выглядит так, будто модель есть.
-  void _rescanModels() {
-    final found = findModels();
-    final own = _defaults.model;
-    _models = own.isEmpty || found.contains(own) || !File(own).existsSync()
-        ? found
-        : [...found, own];
-  }
-
-  String _knownFormat(Object? id, String fallback) =>
-      exportFormats.any((f) => f.id == id) ? id as String : fallback;
+  void didChangeAppLifecycleState(AppLifecycleState state) =>
+      _send(WindowVisibilityChanged(state == AppLifecycleState.resumed));
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _settingsSub?.cancel();
-    _modelTimer?.cancel();
-    _saveTimer?.cancel();
-    _proc?.kill();
-    _tmp?.deleteSync(recursive: true);
-    _writeSettings();
     _promptCtrl.dispose();
     _searchCtrl.dispose();
     _searchFocus.dispose();
@@ -230,122 +113,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // ── настройки ─────────────────────────────────────────────────────────────
-
-  /// Раньше настройки писались только при выходе, и ⌘Q мимо dispose стирал
-  /// все правки за сеанс. Теперь пишем сразу, но не чаще раза в полсекунды —
-  /// иначе каждая буква в подсказке уходила бы на диск.
-  void _persist() {
-    _saveTimer?.cancel();
-    _saveTimer = Timer(const Duration(milliseconds: 500), _writeSettings);
-  }
-
-  /// Пишем только своё: библиотеку и поведение приложения правит окно
-  /// настроек, и его ключи Settings.save оставляет в файле нетронутыми.
-  /// Иначе окно, простоявшее открытым весь сеанс, вернуло бы всё как было.
-  ///
-  /// Ответа не ждём: писать настройки очереди некуда торопиться, а звать
-  /// это приходится и из dispose, где ждать уже некому.
-  void _writeSettings() => unawaited(Settings.save({
-        ..._defaults.toJson(),
-        'timestamps': _timestamps,
-        'yieldBusyModel': _yieldBusyModel,
-        // пишется, но не читается обратно (находка E2) — трогать
-        // в этом заходе не стал: правка не про блок A.
-        'modelUsers': _modelUsers.toList(),
-        'copyFormat': _copyFormat,
-        'saveFormat': _saveFormat,
-        'recent': _recent,
-      }));
-
-  /// Настройки поменяли в другом окне. Перечитываем то, чем это окно
-  /// пользуется, но чего больше не правит.
-  void _reloadSettings() {
-    if (!mounted) return;
-    final s = Settings.load();
-    final formats = (s['libraryFormats'] as List?)
-        ?.cast<String>()
-        .where((v) => exportFormats.any((f) => f.id == v))
-        .toList();
-    setState(() {
-      _timestamps = (s['timestamps'] as bool?) ?? _timestamps;
-      _yieldBusyModel = (s['yieldBusyModel'] as bool?) ?? _yieldBusyModel;
-      _saveNextToSource = (s['saveNextToSource'] as bool?) ?? _saveNextToSource;
-      _toLibrary = (s['toLibrary'] as bool?) ?? _toLibrary;
-      _libraryPath = (s['libraryPath'] as String?) ?? _libraryPath;
-      if (formats != null && formats.isNotEmpty) _libraryFormats = formats;
-      // Модель могли скачать в окне настроек — список файлов уже другой.
-      _rescanModels();
-    });
-  }
-
-  /// Кто держит модель, человеческими словами. Своё называем по делу:
-  /// «whisper-server» — это мы сами, и человеку такое имя ничего не
-  /// говорит. Чужих соседей по-прежнему называем их именами.
-  bool get _weAreTranscribing =>
-      _running && _jobs.any((j) => j.state == JobState.transcribing);
-
-  String get _modelUseBy => _weAreTranscribing
-      ? 'расшифровка'
-      : _dictationHoldsModel
-          ? 'диктовка'
-          : _modelUse.by;
-
-  String get _modelUseLabel => _weAreTranscribing
-      ? 'Занято расшифровкой'
-      : _dictationHoldsModel
-          ? 'Занято диктовкой'
-          : _modelUse.label;
-
-  String get _modelUseDetail => _weAreTranscribing
-      ? 'Расшифровываем запись прямо сейчас.'
-      : _dictationHoldsModel
-          ? 'Диктовка держит модель в памяти. Очередь ей уступает.'
-          : _modelUse.detail;
-
-  /// Настройки, которые сейчас показывает инспектор: общие, если ничего
-  /// не выбрано, иначе — настройки ведущей записи.
-  RunOptions get _shown => _sel.isEmpty ? _defaults : (_lead?.overrides ?? _defaults);
-
-  RunOptions _optionsFor(Job job) => job.overrides ?? _defaults;
-
-  /// Правка уходит туда, куда смотрит инспектор: в общие настройки или
-  /// во все выбранные записи сразу.
-  void _edit(RunOptions Function(RunOptions) change) {
-    setState(() {
-      if (_sel.isEmpty) {
-        _defaults = change(_defaults);
-      } else {
-        for (final job in _sel) {
-          job.overrides = change(job.overrides ?? _defaults);
-        }
-      }
-    });
-    _persist();
-  }
-
-  void _resetOverrides() {
-    setState(() {
-      for (final job in _sel) {
-        job.overrides = null;
-      }
-      _status = 'Настройки записи сброшены';
-    });
-    _syncPromptField();
-  }
-
-  void _makeDefault() {
-    final own = _lead?.overrides;
-    if (own == null) return;
-    setState(() {
-      _defaults = own;
-      _status = 'Эти настройки стали общими';
-    });
-    _persist();
-  }
-
-  void _syncPromptField() {
-    final text = _shown.prompt;
+  /// Поле подсказки следует за выбранной записью, но не мешает набору.
+  void _syncPromptField(QueueState s) {
+    final text = s.shown.prompt;
+    if (text == _promptShown) return;
+    _promptShown = text;
     if (_promptCtrl.text == text) return;
     _promptCtrl.value = TextEditingValue(
       text: text,
@@ -353,103 +125,261 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Один опрос занятости. Разница CPU считается между соседними опросами,
-  /// поэтому замер надо сохранять всегда, даже когда на экране ничего
-  /// не поменялось.
-  Future<void> _pollModel() async {
-    if (_polling) return;
-    _polling = true;
-    try {
-      final use = await modelUsage(
-        modelPath: _shown.model,
-        others: _models,
-        learned: _modelUsers,
-        ignorePid: _proc?.pid,
-        previous: _cpu,
-        // lsof — самая дорогая часть опроса, а нужен он только чтобы поймать
-        // короткий момент загрузки модели в память.
-        probeHolders: _tick++ % 3 == 0,
+  /// Держимся хвоста, пока пользователь сам не отлистал вверх.
+  void _followTail() {
+    if (!_transcriptScroll.hasClients) return;
+    final pos = _transcriptScroll.position;
+    if (pos.maxScrollExtent - pos.pixels > 120) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_transcriptScroll.hasClients) return;
+      _transcriptScroll.animateTo(
+        _transcriptScroll.position.maxScrollExtent,
+        duration: Motion.dur(context, Motion.settle),
+        curve: Motion.curve(context, Motion.settleCurve),
       );
-      _cpu = use.cpu;
-      if (!mounted) return;
-      // Чтение файла в сотню байт вместо запуска `ps`. Живость и имя
-      // процесса проверять здесь незачем: pid пришёл из `ps` внутри
-      // самого опроса — значит процесс жив и распознаёт речь, остаётся
-      // спросить, наш ли он. Прежний вариант запускал `ps` дважды
-      // в секунду прямо на изоляте, который рисует окно.
-      _serverPid = recordedServerPid();
-      final ours = use.busy && use.pid != 0 && use.pid == _serverPid;
-      if (use.label != _modelUse.label ||
-          use.detail != _modelUse.detail ||
-          ours != _dictationHoldsModel ||
-          use.learned.length != _modelUsers.length) {
-        setState(() {
-          _modelUse = use;
-          _modelUsers = use.learned;
-          _dictationHoldsModel = ours;
-        });
-      }
-    } finally {
-      _polling = false;
-    }
+    });
   }
 
-  // ── меню в строке меню ────────────────────────────────────────────────────
+  // ── диалоги и выбор файлов ────────────────────────────────────────────────
+  //
+  // Всё, для чего нужно окно: блок про окна не знает и спрашивать человека
+  // не умеет — он кладёт вопрос в состояние, а показывает его отсюда.
+
+  void _showAsk(Ask ask) {
+    showMacosAlertDialog<void>(
+      context: context,
+      builder: (dialogContext) => MacosAlertDialog(
+        appIcon: MacosIcon(
+          ask.confirm ? CupertinoIcons.waveform_circle : CupertinoIcons.waveform,
+          size: 56,
+        ),
+        title: Text(ask.title, style: Type.emptyTitle),
+        message:
+            Text(ask.message, textAlign: TextAlign.center, style: Type.control),
+        primaryButton: PushButton(
+          controlSize: ControlSize.large,
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            _send(ask.confirm ? const RunConfirmed(true) : const AskDismissed());
+          },
+          child: Text(ask.confirm ? 'Продолжить' : 'Понятно'),
+        ),
+        secondaryButton: ask.confirm
+            ? PushButton(
+                controlSize: ControlSize.large,
+                secondary: true,
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _send(const RunConfirmed(false));
+                },
+                child: const Text('Отмена'),
+              )
+            : null,
+      ),
+    );
+  }
+
+  void _about() => showMacosAlertDialog<void>(
+        context: context,
+        builder: (dialogContext) => MacosAlertDialog(
+          appIcon: const MacosIcon(CupertinoIcons.waveform_circle_fill, size: 56),
+          title: const Text(appName, style: Type.emptyTitle),
+          message: Text(
+            'Распознавание речи на самом компьютере.\n'
+            'Движок: whisper.cpp · ничего не уходит в сеть.',
+            textAlign: TextAlign.center,
+            style: Type.control,
+          ),
+          primaryButton: PushButton(
+            controlSize: ControlSize.large,
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Закрыть'),
+          ),
+        ),
+      );
+
+  Future<void> _pickFiles() async {
+    final files = await openFiles(acceptedTypeGroups: [
+      XTypeGroup(
+        label: 'Аудио и видео',
+        extensions: audioExt.map((e) => e.substring(1)).toList(),
+      ),
+    ]);
+    if (files.isNotEmpty) _send(FilesAdded(files.map((f) => f.path)));
+  }
+
+  Future<void> _openTranscript() async {
+    final f = await openFile(acceptedTypeGroups: [
+      XTypeGroup(
+        label: 'Расшифровки',
+        extensions: transcriptExt.map((e) => e.substring(1)).toList(),
+      ),
+    ]);
+    if (f != null) _send(TranscriptOpened(f.path));
+  }
+
+  /// Выбранный руками файл проверяем: «.bin» лежит на чём угодно, а
+  /// whisper-cli на чужом файле падает с руганью про тензоры — человеку
+  /// из неё не понять, что он выбрал не то.
+  Future<void> _pickModel() async {
+    final f = await openFile(
+        acceptedTypeGroups: const [XTypeGroup(label: 'GGML', extensions: ['bin'])]);
+    if (f == null) return;
+    final problem = modelFileProblem(f.path);
+    if (problem != null) return _showAsk(Ask('Это не модель распознавания', problem));
+    _send(ModelChosen(f.path));
+  }
+
+  Future<void> _saveAs(QueueState s, [ExportFormat? format]) async {
+    final f = format ?? formatById(s.saveFormat);
+    final jobs = s.readyTargets;
+    if (jobs.isEmpty) return;
+    // Одна запись — обычный «Сохранить как…»; несколько — выбор папки,
+    // потому что спрашивать имя шесть раз подряд невыносимо.
+    if (jobs.length > 1) return _exportInto(jobs, [f]);
+
+    final job = jobs.single;
+    final loc = await getSaveLocation(
+      suggestedName: f.fileName(_stem(job.name)),
+      acceptedTypeGroups: [
+        XTypeGroup(label: f.label, extensions: [f.ext.substring(1)]),
+      ],
+    );
+    if (loc == null) return;
+    // Диалог мог отдать путь без расширения — дописываем сами.
+    final path = loc.path.toLowerCase().endsWith(f.ext) ? loc.path : '${loc.path}${f.ext}';
+    _send(SaveRequested(job, path, f));
+  }
+
+  Future<void> _exportAll(QueueState s) async {
+    final jobs = s.readyTargets.isNotEmpty
+        ? s.readyTargets
+        : s.jobs.where((j) => j.done).toList();
+    if (jobs.isEmpty) return;
+    await _exportInto(jobs, s.libraryFormats.map(formatById).toList());
+  }
+
+  Future<void> _exportInto(List<Job> jobs, List<ExportFormat> formats) async {
+    if (formats.isEmpty) return;
+    final dir = await getDirectoryPath(confirmButtonText: 'Экспортировать');
+    if (dir != null) _send(ExportRequested(jobs, dir, formats));
+  }
+
+  String _stem(String name) {
+    final i = name.lastIndexOf('.');
+    return i <= 0 ? name : name.substring(0, i);
+  }
+
+  String _ext(String path) {
+    final i = path.lastIndexOf('.');
+    return i < 0 ? '' : path.substring(i).toLowerCase();
+  }
+
+  void _copy([ExportFormat? format]) {
+    final s = _bloc.state;
+    _send(CopyRequested(format ?? formatById(s.copyFormat)));
+  }
+
+  Future<void> _openSettings([String tab = 'dictation']) =>
+      _bloc.bridge.openSettings(tab);
+
+  // ── как называется занятость ──────────────────────────────────────────────
+
+  String _modelUseBy(QueueState s) => s.transcribing
+      ? 'расшифровка'
+      : s.dictationHoldsModel
+          ? 'диктовка'
+          : s.modelUse.by;
+
+  String _modelUseLabel(QueueState s) => s.transcribing
+      ? 'Занято расшифровкой'
+      : s.dictationHoldsModel
+          ? 'Занято диктовкой'
+          : s.modelUse.label;
+
+  String _modelUseDetail(QueueState s) => s.transcribing
+      ? 'Расшифровываем запись прямо сейчас.'
+      : s.dictationHoldsModel
+          ? 'Диктовка держит модель в памяти. Очередь ей уступает.'
+          : s.modelUse.detail;
 
   static const _cmd = SingleActivator(LogicalKeyboardKey.keyO, meta: true);
 
   List<Object?>? _menuSignature;
   List<PlatformMenuItem> _menuCache = const [];
 
-  // ── интерфейс ─────────────────────────────────────────────────────────────
+  /// Настроение кота выводится из того, что приложение делает прямо сейчас.
+  Mood _mood(QueueState s, Job? job) => moodFor(
+        dragging: _dragging,
+        running: s.running,
+        jobActive: job?.active ?? false,
+        hasJobs: job != null,
+        longWait: (job?.segments.isEmpty ?? true) && job?.raw == null,
+      );
 
   @override
   Widget build(BuildContext context) {
-    return PlatformMenuBar(
-      menus: _menus(),
-      child: MacosWindow(
-        sidebar: Sidebar(
-          minWidth: 248,
-          startWidth: 276,
-          builder: (context, controller) => _queue(controller),
-          bottom: _queueButtons(),
-        ),
-        endSidebar: Sidebar(
-          minWidth: 290,
-          startWidth: 312,
-          maxWidth: 380,
-          shownByDefault: true,
-          builder: (context, controller) => _inspector(controller),
-        ),
-        child: MacosScaffold(
-          toolBar: _toolbar(),
-          children: [
-            ContentArea(
-              builder: (context, _) => Stack(
-                children: [
-                  Positioned.fill(
-                    child: Column(children: [
-                      if (_findOpen) _findBar(),
-                      Expanded(child: _transcriptArea()),
-                    ]),
-                  ),
-                  Positioned(left: 0, right: 0, bottom: 0, child: _statusBar()),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+    return BlocConsumer<QueueBloc, QueueState>(
+      listenWhen: (was, now) =>
+          was.ask != now.ask ||
+          was.shown.prompt != now.shown.prompt ||
+          (was.lead?.live.length ?? 0) != (now.lead?.live.length ?? 0),
+      listener: (context, s) {
+        _syncPromptField(s);
+        // Новый фрагмент — держимся хвоста, пока человек сам не отлистал.
+        if ((s.lead?.live.length ?? 0) > 0) _followTail();
+        final ask = s.ask;
+        if (ask != null) _showAsk(ask);
+      },
+      builder: (context, s) => _window(s),
     );
   }
 
-  ToolBar _toolbar() {
-    final ready = _readyTargets.isNotEmpty;
-    final copyFormat = formatById(_copyFormat);
-    final saveFormat = formatById(_saveFormat);
+  Widget _window(QueueState s) => PlatformMenuBar(
+        menus: _menus(s),
+        child: MacosWindow(
+          sidebar: Sidebar(
+            minWidth: 248,
+            startWidth: 276,
+            builder: (context, controller) => _queue(s, controller),
+            bottom: _queueButtons(s),
+          ),
+          endSidebar: Sidebar(
+            minWidth: 290,
+            startWidth: 312,
+            maxWidth: 380,
+            shownByDefault: true,
+            builder: (context, controller) => _inspector(s, controller),
+          ),
+          child: MacosScaffold(
+            toolBar: _toolbar(s),
+            children: [
+              ContentArea(
+                builder: (context, _) => Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Column(children: [
+                        if (_findOpen) _findBar(s),
+                        Expanded(child: _transcriptArea(s)),
+                      ]),
+                    ),
+                    Positioned(
+                        left: 0, right: 0, bottom: 0, child: _statusBar(s)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  ToolBar _toolbar(QueueState s) {
+    final ready = s.readyTargets.isNotEmpty;
+    final copyFormat = formatById(s.copyFormat);
+    final saveFormat = formatById(s.saveFormat);
 
     return ToolBar(
-      title: _ToolbarTitle(subtitle: _subtitle()),
+      title: ToolbarTitle(subtitle: _subtitle(s)),
       titleWidth: 240,
       enableBlur: true,
       // Кромка появляется только когда под панель что-то уехало.
@@ -463,28 +393,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onPressed: _pickFiles,
         ),
         ToolBarIconButton(
-          label: _running ? 'Остановить' : 'Распознать',
-          icon: MacosIcon(_running
+          label: s.running ? 'Остановить' : 'Распознать',
+          icon: MacosIcon(s.running
               ? CupertinoIcons.stop_fill
-              : _yieldBusyModel && _modelUse.busy
+              : s.yieldBusyModel && s.modelUse.busy
                   ? CupertinoIcons.pause_circle
                   : CupertinoIcons.play_fill),
           showLabel: false,
-          tooltipMessage: _running
-              ? (_waitingForModel
-                  ? 'Ждём, пока $_modelUseBy закончит · остановить ⌘.'
+          tooltipMessage: s.running
+              ? (s.waitingForModel
+                  ? 'Ждём, пока $_modelUseBy(s) закончит · остановить ⌘.'
                   : 'Остановить · ⌘.')
-              : _yieldBusyModel && _modelUse.busy
-                  ? 'Модель занята ($_modelUseBy) — начнём, как только освободится · ⌘⏎'
+              : s.yieldBusyModel && s.modelUse.busy
+                  ? 'Модель занята ($_modelUseBy(s)) — начнём, как только освободится · ⌘⏎'
                   : 'Распознать очередь · ⌘⏎',
-          onPressed: _running ? _stop : (_hasPending ? _start : null),
+          onPressed: s.running ? _sendStop : (s.hasPending ? _sendStart : null),
         ),
         ToolBarIconButton(
           label: 'Распознать заново',
           icon: const MacosIcon(CupertinoIcons.arrow_counterclockwise),
           showLabel: false,
           tooltipMessage: 'Распознать заново с текущими настройками · ⌥⌘R',
-          onPressed: _running || !_targets.any((j) => !j.imported) ? null : _retry,
+          onPressed: s.running || !s.targets.any((j) => !j.imported) ? null : _sendRetry,
         ),
         const ToolBarSpacer(spacerUnits: 1),
 
@@ -503,7 +433,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           items: ready
               ? [
                   for (final f in const [formatPlainText, formatTimedText, formatSrt, formatVtt])
-                    _formatItem(f, _copyFormat, () => _copy(f)),
+                    _formatItem(f, s.copyFormat, () => _copy(f)),
                 ]
               : null,
         ),
@@ -512,7 +442,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           icon: const MacosIcon(CupertinoIcons.arrow_down_doc),
           showLabel: false,
           tooltipMessage: 'Сохранить: ${saveFormat.label.toLowerCase()} · ⌘S',
-          onPressed: ready ? () => _saveAs() : null,
+          onPressed: ready ? () => _saveAs(s) : null,
         ),
         ToolBarPullDownButton(
           label: 'Формат сохранения',
@@ -520,12 +450,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           tooltipMessage: 'Выбрать формат файла',
           items: ready
               ? [
-                  for (final f in exportFormats) _formatItem(f, _saveFormat, () => _saveAs(f)),
+                  for (final f in exportFormats) _formatItem(f, s.saveFormat, () => _saveAs(s, f)),
                   const MacosPulldownMenuDivider(),
                   MacosPulldownMenuItem(
                     title: const Text('Экспортировать в папку…'),
                     label: 'Экспортировать в папку',
-                    onTap: _exportAll,
+                    onTap: () => _exportAll(s),
                   ),
                 ]
               : null,
@@ -535,7 +465,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           icon: const MacosIcon(CupertinoIcons.search),
           showLabel: false,
           tooltipMessage: 'Найти в расшифровке · ⌘F',
-          onPressed: _job == null ? null : _openFind,
+          onPressed: s.lead == null ? null : _openFind,
         ),
       ],
     );
@@ -543,7 +473,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Панель поиска приходит сверху и уходит по Esc — как в Safari и Xcode,
   /// а не занимает место в панели инструментов всё время.
-  Widget _findBar() => Container(
+  Widget _findBar(QueueState s) => Container(
         height: 40,
         padding: const EdgeInsets.fromLTRB(16, 0, 10, 0),
         decoration: BoxDecoration(
@@ -573,7 +503,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
             const SizedBox(width: 12),
             Text(
-              _findSummary(),
+              _findSummary(s),
               style: Type.caption.copyWith(color: Surface.secondaryText(context)),
             ),
             const SizedBox(width: 6),
@@ -585,8 +515,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       );
 
-  String _findSummary() {
-    final job = _job;
+  String _findSummary(QueueState s) {
+    final job = s.lead;
     if (job == null || _query.trim().isEmpty) return 'Esc — закрыть';
     final hits = _visibleSegments(job).length;
     return hits == 0 ? 'Ничего не найдено' : 'Найдено: ${segmentsLabel(hits)}';
@@ -625,18 +555,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       );
 
-  String? _subtitle() {
-    if (_sel.length > 1) return 'Выбрано: ${recordsLabel(_sel.length)}';
-    final job = _lead;
+  String? _subtitle(QueueState s) {
+    if (s.selected.length > 1) return 'Выбрано: ${recordsLabel(s.selected.length)}';
+    final job = s.lead;
     if (job != null) return job.name;
-    if (_jobs.isEmpty) return null;
-    return 'В очереди: ${recordsLabel(_jobs.length)}';
+    if (s.jobs.isEmpty) return null;
+    return 'В очереди: ${recordsLabel(s.jobs.length)}';
   }
 
   // ── очередь ───────────────────────────────────────────────────────────────
 
-  Widget _queue(ScrollController controller) {
-    if (_jobs.isEmpty) {
+  Widget _queue(QueueState s, ScrollController controller) {
+    if (s.jobs.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22),
@@ -658,14 +588,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         final shift = HardwareKeyboard.instance.isShiftPressed;
         switch (event.logicalKey) {
           case LogicalKeyboardKey.arrowDown:
-            _step(1, extend: shift);
+            _send(SelectionStepped(1, extend: shift));
             return KeyEventResult.handled;
           case LogicalKeyboardKey.arrowUp:
-            _step(-1, extend: shift);
+            _send(SelectionStepped(-1, extend: shift));
             return KeyEventResult.handled;
           case LogicalKeyboardKey.backspace:
           case LogicalKeyboardKey.delete:
-            _removeSelected();
+            _sendRemove();
             return KeyEventResult.handled;
         }
         return KeyEventResult.ignored;
@@ -673,32 +603,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       child: ListView.builder(
         controller: controller,
         padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-        itemCount: _jobs.length,
+        itemCount: s.jobs.length,
         itemBuilder: (context, i) {
-          final job = _jobs[i];
+          final job = s.jobs[i];
           return ContextMenuRegion(
             // Правый щелчок по невыделенной записи сначала выделяет её —
             // как в Finder. Это действие жеста, а не построения меню:
             // раньше выделение менялось внутри actions(), то есть setState
             // случался посреди сборки списка пунктов.
             onOpen: () {
-              if (!_sel.contains(job)) _select(job);
+              if (!s.selected.contains(job)) _send(JobSelected(job));
             },
-            actions: () => _rowActions(job),
-            child: _QueueRow(
+            actions: () => _rowActions(s, job),
+            child: QueueRow(
               job: job,
-              selected: _sel.contains(job),
-              lead: identical(job, _lead),
+              selected: s.selected.contains(job),
+              lead: identical(job, s.lead),
               customised: job.overrides != null,
               onTap: () {
                 _queueFocus.requestFocus();
                 final keys = HardwareKeyboard.instance;
                 if (keys.isMetaPressed) {
-                  _toggleSelect(job);
+                  _send(JobToggled(job));
                 } else if (keys.isShiftPressed) {
-                  _extendSelect(job);
+                  _send(SelectionExtended(job));
                 } else {
-                  _select(job);
+                  _send(JobSelected(job));
                 }
               },
             ),
@@ -710,21 +640,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Пункты меню правого щелчка. Считает по нынешнему выделению и ничего
   /// не меняет: выделить запись под курсором — дело жеста (onOpen).
-  List<MenuAction> _rowActions(Job job) {
-    final many = _sel.length > 1;
-    final ready = _readyTargets.isNotEmpty;
+  List<MenuAction> _rowActions(QueueState s, Job job) {
+    final many = s.selected.length > 1;
+    final ready = s.readyTargets.isNotEmpty;
     return [
       MenuAction(
-        'Скопировать ${formatById(_copyFormat).label.toLowerCase()}',
+        'Скопировать ${formatById(s.copyFormat).label.toLowerCase()}',
         onSelected: ready ? () => _copy() : null,
         shortcut: '⇧⌘C',
       ),
       MenuAction('Сохранить как…',
-          onSelected: ready ? () => _saveAs() : null, shortcut: '⌘S'),
+          onSelected: ready ? () => _saveAs(s) : null, shortcut: '⌘S'),
       const MenuAction.separator(),
       MenuAction(
         many ? 'Распознать заново выбранные' : 'Распознать заново',
-        onSelected: _running || !_targets.any((j) => !j.imported) ? null : _retry,
+        onSelected: s.running || !s.targets.any((j) => !j.imported) ? null : _sendRetry,
         shortcut: '⌥⌘R',
       ),
       MenuAction(
@@ -734,16 +664,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       const MenuAction.separator(),
       if (job.overrides != null)
-        MenuAction('Вернуть общие настройки', onSelected: _resetOverrides),
+        MenuAction('Вернуть общие настройки', onSelected: _sendResetOverrides),
       MenuAction(
         many ? 'Убрать выбранные' : 'Убрать из очереди',
-        onSelected: _targets.any((j) => j.active) ? null : _removeSelected,
+        onSelected: s.targets.any((j) => j.active) ? null : _sendRemove,
         shortcut: '⌫',
       ),
     ];
   }
 
-  Widget _queueButtons() => Padding(
+  Widget _queueButtons(QueueState s) => Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
         child: Row(
           children: [
@@ -758,23 +688,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             PushButton(
               controlSize: ControlSize.regular,
               secondary: true,
-              onPressed: _targets.isEmpty || _targets.any((j) => j.active)
+              onPressed: s.targets.isEmpty || s.targets.any((j) => j.active)
                   ? null
-                  : _removeSelected,
+                  : _sendRemove,
               child: const Text('Убрать'),
             ),
           ],
         ),
       );
 
-  /// Настроение кота выводится из того, что приложение делает прямо сейчас.
-  Mood _mood(Job? job) => moodFor(
-        dragging: _dragging,
-        running: _running,
-        jobActive: job?.active ?? false,
-        hasJobs: job != null,
-        longWait: (job?.segments.isEmpty ?? true) && job?.raw == null,
-      );
 
   // ── расшифровка ───────────────────────────────────────────────────────────
 
@@ -801,16 +723,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return _filtered = hits;
   }
 
-  Widget _transcriptArea() {
-    final job = _job;
+  Widget _transcriptArea(QueueState s) {
+    final job = s.lead;
 
     Widget content;
-    if (job == null && _models.isEmpty) {
+    if (job == null && s.models.isEmpty) {
       // Пустее пустого: распознавать нечем. Пока модели нет, разговор про
       // перетаскивание файлов бессмыслен.
       content = Center(
         child: MascotPlaceholder(
-          mood: _mood(job),
+          mood: _mood(s, job),
           title: 'Нужна модель распознавания',
           subtitle: 'Она работает на этом компьютере, поэтому её надо один раз\n'
               'загрузить. Tiny — просто попробовать, Large v3 Turbo — точность.',
@@ -820,7 +742,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } else if (job == null) {
       content = Center(
         child: MascotPlaceholder(
-          mood: _mood(job),
+          mood: _mood(s, job),
           title: 'Перетащите аудио сюда',
           subtitle: 'ogg, m4a, mp3, wav и видео — распознаём локально,\n'
               'ничего не уходит в сеть.',
@@ -829,7 +751,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } else if (job.segments.isEmpty && job.raw == null) {
       content = Center(
         child: MascotPlaceholder(
-          mood: _mood(job),
+          mood: _mood(s, job),
           title: job.active ? 'Слушаем…' : 'Готово к распознаванию',
           subtitle: job.active
               ? 'Текст начнёт появляться, как только модель\nразберёт первый фрагмент.'
@@ -846,7 +768,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final segments = _visibleSegments(job);
       if (segments.isEmpty) {
         content = Center(
-          child: _Placeholder(
+          child: EmptyNotice(
             icon: CupertinoIcons.search,
             title: 'Ничего не найдено',
             subtitle: 'В этой расшифровке нет «$_query».',
@@ -860,12 +782,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           // Ключом служит сам сегмент: время начала у двух соседних
           // фрагментов совпадает (VAD режет по паузам и выдаёт их
           // с одной меткой), и Flutter падал на одинаковых ключах.
-          itemBuilder: (context, i) => _SegmentRow(
+          itemBuilder: (context, i) => SegmentRow(
             key: ObjectKey(segments[i]),
             segment: segments[i],
-            showTimestamp: _timestamps,
+            showTimestamp: s.timestamps,
             highlight: _query.trim(),
-            onCopied: () => setState(() => _status = 'Фрагмент скопирован'),
+            onCopied: () => _send(const StatusReported('Фрагмент скопирован')),
           ),
         );
       }
@@ -876,20 +798,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onDragExited: (_) => setState(() => _dragging = false),
       onDragDone: (details) {
         setState(() => _dragging = false);
-        _addPaths(details.files.map((f) => f.path));
+        _send(FilesAdded(details.files.map((f) => f.path)));
       },
       child: Stack(
         children: [
           Positioned.fill(child: content),
-          Positioned.fill(child: _DropVeil(active: _dragging)),
+          Positioned.fill(child: DropVeil(active: _dragging)),
         ],
       ),
     );
   }
 
   /// Правая половина строки состояния: чем эта расшифровка вообще является.
-  String? _stats() {
-    final job = _lead;
+  String? _stats(QueueState s) {
+    final job = s.lead;
     if (job == null || !job.done) return null;
     final segs = job.segments;
     if (segs.isEmpty) return null;
@@ -903,11 +825,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return parts.join(' · ');
   }
 
-  Widget _statusBar() {
-    final job = _job;
-    final busy = _running && (job?.active ?? false);
+  Widget _statusBar(QueueState s) {
+    final job = s.lead;
+    final busy = s.running && (job?.active ?? false);
     final eta = busy ? job!.eta : null;
-    final stats = busy ? null : _stats();
+    final stats = busy ? null : _stats(s);
 
     return ClipRect(
       child: BackdropFilter(
@@ -933,8 +855,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 child: AnimatedSwitcher(
                   duration: Motion.dur(context, Motion.quick),
                   child: Text(
-                    _status,
-                    key: ValueKey(_status),
+                    s.status,
+                    key: ValueKey(s.status),
                     style: Type.caption.copyWith(color: Surface.secondaryText(context)),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -956,16 +878,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     style: Type.caption.copyWith(color: Surface.secondaryText(context)),
                   ),
                 ),
-              _ModelChip(
-                info: _modelUse,
-                label: _modelUseLabel,
-                detail: _modelUseDetail,
-                busy: _modelUse.busy || _weAreTranscribing,
-                yielding: _yieldBusyModel,
-                waiting: _waitingForModel,
+              ModelChip(
+                info: s.modelUse,
+                label: _modelUseLabel(s),
+                detail: _modelUseDetail(s),
+                busy: s.modelUse.busy || s.transcribing,
+                yielding: s.yieldBusyModel,
+                waiting: s.waitingForModel,
                 onTap: () {
-                  setState(() => _yieldBusyModel = !_yieldBusyModel);
-                  _persist();
+                  _send(const YieldToggled());
                 },
               ),
             ],
@@ -985,38 +906,39 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         child: const Text('Загрузить модель…'),
       );
 
-  Future<void> _openSettings([String tab = 'dictation']) => _mac.openSettings(tab);
 
   /// В инспекторе — только то, что осмысленно менять от записи к записи.
   /// Всё остальное (диктовка, модели, библиотека, поведение приложения)
   /// живёт в отдельном окне настроек: инспектор принадлежит расшифровщику.
-  Widget _inspector(ScrollController controller) {
-    final o = _shown;
-    final own = _lead?.overrides;
+  Widget _inspector(QueueState s, ScrollController controller) {
+    final o = s.shown;
+    final own = s.lead?.overrides;
     return ListView(
       controller: controller,
       padding: const EdgeInsets.fromLTRB(
           Gap.edgeNarrow, Gap.inner, Gap.edgeNarrow, Gap.section),
       children: [
-        _ScopeBanner(
-          selection: _sel.length,
-          name: _lead?.name,
-          changed: own == null ? const [] : own.diffAgainst(_defaults),
-          onReset: own == null ? null : _resetOverrides,
-          onMakeDefault: own == null ? null : _makeDefault,
+        ScopeBanner(
+          selection: s.selected.length,
+          name: s.lead?.name,
+          changed: own == null ? const [] : own.diffAgainst(s.defaults),
+          onReset: own == null ? null : _sendResetOverrides,
+          onMakeDefault: own == null ? null : _sendMakeDefault,
         ),
         const SectionTitle('Распознавание записи'),
         ModelField(
-          installed: _models,
+          installed: s.models,
           value: o.model,
-          onChosen: (v) => _edit((x) => x.copyWith(model: v)),
-          onDownload: _downloadModel,
+          onChosen: (v) => _send(OptionsEdited((x) => x.copyWith(model: v))),
+          onDownload: _sendDownload,
         ),
-        if (_download != null) ...[
+        if (s.downloadProgress != null) ...[
           const SizedBox(height: Gap.inner),
           ModelDownload(
-            active: _download!,
-            onCancel: () => setState(() => _download?.cancel()),
+            title: s.download?.title ?? 'модель',
+            progress: s.downloadProgress!,
+            percent: s.downloadPercent,
+            onCancel: () => _send(const DownloadCancelled()),
           ),
         ],
         const SizedBox(height: Gap.inner),
@@ -1033,12 +955,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             for (final l in languages)
               MacosPopupMenuItem(value: l, child: Text(languageName(l))),
           ],
-          onChanged: (v) => _edit((x) => x.copyWith(lang: v ?? 'auto')),
+          onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(lang: v ?? 'auto'))),
         ),
         const Hint('На смешанной речи выберите язык вручную — так точнее.'),
         const SectionTitle('Пунктуация'),
         Check('Ставить знаки препинания', o.punctuate,
-            (v) => _edit((x) => x.copyWith(punctuate: v))),
+            (v) => _send(OptionsEdited((x) => x.copyWith(punctuate: v)))),
         const Hint('Без этого модель на разговорной речи пишет сплошным нижним '
             'регистром. Своя подсказка ниже заменяет режим.', under: true),
         const SectionTitle('Разбивка на фрагменты'),
@@ -1051,14 +973,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             MacosPopupMenuItem(value: 64, child: Text('До 64 символов')),
             MacosPopupMenuItem(value: 100, child: Text('До 100 символов')),
           ],
-          onChanged: (v) => _edit((x) => x.copyWith(maxLen: v ?? 0)),
+          onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(maxLen: v ?? 0))),
         ),
         const SizedBox(height: Gap.item),
         Check('Резать по паузам (VAD)', o.vad, (v) {
           if (v && o.vadModel.isEmpty) {
-            _enableVad();
+            _sendEnableVad();
           } else {
-            _edit((x) => x.copyWith(vad: v));
+            _send(OptionsEdited((x) => x.copyWith(vad: v)));
           }
         }),
         if (o.vad)
@@ -1076,14 +998,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             for (var t = 2; t <= Platform.numberOfProcessors; t += 2)
               MacosPopupMenuItem(value: t, child: Text('$t ${plural(t, 'поток', 'потока', 'потоков')}')),
           ],
-          onChanged: (v) => _edit((x) => x.copyWith(threads: v ?? o.threads)),
+          onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(threads: v ?? o.threads))),
         ),
         const SectionTitle('Подсказка модели'),
         AppTextField(
           controller: _promptCtrl,
           placeholder: 'Имена, термины, названия',
           maxLines: 3,
-          onChanged: (v) => _edit((x) => x.copyWith(prompt: v)),
+          onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(prompt: v))),
         ),
         const Hint('Слова из подсказки модель пишет правильнее.'),
 
@@ -1101,7 +1023,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
         const SizedBox(height: Gap.item),
         Text(
-          _whisper == null ? 'whisper-cli не найден' : 'Локально · whisper.cpp',
+          !s.whisperFound ? 'whisper-cli не найден' : 'Локально · whisper.cpp',
           style: Type.caption.copyWith(color: Surface.secondaryText(context)),
         ),
       ],

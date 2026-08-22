@@ -1,9 +1,15 @@
-part of 'home_page.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:macos_ui/macos_ui.dart';
+
+import '../../../core/model_usage.dart';
+import '../../../core/text.dart';
+import '../../../design/design.dart';
 
 /// Обвязка окна: заголовок в панели инструментов, значок занятости
 /// модели в строке состояния и заглушка пустого экрана.
-class _ToolbarTitle extends StatelessWidget {
-  const _ToolbarTitle({this.subtitle});
+class ToolbarTitle extends StatelessWidget {
+  const ToolbarTitle({
+    super.key,this.subtitle});
   final String? subtitle;
 
   @override
@@ -27,8 +33,9 @@ class _ToolbarTitle extends StatelessWidget {
 /// Шапка инспектора: к чему относится то, что ниже. Без неё правка настроек
 /// при выбранной записи выглядела бы как правка общих.
 
-class _ModelChip extends StatefulWidget {
-  const _ModelChip({
+class ModelChip extends StatefulWidget {
+  const ModelChip({
+    super.key,
     required this.info,
     required this.label,
     required this.detail,
@@ -54,10 +61,10 @@ class _ModelChip extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_ModelChip> createState() => _ModelChipState();
+  State<ModelChip> createState() => ModelChipState();
 }
 
-class _ModelChipState extends State<_ModelChip> {
+class ModelChipState extends State<ModelChip> {
   bool _hover = false;
 
   @override
@@ -91,7 +98,7 @@ class _ModelChipState extends State<_ModelChip> {
               children: [
                 // Пока мы стоим из-за соседа, точка пульсирует: состояние
                 // временное, а не сломанное.
-                _Dot(color: color, pulsing: widget.waiting),
+                Dot(color: color, pulsing: widget.waiting),
                 const SizedBox(width: 7),
                 Text(
                   widget.label,
@@ -109,16 +116,17 @@ class _ModelChipState extends State<_ModelChip> {
   }
 }
 
-class _Dot extends StatefulWidget {
-  const _Dot({required this.color, required this.pulsing});
+class Dot extends StatefulWidget {
+  const Dot({
+    super.key,required this.color, required this.pulsing});
   final Color color;
   final bool pulsing;
 
   @override
-  State<_Dot> createState() => _DotState();
+  State<Dot> createState() => DotState();
 }
 
-class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
+class DotState extends State<Dot> with SingleTickerProviderStateMixin {
   late final AnimationController _pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
@@ -131,9 +139,9 @@ class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
   }
 
   @override
-  void didUpdateWidget(_Dot old) {
-    super.didUpdateWidget(old);
-    if (widget.pulsing == old.pulsing) return;
+  void didUpdateWidget(Dot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pulsing == oldWidget.pulsing) return;
     widget.pulsing ? _pulse.repeat(reverse: true) : _pulse.animateTo(0);
   }
 
@@ -164,8 +172,9 @@ class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
   }
 }
 
-class _Placeholder extends StatelessWidget {
-  const _Placeholder({required this.icon, required this.title, required this.subtitle});
+class EmptyNotice extends StatelessWidget {
+  const EmptyNotice({
+    super.key,required this.icon, required this.title, required this.subtitle});
   final IconData icon;
   final String title, subtitle;
 

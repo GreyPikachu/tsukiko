@@ -1,8 +1,17 @@
-part of 'home_page.dart';
+import 'dart:async';
+
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show SelectableText;
+import 'package:flutter/services.dart';
+import 'package:macos_ui/macos_ui.dart';
+
+import '../../../core/transcript.dart';
+import '../../../design/design.dart';
+import '../../../design/mascot.dart';
 
 /// Фрагмент расшифровки и полог, который встречает перетаскиваемый файл.
-class _SegmentRow extends StatefulWidget {
-  const _SegmentRow({
+class SegmentRow extends StatefulWidget {
+  const SegmentRow({
     super.key,
     required this.segment,
     required this.showTimestamp,
@@ -15,10 +24,10 @@ class _SegmentRow extends StatefulWidget {
   final String highlight;
 
   @override
-  State<_SegmentRow> createState() => _SegmentRowState();
+  State<SegmentRow> createState() => SegmentRowState();
 }
 
-class _SegmentRowState extends State<_SegmentRow> with SingleTickerProviderStateMixin {
+class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMixin {
   late final AnimationController _enter = AnimationController(
     vsync: this,
     duration: Motion.settle,
@@ -140,8 +149,9 @@ class _SegmentRowState extends State<_SegmentRow> with SingleTickerProviderState
 
 /// Полог при перетаскивании: материал приходит с лёгким перелётом —
 /// жест уже нёс импульс.
-class _DropVeil extends StatelessWidget {
-  const _DropVeil({required this.active});
+class DropVeil extends StatelessWidget {
+  const DropVeil({
+    super.key,required this.active});
   final bool active;
 
   @override

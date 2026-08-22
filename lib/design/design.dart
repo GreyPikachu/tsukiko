@@ -505,24 +505,33 @@ class ModelField extends StatelessWidget {
 /// Ход загрузки модели. Пока файл едет, кнопок нет: вторая полуторагиговая
 /// качка рядом с первой только замедлит обе.
 class ModelDownload extends StatelessWidget {
-  const ModelDownload({super.key, required this.active, required this.onCancel});
+  const ModelDownload({
+    super.key,
+    required this.title,
+    required this.progress,
+    required this.percent,
+    required this.onCancel,
+  });
 
-  final Download active;
+  /// Значения, а не сам загрузчик: он меняется внутри себя, и виджет,
+  /// державший на него ссылку, не замечал бы, что процент сдвинулся.
+  final String title, progress;
+  final int percent;
   final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Загружаем ${active.title}', style: Type.control),
+          Text('Загружаем $title', style: Type.control),
           const SizedBox(height: 7),
-          ProgressBar(value: active.percent.toDouble()),
+          ProgressBar(value: percent.toDouble()),
           const SizedBox(height: 7),
           Row(
             children: [
               Expanded(
                 child: Text(
-                  active.progressLabel,
+                  progress,
                   style: Type.caption.copyWith(color: Surface.secondaryText(context)),
                 ),
               ),

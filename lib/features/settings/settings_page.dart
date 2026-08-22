@@ -387,7 +387,12 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           ),
       if (d != null) ...[
         const SectionTitle('Можно загрузить'),
-        ModelDownload(active: d, onCancel: () => setState(() => d.cancel())),
+        ModelDownload(
+          title: d.title,
+          progress: d.progressLabel,
+          percent: d.percent,
+          onCancel: () => setState(d.cancel),
+        ),
       ] else if (offers.isNotEmpty) ...[
         const SectionTitle('Можно загрузить'),
         for (final m in offers)
