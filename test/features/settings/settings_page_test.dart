@@ -11,7 +11,8 @@ void main() {
     // Размер настоящего окна: раскладка обязана сходиться именно в нём.
     await tester.binding.setSurfaceSize(const Size(580, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(SettingsApp(NativeBridge()));
+    NativeBridge.debugReset();
+    await tester.pumpWidget(const SettingsApp());
     await tester.pump();
 
     expect(find.text('Диктовка'), findsOneWidget);
