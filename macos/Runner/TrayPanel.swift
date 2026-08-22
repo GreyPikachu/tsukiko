@@ -55,12 +55,24 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
   }
 
+  /// Тот же канал жизненного цикла, что у окна настроек: движок здесь
+  /// тоже свой, и после потери фокуса кадры для него не возобновляются.
+  private var lifecycle: FlutterBasicMessageChannel?
+
+  private func setLifecycle(_ state: String) {
+    lifecycle?.sendMessage("AppLifecycleState.\(state)")
+  }
+
   func build(
     engine: FlutterEngine, onShown: @escaping () -> Void,
     onHidden: @escaping () -> Void
   ) {
     self.onShown = onShown
     self.onHidden = onHidden
+    lifecycle = FlutterBasicMessageChannel(
+      name: "flutter/lifecycle",
+      binaryMessenger: engine.binaryMessenger,
+      codec: FlutterStringCodec.sharedInstance())
 
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     // Свой силуэт вместо системного символа. Картинка шаблонная: чёрный
@@ -183,6 +195,7 @@ final class PanelController: NSObject, NSWindowDelegate {
       panel.animator().setFrame(
         NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
     }
+    setLifecycle("resumed")
     onShown?()
   }
 
