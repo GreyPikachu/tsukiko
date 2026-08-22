@@ -8,13 +8,13 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../core/library.dart';
 import '../../core/models.dart';
-import '../../core/whisper_server.dart' show modelSizeLabel;
 import '../../core/text.dart';
 import '../../core/transcript.dart';
 import '../../design/design.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import 'settings_cubit.dart';
+import 'widgets/model_row.dart';
 import 'settings_state.dart';
 
 /// Окно настроек: своё окно с вкладками, как у всех приложений macOS.
@@ -192,7 +192,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         _Field(
           'Модель',
           ModelField(
-            installed: s.models,
+            installed: s.usable,
             value: s.dictationModel,
             fallback: 'Как у расшифровщика',
             onChosen: (v) => _cubit.setDictationModel(v),
@@ -266,7 +266,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   List<Widget> _modelsTab(SettingsState s) {
     // Предлагать к загрузке то, что уже лежит на диске, — обещать человеку
     // полтора гигабайта работы впустую. Есть всё — раздела нет вовсе.
-    final offers = modelOffers(s.models);
+    final offers = modelOffers(s.usable);
     return [
       const SectionTitle('Установлены'),
       if (s.models.isEmpty)
@@ -274,31 +274,14 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             'Tiny — просто проверить, что всё работает, Large v3 Turbo — точность.')
       else
         for (final m in s.models)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(modelDisplayName(m), style: Type.fileName),
-                      Text(
-                        m.replaceFirst(home, '~'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Type.caption
-                            .copyWith(color: Surface.secondaryText(context)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(modelSizeLabel(m),
-                    style:
-                        Type.caption.copyWith(color: Surface.secondaryText(context))),
-              ],
-            ),
+          ModelRow(
+            name: modelLabel(m.path, [for (final x in s.models) x.path]),
+            path: m.path.replaceFirst(home, '~'),
+            size: m.sizeLabel,
+            problem: m.problem,
+            chosen: m.path == s.dictationModel,
+            onReveal: () => _cubit.reveal(m.path),
+            onDelete: () => _confirmDelete(s, m),
           ),
       if (s.downloading) ...[
         const SectionTitle('Можно загрузить'),
@@ -351,11 +334,69 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                 color: MacosColors.systemOrangeColor, height: 1.4)),
       ],
       const SizedBox(height: Gap.section),
-      Text(
-        'Модели лежат в ${modelPathFor('').replaceFirst(home, '~')}',
-        style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Модели лежат в ${os.modelsDir.replaceFirst(home, '~')}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+            ),
+          ),
+          const SizedBox(width: Gap.inner),
+          PushButton(
+            controlSize: ControlSize.small,
+            secondary: true,
+            onPressed: _cubit.revealModelsFolder,
+            child: Text('Показать в ${os.fileManagerName}'),
+          ),
+        ],
       ),
     ];
+  }
+
+  /// Удаление спрашивают, а не делают молча: полтора гигабайта, стёртые
+  /// по промаху, качать заново. Файл при этом уходит в Корзину, поэтому
+  /// вопрос один и без запугивания.
+  Future<void> _confirmDelete(SettingsState s, InstalledModel m) async {
+    final chosen = m.path == s.dictationModel;
+    final where = m.ours
+        ? 'Файл уйдёт в Корзину.'
+        : 'Файл лежит не в папке $appName, а в общем каталоге — им могут '
+            'пользоваться другие программы. Он уйдёт в Корзину.';
+    var yes = false;
+    await showMacosAlertDialog<void>(
+      context: context,
+      builder: (dialogContext) => MacosAlertDialog(
+        appIcon: const MacosIcon(CupertinoIcons.trash, size: 56),
+        title: Text('Убрать ${m.name}?', style: Type.emptyTitle),
+        message: Text(
+          [
+            where,
+            if (chosen) 'Сейчас эта модель выбрана для диктовки.',
+            if (m.sizeLabel.isNotEmpty) 'Освободится ${m.sizeLabel}.',
+          ].join('\n'),
+          textAlign: TextAlign.center,
+          style: Type.control,
+        ),
+        primaryButton: PushButton(
+          controlSize: ControlSize.large,
+          onPressed: () {
+            yes = true;
+            Navigator.pop(dialogContext);
+          },
+          child: const Text('Убрать'),
+        ),
+        secondaryButton: PushButton(
+          controlSize: ControlSize.large,
+          secondary: true,
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Отмена'),
+        ),
+      ),
+    );
+    if (yes) await _cubit.deleteModel(m.path);
   }
 
   // ── библиотека ────────────────────────────────────────────────────────────
