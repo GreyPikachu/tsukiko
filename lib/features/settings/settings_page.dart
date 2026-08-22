@@ -1,20 +1,21 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
-import '../../design/design.dart';
-import '../../core/whisper_server.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
+import '../../core/whisper_server.dart' show modelSizeLabel;
 import '../../core/text.dart';
 import '../../core/transcript.dart';
+import '../../design/design.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
-import '../../core/settings.dart';
+import 'settings_cubit.dart';
+import 'settings_state.dart';
 
 /// Окно настроек: своё окно с вкладками, как у всех приложений macOS.
 ///
@@ -24,14 +25,10 @@ import '../../core/settings.dart';
 /// окно расшифровщика: диктовка настраивается и тогда, когда очереди
 /// нет вовсе, а без значка в Dock главного окна может не быть на экране.
 ///
-/// Общие настройки приложения лежат в том же settings.json, что правит
-/// главное окно. Ключи почти не пересекаются, но «почти» здесь не работает:
-/// две галки («метки времени», «ждать занятую модель») есть и там и там.
-/// Поэтому расходиться копиям мешает не разделение ключей, а очередь
-/// записи в lib/settings.dart и «reload» соседям после каждой правки.
+/// Состоянием владеет [SettingsCubit]; здесь только то, что рисуется.
 void runSettings() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(SettingsApp(NativeBridge()));
+  runApp(const SettingsApp());
 }
 
 const settingsTabs = [
@@ -42,191 +39,117 @@ const settingsTabs = [
 ];
 
 class SettingsApp extends StatelessWidget {
-  const SettingsApp(this.platform, {super.key});
-  final NativeBridge platform;
+  const SettingsApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MacosApp(
-        title: 'Настройки',
-        theme: MacosThemeData.light(),
-        darkTheme: MacosThemeData.dark(),
-        themeMode: ThemeMode.system,
-        debugShowCheckedModeBanner: false,
-        home: SettingsBody(platform),
+  Widget build(BuildContext context) => BlocProvider(
+        create: (_) => SettingsCubit(NativeBridge()),
+        child: MacosApp(
+          title: 'Настройки',
+          theme: MacosThemeData.light(),
+          darkTheme: MacosThemeData.dark(),
+          themeMode: ThemeMode.system,
+          debugShowCheckedModeBanner: false,
+          home: const SettingsBody(),
+        ),
       );
 }
 
 class SettingsBody extends StatefulWidget {
-  const SettingsBody(this.platform, {super.key});
-  final NativeBridge platform;
+  const SettingsBody({super.key});
 
   @override
   State<SettingsBody> createState() => _SettingsBodyState();
 }
 
 class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver {
-  NativeBridge get _mac => widget.platform;
-
-  final _dictation = DictationSettings.load();
+  /// Единственное, что остаётся окну: поле ввода подсказки.
   final _promptCtrl = TextEditingController();
+  String _promptShown = '';
 
-  String _tab = 'dictation';
-  List<String> _models = findModels();
-  Download? _download;
-
-  /// Почему выбранный файл не годится в модель. Пусто — всё хорошо.
-  String? _problem;
-  bool _allowed = true;
-  int _denied = 0;
-  Timer? _timer;
-
-  /// Движок окна настроек живёт и после закрытия окна (SettingsWindow.swift),
-  /// поэтому подписки надо снимать самим: иначе они будут звать setState
-  /// у состояния, снятого с дерева.
-  final _subs = <StreamSubscription<void>>[];
-
-  // Настройки приложения: правит их это окно, пользуется ими главное.
-  bool _toLibrary = true, _saveNextToSource = false, _timestamps = true;
-  bool _yieldBusyModel = true, _dockIcon = true;
-
-  /// Автозапуск живёт в системе, а не в settings.json: его можно
-  /// выключить в Системных настройках мимо нас, поэтому при открытии
-  /// окна спрашиваем настоящее состояние.
-  bool _loginItem = false;
-  String _libraryPath = defaultLibraryPath;
-  List<String> _libraryFormats = const ['txt'];
+  SettingsCubit get _cubit => context.read<SettingsCubit>();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _promptCtrl.text = _dictation.prompt;
-    _readApp();
-    _subs.add(_mac.settingsReloaded.listen((_) {
-      if (mounted) setState(_readApp);
-    }));
-    _subs.add(_mac.settingsTab.listen((t) {
-      if (mounted) setState(() => _tab = t);
-    }));
-    unawaited(_mac.initialTab().then((t) {
-      if (mounted) setState(() => _tab = t);
-    }));
-    unawaited(_checkPermission());
-    _syncTimer();
+    // Первый вопрос о разрешении задаём сразу: окно только что открыли.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncVisibility());
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) => _syncTimer();
+  void didChangeAppLifecycleState(AppLifecycleState state) => _syncVisibility();
 
-  /// Окно настроек закрывается, а не размонтируется — движок живёт дальше
-  /// (см. SettingsWindow.swift). Без этого таймер тикал бы до выхода из
-  /// приложения, а не только пока окно реально на экране.
-  void _syncTimer() {
-    final visible =
-        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-    if (visible == (_timer != null)) return;
-    if (visible) {
-      // Разрешение выдают в другом приложении и возвращаются к этому окну:
-      // спрашивать надо самим, уведомления об этом нет.
-      _timer = Timer.periodic(const Duration(seconds: 1), (_) => _checkPermission());
-    } else {
-      _timer?.cancel();
-      _timer = null;
-    }
-  }
+  void _syncVisibility() => _cubit.setVisible(
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed);
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    for (final s in _subs) {
-      s.cancel();
-    }
-    _timer?.cancel();
     _promptCtrl.dispose();
     super.dispose();
   }
 
-  void _readApp() {
-    final s = Settings.load();
-    _toLibrary = (s['toLibrary'] as bool?) ?? true;
-    _saveNextToSource = (s['saveNextToSource'] as bool?) ?? false;
-    _timestamps = (s['timestamps'] as bool?) ?? true;
-    _yieldBusyModel = (s['yieldBusyModel'] as bool?) ?? true;
-    _dockIcon = (s['dockIcon'] as bool?) ?? true;
-    _mac.loginItem().then((on) {
-      if (mounted) setState(() => _loginItem = on);
-    });
-    _libraryPath = (s['libraryPath'] as String?) ?? defaultLibraryPath;
-    final formats = (s['libraryFormats'] as List?)
-        ?.cast<String>()
-        .map((v) => v.startsWith('.') ? v.substring(1) : v)
-        .where((v) => exportFormats.any((f) => f.id == v))
-        .toList();
-    if (formats != null && formats.isNotEmpty) _libraryFormats = formats;
+  /// Поле подсказки следует за настройкой, но не мешает набору.
+  void _syncPromptField(String text) {
+    if (text == _promptShown) return;
+    _promptShown = text;
+    if (_promptCtrl.text == text) return;
+    _promptCtrl.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
   }
 
-  /// Тот же счёт отказов, что и в панели: сразу после запуска система
-  /// отвечает «нет» и тем, у кого разрешение выдано, — верить одному
-  /// ответу нельзя, иначе предупреждение мигает на ровном месте.
-  Future<void> _checkPermission() async {
-    final now = await _mac.permission();
-    if (!mounted) return;
-    if (now) {
-      _denied = 0;
-      if (!_allowed) setState(() => _allowed = true);
-      return;
-    }
-    if (++_denied < 3 || !_allowed) return;
-    setState(() => _allowed = false);
+  Future<void> _pickModel() async {
+    final f = await openFile(
+        acceptedTypeGroups: const [XTypeGroup(label: 'GGML', extensions: ['bin'])]);
+    if (f != null) _cubit.pickModel(f.path);
   }
 
-  /// Одно место, где настройки уходят на диск: пишем и говорим соседним
-  /// изолятам перечитать. Без второго половина правок доходила бы только
-  /// до следующего запуска.
-  ///
-  /// Записи дожидаемся: соседи по «перечитать» тут же читают файл, и
-  /// сказать им об этом раньше, чем правка на диске, значит послать их
-  /// за старым значением.
-  Future<void> _saveApp(Map<String, dynamic> data) async {
-    await Settings.save(data);
-    await _mac.settingsChanged();
+  Future<void> _pickLibrary(SettingsState s) async {
+    final dir = await getDirectoryPath(
+      confirmButtonText: 'Выбрать',
+      initialDirectory:
+          Directory(s.libraryPath).existsSync() ? s.libraryPath : os.documentsDir,
+    );
+    if (dir != null) _cubit.setLibraryPath(dir);
   }
-
-  void _saveDictation(VoidCallback change) {
-    setState(change);
-    _dictation.save();
-    _mac.settingsChanged();
-  }
-
-  // ── вкладки ───────────────────────────────────────────────────────────────
 
   @override
-  Widget build(BuildContext context) => Container(
-        color: MacosTheme.of(context).canvasColor,
-        child: Column(
-          children: [
-            _tabs(context),
-            Expanded(
-              child: ListView(
-                // Поля слева и справа одинаковые и одни на все вкладки.
-                padding: const EdgeInsets.fromLTRB(
-                    Gap.edge, Gap.inner, Gap.edge, Gap.section),
-                children: switch (_tab) {
-                  'models' => _modelsTab(),
-                  'library' => _libraryTab(),
-                  'general' => _generalTab(),
-                  _ => _dictationTab(),
-                },
+  Widget build(BuildContext context) =>
+      BlocConsumer<SettingsCubit, SettingsState>(
+        listenWhen: (was, now) => was.prompt != now.prompt,
+        listener: (context, s) => _syncPromptField(s.prompt),
+        builder: (context, s) => Container(
+          color: MacosTheme.of(context).canvasColor,
+          child: Column(
+            children: [
+              _tabs(context, s),
+              Expanded(
+                child: ListView(
+                  // Поля слева и справа одинаковые и одни на все вкладки.
+                  padding: const EdgeInsets.fromLTRB(
+                      Gap.edge, Gap.inner, Gap.edge, Gap.section),
+                  children: switch (s.tab) {
+                    'models' => _modelsTab(s),
+                    'library' => _libraryTab(s),
+                    'general' => _generalTab(s),
+                    _ => _dictationTab(s),
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
+
+  // ── вкладки ───────────────────────────────────────────────────────────────
 
   /// Вкладки стоят в полосе на месте панели инструментов. Полоса высокая
   /// и вкладки в ней по центру: слева живут кнопки окна, и наезжать на них
   /// нельзя.
-  Widget _tabs(BuildContext context) => Container(
+  Widget _tabs(BuildContext context, SettingsState s) => Container(
         height: 58,
         alignment: Alignment.center,
         decoration: BoxDecoration(
@@ -239,8 +162,8 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
               _TabButton(
                 label: t.label,
                 icon: t.icon,
-                selected: _tab == t.id,
-                onTap: () => setState(() => _tab = t.id),
+                selected: s.tab == t.id,
+                onTap: () => _cubit.setTab(t.id),
               ),
           ],
         ),
@@ -248,17 +171,17 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
 
   // ── диктовка ──────────────────────────────────────────────────────────────
 
-  List<Widget> _dictationTab() => [
+  List<Widget> _dictationTab(SettingsState s) => [
         const SectionTitle('Сочетания клавиш'),
         HotkeyRow(
           label: 'Держать и говорить',
-          keys: _dictation.hold.label,
-          onTap: () => _reassign('hold'),
+          keys: s.hold.label,
+          onTap: () => _cubit.reassign('hold'),
         ),
         HotkeyRow(
           label: 'Нажать, ещё раз — остановить',
-          keys: _dictation.toggle.label,
-          onTap: () => _reassign('toggle'),
+          keys: s.toggle.label,
+          onTap: () => _cubit.reassign('toggle'),
         ),
         const Hint('Нажмите на сочетание и наберите новое. Из одних '
             'модификаторов — отпустите их вместе.'),
@@ -269,11 +192,11 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         _Field(
           'Модель',
           ModelField(
-            installed: _models,
-            value: _dictation.model,
+            installed: s.models,
+            value: s.dictationModel,
             fallback: 'Как у расшифровщика',
-            onChosen: (v) => _saveDictation(() => _dictation.model = v),
-            onDownload: _fetch,
+            onChosen: (v) => _cubit.setDictationModel(v),
+            onDownload: _cubit.download,
           ),
         ),
         const Hint('«Как у расшифровщика» — брать ту же модель, что выбрана '
@@ -282,7 +205,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         _Field(
           'Потоки',
           MacosPopupButton<int>(
-            value: _dictation.threads,
+            value: s.threads,
             items: [
               for (var t = 2; t <= Platform.numberOfProcessors; t += 2)
                 MacosPopupMenuItem(
@@ -290,12 +213,12 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                     child: Text('$t ${plural(t, 'поток', 'потока', 'потоков')}')),
             ],
             onChanged: (v) =>
-                _saveDictation(() => _dictation.threads = v ?? _dictation.threads),
+                _cubit.setThreads(v ?? s.threads),
           ),
         ),
         const SizedBox(height: Gap.item),
-        Check('Ставить знаки препинания', _dictation.punctuate,
-            (v) => _saveDictation(() => _dictation.punctuate = v)),
+        Check('Ставить знаки препинания', s.punctuate,
+            _cubit.setPunctuate),
         const SizedBox(height: Gap.item),
         // Подпись стоит над полем, а не под ним: под полем она читалась
         // как пояснение ко всему разделу.
@@ -305,7 +228,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             controller: _promptCtrl,
             placeholder: 'Имена, термины, названия',
             maxLines: 2,
-            onChanged: (v) => _saveDictation(() => _dictation.prompt = v),
+            onChanged: (v) => _cubit.setPrompt(v),
           ),
         ),
         const Hint('Слова из подсказки модель пишет правильнее.'),
@@ -313,7 +236,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         _Field(
           'Держать модель',
           MacosPopupButton<int>(
-            value: _dictation.idleSeconds,
+            value: s.idleSeconds,
             items: const [
               MacosPopupMenuItem(value: 30, child: Text('30 секунд')),
               MacosPopupMenuItem(value: 60, child: Text('1 минуту')),
@@ -321,44 +244,36 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
               MacosPopupMenuItem(value: 600, child: Text('10 минут')),
               MacosPopupMenuItem(value: 3600, child: Text('1 час')),
             ],
-            onChanged: (v) => _saveDictation(() => _dictation.idleSeconds = v ?? 180),
+            onChanged: (v) => _cubit.setIdleSeconds(v ?? 180),
           ),
         ),
         const Hint('Пока модель в памяти, фраза распознаётся за доли секунды. '
             'Она занимает полтора гигабайта.'),
         const SectionTitle('Готовый текст'),
-        Check('Вставлять текст в активное окно', _dictation.insert,
-            (v) => _saveDictation(() => _dictation.insert = v)),
+        Check('Вставлять текст в активное окно', s.insert,
+            _cubit.setInsert),
         const Hint('Без этого готовый текст только ложится в буфер обмена.',
             under: true),
         const SizedBox(height: Gap.item),
-        Check('Показывать панель записи', _dictation.hud,
-            (v) => _saveDictation(() => _dictation.hud = v)),
+        Check('Показывать панель записи', s.hud,
+            _cubit.setHud),
         const Hint('Плавающая полоска поверх окон: видно, что вас слушают, '
             'и есть чем остановить мышью.', under: true),
       ];
 
-  /// Назначение сочетания: следующая нажатая комбинация становится новой.
-  Future<void> _reassign(String id) async {
-    final hk = await _mac.capture();
-    if (hk == null) return;
-    _saveDictation(() => id == 'hold' ? _dictation.hold = hk : _dictation.toggle = hk);
-  }
-
   // ── модели ────────────────────────────────────────────────────────────────
 
-  List<Widget> _modelsTab() {
-    final d = _download;
+  List<Widget> _modelsTab(SettingsState s) {
     // Предлагать к загрузке то, что уже лежит на диске, — обещать человеку
     // полтора гигабайта работы впустую. Есть всё — раздела нет вовсе.
-    final offers = modelOffers(_models);
+    final offers = modelOffers(s.models);
     return [
       const SectionTitle('Установлены'),
-      if (_models.isEmpty)
+      if (s.models.isEmpty)
         const Hint('Ни одной модели не найдено. Возьмите любую из списка ниже: '
             'Tiny — просто проверить, что всё работает, Large v3 Turbo — точность.')
       else
-        for (final m in _models)
+        for (final m in s.models)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(
@@ -385,13 +300,13 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
               ],
             ),
           ),
-      if (d != null) ...[
+      if (s.downloading) ...[
         const SectionTitle('Можно загрузить'),
         ModelDownload(
-          title: d.title,
-          progress: d.progressLabel,
-          percent: d.percent,
-          onCancel: () => setState(d.cancel),
+          title: s.downloadTitle ?? 'модель',
+          progress: s.downloadProgress!,
+          percent: s.downloadPercent,
+          onCancel: _cubit.cancelDownload,
         ),
       ] else if (offers.isNotEmpty) ...[
         const SectionTitle('Можно загрузить'),
@@ -415,7 +330,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                 PushButton(
                   controlSize: ControlSize.regular,
                   secondary: true,
-                  onPressed: () => _fetch(m),
+                  onPressed: () => _cubit.download(m),
                   child: const Text('Загрузить'),
                 ),
               ],
@@ -429,9 +344,9 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         onPressed: _pickModel,
         child: const Text('Выбрать другой файл…'),
       ),
-      if (_problem != null) ...[
+      if (s.problem != null) ...[
         const SizedBox(height: Gap.inner),
-        Text(_problem!,
+        Text(s.problem!,
             style: Type.caption.copyWith(
                 color: MacosColors.systemOrangeColor, height: 1.4)),
       ],
@@ -443,79 +358,38 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
     ];
   }
 
-  /// Выбранный руками файл проверяем: «.bin» бывает чем угодно, а
-  /// whisper-cli на чужом файле падает с руганью про тензоры.
-  Future<void> _pickModel() async {
-    final f = await openFile(
-        acceptedTypeGroups: const [XTypeGroup(label: 'GGML', extensions: ['bin'])]);
-    if (f == null) return;
-    final problem = modelFileProblem(f.path);
-    setState(() {
-      _problem = problem;
-      if (problem == null && !_models.contains(f.path)) {
-        _models = [..._models, f.path];
-      }
-    });
-    if (problem == null) _saveDictation(() => _dictation.model = f.path);
-  }
-
-  Future<void> _fetch(ModelOffer m) async {
-    if (_download != null) return;
-    final d = Download(m.url, m.path, title: m.title);
-    setState(() => _download = d);
-    final path = await d.run(onProgress: () {
-      if (mounted) setState(() {});
-    });
-    if (!mounted) return;
-    setState(() {
-      _download = null;
-      if (path != null) _models = findModels();
-    });
-    // Список моделей стал другим — соседним окнам надо его перечитать.
-    if (path != null) _mac.settingsChanged();
-  }
-
   // ── библиотека ────────────────────────────────────────────────────────────
 
   /// Вкладка отвечает на один вопрос: что происходит с текстом, когда
   /// запись распознана. Поэтому каждая галка говорит и что делает, и что
   /// будет, если её выключить, — иначе выключать её страшно.
-  List<Widget> _libraryTab() => [
+  List<Widget> _libraryTab(SettingsState s) => [
         const SectionTitle('Сохранять расшифровки автоматически'),
-        Check('Сохранять готовый текст на диск', _toLibrary, (v) {
-          setState(() => _toLibrary = v);
-          unawaited(_saveApp({'toLibrary': v}));
-        }),
+        Check('Сохранять готовый текст на диск', s.toLibrary,
+            _cubit.setToLibrary),
         const Hint('Как только запись распознана, текст сам ложится файлом '
             'в папку ниже. Выключено — текст остаётся только в окне tsukiko, '
             'и сохранять его придётся вручную: «Сохранить как…» или ⌘C.',
             under: true),
         const SectionTitle('Куда сохранять'),
         LibraryPath(
-          path: _libraryPath,
-          onReveal: () => revealInFinder(_libraryPath),
-          onChange: _pickLibrary,
+          path: s.libraryPath,
+          onReveal: () => _cubit.reveal(s.libraryPath),
+          onChange: () => _pickLibrary(s),
           hint: 'Внутри папка на каждый месяц: $appName/'
               '${monthFolder(DateTime.now())}/. Щёлкните по пути, чтобы '
               'открыть папку в ${os.fileManagerName}.',
         ),
-        if (_toLibrary) ...[
+        if (s.toLibrary) ...[
           const SectionTitle('В каком виде сохранять'),
           for (final f in exportFormats)
             // suffix у «текста с таймкодами» начинается с пробела: он
             // дописывается к имени файла. В подписи этот пробел — дыра.
-            Check('${f.label} · ${f.suffix.trim()}', _libraryFormats.contains(f.id),
-                (v) {
-              setState(() {
-                final next = [..._libraryFormats];
-                v ? next.add(f.id) : next.remove(f.id);
-                // Пустой набор при включённом сохранении означал бы тишину.
-                _libraryFormats = next.isEmpty ? [f.id] : next;
-              });
-              unawaited(_saveApp({'libraryFormats': _libraryFormats}));
-            }),
+            Check('${f.label} · ${f.suffix.trim()}',
+                s.libraryFormats.contains(f.id),
+                (v) => _cubit.toggleFormat(f.id, v)),
           Hint(
-              _libraryFormats.length > 1
+              s.libraryFormats.length > 1
                   ? 'На каждую запись сохраняется столько файлов, сколько '
                       'форматов отмечено, и у записи появляется своя папка. '
                       'Совсем без форматов сохранять было бы нечего, поэтому '
@@ -525,62 +399,37 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
               under: true),
         ],
         const SectionTitle('Копия рядом с аудиофайлом'),
-        Check('Класть текст рядом с исходной записью', _saveNextToSource, (v) {
-          setState(() => _saveNextToSource = v);
-          unawaited(_saveApp({'saveNextToSource': v}));
-        }),
+        Check('Класть текст рядом с исходной записью', s.saveNextToSource,
+            _cubit.setSaveNextToSource),
         const Hint('Кроме папки выше: в ту же папку, где лежит сама запись, '
             'ляжет .txt с её именем — чистый текст без таймкодов. '
             'Выключено — рядом с записью ничего не появляется.',
             under: true),
       ];
 
-  Future<void> _pickLibrary() async {
-    final dir = await getDirectoryPath(
-      confirmButtonText: 'Выбрать',
-      initialDirectory:
-          Directory(_libraryPath).existsSync() ? _libraryPath : os.documentsDir,
-    );
-    if (dir == null) return;
-    setState(() => _libraryPath = dir);
-    unawaited(_saveApp({'libraryPath': dir}));
-  }
-
   // ── общие ─────────────────────────────────────────────────────────────────
 
-  List<Widget> _generalTab() => [
+  List<Widget> _generalTab(SettingsState s) => [
         const SectionTitle('Приложение'),
-        Check('Запускать при входе в систему', _loginItem, (v) async {
-          // Ответ берём у системы, а не у себя: она могла и отказать.
-          final on = await _mac.loginItem(v);
-          if (mounted) setState(() => _loginItem = on);
-        }),
+        Check('Запускать при входе в систему', s.loginItem,
+            _cubit.setLoginItem),
         const Hint('Диктовка поднимется сама и будет ждать в строке меню. '
             'Окно расшифровщика при этом не открывается — оно всегда '
             'доступно по значку в Dock.',
             under: true),
         const SizedBox(height: Gap.item),
-        Check('Показывать значок в Dock', _dockIcon, (v) {
-          setState(() => _dockIcon = v);
-          unawaited(_saveApp({'dockIcon': v}));
-          _mac.setDockIcon(v);
-        }),
+        Check('Показывать значок в Dock', s.dockIcon, _cubit.setDockIcon),
         const Hint('Без значка tsukiko исчезает из Dock и из ⌘Tab и живёт '
             'только в строке меню. Окно и настройки открываются оттуда же.',
             under: true),
         const SizedBox(height: Gap.item),
-        Check('Ждать, если модель занята', _yieldBusyModel, (v) {
-          setState(() => _yieldBusyModel = v);
-          unawaited(_saveApp({'yieldBusyModel': v}));
-        }),
+        Check('Ждать, если модель занята', s.yieldBusyModel,
+            _cubit.setYieldBusyModel),
         const Hint('Пока модель держит другая программа, очередь стоит и '
             'не отбирает у неё память и GPU. Своей диктовке очередь уступает '
             'всегда: одна фраза короче одной записи.', under: true),
         const SizedBox(height: Gap.item),
-        Check('Показывать метки времени', _timestamps, (v) {
-          setState(() => _timestamps = v);
-          unawaited(_saveApp({'timestamps': v}));
-        }),
+        Check('Показывать метки времени', s.timestamps, _cubit.setTimestamps),
         const Hint('Только на экране. Что попадёт в файл, решает выбранный '
             'формат, а не эта галка.', under: true),
         const SectionTitle('Разрешения'),
@@ -588,7 +437,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           children: [
             Expanded(
               child: Text(
-                _allowed
+                s.allowed
                     ? 'Универсальный доступ выдан.'
                     : 'Без «Универсального доступа» tsukiko не перехватывает '
                         'клавиши и не вставляет текст в активное окно.',
@@ -598,19 +447,19 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           ],
         ),
         const SizedBox(height: Gap.item),
-        if (!_allowed)
+        if (!s.allowed)
           Row(
             children: [
               PushButton(
                 controlSize: ControlSize.regular,
-                onPressed: _mac.requestPermission,
+                onPressed: _cubit.requestPermission,
                 child: const Text('Запросить'),
               ),
               const SizedBox(width: 8),
               PushButton(
                 controlSize: ControlSize.regular,
                 secondary: true,
-                onPressed: _mac.openPermissionSettings,
+                onPressed: _cubit.openPermissionSettings,
                 child: const Text('Открыть настройки системы'),
               ),
             ],
@@ -619,7 +468,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           PushButton(
             controlSize: ControlSize.regular,
             secondary: true,
-            onPressed: _mac.openPermissionSettings,
+            onPressed: _cubit.openPermissionSettings,
             child: const Text('Открыть настройки системы'),
           ),
       ];
