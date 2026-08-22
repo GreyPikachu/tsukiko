@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tsukiko/dictation.dart';
-import 'package:tsukiko/engine.dart';
+import 'package:tsukiko/core/whisper_server.dart';
+import 'package:tsukiko/core/whisper.dart';
 
 void main() {
   // Ровно та потеря, из-за которой длинные записи приходили обрезанными:

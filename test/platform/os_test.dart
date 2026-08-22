@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/legacy_migration.dart';
-import 'package:tsukiko/os.dart';
-import 'package:tsukiko/settings.dart';
+import 'package:tsukiko/platform/os.dart';
+import 'package:tsukiko/core/settings.dart';
 
 /// Граница ОС и разовый переезд моделей.
 ///

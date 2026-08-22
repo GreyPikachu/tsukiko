@@ -3,9 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data' show BytesBuilder;
 
-import 'engine.dart';
-import 'os.dart';
-import 'settings.dart';
+import '../core/library.dart';
+import '../core/whisper.dart';
+import '../platform/os.dart';
+import '../core/settings.dart';
 
 /// Фоновая диктовка: долгоживущий whisper-server, который держит модель
 /// в памяти между фразами, и состояние самой диктовки.

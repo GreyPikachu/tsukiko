@@ -14,9 +14,9 @@ library;
 
 import 'dart:io';
 
-import 'dictation.dart' show DictationSettings;
-import 'os.dart';
-import 'settings.dart';
+import 'core/whisper_server.dart' show DictationSettings;
+import 'platform/os.dart';
+import 'core/settings.dart';
 
 /// Папка моделей прежней установки. Единственное место, где этот путь
 /// вообще упоминается.

@@ -5,13 +5,14 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
-import 'bridge.dart';
-import 'design.dart';
-import 'dictation.dart' show sweepRecordings;
+import '../../platform/bridge.dart';
+import '../../design/design.dart';
+import '../../core/whisper_server.dart' show sweepRecordings;
 import 'dictation_cubit.dart';
 import 'dictation_state.dart';
-import 'engine.dart';
-import 'legacy_migration.dart';
+import '../../core/models.dart';
+import '../../core/text.dart';
+import '../../legacy_migration.dart';
 
 /// Панель у строки меню и вся диктовка. Живёт на отдельном движке Flutter,
 /// который работает и со спрятанной панелью, — поэтому диктовка не зависит

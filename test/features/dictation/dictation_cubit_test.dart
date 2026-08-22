@@ -1,10 +1,10 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tsukiko/bridge.dart';
-import 'package:tsukiko/dictation.dart';
-import 'package:tsukiko/dictation_cubit.dart';
-import 'package:tsukiko/dictation_state.dart';
-import 'package:tsukiko/engine.dart';
+import 'package:tsukiko/platform/bridge.dart';
+import 'package:tsukiko/core/whisper_server.dart';
+import 'package:tsukiko/features/dictation/dictation_cubit.dart';
+import 'package:tsukiko/features/dictation/dictation_state.dart';
+import 'package:tsukiko/core/whisper.dart';
 
 /// Логика диктовки, которую до выноса из виджета проверять было нечем.
 ///

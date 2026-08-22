@@ -4,8 +4,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/physics.dart';
 import 'package:macos_ui/macos_ui.dart';
 
-import 'engine.dart';
-import 'os.dart';
+import '../core/library.dart';
+import '../core/models.dart';
+import '../platform/os.dart';
 
 /// Пружины и типографика по формулировкам Apple: не «длительность и кривая»,
 /// а «отклик» (за сколько дойти) и «затухание» (насколько перелетит).

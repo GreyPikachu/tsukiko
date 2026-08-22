@@ -5,12 +5,14 @@ import 'package:bloc/bloc.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
-import 'bridge.dart';
-import 'dictation.dart';
+import '../../platform/bridge.dart';
+import '../../core/whisper_server.dart';
 import 'dictation_state.dart';
-import 'engine.dart';
-import 'os.dart';
-import 'settings.dart';
+import '../../core/library.dart';
+import '../../core/models.dart';
+import '../../core/whisper.dart';
+import '../../platform/os.dart';
+import '../../core/settings.dart';
 
 /// Диктовка целиком: перехват клавиш, запись, сервер с моделью, вставка
 /// текста и то, что из этого видно в панели.

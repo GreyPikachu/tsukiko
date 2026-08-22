@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 
-import 'dictation.dart';
+import '../core/whisper_server.dart';
 
 /// Мост к родному коду приложения: перехват клавиш, запись с микрофона,
 /// вставка текста, окна и панель у строки меню.

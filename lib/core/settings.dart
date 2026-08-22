@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui' show IsolateNameServer;
 
-import 'engine.dart' show supportDir;
+import 'library.dart' show supportDir;
 
 /// Хранение настроек на диске.
 ///

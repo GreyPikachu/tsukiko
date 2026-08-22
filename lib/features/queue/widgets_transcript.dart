@@ -1,4 +1,4 @@
-part of 'main.dart';
+part of 'home_page.dart';
 
 /// Фрагмент расшифровки и полог, который встречает перетаскиваемый файл.
 class _SegmentRow extends StatefulWidget {
