@@ -1,9 +1,14 @@
-part of 'home_page.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:macos_ui/macos_ui.dart';
+
+import '../../../core/text.dart';
+import '../../../design/design.dart';
 
 /// Правая панель: к чему относятся настройки, путь к библиотеке
 /// и мелочи, из которых она собрана.
-class _ScopeBanner extends StatelessWidget {
-  const _ScopeBanner({
+class ScopeBanner extends StatelessWidget {
+  const ScopeBanner({
+    super.key,
     required this.selection,
     required this.name,
     required this.changed,

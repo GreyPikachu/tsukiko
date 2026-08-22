@@ -1,8 +1,14 @@
-part of 'home_page.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:macos_ui/macos_ui.dart';
+
+import '../../../core/whisper.dart';
+import '../../../design/design.dart';
+import '../job.dart';
 
 /// Строка очереди и значок её состояния.
-class _QueueRow extends StatefulWidget {
-  const _QueueRow({
+class QueueRow extends StatefulWidget {
+  const QueueRow({
+    super.key,
     required this.job,
     required this.selected,
     required this.lead,
@@ -14,10 +20,10 @@ class _QueueRow extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_QueueRow> createState() => _QueueRowState();
+  State<QueueRow> createState() => QueueRowState();
 }
 
-class _QueueRowState extends State<_QueueRow> {
+class QueueRowState extends State<QueueRow> {
   bool _hover = false, _down = false;
 
   @override
@@ -57,7 +63,7 @@ class _QueueRowState extends State<_QueueRow> {
             children: [
               Row(
                 children: [
-                  _StateGlyph(job: job, tint: fg),
+                  StateGlyph(job: job, tint: fg),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -125,8 +131,9 @@ class _QueueRowState extends State<_QueueRow> {
   }
 }
 
-class _StateGlyph extends StatelessWidget {
-  const _StateGlyph({required this.job, this.tint});
+class StateGlyph extends StatelessWidget {
+  const StateGlyph({
+    super.key,required this.job, this.tint});
   final Job job;
   final Color? tint;
 
