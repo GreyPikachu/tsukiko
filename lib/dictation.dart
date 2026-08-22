@@ -197,6 +197,37 @@ Future<int> freePort() async {
   return port;
 }
 
+/// Аргументы запуска whisper-server. Отдельно от `_start` затем, что
+/// проверять их иначе нечем: сервер поднимается один раз и надолго.
+List<String> serverArgs(RunOptions o, int port) => [
+  '-m', o.model,
+  '-l', o.lang,
+  '-t', '${o.threads}',
+  '--host', '127.0.0.1',
+  '--port', '$port',
+  // Метка своего процесса в аргументах: по ней сирота узнаётся, когда
+  // pid-файла уже нет. Сервер читает её только вместе с --convert.
+  '--tmp-dir', serverMark,
+  // Речь в диктовке короткая, таймкоды в ней не нужны и только мешают
+  // склеивать текст.
+  '-nt',
+  // Луч, а не жадный поиск. Это и была потеря на длинных записях:
+  // whisper-cli по умолчанию идёт лучом (-bs 5 -bo 5), а whisper-server
+  // — жадно (-bs -1 -bo 2), и на жадном декодере длинная речь срывается
+  // в повторы и обрывы. Измерено на одной и той же модели и записях:
+  // 6 с и 2 мин — без разницы, 4 мин — +18% текста, 5,5 мин — +25%,
+  // 10,5 мин — +46%, 14,5 мин — +24%. Короткая фраза от этого не
+  // медленнее (1,2 с и там, и там), а очередь и так идёт лучом.
+  //
+  // Только флагами запуска: стратегию сервер выбирает один раз, и те же
+  // beam_size/best_of в самом запросе доходят лишь наполовину.
+  '-bs', '5', '-bo', '5',
+  // Тот же VAD, что и у очереди: он вырезает тишину до модели, а
+  // значит и повод для галлюцинаций.
+  if (o.vad && o.vadModel.isNotEmpty) ...['--vad', '-vm', o.vadModel],
+  if (o.effectivePrompt.isNotEmpty) ...['--prompt', o.effectivePrompt],
+];
+
 class WhisperServer {
   WhisperServer({this.idleTimeout = const Duration(minutes: 3), this.onChanged});
 
@@ -263,23 +294,7 @@ class WhisperServer {
 
     _port = await freePort();
     _model = o.model;
-    final proc = await Process.start(exe, [
-      '-m', o.model,
-      '-l', o.lang,
-      '-t', '${o.threads}',
-      '--host', '127.0.0.1',
-      '--port', '$_port',
-      // Метка своего процесса в аргументах: по ней сирота узнаётся, когда
-      // pid-файла уже нет. Сервер читает её только вместе с --convert.
-      '--tmp-dir', serverMark,
-      // Речь в диктовке короткая, таймкоды в ней не нужны и только мешают
-      // склеивать текст.
-      '-nt',
-      // Тот же VAD, что и у очереди: он вырезает тишину до модели, а
-      // значит и повод для галлюцинаций.
-      if (o.vad && o.vadModel.isNotEmpty) ...['--vad', '-vm', o.vadModel],
-      if (o.effectivePrompt.isNotEmpty) ...['--prompt', o.effectivePrompt],
-    ]);
+    final proc = await Process.start(exe, serverArgs(o, _port));
     _proc = proc;
     // Вывод сервера никому не нужен, но не читать его нельзя: труба
     // заполнится, и процесс встанет.
