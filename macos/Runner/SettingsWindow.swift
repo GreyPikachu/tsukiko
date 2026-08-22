@@ -12,6 +12,30 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
   private var engine: FlutterEngine?
   private(set) var channel: FlutterMethodChannel?
 
+  /// Канал жизненного цикла этого движка.
+  ///
+  /// Главное окно ведёт плагин, а это — обычное NSWindow со своим движком,
+  /// и состояние жизненного цикла ему никто не возвращает: стоит окну
+  /// потерять фокус (открылся Finder, ушли в другую программу), Flutter
+  /// останавливает конвейер кадров — и больше не запускает. Окно после
+  /// этого живо, но не рисуется и не отвечает на нажатия.
+  ///
+  /// Поэтому состояние досылаем сами по ключевому статусу окна. Если
+  /// движок дошлёт своё — ничего не случится, сообщение то же самое.
+  private var lifecycle: FlutterBasicMessageChannel?
+
+  private func setLifecycle(_ state: String) {
+    lifecycle?.sendMessage("AppLifecycleState.\(state)")
+  }
+
+  func windowDidBecomeKey(_ notification: Notification) {
+    setLifecycle("resumed")
+  }
+
+  func windowDidResignKey(_ notification: Notification) {
+    setLifecycle("inactive")
+  }
+
   /// Вкладка, которую попросили открыть. Dart спрашивает её сам: до того
   /// как его изолят подпишется на канал, посланное ему сообщение теряется.
   private(set) var tab = "dictation"
@@ -52,6 +76,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         name: "tsukiko/dictation", binaryMessenger: engine.binaryMessenger)
       channel.setMethodCallHandler(handler)
 
+      lifecycle = FlutterBasicMessageChannel(
+        name: "flutter/lifecycle",
+        binaryMessenger: engine.binaryMessenger,
+        codec: FlutterStringCodec.sharedInstance())
+
       self.engine = engine
       self.channel = channel
       self.window = window
@@ -63,5 +92,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     // план не выходит — окно осталось бы за чужими.
     NSApp.activate(ignoringOtherApps: true)
     window?.makeKeyAndOrderFront(nil)
+    setLifecycle("resumed")
   }
 }
