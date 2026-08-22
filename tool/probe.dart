@@ -2,7 +2,9 @@
 // (whisper-cli, чужой распознаватель) и смотри, ловит ли его tsukiko.
 //   dart run tool/probe.dart
 // ignore_for_file: avoid_print
-import 'package:tsukiko/engine.dart';
+import 'package:tsukiko/core/model_usage.dart';
+import 'package:tsukiko/core/models.dart';
+import 'package:tsukiko/core/text.dart';
 
 Future<void> main() async {
   final models = findModels();

@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tsukiko/bridge.dart';
-import 'package:tsukiko/settings_window.dart';
+import 'package:tsukiko/platform/bridge.dart';
+import 'package:tsukiko/features/settings/settings_page.dart';
 
 /// Окно настроек живёт отдельным файлом теста намеренно: рисующий тест
 /// заводит TestWidgetsFlutterBinding, а та подменяет HttpClient — рядом

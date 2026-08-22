@@ -1,4 +1,4 @@
-part of 'main.dart';
+part of 'home_page.dart';
 
 /// Одна запись в очереди: файл, его состояние и то, что из него вышло.
 class Job {

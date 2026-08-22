@@ -1,4 +1,4 @@
-part of 'main.dart';
+part of 'home_page.dart';
 
 /// Модальные окна: сообщение, вопрос «продолжить?» и «О программе».
 extension _Dialogs on _HomePageState {

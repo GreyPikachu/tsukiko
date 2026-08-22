@@ -1,4 +1,4 @@
-part of 'main.dart';
+part of 'home_page.dart';
 
 /// Строка очереди и значок её состояния.
 class _QueueRow extends StatefulWidget {

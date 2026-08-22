@@ -6,12 +6,15 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
 
-import 'design.dart';
-import 'dictation.dart';
-import 'engine.dart';
-import 'bridge.dart';
-import 'os.dart';
-import 'settings.dart';
+import '../../design/design.dart';
+import '../../core/whisper_server.dart';
+import '../../core/library.dart';
+import '../../core/models.dart';
+import '../../core/text.dart';
+import '../../core/transcript.dart';
+import '../../platform/bridge.dart';
+import '../../platform/os.dart';
+import '../../core/settings.dart';
 
 /// Окно настроек: своё окно с вкладками, как у всех приложений macOS.
 ///

@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tsukiko/dictation.dart';
-import 'package:tsukiko/engine.dart';
-import 'package:tsukiko/settings.dart';
+import 'package:tsukiko/core/whisper_server.dart';
+import 'package:tsukiko/core/library.dart';
+import 'package:tsukiko/core/model_usage.dart';
+import 'package:tsukiko/core/models.dart';
+import 'package:tsukiko/core/settings.dart';
 
 /// Проверки на те поломки, которые раньше проходили молча: обрезанный файл
 /// настроек, склеенная из двух версий модель, экспорт поверх чужих файлов.

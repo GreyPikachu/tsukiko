@@ -2,10 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tsukiko/dictation.dart';
-import 'package:tsukiko/engine.dart';
-import 'package:tsukiko/os.dart';
-import 'package:tsukiko/os_macos.dart' show cpuSeconds;
+import 'package:tsukiko/core/whisper_server.dart';
+import 'package:tsukiko/core/library.dart';
+import 'package:tsukiko/core/model_usage.dart';
+import 'package:tsukiko/core/models.dart';
+import 'package:tsukiko/core/text.dart';
+import 'package:tsukiko/core/transcript.dart';
+import 'package:tsukiko/core/whisper.dart';
+import 'package:tsukiko/platform/os.dart';
+import 'package:tsukiko/platform/os_macos.dart' show cpuSeconds;
 
 void main() {
   test('таймкоды', () {
