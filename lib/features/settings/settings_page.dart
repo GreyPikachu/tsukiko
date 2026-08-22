@@ -280,7 +280,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             size: m.sizeLabel,
             problem: m.problem,
             chosen: m.path == s.dictationModel,
-            onReveal: () => _cubit.reveal(m.path),
+            onReveal: () => _cubit.revealModel(m.path),
             onDelete: () => _confirmDelete(s, m),
           ),
       if (s.downloading) ...[
@@ -415,7 +415,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         const SectionTitle('Куда сохранять'),
         LibraryPath(
           path: s.libraryPath,
-          onReveal: () => _cubit.reveal(s.libraryPath),
+          onReveal: () => _cubit.revealLibrary(s.libraryPath),
           onChange: () => _pickLibrary(s),
           hint: 'Внутри папка на каждый месяц: $appName/'
               '${monthFolder(DateTime.now())}/. Щёлкните по пути, чтобы '

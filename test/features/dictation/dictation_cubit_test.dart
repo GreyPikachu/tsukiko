@@ -65,6 +65,21 @@ void main() {
       expect(native.hudStates.last, 'hidden');
     });
 
+    test('короткое нажатие не оставляет панель в «Записываю»', () async {
+      // Между «нажали» и «микрофон пишет» проходит время. Клавишу успевали
+      // отпустить в этом промежутке: stop видел покой и выходил, а start
+      // следом ставил «запись» — и панель писала её вечно.
+      native.recordDelay = const Duration(milliseconds: 60);
+
+      final starting = cubit.start();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await cubit.stop();
+      await starting;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(cubit.state.phase, Phase.idle, reason: 'микрофон уже молчит');
+    });
+
     test('отмена не из записи ничего не делает', () async {
       await cubit.cancel();
       expect(cubit.state.phase, Phase.idle);
@@ -194,6 +209,9 @@ class _FakeNative {
   bool permitted = true;
   bool pasteSucceeds = true;
 
+  /// Насколько система тянет с ответом «микрофон готов».
+  Duration recordDelay = Duration.zero;
+
   static const _channel = MethodChannel('tsukiko/dictation');
 
   void install() {
@@ -202,6 +220,7 @@ class _FakeNative {
       calls.add(call.method);
       switch (call.method) {
         case 'record':
+          if (recordDelay > Duration.zero) await Future<void>.delayed(recordDelay);
           return '/tmp/тест-диктовки.wav';
         case 'stopRecord':
           return null;

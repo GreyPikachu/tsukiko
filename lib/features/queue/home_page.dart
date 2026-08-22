@@ -283,6 +283,13 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   Future<void> _openSettings([String tab = 'dictation']) =>
       _bloc.bridge.openSettings(tab);
 
+  /// Показать исходную запись. Её могли убрать мимо приложения — тогда
+  /// говорим об этом, а не открываем пустое место.
+  Future<void> _revealSource(String path) async {
+    if (await revealInFinder(path)) return;
+    _send(StatusReported('Файла «${os.basename(path)}» больше нет на диске'));
+  }
+
   // ── как называется занятость ──────────────────────────────────────────────
 
   String _modelUseBy(QueueState s) => s.transcribing
@@ -659,7 +666,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       ),
       MenuAction(
         'Показать в ${os.fileManagerName}',
-        onSelected: () => revealInFinder(job.file.path),
+        onSelected: () => _revealSource(job.path),
         shortcut: '⌘R',
       ),
       const MenuAction.separator(),

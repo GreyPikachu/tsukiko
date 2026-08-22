@@ -294,10 +294,23 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   /// Показать папку моделей в проводнике: где они лежат, из интерфейса
-  /// иначе не узнать.
-  Future<void> revealModelsFolder() => revealInFinder(os.modelsDir);
+  /// иначе не узнать. Папки может ещё не быть — заводим.
+  Future<void> revealModelsFolder() =>
+      revealInFinder(os.modelsDir, createIfMissing: true);
 
-  Future<void> reveal(String path) => revealInFinder(path);
+  /// Папку библиотеки человек мог ещё ни разу не наполнить.
+  Future<void> revealLibrary(String path) =>
+      revealInFinder(path, createIfMissing: true);
+
+  /// Показать файл модели. Файл мог исчезнуть мимо приложения — тогда
+  /// говорим об этом и обновляем список, а не открываем пустоту.
+  Future<void> revealModel(String path) async {
+    if (await revealInFinder(path)) return;
+    _emit(state.copyWith(
+      problem: 'Файла «${os.basename(path)}» больше нет на диске.',
+      models: scanModels(),
+    ));
+  }
 
   @override
   Future<void> close() {

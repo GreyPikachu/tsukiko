@@ -220,17 +220,16 @@ class MacOs implements Os {
   /// Папку открываем, файл — показываем в папке и выделяем. Раньше и то
   /// и другое шло через `open`, и щелчок по файлу запускал его в проигрывателе.
   @override
-  Future<void> reveal(String path) async {
+  Future<bool> reveal(String path) async {
     try {
       final type = FileSystemEntity.typeSync(path);
-      if (type == FileSystemEntityType.notFound) {
-        Directory(path).createSync(recursive: true);
-        await Process.run('open', [path]);
-        return;
-      }
+      if (type == FileSystemEntityType.notFound) return false;
       await Process.run(
           'open', type == FileSystemEntityType.directory ? [path] : ['-R', path]);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// `~/Library/Application Support/<обратный.домен>/…` → «домен».

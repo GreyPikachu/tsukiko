@@ -108,6 +108,7 @@ class DictationState extends Equatable {
     // Обнулять поля через copyWith иначе нечем: `null` в именованном
     // параметре не отличить от «не передали».
     bool clearFailure = false,
+    bool clearFailurePath = false,
     bool clearVad = false,
     bool clearUnload = false,
   }) =>
@@ -122,7 +123,9 @@ class DictationState extends Equatable {
         allowed: allowed ?? this.allowed,
         sweptMb: sweptMb ?? this.sweptMb,
         failure: clearFailure ? null : (failure ?? this.failure),
-        failurePath: clearFailure ? null : (failurePath ?? this.failurePath),
+        failurePath: clearFailure || clearFailurePath
+            ? null
+            : (failurePath ?? this.failurePath),
         vadProgress: clearVad ? null : (vadProgress ?? this.vadProgress),
         vadError: clearVad ? null : (vadError ?? this.vadError),
         serverUp: serverUp ?? this.serverUp,

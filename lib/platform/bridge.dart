@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show stderr;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
@@ -122,8 +123,22 @@ class NativeBridge {
   /// Убрать файл в Корзину, а не стереть насовсем. Промах по кнопке
   /// «Удалить» после часа речи иначе стоил бы этого часа: из Корзины
   /// запись возвращается средствами самой системы.
-  Future<bool> trash(String path) async =>
-      await _channel.invokeMethod<bool>('trash', {'path': path}) ?? false;
+  ///
+  /// С ограничением по времени. Ответ приходит из completion-обработчика
+  /// системы, и однажды он уже приходил не с того потока — канал после
+  /// такого замолкает, а окно, ждущее ответа, каменеет без единого следа.
+  /// Пусть лучше действие честно не удастся, чем повиснет навсегда.
+  Future<bool> trash(String path) async {
+    try {
+      return await _channel
+              .invokeMethod<bool>('trash', {'path': path})
+              .timeout(const Duration(seconds: 10)) ??
+          false;
+    } catch (e) {
+      stderr.writeln('tsukiko: Корзина не ответила — $e');
+      return false;
+    }
+  }
 
   Stream<String> get hudActions => _hudActions.stream;
 

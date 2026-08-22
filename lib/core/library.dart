@@ -77,7 +77,20 @@ String freeStemFor(String dir, String stem, List<String> suffixes) {
   return name.substring(0, name.length - ext.length);
 }
 
-/// Показать файл в проводнике системы.
-Future<void> revealInFinder(String path) => os.reveal(path);
+/// Показать файл в проводнике системы. Возвращает false, если показывать
+/// нечего: файл убрали мимо приложения.
+///
+/// [createIfMissing] — только для папки библиотеки: её человек может ещё
+/// ни разу не наполнить, и «показать» разумно понимать как «заведи и
+/// покажи». Ко всему остальному это не относится: создавать файл, который
+/// пропал, значит показывать подделку вместо него.
+Future<bool> revealInFinder(String path, {bool createIfMissing = false}) async {
+  if (createIfMissing && !Directory(path).existsSync()) {
+    try {
+      Directory(path).createSync(recursive: true);
+    } catch (_) {}
+  }
+  return os.reveal(path);
+}
 
 String? findWhisper() => os.findExecutable('whisper-cli');

@@ -101,6 +101,17 @@ class DictationCubit extends Cubit<DictationState> {
   Future<void>? _sweeping;
   Future<void>? _bringingUp;
 
+  /// Начало записи в полёте и просьба остановиться, пришедшая раньше,
+  /// чем оно закончилось.
+  ///
+  /// Между «нажали клавишу» и «микрофон пишет» проходит время: система
+  /// спрашивает разрешение, `AVAudioRecorder` заводится. Короткое нажатие
+  /// успевало отпуститься в этом промежутке — `stop` видел фазу «покой»
+  /// и выходил ни с чем, а `start` следом ставил «запись». Панель после
+  /// этого писала «Записываю» вечно, хотя микрофон уже молчал.
+  Future<void>? _startingRecording;
+  bool _stopWanted = false;
+
   // ── настройки распознавания ────────────────────────────────────────────────
 
   /// Настройки диктовки — свои целиком, не общие с очередью: диктуют не то
@@ -218,6 +229,7 @@ class DictationCubit extends Cubit<DictationState> {
 
   Future<void> _onPanelShown() async {
     _panelVisible = true;
+    _forgetGoneRecording();
     _models = findModels();
     _emit(_withSnapshots(state));
     _syncMeter();
@@ -299,7 +311,19 @@ class DictationCubit extends Cubit<DictationState> {
   }
 
   Future<void> start() async {
-    if (state.phase != Phase.idle) return;
+    if (state.phase != Phase.idle || _startingRecording != null) return;
+    _stopWanted = false;
+    _startingRecording = _beginRecording();
+    try {
+      await _startingRecording;
+    } finally {
+      _startingRecording = null;
+    }
+    // Пока заводился микрофон, клавишу успели отпустить.
+    if (_stopWanted && state.recording) await stop();
+  }
+
+  Future<void> _beginRecording() async {
     _aborted = false;
     _emit(state.copyWith(clearFailure: true));
 
@@ -333,6 +357,12 @@ class DictationCubit extends Cubit<DictationState> {
   }
 
   Future<void> stop() async {
+    // Запись ещё только заводится — запомним, что её просили прекратить,
+    // и сделаем это, как только будет что прекращать.
+    if (_startingRecording != null) {
+      _stopWanted = true;
+      return;
+    }
     if (!state.recording) return;
     _stopMeter();
     _emit(state.copyWith(phase: Phase.transcribing));
@@ -417,6 +447,11 @@ class DictationCubit extends Cubit<DictationState> {
   /// Передумал. Записанное выбрасываем, ничего не распознаём и не
   /// вставляем — молча, как будто ничего и не начиналось.
   Future<void> cancel() async {
+    if (_startingRecording != null) {
+      _stopWanted = true;
+      _aborted = false;
+      return;
+    }
     if (!state.recording) return;
     _stopMeter();
     _emit(state.copyWith(phase: Phase.idle));
@@ -522,9 +557,28 @@ class DictationCubit extends Cubit<DictationState> {
 
   /// Показать спасённую запись в проводнике — оттуда её перетаскивают
   /// в очередь главного окна и распознают вручную.
+  ///
+  /// Запись могли убрать мимо приложения. Тогда показывать нечего,
+  /// и вместо подделки говорим правду.
   Future<void> revealFailure() async {
     final p = state.failurePath;
-    if (p != null) await revealInFinder(p);
+    if (p == null) return;
+    if (await revealInFinder(p)) return;
+    _emit(state.copyWith(
+      failure: 'Записи больше нет на диске — её убрали мимо приложения.',
+      clearFailurePath: true,
+    ));
+  }
+
+  /// Убедиться, что спасённая запись всё ещё на месте. Панель открывают
+  /// спустя время, и предлагать кнопку к исчезнувшему файлу нечестно.
+  void _forgetGoneRecording() {
+    final p = state.failurePath;
+    if (p == null || File(p).existsSync()) return;
+    _emit(state.copyWith(
+      failure: 'Записи больше нет на диске — её убрали мимо приложения.',
+      clearFailurePath: true,
+    ));
   }
 
   /// Очередь просит модель. Пока человек говорит — не отдаём: пауза
