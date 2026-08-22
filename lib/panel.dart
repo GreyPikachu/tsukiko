@@ -1,400 +1,47 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
-import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
+import 'bridge.dart';
 import 'design.dart';
-import 'dictation.dart';
+import 'dictation.dart' show sweepRecordings;
+import 'dictation_cubit.dart';
+import 'dictation_state.dart';
 import 'engine.dart';
-import 'platform_mac.dart';
+import 'legacy_migration.dart';
 
 /// Панель у строки меню и вся диктовка. Живёт на отдельном движке Flutter,
 /// который работает и со спрятанной панелью, — поэтому диктовка не зависит
 /// от того, открыто ли главное окно.
-void runPanel() {
+///
+/// Состоянием владеет [DictationCubit]; здесь только то, что рисуется.
+Future<void> runPanel() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Сервер мог пережить падение приложения: полтора гигабайта, которые
-  // иначе не вернёт никто. Ищем по метке в аргументах — pid-файла после
-  // падения может не быть вовсе.
-  final freed = sweepOurServers();
   sweepRecordings();
-  runApp(PanelApp(DictationController(MacPlatform(), sweptMb: freed)));
-}
-
-
-enum Phase { idle, recording, transcribing }
-
-class DictationController extends ChangeNotifier {
-  DictationController(this.platform, {this.sweptMb = 0}) {
-    server = WhisperServer(
-      idleTimeout: Duration(seconds: settings.idleSeconds),
-      onChanged: _onServerChanged,
-    );
-    platform.events.listen(_onHotkey);
-    // Кнопки плавающей панели — те же два действия, что и клавиши.
-    platform.hudActions.listen((a) => a == 'cancel' ? cancel() : stop());
-    platform.panelShown.listen((_) => _refresh());
-    // Очередь спрашивает, можно ли забрать модель. Отвечаем мы: диктовка
-    // главнее — она короткая, а очередь подождёт и продолжит сама.
-    platform.onModelRequested = _yieldModel;
-    // Те же настройки правит инспектор главного окна — там они и живут.
-    platform.settingsReloaded.listen((_) => _reloadSettings());
-    _apply();
-
-    unawaited(_ensureVad());
-
-    // Обратный отсчёт до выгрузки идёт на экране — секунды хватает.
-    Timer.periodic(const Duration(seconds: 1), (_) => _tickServer());
-    ProcessSignal.sigterm.watch().listen((_) => _bye());
-    ProcessSignal.sigint.watch().listen((_) => _bye());
-  }
-
-  final MacPlatform platform;
-
-  /// Сколько мегабайт вернул подбор сирот на старте. Ноль — всё было
-  /// чисто. Пока не 0, панель говорит об этом вслух: полтора гигабайта,
-  /// потерянные молча, человек иначе находит только в мониторе системы.
-  int sweptMb;
-
-  DictationSettings settings = DictationSettings.load();
-  late final WhisperServer server;
-
-  Phase phase = Phase.idle;
-  String last = '';
-  double level = 0;
-  Duration elapsed = Duration.zero;
-  int memoryMb = 0;
-  bool allowed = true;
-
-  /// Сколько раз подряд система ответила «разрешения нет».
-  int _denied = 0;
-
-  List<String> models = findModels();
-
-  /// Идёт загрузка модели тишины. Пока она идёт, диктовка работает без VAD.
-  Download? vadDownload;
-
-  /// Почему модель тишины так и не приехала. Сеть могла лежать ровно в те
-  /// секунды, когда приложение стартовало, — второго шанса без кнопки
-  /// не было бы до следующего запуска.
-  String? vadError;
-
-  /// Последняя неудача распознавания и путь к спасённой записи. Висят
-  /// в панели, пока не начнётся следующая диктовка.
-  String? failure;
-  String? failurePath;
-
-  String? _wav;
-  DateTime? _startedAt;
-  Timer? _meter;
-
-  Never _bye() {
-    server.shutdown();
-    // Свой сервер мы только что погасили; этот проход — на случай, если
-    // рядом остался ещё один, о котором мы не знаем.
-    sweepOurServers();
-    exit(0);
-  }
-
-  /// Настройки распознавания диктовки — свои целиком, не общие с очередью:
-  /// диктуют не то же, что расшифровывают, и одни значения на две стороны
-  /// устраивали бы плохо обе. Из настроек очереди берётся одно — модель,
-  /// и то лишь пока своя не выбрана: «как у расшифровщика» и обещает.
-  ///
-  /// Язык всегда «авто»: диктуют на разных языках вперемешку, и выбирать
-  /// его руками каждый раз некому. VAD включён всегда, независимо от галки
-  /// в очереди: фразы короткие, и на секундах тишины whisper сочиняет
-  /// «Продолжение следует…».
-  RunOptions get options {
-    final vad = File(vadModelPath).existsSync();
-    return RunOptions(
-      model: settings.model.isNotEmpty
-          ? settings.model
-          : (Settings.load()['model'] as String?) ?? '',
-      lang: 'auto',
-      threads: settings.threads,
-      prompt: settings.prompt,
-      punctuate: settings.punctuate,
-      vad: vad,
-      vadModel: vad ? vadModelPath : '',
-    );
-  }
-
-  /// Модель тишины весит меньше мегабайта и качается один раз. Не вышло —
-  /// диктуем без неё: галлюцинации на тишине хуже, чем ничего, но молчащая
-  /// диктовка хуже вдвойне.
-  Future<void> _ensureVad() async {
-    if (File(vadModelPath).existsSync() || vadDownload != null) return;
-    final d = Download(vadModelUrl, vadModelPath);
-    vadDownload = d;
-    vadError = null;
-    notifyListeners();
-    final path = await d.run(onProgress: notifyListeners);
-    vadDownload = null;
-    vadError = path == null ? d.error : null;
-    notifyListeners();
-  }
-
-  /// Повтор после неудачи. Недокачанное лежит в «.part», так что второй
-  /// заход продолжит с того же места, а не начнёт сначала.
-  Future<void> retryVad() => _ensureVad();
-
-  Future<void> _reloadSettings() async {
-    final was = settings;
-    settings = DictationSettings.load();
-    server.idleTimeout = Duration(seconds: settings.idleSeconds);
-    // Всё, с чем сервер запускается, он читает один раз — значит новое
-    // увидит только с новым запуском. Память отдаём сразу, поднимется
-    // он снова на следующей фразе.
-    //
-    // Модель сравниваем не по своей настройке, а по той, с которой сервер
-    // поднят: при «как у расшифровщика» своя настройка пуста и до и после,
-    // а модель под ней сменилась в главном окне — и диктовка молча
-    // продолжала бы говорить старой.
-    if (was.prompt != settings.prompt ||
-        was.punctuate != settings.punctuate ||
-        was.threads != settings.threads ||
-        (server.up && server.model != options.model)) {
-      server.shutdown();
-    }
-    await _apply();
-  }
-
-  Future<void> _apply() async {
-    // Приложение всегда стартует со значком в Dock: LSUIElement в Info.plist
-    // спрятал бы его навсегда, а настройка должна переключаться на лету.
-    // Значит спрятать его может только Dart, и как можно раньше.
-    await platform.setDockIcon((Settings.load()['dockIcon'] as bool?) ?? true);
-    await platform.bind(hold: settings.hold, toggle: settings.toggle);
-    await _checkPermission();
-    notifyListeners();
-  }
-
-  /// «Разрешения нет» — вывод не с первой попытки. Сразу после запуска
-  /// система отвечает «нет» и тем, кто всё давно разрешил: процесс ещё
-  /// не осел. Плашка на пустом месте пугает зря, поэтому верим только
-  /// нескольким отказам подряд, а любому «да» — сразу.
-  Future<void> _checkPermission() async {
-    final now = await platform.permission();
-    if (now) {
-      _denied = 0;
-      if (!allowed) {
-        allowed = true;
-        notifyListeners();
-      }
-      return;
-    }
-    if (++_denied < 3 || !allowed) return;
-    allowed = false;
-    notifyListeners();
-  }
-
-  Future<void> _refresh() async {
-    models = findModels();
-    await _checkPermission();
-    notifyListeners();
-  }
-
-  void _onServerChanged() {
-    if (!server.up) memoryMb = 0;
-    notifyListeners();
-  }
-
-  Future<void> _tickServer() async {
-    // Спрашиваем о разрешении каждую секунду: человек уходит выдавать его
-    // в другое приложение и возвращается к открытой панели. Тот же вопрос
-    // заново создаёт перехват клавиш — без перезапуска.
-    await _checkPermission();
-    if (!server.up) return;
-    memoryMb = await server.footprintMb();
-    notifyListeners();
-  }
-
-  void _onHotkey(HotkeyEvent e) {
-    if (!settings.enabled) return;
-    if (e.id == 'hold') {
-      e.edge == HotkeyEdge.down ? start() : stop();
-      return;
-    }
-    if (e.edge == HotkeyEdge.down) {
-      phase == Phase.recording ? stop() : start();
-    }
-  }
-
-  Future<void> start() async {
-    if (phase != Phase.idle) return;
-    failure = null;
-    failurePath = null;
-    // Сервер поднимается параллельно записи: пока человек говорит, модель
-    // успевает загрузиться, и после отпускания клавиши ждать уже нечего.
-    // Аренда держит его живым всю запись: без неё таймер простоя выгружал
-    // модель посреди длинной фразы, и распознавать было уже нечем.
-    server.hold();
-    unawaited(server.ensureUp(options));
-    final path = await platform.startRecording();
-    if (path == null) {
-      server.release();
-      return;
-    }
-    _wav = path;
-    _startedAt = DateTime.now();
-    phase = Phase.recording;
-    if (settings.hud) unawaited(platform.hud(HudState.recording));
-    elapsed = Duration.zero;
-    _meter = Timer.periodic(const Duration(milliseconds: 100), (_) async {
-      level = await platform.level();
-      elapsed = DateTime.now().difference(_startedAt ?? DateTime.now());
-      notifyListeners();
-    });
-    notifyListeners();
-  }
-
-  Future<void> stop() async {
-    if (phase != Phase.recording) return;
-    _stopMeter();
-    phase = Phase.transcribing;
-    if (settings.hud) unawaited(platform.hud(HudState.transcribing));
-    notifyListeners();
-
-    final path = await platform.stopRecording() ?? _wav;
-    _wav = null;
-    var ok = false;
-    try {
-      if (path != null) {
-        final text = await server.transcribe(path);
-        if (text == null) {
-          // Распознать не удалось. Запись — единственный экземпляр
-          // сказанного, и удалять её здесь было бы потерей данных.
-          final saved = rescueRecording(path);
-          failurePath = saved ?? path;
-          failure = saved == null
-              ? 'Распознать не удалось, и сохранить запись тоже: $path'
-              : 'Распознать не удалось — модель не ответила. '
-                  'Запись сохранена: $saved';
-        } else {
-          _discard(path);
-          if (text.isNotEmpty) {
-            last = text;
-            // «Только в буфер» — для тех, кто вставит сам и туда, куда решит.
-            ok = settings.insert
-                ? await platform.insert(text)
-                : await copyLast().then((_) => true);
-          }
-        }
-      }
-    } finally {
-      server.release();
-    }
-    // Панель уходит с подтверждением, только если было что вставлять:
-    // галочка после тишины была бы неправдой. А неудача не должна уходить
-    // молча — иначе человек так и не узнает, что записи он лишился.
-    await platform.hud(ok
-        ? HudState.done
-        : failure != null
-            ? HudState.failed
-            : HudState.hidden);
-    phase = Phase.idle;
-    notifyListeners();
-  }
-
-  /// Передумал. Записанное выбрасываем, ничего не распознаём и не
-  /// вставляем — молча, как будто ничего и не начиналось.
-  Future<void> cancel() async {
-    if (phase != Phase.recording) return;
-    _stopMeter();
-    phase = Phase.idle;
-    unawaited(platform.hud(HudState.hidden));
-    notifyListeners();
-    _discard(await platform.stopRecording() ?? _wav);
-    _wav = null;
-    server.release();
-  }
-
-  void _stopMeter() {
-    _meter?.cancel();
-    _meter = null;
-    level = 0;
-  }
-
-  void _discard(String? path) {
-    if (path == null) return;
-    try {
-      File(path).deleteSync();
-    } catch (_) {}
-  }
-
-  // ── правки из панели ──────────────────────────────────────────────────────
-
-  void _save() {
-    settings.save();
-    notifyListeners();
-  }
-
-  void setEnabled(bool v) {
-    settings.enabled = v;
-    if (!v && phase == Phase.recording) cancel();
-    _save();
-  }
-
-  void setModel(String path) {
-    settings.model = path;
-    _save();
-    // Модель меняется только перезапуском сервера — но не сейчас, а на
-    // следующей фразе: сегодняшнюю память отдаём сразу.
-    if (server.up && server.model != path) server.shutdown();
-  }
-
-  Future<void> copyLast() async {
-    if (last.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: last));
-  }
-
-  void unload() => server.shutdown();
-
-  /// Очередь просит модель. Пока человек говорит — не отдаём: пауза
-  /// в очереди стоит секунды, а прерванная фраза пропадает совсем.
-  /// В покое отдаём сразу: держать полтора гигабайта ради возможной
-  /// следующей фразы дороже, чем поднять сервер заново за 0,6 с.
-  bool _yieldModel() {
-    if (phase != Phase.idle) return false;
-    server.shutdown();
-    return true;
-  }
-
-  void forgetSweep() {
-    sweptMb = 0;
-    notifyListeners();
-  }
-
-  /// Показать спасённую запись в Finder — оттуда её перетаскивают
-  /// в очередь главного окна и распознают вручную.
-  Future<void> revealFailure() async {
-    final p = failurePath;
-    if (p != null) await revealInFinder(p);
-  }
-
-  Future<void> openMainWindow() => platform.openMainWindow();
-
-  /// Настройки диктовки живут в своём окне. Без значка в Dock строки меню
-  /// у приложения нет, и эта кнопка — единственная дорога туда.
-  Future<void> openSettings([String tab = 'dictation']) =>
-      platform.openSettings(tab);
-
-  Future<void> requestPermission() => platform.requestPermission();
-
-  Future<void> openPermissionSettings() => platform.openPermissionSettings();
-
-  Future<void> quit() => platform.quit();
+  // Модели прежней установки переезжают к нам до того, как кто-нибудь
+  // спросит их список. Какой из движков стартует первым — не наше дело,
+  // поэтому переезд зовут обе точки входа, и он идемпотентен.
+  await migrateLegacyModels();
+  runApp(const PanelApp());
 }
 
 // ── интерфейс ───────────────────────────────────────────────────────────────
 
 class PanelApp extends StatelessWidget {
-  const PanelApp(this.controller, {super.key});
-  final DictationController controller;
+  const PanelApp({super.key});
+
+  @override
+  Widget build(BuildContext context) => BlocProvider(
+        create: (_) => DictationCubit(NativeBridge()),
+        child: const _PanelApp(),
+      );
+}
+
+class _PanelApp extends StatelessWidget {
+  const _PanelApp();
 
   @override
   Widget build(BuildContext context) => MacosApp(
@@ -406,18 +53,17 @@ class PanelApp extends StatelessWidget {
         // Фон рисует NSVisualEffectView под этим слоем — своим здесь
         // ничего не закрашиваем, иначе материал не будет виден.
         color: const Color(0x00000000),
-        home: PanelBody(controller),
+        home: const PanelBody(),
       );
 }
 
 class PanelBody extends StatelessWidget {
-  const PanelBody(this.controller, {super.key});
-  final DictationController controller;
+  const PanelBody({super.key});
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) => _Panel(controller),
+  Widget build(BuildContext context) =>
+      BlocBuilder<DictationCubit, DictationState>(
+        builder: (context, state) => _Panel(state),
       );
 }
 
@@ -429,12 +75,23 @@ class PanelBody extends StatelessWidget {
 /// приходят и уходят, расшифровка бывает в три строки и в ноль, и панель
 /// с запасом «на всякий случай» зияла бы пустотой посередине. Меряем
 /// после раскладки и сообщаем macOS — окно растёт вниз от значка.
-class _Panel extends StatelessWidget {
-  const _Panel(this.c);
-  final DictationController c;
+class _Panel extends StatefulWidget {
+  const _Panel(this.state);
+  final DictationState state;
 
-  static final _content = GlobalKey();
-  static double _reported = 0;
+  @override
+  State<_Panel> createState() => _PanelState();
+}
+
+class _PanelState extends State<_Panel> {
+  // Ключ и последняя сообщённая высота — поля состояния, а не статика
+  // виджета. Статика работала лишь потому, что панель в приложении одна:
+  // второй экземпляр (тест, будущий второй поповер) молча делил бы
+  // с первым и ключ, и «уже сообщённую» высоту.
+  final _content = GlobalKey();
+  double _reported = 0;
+
+  DictationState get s => widget.state;
 
   @override
   Widget build(BuildContext context) {
@@ -444,7 +101,7 @@ class _Panel extends StatelessWidget {
       final h = _content.currentContext?.size?.height.ceilToDouble();
       if (h == null || h == _reported) return;
       _reported = h;
-      unawaited(c.platform.setPanelHeight(h));
+      unawaited(context.read<DictationCubit>().reportHeight(h));
     });
 
     return SingleChildScrollView(
@@ -455,18 +112,18 @@ class _Panel extends StatelessWidget {
         // и встали по центру: раньше ширину задавал ListView.
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _Header(c),
+          _Header(s),
           const _Divider(),
-          _Live(c),
-          _Notices(c),
+          _Live(s),
+          _Notices(s),
           const _Divider(),
-          _Last(c),
+          _Last(s),
           const _Divider(),
-          _Model(c),
+          _Model(s),
           // Действия ухода живут внизу и отделены — так во всех поповерах
           // системы: сначала состояние, в конце «закрыть за собой дверь».
           const _Divider(),
-          _Footer(c),
+          _Footer(s),
         ],
       ),
     );
@@ -476,8 +133,8 @@ class _Panel extends StatelessWidget {
 /// Заголовок с главным выключателем. Ради него панель чаще всего и
 /// открывают, поэтому он первый и ничем не обвешан.
 class _Header extends StatelessWidget {
-  const _Header(this.c);
-  final DictationController c;
+  const _Header(this.s);
+  final DictationState s;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -492,13 +149,16 @@ class _Header extends StatelessWidget {
                   Text('Диктовка', style: Type.emptyTitle),
                   const SizedBox(height: 2),
                   Text(
-                    c.settings.enabled ? 'Включена' : 'Выключена',
+                    s.enabled ? 'Включена' : 'Выключена',
                     style: Type.caption.copyWith(color: Surface.secondaryText(context)),
                   ),
                 ],
               ),
             ),
-            MacosSwitch(value: c.settings.enabled, onChanged: c.setEnabled),
+            MacosSwitch(
+              value: s.enabled,
+              onChanged: context.read<DictationCubit>().setEnabled,
+            ),
           ],
         ),
       );
@@ -508,19 +168,19 @@ class _Header extends StatelessWidget {
 /// Под ним — уровень сигнала во время записи и напоминание о клавишах
 /// в покое: два размера вместо рамок и подписей.
 class _Live extends StatelessWidget {
-  const _Live(this.c);
-  final DictationController c;
+  const _Live(this.s);
+  final DictationState s;
 
   @override
   Widget build(BuildContext context) {
     final accent = MacosTheme.of(context).primaryColor;
-    final recording = c.phase == Phase.recording;
-    final (title, color) = switch (c.phase) {
+    final recording = s.recording;
+    final (title, color) = switch (s.phase) {
       Phase.recording => ('Записываю', MacosColors.systemRedColor),
       Phase.transcribing => ('Распознаю…', accent),
       Phase.idle => (
-          c.settings.enabled ? 'Готово' : 'Диктовка выключена',
-          c.settings.enabled
+          s.enabled ? 'Готово' : 'Диктовка выключена',
+          s.enabled
               ? MacosColors.systemGreenColor
               : Surface.secondaryText(context)
         ),
@@ -555,18 +215,26 @@ class _Live extends StatelessWidget {
               ),
               if (recording)
                 Text(
-                  humanDuration(c.elapsed.inMilliseconds),
+                  humanDuration(s.elapsed.inMilliseconds),
                   style: Type.timestamp.copyWith(color: Surface.secondaryText(context)),
                 ),
-              if (c.phase == Phase.transcribing)
+              if (s.phase == Phase.transcribing) ...[
                 const SizedBox(width: 14, height: 14, child: ProgressCircle()),
+                // Тот же крестик, что и в плавающей панели, и на том же
+                // месте относительно прогресса: одно действие — один вид
+                // в обеих панелях, искать его дважды не приходится.
+                const SizedBox(width: Gap.inner),
+                _AbortButton(
+                  onPressed: context.read<DictationCubit>().abortTranscription,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: Gap.item),
           if (recording)
-            _Meter(level: c.level)
+            _Meter(level: s.level)
           else
-            _Keys(c),
+            _Keys(s),
         ],
       ),
     );
@@ -578,8 +246,8 @@ class _Live extends StatelessWidget {
 /// подпись, а не как то, что можно поменять. Щелчок ведёт туда, где их
 /// и меняют.
 class _Keys extends StatefulWidget {
-  const _Keys(this.c);
-  final DictationController c;
+  const _Keys(this.s);
+  final DictationState s;
 
   @override
   State<_Keys> createState() => _KeysState();
@@ -590,7 +258,7 @@ class _KeysState extends State<_Keys> {
 
   @override
   Widget build(BuildContext context) {
-    final s = widget.c.settings;
+    
     final grey = Type.caption.copyWith(color: Surface.secondaryText(context));
     Widget row(String keys, String what) => Padding(
           padding: const EdgeInsets.only(bottom: Gap.hint),
@@ -612,18 +280,75 @@ class _KeysState extends State<_Keys> {
         onExit: (_) => setState(() => _hover = false),
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
-          onTap: () => widget.c.openSettings('dictation'),
+          onTap: () => context.read<DictationCubit>().openSettings('dictation'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              row(s.hold.label, 'держать и говорить'),
-              row(s.toggle.label, 'нажать, ещё раз — остановить'),
+              row(widget.s.holdLabel, 'держать и говорить'),
+              row(widget.s.toggleLabel, 'нажать, ещё раз — остановить'),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+/// Крестик отмены рядом с индикатором. Не кнопка с подписью: часовую
+/// запись прерывают раз в месяц, и громкая кнопка рядом с «Распознаю…»
+/// читалась бы как основное намерение. В покое приглушён, под курсором
+/// проявляется — есть, когда его ищут, и молчит, когда не нужен.
+class _AbortButton extends StatefulWidget {
+  const _AbortButton({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  State<_AbortButton> createState() => _AbortButtonState();
+}
+
+class _AbortButtonState extends State<_AbortButton> {
+  bool _hover = false, _down = false;
+
+  @override
+  Widget build(BuildContext context) => MacosTooltip(
+        message: 'Отменить распознавание',
+        child: Semantics(
+          button: true,
+          label: 'Отменить распознавание',
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _hover = true),
+            onExit: (_) => setState(() => _hover = false),
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              // Отклик на нажатие, а не на отпускании — как везде в панели.
+              onTapDown: (_) => setState(() => _down = true),
+              onTapUp: (_) => setState(() => _down = false),
+              onTapCancel: () => setState(() => _down = false),
+              onTap: widget.onPressed,
+              child: AnimatedScale(
+                duration: Motion.dur(context, Motion.press),
+                scale: _down ? 0.94 : 1,
+                child: AnimatedContainer(
+                  duration: Motion.dur(context, Motion.quick),
+                  curve: Motion.curve(context, Motion.quickCurve),
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: _hover ? Surface.hover(context) : MacosColors.transparent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: MacosIcon(
+                    CupertinoIcons.xmark,
+                    size: 10,
+                    color: Surface.secondaryText(context)
+                        .withValues(alpha: _hover ? 1 : 0.55),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 /// Уровень сигнала: не столбики-эквалайзер, а одна полоса — она отвечает
@@ -658,12 +383,12 @@ class _Meter extends StatelessWidget {
 /// То, что требует внимания: невыданные разрешения и модель тишины.
 /// В спокойном состоянии этого блока нет вовсе.
 class _Notices extends StatelessWidget {
-  const _Notices(this.c);
-  final DictationController c;
+  const _Notices(this.s);
+  final DictationState s;
 
   @override
   Widget build(BuildContext context) {
-    final d = c.vadDownload;
+    final cubit = context.read<DictationCubit>();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Gap.edgeNarrow),
       child: Column(
@@ -671,45 +396,52 @@ class _Notices extends StatelessWidget {
           // Разрешение одно, и просят его в два приёма: сначала системный
           // запрос — он и заводит tsukiko в списке выключенным, — а уже
           // потом настройки, где остаётся щёлкнуть переключатель.
-          if (!c.allowed)
+          if (!s.allowed)
             _Warning(
               'Без «Универсального доступа» tsukiko не перехватывает клавиши '
               'и не вставляет текст в активное окно.',
               button: 'Запросить',
-              onPressed: c.requestPermission,
+              onPressed: cubit.requestPermission,
               second: 'Открыть настройки',
-              onSecond: c.openPermissionSettings,
+              onSecond: cubit.openPermissionSettings,
             ),
           // Молчаливая потеря записи — худшее, что может случиться:
           // человек договорил и не получил ничего. Говорим, что случилось
           // и где лежит запись, чтобы её можно было распознать вручную.
-          if (c.failure != null)
+          // Есть спасённая запись — ведём к ней и даём убрать её, если она
+          // не нужна: удаление идёт в Корзину, поэтому промах не страшен.
+          // Текст уцелел и лежит в буфере — предлагаем положить его туда
+          // ещё раз.
+          if (s.failure != null)
             _Warning(
-              c.failure!,
-              button: 'Показать запись',
-              onPressed: c.revealFailure,
+              s.failure!,
+              button: s.failurePath != null ? 'Показать запись' : 'Скопировать',
+              onPressed:
+                  s.failurePath != null ? cubit.revealFailure : cubit.copyLast,
+              second: s.failurePath != null ? 'Удалить' : null,
+              onSecond: s.failurePath != null ? cubit.discardFailure : null,
             ),
-          if (c.sweptMb > 0)
+          if (s.sweptMb > 0)
             _Warning(
               'Нашли забытый распознаватель диктовки от прошлого запуска '
-              'и выгрузили его: вернули ${sizeLabelMb(c.sweptMb)} памяти.',
+              'и выгрузили его: вернули ${sizeLabelMb(s.sweptMb)} памяти.',
               button: 'Понятно',
-              onPressed: c.forgetSweep,
+              onPressed: cubit.forgetSweep,
             ),
-          if (d != null)
+          if (s.vadProgress != null)
             Padding(
               padding: const EdgeInsets.only(top: Gap.inner),
               child: Text(
-                'Загружаем распознавание тишины · ${d.progressLabel}',
+                'Загружаем распознавание тишины · ${s.vadProgress}',
                 style: Type.caption.copyWith(color: Surface.secondaryText(context)),
               ),
             )
-          else if (c.vadError != null)
+          else if (s.vadError != null)
             _Warning(
-              'Распознавание тишины не загрузилось: ${c.vadError}. '
+              'Распознавание тишины не загрузилось: ${s.vadError}. '
               'Диктовать можно и так, но на паузах модель дописывает лишнее.',
               button: 'Попробовать ещё раз',
-              onPressed: c.retryVad,
+              onPressed: cubit.retryVad,
             ),
         ],
       ),
@@ -718,8 +450,8 @@ class _Notices extends StatelessWidget {
 }
 
 class _Last extends StatelessWidget {
-  const _Last(this.c);
-  final DictationController c;
+  const _Last(this.s);
+  final DictationState s;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -732,10 +464,10 @@ class _Last extends StatelessWidget {
                 style: Type.caption.copyWith(color: Surface.secondaryText(context))),
             const SizedBox(height: Gap.hint),
             Text(
-              c.last.isEmpty ? 'Пока ничего не надиктовано.' : c.last,
+              s.last.isEmpty ? 'Пока ничего не надиктовано.' : s.last,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: c.last.isEmpty
+              style: s.last.isEmpty
                   ? Type.control.copyWith(color: Surface.secondaryText(context))
                   : Type.control,
             ),
@@ -744,12 +476,12 @@ class _Last extends StatelessWidget {
             // «Вставить снова» здесь была и не работала: панель не помнила,
             // куда вставляла, а ждала наугад двести миллисекунд и попадала
             // в чужое окно. Осталось «Скопировать» и родное ⌘V.
-            if (c.last.isNotEmpty) ...[
+            if (s.last.isNotEmpty) ...[
               const SizedBox(height: Gap.item),
               PushButton(
                 controlSize: ControlSize.small,
                 secondary: true,
-                onPressed: c.copyLast,
+                onPressed: context.read<DictationCubit>().copyLast,
                 child: const Text('Скопировать'),
               ),
             ],
@@ -761,21 +493,23 @@ class _Last extends StatelessWidget {
 /// Модель: что загружено, сколько занимает и когда освободится. Та самая
 /// причина, по которой панель вообще нужна.
 class _Model extends StatelessWidget {
-  const _Model(this.c);
-  final DictationController c;
+  const _Model(this.s);
+  final DictationState s;
 
   @override
   Widget build(BuildContext context) {
-    final pair = modelPair(c.models);
-    final chosen = c.settings.model.isNotEmpty ? c.settings.model : c.options.model;
-    final left = c.server.untilUnload;
+    // Всё готовым значением из состояния: считать размеры файлов и читать
+    // settings.json на каждом кадре панели здесь было нечем оправдать —
+    // во время записи это выходило десять чтений диска в секунду.
+    final cubit = context.read<DictationCubit>();
+    final left = s.untilUnload;
     final grey = Type.caption.copyWith(color: Surface.secondaryText(context));
 
-    final state = !c.server.up
+    final serverState = !s.serverUp
         ? 'Выгружена'
         : [
-            if (c.memoryMb > 0)
-              '${(c.memoryMb / 1024).toStringAsFixed(1).replaceAll('.', ',')} ГБ в памяти'
+            if (s.memoryMb > 0)
+              '${(s.memoryMb / 1024).toStringAsFixed(1).replaceAll('.', ',')} ГБ в памяти'
             else
               'В памяти',
             if (left != null) 'освободится через ${humanDuration(left.inMilliseconds)}',
@@ -788,17 +522,17 @@ class _Model extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            pair.fast.isEmpty
+            !s.hasModels
                 ? 'Модель не найдена'
-                : chosen.isEmpty
+                : s.chosenModel.isEmpty
                     ? 'Модель не выбрана'
-                    : modelDisplayName(chosen),
+                    : modelDisplayName(s.chosenModel),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Type.fileName,
           ),
           const SizedBox(height: Gap.hint),
-          Text(pair.fast.isEmpty ? 'Распознавать нечем' : state, style: grey),
+          Text(!s.hasModels ? 'Распознавать нечем' : serverState, style: grey),
           // Кнопки под текстом, как в блоке последней расшифровки: два
           // соседних блока, устроенных по-разному, читаются как два разных
           // языка в одной панели.
@@ -808,15 +542,15 @@ class _Model extends StatelessWidget {
               PushButton(
                 controlSize: ControlSize.small,
                 secondary: true,
-                onPressed: () => c.openSettings('models'),
+                onPressed: () => cubit.openSettings('models'),
                 child: const Text('Загрузить другую…'),
               ),
-              if (c.server.up) ...[
+              if (s.serverUp) ...[
                 const SizedBox(width: Gap.inner),
                 PushButton(
                   controlSize: ControlSize.small,
                   secondary: true,
-                  onPressed: c.unload,
+                  onPressed: cubit.unload,
                   child: const Text('Выгрузить'),
                 ),
               ],
@@ -824,15 +558,16 @@ class _Model extends StatelessWidget {
           ),
           // Переключать нечего, пока модель одна: мёртвый переключатель
           // врёт, будто выбор есть.
-          if (pair.fast.isNotEmpty && pair.fast != pair.accurate) ...[
+          if (s.canSwitchModel) ...[
             const SizedBox(height: Gap.item),
             _Segmented(
               options: [
-                (pair.fast, 'Быстрая'),
-                (pair.accurate, 'Точная'),
+                (s.fastModel, 'Быстрая'),
+                (s.accurateModel, 'Точная'),
               ],
-              value: chosen == pair.accurate ? pair.accurate : pair.fast,
-              onChanged: c.setModel,
+              value:
+                  s.chosenModel == s.accurateModel ? s.accurateModel : s.fastModel,
+              onChanged: cubit.setModel,
             ),
           ],
         ],
@@ -842,18 +577,23 @@ class _Model extends StatelessWidget {
 }
 
 class _Footer extends StatelessWidget {
-  const _Footer(this.c);
-  final DictationController c;
+  const _Footer(this.s);
+  final DictationState s;
 
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 5),
         child: Column(
           children: [
-            _MenuRow('Настройки диктовки…', () => c.openSettings('dictation'),
-                shortcut: '⌘,'),
-            _MenuRow('Открыть tsukiko…', c.openMainWindow),
-            _MenuRow('Завершить tsukiko', c.quit, shortcut: '⌘Q'),
+            _MenuRow(
+              'Настройки диктовки…',
+              () => context.read<DictationCubit>().openSettings('dictation'),
+              shortcut: '⌘,',
+            ),
+            _MenuRow('Открыть tsukiko…',
+                context.read<DictationCubit>().openMainWindow),
+            _MenuRow('Завершить tsukiko', context.read<DictationCubit>().quit,
+                shortcut: '⌘Q'),
           ],
         ),
       );

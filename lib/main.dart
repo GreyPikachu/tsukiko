@@ -6,17 +6,21 @@ import 'dart:ui' show ImageFilter;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart' show ThemeMode, SelectableText;
 import 'package:flutter/services.dart';
 import 'package:macos_ui/macos_ui.dart';
 
 import 'design.dart';
-import 'dictation.dart' show ourServerPid;
+import 'dictation.dart' show recordedServerPid;
 import 'engine.dart';
+import 'legacy_migration.dart';
 import 'mascot.dart';
+import 'os.dart';
 import 'panel.dart' show runPanel;
+import 'settings.dart';
 import 'settings_window.dart' show runSettings;
-import 'platform_mac.dart' show MacPlatform;
+import 'bridge.dart' show NativeBridge;
 
 part 'job.dart';
 part 'home_queue.dart';
@@ -41,24 +45,23 @@ void panelMain() => runPanel();
 @pragma('vm:entry-point')
 void settingsMain() => runSettings();
 
+/// Второй копии здесь не бывает: её ловит и завершает сторона macOS ещё
+/// до запуска движка (AppDelegate.applicationWillFinishLaunching), подняв
+/// окно уже работающей. Проверять это в Dart больше нечем и незачем.
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   // Настоящий материал окна: содержимое во всю высоту, титульная полоса прозрачная.
   await const MacosWindowUtilsConfig(toolbarStyle: NSWindowToolbarStyle.unified).apply();
-  final lock = acquireSingleInstanceLock();
+  // До первого findModels(): список моделей должен собираться уже
+  // из своей папки. Когда переезжать нечего, это одна проверка папки.
+  await migrateLegacyModels();
   runApp(TsukikoApp(
-    alreadyRunning: lock == null,
     initialFiles: args.where((a) => FileSystemEntity.typeSync(a) != FileSystemEntityType.notFound),
   ));
 }
 
 class TsukikoApp extends StatelessWidget {
-  const TsukikoApp({
-    super.key,
-    required this.alreadyRunning,
-    this.initialFiles = const [],
-  });
-  final bool alreadyRunning;
+  const TsukikoApp({super.key, this.initialFiles = const []});
   final Iterable<String> initialFiles;
 
   @override
@@ -68,28 +71,7 @@ class TsukikoApp extends StatelessWidget {
         darkTheme: MacosThemeData.dark(),
         themeMode: ThemeMode.system,
         debugShowCheckedModeBanner: false,
-        home: alreadyRunning
-            ? const _AlreadyRunning()
-            : HomePage(initialFiles: initialFiles),
-      );
-}
-
-class _AlreadyRunning extends StatelessWidget {
-  const _AlreadyRunning();
-
-  @override
-  Widget build(BuildContext context) => MacosWindow(
-        child: MacosScaffold(children: [
-          ContentArea(
-            builder: (context, _) => Center(
-              child: _Placeholder(
-                icon: CupertinoIcons.square_stack_3d_up,
-                title: '$appName уже открыта',
-                subtitle: 'Две копии загрузили бы модель в память дважды.',
-              ),
-            ),
-          ),
-        ]),
+        home: HomePage(initialFiles: initialFiles),
       );
 }
 
@@ -101,7 +83,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final _jobs = <Job>[];
   final _sel = <Job>{};
   Job? _lead;
@@ -119,12 +101,20 @@ class _HomePageState extends State<HomePage> {
   String _query = '';
   Process? _proc;
   Directory? _tmp;
+
+  /// Номер следующего запуска whisper-cli. Растёт и не сбрасывается: имена
+  /// временных файлов должны быть новыми даже после правки очереди.
+  int _runSeq = 0;
   Timer? _modelTimer, _saveTimer;
   ModelUse _modelUse = const ModelUse(ModelState.free);
 
   /// Модель занял наш же сервер диктовки. Считается раз в опрос: узнаётся
   /// это по pid из файла, а ходить в `ps` на каждый кадр незачем.
   bool _dictationHoldsModel = false;
+
+  /// Pid сервера диктовки, каким его записала панель. Обновляется тем же
+  /// опросом; читатели берут готовое значение и в систему не ходят.
+  int? _serverPid;
   Set<String> _modelUsers = <String>{};
   CpuSample _cpu = const CpuSample.empty();
   bool _polling = false;
@@ -144,7 +134,8 @@ class _HomePageState extends State<HomePage> {
   bool _saveNextToSource = false;
 
   /// Единственное, за чем главное окно ходит в macOS напрямую.
-  late final _mac = MacPlatform();
+  late final _mac = NativeBridge();
+  StreamSubscription<void>? _settingsSub;
   bool _toLibrary = true;
   String _libraryPath = defaultLibraryPath;
   List<String> _libraryFormats = const ['txt'];
@@ -174,8 +165,7 @@ class _HomePageState extends State<HomePage> {
     );
     _rescanModels();
     _timestamps = (s['timestamps'] as bool?) ?? true;
-    _yieldBusyModel =
-        (s['yieldBusyModel'] as bool?) ?? (s['yieldDictara'] as bool?) ?? true;
+    _yieldBusyModel = (s['yieldBusyModel'] as bool?) ?? true;
     _saveNextToSource = (s['saveNextToSource'] as bool?) ?? false;
     _toLibrary = (s['toLibrary'] as bool?) ?? true;
     _libraryPath = (s['libraryPath'] as String?) ?? defaultLibraryPath;
@@ -195,7 +185,9 @@ class _HomePageState extends State<HomePage> {
 
     // Настройки правят в другом окне и в другом изоляте: пока это окно
     // открыто, оно должно узнавать о правках, а не жить со своей копией.
-    _mac.settingsReloaded.listen((_) => _reloadSettings());
+    // Подписку держим в поле: движок переживает закрытие окна, и без
+    // отмены она звала бы setState у снятого с дерева состояния.
+    _settingsSub = _mac.settingsReloaded.listen((_) => _reloadSettings());
 
     _transcriptScroll.addListener(() {
       final scrolled = _transcriptScroll.hasClients && _transcriptScroll.offset > 6;
@@ -205,11 +197,8 @@ class _HomePageState extends State<HomePage> {
       if (_searchCtrl.text != _query) setState(() => _query = _searchCtrl.text);
     });
 
-    _pollModel();
-    // Диктовка короткая: между «отпустил клавишу» и «текст готов» проходит
-    // пара секунд. Реже чем раз в 700 мс её просто не видно.
-    _modelTimer =
-        Timer.periodic(const Duration(milliseconds: 700), (_) => _pollModel());
+    WidgetsBinding.instance.addObserver(this);
+    _syncPolling();
 
     if (widget.initialFiles.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _addPaths(widget.initialFiles));
@@ -219,6 +208,35 @@ class _HomePageState extends State<HomePage> {
   /// setState помечен @protected: из вынесенных в part-файлы расширений
   /// его не вызвать напрямую, а поведение должно остаться прежним.
   void _set(VoidCallback change) => setState(change);
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => _syncPolling();
+
+  /// Опрос занятости модели — самая дорогая мелочь в простое: каждый заход
+  /// это `pgrep` и `ps`, а каждый третий ещё и `lsof` на 150 мс. Смысл
+  /// у него ровно один — показать значок в строке состояния, поэтому пока
+  /// окно не на виду, опрашивать некого и не для кого.
+  ///
+  /// Исключение — идущая расшифровка: очередь уступает занятой модели,
+  /// глядя на тот же `_modelUse`, и с замороженным опросом она встала бы
+  /// на устаревшем ответе.
+  void _syncPolling() {
+    final needed = _running ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    if (needed == (_modelTimer != null)) return;
+    if (!needed) {
+      _modelTimer?.cancel();
+      _modelTimer = null;
+      return;
+    }
+    // Возвращаемся к окну — показанное состояние может быть минутной
+    // давности, поэтому сразу спрашиваем заново.
+    _pollModel();
+    // Диктовка короткая: между «отпустил клавишу» и «текст готов» проходит
+    // пара секунд. Реже чем раз в 700 мс её просто не видно.
+    _modelTimer =
+        Timer.periodic(const Duration(milliseconds: 700), (_) => _pollModel());
+  }
 
   /// Перечитать модели с диска: скачанное ложится в папку, которую
   /// findModels() и так просматривает. Выбранный вручную файл из чужой папки
@@ -237,6 +255,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _settingsSub?.cancel();
     _modelTimer?.cancel();
     _saveTimer?.cancel();
     _proc?.kill();
@@ -263,19 +283,25 @@ class _HomePageState extends State<HomePage> {
   /// Пишем только своё: библиотеку и поведение приложения правит окно
   /// настроек, и его ключи Settings.save оставляет в файле нетронутыми.
   /// Иначе окно, простоявшее открытым весь сеанс, вернуло бы всё как было.
-  void _writeSettings() => Settings.save({
+  ///
+  /// Ответа не ждём: писать настройки очереди некуда торопиться, а звать
+  /// это приходится и из dispose, где ждать уже некому.
+  void _writeSettings() => unawaited(Settings.save({
         ..._defaults.toJson(),
         'timestamps': _timestamps,
         'yieldBusyModel': _yieldBusyModel,
+        // пишется, но не читается обратно (находка E2) — трогать
+        // в этом заходе не стал: правка не про блок A.
         'modelUsers': _modelUsers.toList(),
         'copyFormat': _copyFormat,
         'saveFormat': _saveFormat,
         'recent': _recent,
-      });
+      }));
 
   /// Настройки поменяли в другом окне. Перечитываем то, чем это окно
   /// пользуется, но чего больше не правит.
   void _reloadSettings() {
+    if (!mounted) return;
     final s = Settings.load();
     final formats = (s['libraryFormats'] as List?)
         ?.cast<String>()
@@ -386,7 +412,13 @@ class _HomePageState extends State<HomePage> {
       );
       _cpu = use.cpu;
       if (!mounted) return;
-      final ours = use.busy && use.pid != 0 && use.pid == ourServerPid();
+      // Чтение файла в сотню байт вместо запуска `ps`. Живость и имя
+      // процесса проверять здесь незачем: pid пришёл из `ps` внутри
+      // самого опроса — значит процесс жив и распознаёт речь, остаётся
+      // спросить, наш ли он. Прежний вариант запускал `ps` дважды
+      // в секунду прямо на изоляте, который рисует окно.
+      _serverPid = recordedServerPid();
+      final ours = use.busy && use.pid != 0 && use.pid == _serverPid;
       if (use.label != _modelUse.label ||
           use.detail != _modelUse.detail ||
           ours != _dictationHoldsModel ||
@@ -406,7 +438,7 @@ class _HomePageState extends State<HomePage> {
 
   static const _cmd = SingleActivator(LogicalKeyboardKey.keyO, meta: true);
 
-  String? _menuSignature;
+  List<Object?>? _menuSignature;
   List<PlatformMenuItem> _menuCache = const [];
 
   // ── интерфейс ─────────────────────────────────────────────────────────────
@@ -685,6 +717,13 @@ class _HomePageState extends State<HomePage> {
         itemBuilder: (context, i) {
           final job = _jobs[i];
           return ContextMenuRegion(
+            // Правый щелчок по невыделенной записи сначала выделяет её —
+            // как в Finder. Это действие жеста, а не построения меню:
+            // раньше выделение менялось внутри actions(), то есть setState
+            // случался посреди сборки списка пунктов.
+            onOpen: () {
+              if (!_sel.contains(job)) _select(job);
+            },
             actions: () => _rowActions(job),
             child: _QueueRow(
               job: job,
@@ -709,10 +748,9 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Меню правого щелчка работает с тем, по чему щёлкнули: если запись
-  /// не в выделении, она сначала становится выделенной — как в Finder.
+  /// Пункты меню правого щелчка. Считает по нынешнему выделению и ничего
+  /// не меняет: выделить запись под курсором — дело жеста (onOpen).
   List<MenuAction> _rowActions(Job job) {
-    if (!_sel.contains(job)) _select(job);
     final many = _sel.length > 1;
     final ready = _readyTargets.isNotEmpty;
     return [
@@ -730,7 +768,7 @@ class _HomePageState extends State<HomePage> {
         shortcut: '⌥⌘R',
       ),
       MenuAction(
-        'Показать в Finder',
+        'Показать в ${os.fileManagerName}',
         onSelected: () => revealInFinder(job.file.path),
         shortcut: '⌘R',
       ),
@@ -780,11 +818,27 @@ class _HomePageState extends State<HomePage> {
 
   // ── расшифровка ───────────────────────────────────────────────────────────
 
+  /// Отфильтрованная расшифровка и то, для чего она посчитана.
+  ///
+  /// Считать заново на каждый кадр нельзя: во время распознавания окно
+  /// перерисовывается десятки раз в секунду, а на длинной записи это
+  /// `toLowerCase` по каждому фрагменту. Ответ меняется, только когда
+  /// меняется запрос или сама расшифровка, — по ним и сверяемся.
+  List<Segment>? _filtered;
+  ({Job? job, String query, int count})? _filterFor;
+
   List<Segment> _visibleSegments(Job job) {
     final all = job.segments;
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return all;
-    return all.where((s) => s.text.toLowerCase().contains(q)).toList();
+
+    final key = (job: job, query: q, count: all.length);
+    final cached = _filtered;
+    if (cached != null && _filterFor == key) return cached;
+
+    final hits = all.where((s) => s.text.toLowerCase().contains(q)).toList();
+    _filterFor = key;
+    return _filtered = hits;
   }
 
   Widget _transcriptArea() {
@@ -843,8 +897,11 @@ class _HomePageState extends State<HomePage> {
           controller: _transcriptScroll,
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 66),
           itemCount: segments.length,
+          // Ключом служит сам сегмент: время начала у двух соседних
+          // фрагментов совпадает (VAD режет по паузам и выдаёт их
+          // с одной меткой), и Flutter падал на одинаковых ключах.
           itemBuilder: (context, i) => _SegmentRow(
-            key: ValueKey('${job.file.path}#${segments[i].from}'),
+            key: ObjectKey(segments[i]),
             segment: segments[i],
             showTimestamp: _timestamps,
             highlight: _query.trim(),
@@ -1048,7 +1105,7 @@ class _HomePageState extends State<HomePage> {
           Padding(
             padding: const EdgeInsets.only(left: 25, top: Gap.hint),
             child: Text(
-              o.vadModel.isEmpty ? 'Нужен файл модели VAD' : o.vadModel.split('/').last,
+              o.vadModel.isEmpty ? 'Нужен файл модели VAD' : os.basename(o.vadModel),
               style: Type.caption.copyWith(color: Surface.secondaryText(context)),
             ),
           ),

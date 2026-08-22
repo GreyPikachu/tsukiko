@@ -20,6 +20,10 @@ final class PanelController: NSObject, NSWindowDelegate {
   private var controller: FlutterViewController?
   private var onShown: (() -> Void)?
 
+  /// Панель уехала. Пока её нет на экране, считать уровень сигнала
+  /// и спрашивать память сервера не для кого.
+  private var onHidden: (() -> Void)?
+
   // Ширина поповера постоянна, высота — нет: её сообщает Flutter, померив
   // содержимое. Здесь только первое значение, до первого замера.
   private var size = NSSize(width: 320, height: 430)
@@ -51,8 +55,12 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
   }
 
-  func build(engine: FlutterEngine, onShown: @escaping () -> Void) {
+  func build(
+    engine: FlutterEngine, onShown: @escaping () -> Void,
+    onHidden: @escaping () -> Void
+  ) {
     self.onShown = onShown
+    self.onHidden = onHidden
 
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     // Свой силуэт вместо системного символа. Картинка шаблонная: чёрный
@@ -180,6 +188,9 @@ final class PanelController: NSObject, NSWindowDelegate {
 
   func hide() {
     guard let panel, panel.isVisible else { return }
+    // Говорим сразу, а не в конце анимации: за эти 120 мс считать уже
+    // нечего, а лишний кадр уровня стоит целого замера.
+    onHidden?()
     NSAnimationContext.runAnimationGroup(
       { context in
         context.duration = 0.12

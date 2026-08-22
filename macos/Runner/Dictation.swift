@@ -115,7 +115,14 @@ final class DictationBridge: NSObject {
 
   private var hold = HotkeySpec()
   private var toggle = HotkeySpec()
+
+  /// Сочетание нажато и ещё не отпущено. Нужны обе защёлки: без них
+  /// каждое событие flagsChanged, где набор модификаторов снова совпал,
+  /// считалось бы новым нажатием. У toggle это стоило записи — нажали
+  /// и отпустили любой лишний модификатор поверх, набор вернулся
+  /// к назначенному, и запись останавливалась сама.
   private var holdDown = false
+  private var toggleDown = false
 
   private var tap: CFMachPort?
   private var tapSource: CFRunLoopSource?
@@ -140,7 +147,8 @@ final class DictationBridge: NSObject {
   private lazy var hud: RecordingHUD = {
     let hud = RecordingHUD(
       onCancel: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "cancel") },
-      onStop: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "stop") })
+      onStop: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "stop") },
+      onAbort: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "abort") })
     hud.levelSource = { [weak self] in self?.currentLevel() ?? 0 }
     return hud
   }()
@@ -166,9 +174,14 @@ final class DictationBridge: NSObject {
     }
     self.channel = channel
 
-    panel.build(engine: engine) { [weak self] in
-      self?.channel?.invokeMethod("panelShown", arguments: nil)
-    }
+    panel.build(
+      engine: engine,
+      onShown: { [weak self] in
+        self?.channel?.invokeMethod("panelShown", arguments: nil)
+      },
+      onHidden: { [weak self] in
+        self?.channel?.invokeMethod("panelHidden", arguments: nil)
+      })
     installTap()
 
     // Полтора гигабайта в памяти нельзя оставлять сиротой, а до
@@ -199,6 +212,10 @@ final class DictationBridge: NSObject {
     case "bind":
       hold = HotkeySpec(args?["hold"] as? [String: Any])
       toggle = HotkeySpec(args?["toggle"] as? [String: Any])
+      // Защёлки относятся к прежним сочетаниям: с новыми они соврут
+      // о том, что клавиша уже нажата.
+      holdDown = false
+      toggleDown = false
       reply(nil)
     case "capture":
       // Назначенное сочетание ждёт то окно, которое его попросило:
@@ -250,6 +267,27 @@ final class DictationBridge: NSObject {
         NSWorkspace.shared.open(url)
       }
       reply(nil)
+    case "serverMarks":
+      // Признаки «наш whisper-server» приходят из Dart: там они и живут
+      // (ourServerMarks в lib/dictation.dart). Держать вторую копию здесь
+      // значило бы разойтись с ней при первой же правке.
+      if let marks = args?["marks"] as? [String], !marks.isEmpty {
+        DictationBridge.serverMarks = marks
+      }
+      reply(nil)
+    case "trash":
+      // В Корзину, а не `unlink`: удаление записи должно оставаться
+      // обратимым средствами самой системы.
+      guard let path = args?["path"] as? String else {
+        reply(false)
+        return
+      }
+      NSWorkspace.shared.recycle([URL(fileURLWithPath: path)]) { _, error in
+        if let error {
+          NSLog("tsukiko: не удалось убрать запись в Корзину — \(error.localizedDescription)")
+        }
+        reply(error == nil)
+      }
     case "quit":
       NSApp.terminate(nil)
       reply(nil)
@@ -260,14 +298,19 @@ final class DictationBridge: NSObject {
     case "level":
       reply(currentLevel())
     case "paste":
-      paste((args?["text"] as? String) ?? "")
-      reply(true)
+      // Отвечаем настоящим результатом. Раньше здесь стояло `reply(true)`
+      // всегда, и панель показывала «Готово» даже когда вставлять было
+      // нечем и некуда: надиктованный текст пропадал вместе с буфером,
+      // который через 0,4 с возвращался к прежнему содержимому.
+      reply(paste((args?["text"] as? String) ?? ""))
     case "hud":
       switch (args?["state"] as? String) ?? "" {
       case "recording": hud.show()
       case "transcribing": hud.transcribing()
       case "done": hud.finish()
       case "failed": hud.failed()
+      case "copied": hud.copied()
+      case "cancelled": hud.cancelled()
       default: hud.hide()
       }
       reply(nil)
@@ -429,8 +472,16 @@ final class DictationBridge: NSObject {
           send("hold", down: false)
         }
       }
-      if toggle.key == nil, !toggle.isEmpty, mods == toggle.mods {
-        send("toggle", down: true)
+      if toggle.key == nil, !toggle.isEmpty {
+        let now = mods == toggle.mods
+        if now, !toggleDown {
+          toggleDown = true
+          send("toggle", down: true)
+        } else if !now, toggleDown {
+          // Отпустили — само по себе это ничего не переключает, но
+          // разрешает следующему нажатию сработать.
+          toggleDown = false
+        }
       }
     default:
       break
@@ -583,8 +634,17 @@ final class DictationBridge: NSObject {
   /// Буфер обмена — чужая вещь: положили своё, вставили, вернули как было.
   /// Сохраняем все типы данных, а не только строку, иначе скопированная
   /// картинка после диктовки превращалась бы в текст.
-  private func paste(_ text: String) {
-    guard !text.isEmpty else { return }
+  ///
+  /// Возвращает, дошло ли дело до нажатия ⌘V. False значит, что текст
+  /// в чужое окно не попал, и вызывающая сторона обязана этим заняться:
+  /// показать неудачу и оставить текст хотя бы в буфере обмена.
+  @discardableResult
+  private func paste(_ text: String) -> Bool {
+    guard !text.isEmpty else { return false }
+    // Без «Универсального доступа» событие клавиши не доходит никуда.
+    // Проверяем до того, как трогать буфер: иначе мы бы затёрли чужую
+    // копию ради нажатия, которое всё равно не состоится.
+    guard AXIsProcessTrusted() else { return false }
     let pb = NSPasteboard.general
     let saved: [[NSPasteboard.PasteboardType: Data]] =
       pb.pasteboardItems?.map { item in
@@ -597,10 +657,13 @@ final class DictationBridge: NSObject {
 
     pb.clearContents()
     pb.setString(text, forType: .string)
-    sendCommandV()
+    let sent = sendCommandV()
 
     // Вернуть буфер сразу нельзя: приложение-получатель читает его уже
-    // после того, как ⌘V дошло до него.
+    // после того, как ⌘V дошло до него. Если нажатие не состоялось,
+    // возвращать нечего и ждать нечего — но и оставлять свой текст
+    // в буфере правильно: вызывающая сторона на это и рассчитывает.
+    guard sent else { return false }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
       pb.clearContents()
       guard !saved.isEmpty else { return }
@@ -611,9 +674,13 @@ final class DictationBridge: NSObject {
       }
       pb.writeObjects(items)
     }
+    return true
   }
 
-  private func sendCommandV() {
+  /// Возвращает, удалось ли отправить нажатие. Молча провалиться здесь
+  /// нельзя: это единственный способ текста попасть в чужое окно.
+  @discardableResult
+  private func sendCommandV() -> Bool {
     let source = CGEventSource(stateID: .combinedSessionState)
     // Пользователь мог ещё держать fn+ctrl. Флаги задаём явно, иначе
     // получатель увидит ⌃⌘V вместо ⌘V.
@@ -623,11 +690,15 @@ final class DictationBridge: NSObject {
     let v = keyCodes["v"]!
     guard let down = CGEvent(keyboardEventSource: source, virtualKey: v, keyDown: true),
       let up = CGEvent(keyboardEventSource: source, virtualKey: v, keyDown: false)
-    else { return }
+    else {
+      NSLog("tsukiko: не удалось создать событие ⌘V — текст не вставлен")
+      return false
+    }
     down.flags = .maskCommand
     up.flags = .maskCommand
     down.post(tap: .cgAnnotatedSessionEventTap)
     up.post(tap: .cgAnnotatedSessionEventTap)
+    return true
   }
 
   // MARK: главное окно
@@ -650,9 +721,15 @@ final class DictationBridge: NSObject {
   ///
   /// SIGTERM whisper-server переживает — проверено, поэтому следом идёт
   /// SIGKILL. Чужие whisper-server без нашей метки не трогаем.
+  /// По каким признакам сервер считается нашим. Присылает Dart сразу после
+  /// старта; до первого сообщения — запасной вариант на случай падения,
+  /// не успевшего дойти до `setServerMarks`.
+  static var serverMarks: [String] = [
+    NSHomeDirectory() + "/Library/Application Support/app.yuko.tsukiko"
+  ]
+
   static func killWhisperServer() {
-    let support = NSHomeDirectory() + "/Library/Application Support/app.yuko.tsukiko"
-    let marks = ["/tmp/tsukiko-whisper", support]
+    let marks = serverMarks
 
     let ps = Process()
     ps.executableURL = URL(fileURLWithPath: "/bin/ps")
@@ -673,6 +750,8 @@ final class DictationBridge: NSObject {
       usleep(150_000)
       if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
     }
-    try? FileManager.default.removeItem(atPath: support + "/whisper-server.pid")
+    try? FileManager.default.removeItem(
+      atPath: NSHomeDirectory()
+        + "/Library/Application Support/app.yuko.tsukiko/whisper-server.pid")
   }
 }

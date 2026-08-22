@@ -1,14 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'os.dart';
+
 /// Всё, что не про интерфейс: пути, запуск whisper-cli, форматы,
 /// раскладка библиотеки и надзор за занятостью модели.
+///
+/// Про операционную систему этот файл не знает ничего: за путями,
+/// процессами и звуком он ходит в `os`. Единственное исключение —
+/// разовый перенос моделей из папки прежнего приложения, он помечен
+/// и подлежит удалению.
 
-const whisperCandidates = [
-  '/opt/homebrew/bin/whisper-cli',
-  '/usr/local/bin/whisper-cli',
-];
-
+/// `appName` объявлен рядом с границей ОС (там он нужен для путей),
+/// но пользуются им повсюду — отдаём дальше отсюда, чтобы каждый файл
+/// не тащил два импорта ради одной строки.
+export 'os.dart' show appName, bundleId;
 
 const audioExt = {
   '.ogg', '.oga', '.opus', '.mp3', '.m4a', '.aac', '.wav', '.aiff', '.aif',
@@ -49,8 +55,6 @@ const _languageNames = {
 String languageName(String code) =>
     _languageNames[code.toLowerCase()] ?? code.toUpperCase();
 
-const appName = 'tsukiko';
-
 // ── маленькие правила языка и чисел ─────────────────────────────────────────
 
 /// «1 фрагмент · 2 фрагмента · 5 фрагментов». Без этого интерфейс на русском
@@ -83,12 +87,12 @@ String humanDuration(int ms) {
   return h > 0 ? '$h:${m.toString().padLeft(2, '0')}:$ss' : '$m:$ss';
 }
 
-String get home => Platform.environment['HOME']!;
+String get home => os.home;
 
-String get supportDir => '$home/Library/Application Support/app.yuko.tsukiko';
+String get supportDir => os.supportDir;
 
-/// Библиотека расшифровок — обычная папка, которую видно в Finder.
-String get defaultLibraryPath => '$home/Documents/$appName';
+/// Библиотека расшифровок — обычная папка, которую видно в проводнике.
+String get defaultLibraryPath => os.defaultLibraryPath;
 
 String monthFolder(DateTime t) => '${t.year}-${t.month.toString().padLeft(2, '0')}';
 
@@ -97,12 +101,12 @@ class Placement {
   const Placement(this.dir, this.stem);
   final String dir, stem;
 
-  String pathFor(String ext) => '$dir/$stem$ext';
+  String pathFor(String ext) => os.join(dir, '$stem$ext');
 }
 
 String _free(String path, bool Function(String) taken) {
   if (!taken(path)) return path;
-  final slash = path.lastIndexOf('/');
+  final slash = path.lastIndexOf(Platform.pathSeparator);
   final dotAt = path.lastIndexOf('.');
   final hasExt = dotAt > slash;
   final head = hasExt ? path.substring(0, dotAt) : path;
@@ -122,39 +126,43 @@ Placement planPlacement({
   required int formatCount,
   DateTime? now,
 }) {
-  final month = '$root/${monthFolder(now ?? DateTime.now())}';
+  final month = os.join(root, monthFolder(now ?? DateTime.now()));
   if (formatCount > 1) {
-    final dir = _free('$month/$stem', (p) => Directory(p).existsSync());
+    final dir = _free(os.join(month, stem), (p) => Directory(p).existsSync());
     return Placement(dir, stem);
   }
   return Placement(month, stem);
 }
 
 /// Свободное имя внутри папки: «Запись 2.txt», если «Запись.txt» уже занято.
-String freeStem(String dir, String stem, String ext) {
-  final name = _free('$dir/$stem$ext', (p) => File(p).existsSync()).split('/').last;
+String freeStem(String dir, String stem, String ext) =>
+    freeStemFor(dir, stem, [ext]);
+
+/// То же для набора форматов сразу: имя выбирается такое, при котором
+/// ни один из [suffixes] не ляжет поверх чужого файла.
+///
+/// Отдельной функции здесь быть не должно бы, но проверять каждый формат
+/// по очереди нельзя: «Запись.txt» свободно, «Запись.srt» занято — и
+/// экспорт двух форматов затирал бы субтитры, оставляя текст рядом.
+String freeStemFor(String dir, String stem, List<String> suffixes) {
+  // Расширение первого формата нужно только чтобы отрезать его от готового
+  // имени: _free приписывает номер к основе, а не к концу строки.
+  final ext = suffixes.first;
+  final path = _free(
+    os.join(dir, '$stem$ext'),
+    (p) {
+      final base = p.substring(0, p.length - ext.length);
+      return suffixes.any((s) => File('$base$s').existsSync());
+    },
+  );
+  final name = os.basename(path);
   return name.substring(0, name.length - ext.length);
 }
 
-/// Папку открываем, файл — показываем в папке и выделяем. Раньше и то и другое
-/// шло через `open`, и щелчок по файлу запускал его в проигрывателе.
-Future<void> revealInFinder(String path) async {
-  final type = FileSystemEntity.typeSync(path);
-  if (type == FileSystemEntityType.notFound) {
-    Directory(path).createSync(recursive: true);
-    await Process.run('open', [path]);
-    return;
-  }
-  await Process.run(
-      'open', type == FileSystemEntityType.directory ? [path] : ['-R', path]);
-}
+/// Показать файл в проводнике системы.
+Future<void> revealInFinder(String path) => os.reveal(path);
 
-String? findWhisper() {
-  for (final p in whisperCandidates) {
-    if (File(p).existsSync()) return p;
-  }
-  return null;
-}
+String? findWhisper() => os.findExecutable('whisper-cli');
 
 /// Файл модели распознавания. Имя VAD-модели устроено так же
 /// (ggml-silero-….bin), но речь она не распознаёт — в списке моделей ей
@@ -163,17 +171,12 @@ bool looksLikeSpeechModel(String name) =>
     name.startsWith('ggml-') && name.endsWith('.bin') && !name.contains('silero');
 
 List<String> findModels() {
-  final dirs = [
-    '$home/Library/Application Support/app.dictara/models',
-    '$home/.cache/whisper',
-    '$supportDir/models',
-  ];
   final out = <String>[];
-  for (final d in dirs) {
+  for (final d in [os.modelsDir, ...os.sharedModelDirs]) {
     final dir = Directory(d);
     if (!dir.existsSync()) continue;
     for (final f in dir.listSync(recursive: true)) {
-      if (f is File && looksLikeSpeechModel(f.path.split('/').last)) out.add(f.path);
+      if (f is File && looksLikeSpeechModel(os.basename(f.path))) out.add(f.path);
     }
   }
   out.sort();
@@ -194,7 +197,7 @@ const vadModelFile = 'ggml-silero-v5.1.2.bin';
 const vadModelUrl =
     'https://huggingface.co/ggml-org/whisper-vad/resolve/main/$vadModelFile';
 
-String modelPathFor(String file) => '$supportDir/models/$file';
+String modelPathFor(String file) => os.join(os.modelsDir, file);
 
 String get vadModelPath => modelPathFor(vadModelFile);
 
@@ -204,11 +207,11 @@ String sizeLabelMb(int mb) => mb >= 1024
 
 /// Имя модели, одно на всё приложение: загрузчик, панель, переключатель,
 /// инспектор и диалоги называют «ggml-large-v3-turbo.bin» одинаково —
-/// «Large v3 Turbo». Модель может быть и не из каталога (свой файл, папка
-/// Dictara), поэтому имя разбирается из имени файла, а не ищется в списке:
+/// «Large v3 Turbo». Модель может быть и не из каталога (свой файл, чужая
+/// папка), поэтому имя разбирается из имени файла, а не ищется в списке:
 /// слова из букв — с заглавной, версии и квантование — как есть.
 String modelDisplayName(String path) {
-  final file = path.split('/').last;
+  final file = os.basename(path);
   final stem = file
       .replaceFirst(RegExp(r'^ggml-'), '')
       .replaceFirst(RegExp(r'\.bin$'), '')
@@ -234,7 +237,7 @@ String modelDisplayName(String path) {
 /// и от мусора, и от VAD.
 String? modelFileProblem(String path) {
   final file = File(path);
-  final name = path.split('/').last;
+  final name = os.basename(path);
   if (!file.existsSync()) return 'Файла «$name» больше нет на диске.';
 
   final size = file.lengthSync();
@@ -301,11 +304,11 @@ const modelCatalog = [
 /// Есть ли эта модель уже на диске.
 ///
 /// По имени файла, а не по пути: одна и та же модель лежит то в нашей папке,
-/// то в ~/.cache/whisper, то в папке Dictara — путь каждый раз свой, файл
-/// один. Со сравнением путей приложение предлагало скачать полтора гигабайта
-/// того, что у человека уже стоит.
+/// то в общем кеше whisper.cpp — путь каждый раз свой, файл один. Со
+/// сравнением путей приложение предлагало скачать полтора гигабайта того,
+/// что у человека уже стоит.
 bool haveModel(List<String> installed, ModelOffer m) =>
-    installed.any((p) => p.split('/').last == m.file);
+    installed.any((p) => os.basename(p) == m.file);
 
 /// Что из каталога ещё можно загрузить. Пусто — значит есть всё.
 List<ModelOffer> modelOffers(List<String> installed) =>
@@ -339,9 +342,41 @@ class Download {
 
   void cancel() => cancelled = true;
 
+  /// Метка версии файла на сервере (ETag, иначе Last-Modified), сохранённая
+  /// рядом с «.part».
+  ///
+  /// Без неё докачка небезопасна: между двумя заходами файл в репозитории
+  /// могли перезалить, и хвост новой версии, дописанный к началу старой,
+  /// даёт мусор, который переименовывается в готовую модель. Метка уходит
+  /// в `If-Range`: не совпала — сервер сам отдаёт файл целиком, и мы
+  /// начинаем сначала.
+  File get _tagFile => File('$dest.part.id');
+
+  String? _readTag() {
+    try {
+      final tag = _tagFile.readAsStringSync().trim();
+      return tag.isEmpty ? null : tag;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String? _tagOf(HttpHeaders headers) =>
+      headers.value(HttpHeaders.etagHeader) ??
+      headers.value(HttpHeaders.lastModifiedHeader);
+
+  void _forgetPart(File part) {
+    try {
+      if (part.existsSync()) part.deleteSync();
+    } catch (_) {}
+    try {
+      if (_tagFile.existsSync()) _tagFile.deleteSync();
+    } catch (_) {}
+  }
+
   /// Возвращает путь к готовому файлу или null: отменили, оборвалось,
   /// сервер ответил не тем. Недокачанное остаётся в «.part» — следующий
-  /// заход продолжит с того же места.
+  /// заход продолжит с того же места, если файл на сервере тот же.
   Future<String?> run({void Function()? onProgress}) async {
     if (File(dest).existsSync()) return dest;
     error = null;
@@ -353,26 +388,51 @@ class Download {
       error = 'некуда положить файл: папка ${part.parent.path} недоступна';
       return null;
     }
-    var have = part.existsSync() ? part.lengthSync() : 0;
 
-    final client = HttpClient();
+    // Продолжаем только то, у чего есть метка версии. Огрызок без метки
+    // достался от старой сборки или от оборванной записи — начинаем заново.
+    var have = part.existsSync() ? part.lengthSync() : 0;
+    var tag = have > 0 ? _readTag() : null;
+    if (have > 0 && tag == null) {
+      _forgetPart(part);
+      have = 0;
+    }
+
+    final client = HttpClient()
+      // Без таймаутов повисшее соединение висит вечно, и единственный
+      // признак беды — что счётчик мегабайт перестал расти.
+      ..connectionTimeout = const Duration(seconds: 20)
+      ..idleTimeout = const Duration(seconds: 30);
     try {
       final req = await client.getUrl(uri);
-      if (have > 0) req.headers.set(HttpHeaders.rangeHeader, 'bytes=$have-');
+      if (have > 0) {
+        req.headers.set(HttpHeaders.rangeHeader, 'bytes=$have-');
+        req.headers.set(HttpHeaders.ifRangeHeader, tag!);
+      }
       final res = await req.close();
       if (res.statusCode != HttpStatus.ok &&
           res.statusCode != HttpStatus.partialContent) {
         error = '${uri.host} ответил ${res.statusCode}';
         return null;
       }
-      // Докачку не поняли — начинаем сначала, это дороже, но верно.
+      // Полный ответ вместо куска значит одно из двух: докачку не поняли
+      // или файл на сервере сменился. И там и там начинаем сначала —
+      // дороже, но верно.
       if (res.statusCode == HttpStatus.ok) have = 0;
+      tag = _tagOf(res.headers) ?? tag;
       got = have;
       total = res.contentLength > 0 ? have + res.contentLength : 0;
 
       final sink = part.openSync(mode: have > 0 ? FileMode.append : FileMode.write);
       var shown = -1;
       try {
+        // Метку пишем до первого байта: оборвись загрузка сразу, «.part»
+        // без метки следующий заход просто выбросит.
+        if (tag != null) {
+          try {
+            _tagFile.writeAsStringSync(tag);
+          } catch (_) {}
+        }
         await for (final chunk in res) {
           if (cancelled) return null;
           sink.writeFromSync(chunk);
@@ -392,6 +452,9 @@ class Download {
         return null;
       }
       part.renameSync(dest);
+      try {
+        if (_tagFile.existsSync()) _tagFile.deleteSync();
+      } catch (_) {}
       return dest;
     } catch (e) {
       // Текст исключения показывать нельзя: он английский и про сокеты.
@@ -408,30 +471,33 @@ class Download {
 
 // ── занятость модели ────────────────────────────────────────────────────────
 //
-// В macOS нет замка «модель занята», поэтому судим по косвенным признакам.
-// Первая версия смотрела только на память: кто держит больше половины веса
-// модели, тот её и загрузил. На whisper-cli это работает (large-v3-turbo —
-// около 1,8 ГБ резидентной памяти), но на Dictara не работало вовсе:
-// замер во время диктовки дал пик 139 МБ при модели в 1,6 ГБ и ни одного
-// открытого дескриптора — модель у неё не лежит в резидентной памяти.
+// Замка «модель занята» в системе нет, поэтому судим по косвенным
+// признакам. Первая версия смотрела только на память: кто держит больше
+// половины веса модели, тот её и загрузил. На whisper-cli это работает
+// (large-v3-turbo — около 1,8 ГБ резидентной памяти), но не на всех: замер
+// соседнего распознавателя во время диктовки дал пик 139 МБ при модели
+// в 1,6 ГБ и ни одного открытого дескриптора — модель у него не лежит
+// в резидентной памяти целиком.
 //
 // Единственный признак, который не может отсутствовать у того, кто прямо
 // сейчас распознаёт речь, — это потраченное процессорное время. Поэтому
 // главный сигнал теперь такой: сколько CPU-секунд процесс сжёг между двумя
-// опросами. Фоновая Dictara в простое тратит около 0,2 % ядра, работающая —
-// на порядки больше, так что порог различает их с огромным запасом.
+// опросами. Фоновый распознаватель в простое тратит около 0,2 % ядра,
+// работающий — на порядки больше, так что порог различает их с запасом.
 
 enum ModelState { free, loading, busy }
 
 /// Насколько ядра должен потратить процесс между опросами, чтобы считаться
-/// работающим. Замер фоновой Dictara в простое — 0,002 ядра, так что запас
-/// стократный; выше поднимать нельзя — часть работы может уходить на ANE.
+/// работающим. Замер фонового распознавателя в простое — 0,002 ядра, так что
+/// запас стократный; выше поднимать нельзя — часть работы может уходить
+/// на отдельный ускоритель, и процессор её не увидит.
 const _busyCpuShare = 0.20;
 
 /// На сколько должна вырасти резидентная память между опросами, чтобы это
 /// значило «читают модель». Второй признак нужен затем, что он не зависит
-/// от порога по процессору: у Dictara во время диктовки память идёт
-/// с 42 МБ до 139 МБ, и такой скачок виден, даже если считает не процессор.
+/// от порога по процессору: у соседнего распознавателя во время диктовки
+/// память идёт с 42 МБ до 139 МБ, и такой скачок виден, даже если считает
+/// не процессор.
 const _loadingGrowthKb = 40 * 1024;
 
 /// Снимок кандидатов на момент опроса. Сам по себе он ни о чём не говорит —
@@ -490,46 +556,9 @@ class ModelUse {
       };
 }
 
-/// «69:20.60», «1:02:03.4», «2-03:04:05» → секунды.
-double? cpuSeconds(String raw) {
-  var text = raw.trim();
-  if (text.isEmpty) return null;
-  var days = 0;
-  final dash = text.indexOf('-');
-  if (dash > 0) {
-    days = int.tryParse(text.substring(0, dash)) ?? 0;
-    text = text.substring(dash + 1);
-  }
-  final parts = text.split(':');
-  var total = double.tryParse(parts.last);
-  if (total == null) return null;
-  if (parts.length > 1) total += (int.tryParse(parts[parts.length - 2]) ?? 0) * 60;
-  if (parts.length > 2) total += (int.tryParse(parts[parts.length - 3]) ?? 0) * 3600;
-  return total + days * 86400;
-}
-
 /// Приложение обычно хранит модель у себя в Application Support — по пути
 /// к файлу можно догадаться, кто её хозяин, ещё до первой встречи.
-String? ownerFromModelPath(String modelPath) {
-  final m = RegExp(r'/Application Support/([^/]+)/').firstMatch(modelPath);
-  if (m == null) return null;
-  final parts = m.group(1)!.split('.');
-  final name = parts.last.toLowerCase();
-  return name.isEmpty ? null : name;
-}
-
-Future<List<int>> _pids(String cmd, List<String> args) async {
-  try {
-    final r = await Process.run(cmd, args);
-    return (r.stdout as String)
-        .split(RegExp(r'\s+'))
-        .map(int.tryParse)
-        .whereType<int>()
-        .toList();
-  } catch (_) {
-    return const [];
-  }
-}
+String? ownerFromModelPath(String modelPath) => os.appOwnerOf(modelPath);
 
 /// Кто сейчас распознаёт речь на этой машине.
 ///
@@ -570,21 +599,24 @@ Future<ModelUse> modelUsage({
       if (owner != null && owner != appName) names.add(owner);
     }
 
-    final holders = probeHolders ? await _pids('lsof', ['-t', ...paths]) : const <int>[];
+    final holders = probeHolders ? await os.holdersOf(paths) : const <int>[];
     final candidates = <int>{...holders};
-    candidates.addAll(await _pids('pgrep', ['-f', 'whisper']));
+    candidates.addAll(await os.pidsMatching('whisper'));
     for (final n in names) {
-      candidates.addAll(await _pids('pgrep', ['-x', n]));
+      candidates.addAll(await os.pidsNamed(n));
     }
     candidates.remove(pid);
     if (ignorePid != null) candidates.remove(ignorePid);
     if (candidates.isEmpty) {
-      return ModelUse(ModelState.free, learned: learned, cpu: const CpuSample.empty());
+      // Замер прошлого опроса сохраняем, а не сбрасываем: сосед, который
+      // на один опрос исчез из кандидатов и вернулся (whisper-cli
+      // перезапускается на каждом файле очереди), иначе оставался бы без
+      // базы для разницы и не считался бы работающим ещё 700 мс.
+      return ModelUse(ModelState.free, learned: learned, cpu: previous);
     }
 
     final now = DateTime.now();
-    final ps = await Process.run(
-        'ps', ['-o', 'pid=,rss=,time=,comm=', '-p', candidates.join(',')]);
+    final samples = await os.sample(candidates);
 
     final sampled = <int, ({double cpu, int rssKb})>{};
     final seen = <String>{...learned};
@@ -595,14 +627,11 @@ Future<ModelUse> modelUsage({
     var best = const ModelUse(ModelState.free);
     var bestScore = 0.0;
 
-    for (final line in (ps.stdout as String).split('\n')) {
-      final m =
-          RegExp(r'^\s*(\d+)\s+(\d+)\s+([\d:.\-]+)\s+(.*)$').firstMatch(line);
-      if (m == null) continue;
-      final procPid = int.parse(m.group(1)!);
-      final rss = int.parse(m.group(2)!);
-      final cpu = cpuSeconds(m.group(3)!) ?? 0;
-      final name = m.group(4)!.trim().split('/').last;
+    for (final s in samples) {
+      final procPid = s.pid;
+      final rss = s.rssKb;
+      final cpu = s.cpuSeconds;
+      final name = s.name;
       if (holders.contains(procPid)) seen.add(name.toLowerCase());
       sampled[procPid] = (cpu: cpu, rssKb: rss);
 
@@ -615,7 +644,7 @@ Future<ModelUse> modelUsage({
 
       // Три независимых признака. Память целиком ловит whisper-cli и всё,
       // что разворачивает модель классически; процессор и резкий рост
-      // памяти — тех, кто читает её кусками, как Dictara.
+      // памяти — тех, кто читает её кусками.
       final byMemory = rss > thresholdKb;
       final byCpu = share >= _busyCpuShare;
       final byGrowth = growthKb >= _loadingGrowthKb;
@@ -650,14 +679,10 @@ Future<ModelUse> modelUsage({
   }
 }
 
-/// ogg/opus, m4a, mp3… → 16 кГц моно WAV штатным afconvert (ffmpeg не нужен).
+/// ogg/opus, m4a, mp3… → 16 кГц моно WAV. Чем именно — дело системы:
 /// whisper-cli сам читает только wav/mp3/ogg-vorbis/flac и падает на opus,
-/// поэтому конвертируем всегда; не осилил — отдаём исходник как есть.
-Future<String> toWav(String src, String dst) async {
-  final r = await Process.run(
-      'afconvert', ['-f', 'WAVE', '-d', 'LEI16@16000', '-c', '1', src, dst]);
-  return (r.exitCode == 0 && File(dst).existsSync()) ? dst : src;
-}
+/// поэтому перекладываем всегда; не осилили — отдаём исходник как есть.
+Future<String> toWav(String src, String dst) => os.toWav(src, dst);
 
 /// С таймкодами модель на разговорной речи скатывается в сплошной нижний
 /// регистр без знаков препинания. Затравка задаёт стиль — знаки возвращаются,
@@ -961,38 +986,6 @@ String renderAs(ExportFormat f, Transcript t, {String name = ''}) => switch (f.i
       _ => renderPlain(t.segments, false),
     };
 
-/// Настройки: обычный JSON в Application Support, без лишних пакетов.
-class Settings {
-  static File get _file => File('$supportDir/settings.json');
-
-  static Map<String, dynamic> load() {
-    try {
-      return jsonDecode(_file.readAsStringSync()) as Map<String, dynamic>;
-    } catch (_) {
-      return {};
-    }
-  }
-
-  /// Дописываем, а не переписываем: файл правят два окна на разных
-  /// изолятах, и каждое знает только свои ключи. Целиком записанный файл
-  /// затирал бы чужие правки прошлой минуты.
-  static void save(Map<String, dynamic> data) {
-    try {
-      Directory(supportDir).createSync(recursive: true);
-      _file.writeAsStringSync(
-          const JsonEncoder.withIndent('  ').convert({...load(), ...data}));
-    } catch (_) {}
-  }
-}
-
-/// Вторая копия не должна поднимать вторую модель в память.
-RandomAccessFile? acquireSingleInstanceLock() {
-  try {
-    Directory(supportDir).createSync(recursive: true);
-    final raf = File('$supportDir/app.lock').openSync(mode: FileMode.write);
-    raf.lockSync(FileLock.exclusive);
-    return raf;
-  } catch (_) {
-    return null;
-  }
-}
+// Настройки живут в lib/settings.dart: им нужен dart:ui ради очереди
+// записи между изолятами, а этот файл должен оставаться пригодным для
+// `dart run` (tool/probe.dart).

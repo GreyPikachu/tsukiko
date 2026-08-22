@@ -22,10 +22,15 @@ class Job {
   /// Свои настройки записи. null — берутся общие.
   RunOptions? overrides;
 
+  /// Куда легла копия текста рядом с исходной записью. Запоминается, чтобы
+  /// повторное распознавание обновило свой же файл, а не наплодило
+  /// «запись 2.txt», «запись 3.txt».
+  String? besideSource;
+
   DateTime? startedAt;
   Duration? took;
 
-  String get name => file.path.split('/').last;
+  String get name => os.basename(file.path);
   bool get active =>
       state == JobState.converting || state == JobState.transcribing;
   bool get done => transcript != null || raw != null;
