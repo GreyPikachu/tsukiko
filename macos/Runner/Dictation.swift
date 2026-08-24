@@ -28,6 +28,11 @@ private func modNames(_ flags: CGEventFlags) -> Set<String> {
 
 private let keyCodes: [String: CGKeyCode] = [
   "space": 49, "return": 36, "tab": 48, "escape": 53, "delete": 51,
+  "forwarddelete": 117, "enter": 76,
+  "left": 123, "right": 124, "down": 125, "up": 126,
+  "home": 115, "end": 119, "pageup": 116, "pagedown": 121,
+  "-": 27, "=": 24, "[": 33, "]": 30, "\\": 42, ";": 41, "'": 39,
+  ",": 43, ".": 47, "/": 44, "`": 50,
   "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8,
   "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,
   "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45,
@@ -46,33 +51,62 @@ private let keyNames: [CGKeyCode: String] = {
   return out
 }()
 
-/// Функциональные клавиши можно назначать в одиночку, обычные — нет:
-/// «q» без модификаторов отобрала бы у пользователя букву.
-private func standaloneAllowed(_ code: CGKeyCode) -> Bool {
-  guard let name = keyNames[code] else { return false }
-  return name.hasPrefix("f") && name.count > 1 && Int(name.dropFirst()) != nil
+/// Имя клавиши для передачи в Dart и обратно. Незнакомую называем её
+/// кодом — тогда назначить можно действительно любую, а не только ту,
+/// что мы заранее перечислили.
+private func keyName(_ code: CGKeyCode) -> String {
+  keyNames[code] ?? "#\(code)"
 }
 
+private func keyCode(_ name: String) -> CGKeyCode? {
+  if let known = keyCodes[name] { return known }
+  guard name.hasPrefix("#"), let raw = UInt16(name.dropFirst()) else { return nil }
+  return CGKeyCode(raw)
+}
+
+/// Назначенное сочетание: набор модификаторов и набор обычных клавиш.
+///
+/// Именно набор, а не одна клавиша. Раньше сочетание было либо
+/// «модификаторы плюс одна клавиша», либо «одни модификаторы», а обычную
+/// клавишу в одиночку взять было нельзя вовсе — назначить «Y» или «X+Y»
+/// не получалось. Теперь правило одно на все случаи.
 private struct HotkeySpec {
   var mods = Set<String>()
-  var key: CGKeyCode?
+  var keys = Set<CGKeyCode>()
 
-  var isEmpty: Bool { mods.isEmpty && key == nil }
+  var isEmpty: Bool { mods.isEmpty && keys.isEmpty }
 
   init() {}
+
+  init(mods: Set<String>, keys: Set<CGKeyCode>) {
+    self.mods = mods
+    self.keys = keys
+  }
 
   init(_ raw: [String: Any]?) {
     guard let raw else { return }
     mods = Set((raw["mods"] as? [String]) ?? [])
-    if let name = raw["key"] as? String { key = keyCodes[name] }
+    if let names = raw["keys"] as? [String] {
+      keys = Set(names.compactMap(keyCode))
+    } else if let name = raw["key"] as? String, let code = keyCode(name) {
+      // Настройки прежних сборок: там клавиша была одна.
+      keys = [code]
+    }
   }
 
+  /// Сочетание зажато целиком.
+  ///
   /// Совпадение строгое: fn+ctrl не должно срабатывать на fn+ctrl+cmd,
   /// иначе диктовка вклинивалась бы в чужие сочетания.
-  func matches(_ flags: CGEventFlags, code: CGKeyCode?) -> Bool {
-    if isEmpty { return false }
-    guard modNames(flags) == mods else { return false }
-    return key == code
+  func pressed(_ mods: Set<String>, _ held: Set<CGKeyCode>) -> Bool {
+    !isEmpty && mods == self.mods && held == keys
+  }
+
+  /// Эта клавиша принадлежит сочетанию, и модификаторы сейчас те самые.
+  /// По этому признаку событие поглощается, чтобы буква не попала в чужое
+  /// поле ввода.
+  func claims(_ code: CGKeyCode, _ mods: Set<String>) -> Bool {
+    !isEmpty && keys.contains(code) && mods == self.mods
   }
 }
 
@@ -127,8 +161,16 @@ final class DictationBridge: NSObject {
   private var tap: CFMachPort?
   private var tapSource: CFRunLoopSource?
 
+  /// Что зажато прямо сейчас и что мы поглотили как своё.
+  private var heldKeys = Set<CGKeyCode>()
+  private var swallowed = Set<CGKeyCode>()
+
   private var capturing = false
-  private var capturePeak = Set<String>()
+
+  /// Набранное за нынешний подход: пиковый набор модификаторов и все
+  /// клавиши, которых коснулись, не отпуская остального.
+  private var captureMods = Set<String>()
+  private var captureKeys = Set<CGKeyCode>()
   private weak var captureChannel: FlutterMethodChannel?
 
   private var recorder: AVAudioRecorder?
@@ -216,13 +258,15 @@ final class DictationBridge: NSObject {
       // о том, что клавиша уже нажата.
       holdDown = false
       toggleDown = false
+      swallowed = []
       reply(nil)
     case "capture":
       // Назначенное сочетание ждёт то окно, которое его попросило:
       // инспектор и панель живут на разных движках.
       captureChannel = source
       capturing = true
-      capturePeak = []
+      captureMods = []
+      captureKeys = []
       reply(nil)
     case "cancelCapture":
       capturing = false
@@ -440,83 +484,86 @@ final class DictationBridge: NSObject {
     let mods = modNames(flags)
     let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
 
-    if capturing {
-      return capture(type: type, event: event, mods: mods, code: code)
+    // Что зажато прямо сейчас. Без этого «сочетание» ограничивалось одной
+    // клавишей: набор X+Y отследить по одному событию нельзя.
+    switch type {
+    case .keyDown: heldKeys.insert(code)
+    case .keyUp: heldKeys.remove(code)
+    default: break
     }
 
+    if capturing {
+      return capture(type: type, mods: mods, code: code)
+    }
+
+    // Одно правило на все случаи: сочетание сработало, когда зажаты ровно
+    // его модификаторы и ровно его клавиши. Раньше «модификаторы плюс
+    // клавиша» и «одни модификаторы» разбирались двумя разными ветками.
+    let holdNow = hold.pressed(mods, heldKeys)
+    if holdNow != holdDown {
+      holdDown = holdNow
+      send("hold", down: holdNow)
+    }
+
+    let toggleNow = toggle.pressed(mods, heldKeys)
+    if toggleNow != toggleDown {
+      toggleDown = toggleNow
+      // Отпускание само по себе ничего не переключает — оно лишь
+      // разрешает следующему нажатию сработать.
+      if toggleNow { send("toggle", down: true) }
+    }
+
+    // Свою клавишу поглощаем, чтобы буква не попала в чужое поле ввода.
+    // Отпускание поглощаем по памяти: к этому моменту модификаторы могли
+    // уже отпустить, и признак «наша» перестал бы совпадать.
     switch type {
     case .keyDown:
-      if toggle.matches(flags, code: code) {
-        send("toggle", down: true)
-        return nil  // иначе fn+пробел вставит пробел в чужое поле
-      }
-      if hold.key != nil, hold.matches(flags, code: code) {
-        if !holdDown {
-          holdDown = true
-          send("hold", down: true)
-        }
+      if hold.claims(code, mods) || toggle.claims(code, mods) {
+        swallowed.insert(code)
         return nil
       }
     case .keyUp:
-      if hold.key != nil, holdDown, code == hold.key {
-        holdDown = false
-        send("hold", down: false)
-        return nil
-      }
-    case .flagsChanged:
-      // Сочетания из одних модификаторов обычной клавиши не имеют:
-      // отследить их можно только по смене набора флагов.
-      if hold.key == nil, !hold.isEmpty {
-        let now = mods == hold.mods
-        if now, !holdDown {
-          holdDown = true
-          send("hold", down: true)
-        } else if !now, holdDown {
-          holdDown = false
-          send("hold", down: false)
-        }
-      }
-      if toggle.key == nil, !toggle.isEmpty {
-        let now = mods == toggle.mods
-        if now, !toggleDown {
-          toggleDown = true
-          send("toggle", down: true)
-        } else if !now, toggleDown {
-          // Отпустили — само по себе это ничего не переключает, но
-          // разрешает следующему нажатию сработать.
-          toggleDown = false
-        }
-      }
+      if swallowed.remove(code) != nil { return nil }
     default:
       break
     }
+
     // Модификаторы всегда пропускаем дальше: ⌃ и ⌘ нужны всей системе.
     return Unmanaged.passUnretained(event)
   }
 
-  /// Назначение сочетания. Модификаторы копятся, пока их держат, и
-  /// отдаются, когда отпустили, — иначе «fn+ctrl» записалось бы как «fn».
+  /// Назначение сочетания.
+  ///
+  /// Правило простое: пока клавиши держат, набор копится; отпустили всё —
+  /// набранное и есть сочетание. Годится любая клавиша и любое их число,
+  /// хоть «Y», хоть «X+Y», хоть «fn+O».
+  ///
+  /// Единственное ограничение — сочетание из одних модификаторов должно
+  /// состоять хотя бы из двух: одна ⇧ или ⌘ срабатывала бы непрерывно
+  /// и отняла бы модификатор у всей системы.
   private func capture(
-    type: CGEventType, event: CGEvent, mods: Set<String>, code: CGKeyCode
+    type: CGEventType, mods: Set<String>, code: CGKeyCode
   ) -> Unmanaged<CGEvent>? {
     switch type {
     case .keyDown:
-      guard !mods.isEmpty || standaloneAllowed(code) else {
-        return Unmanaged.passUnretained(event)
-      }
-      capturing = false
-      sendCaptured(mods: mods, key: keyNames[code])
+      captureKeys.insert(code)
+      captureMods.formUnion(mods)
+      // Поглощаем: набираемая буква не должна попасть в чужое поле.
       return nil
     case .flagsChanged:
-      if mods.count > capturePeak.count { capturePeak = mods }
-      if mods.isEmpty, capturePeak.count >= 2 {
-        capturing = false
-        sendCaptured(mods: capturePeak, key: nil)
-      }
-      return Unmanaged.passUnretained(event)
+      captureMods.formUnion(mods)
     default:
-      return nil
+      break
     }
+
+    // Всё отпущено — сочетание набрано.
+    if heldKeys.isEmpty, mods.isEmpty, !captureKeys.isEmpty || captureMods.count >= 2 {
+      capturing = false
+      sendCaptured(mods: captureMods, keys: captureKeys.map(keyName))
+      captureKeys = []
+      captureMods = []
+    }
+    return nil
   }
 
   private func send(_ id: String, down: Bool) {
@@ -525,11 +572,11 @@ final class DictationBridge: NSObject {
     }
   }
 
-  private func sendCaptured(mods: Set<String>, key: String?) {
+  private func sendCaptured(mods: Set<String>, keys: [String]) {
     let target = captureChannel ?? channel
     DispatchQueue.main.async {
       target?.invokeMethod(
-        "captured", arguments: ["mods": Array(mods), "key": key as Any])
+        "captured", arguments: ["mods": Array(mods), "keys": keys])
     }
   }
 

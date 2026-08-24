@@ -95,7 +95,7 @@ class NativeBridge {
         final a = (call.arguments as Map).cast<String, dynamic>();
         _capture?.complete(Hotkey(
           (a['mods'] as List).map((e) => '$e').toList(),
-          key: a['key'] as String?,
+          keys: ((a['keys'] as List?) ?? const []).map((e) => '$e').toList(),
         ));
         _capture = null;
       case 'panelShown':

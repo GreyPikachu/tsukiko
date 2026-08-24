@@ -85,14 +85,14 @@ class MacOs implements Os {
   String modifierLabel(String mod) => _modSymbols[mod] ?? mod;
 
   @override
-  String shortcutLabel(List<String> mods, [String? key]) {
+  String shortcutLabel(List<String> mods, [List<String> keys = const []]) {
     // Порядок наводим сами: захват сочетания приходит множеством, у него
     // порядка нет вовсе, и подпись могла прочитаться как «⌘ + fn».
     final ordered = [
       ..._modOrder.where(mods.contains),
       ...mods.where((m) => !_modOrder.contains(m)),
     ];
-    return [...ordered.map(modifierLabel), ?key].join(' + ');
+    return [...ordered.map(modifierLabel), ...keys].join(' + ');
   }
 
   // ── звук ──────────────────────────────────────────────────────────────────
