@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data' show BytesBuilder;
 
 import '../core/library.dart';
+import '../core/transcript.dart';
 import '../core/whisper.dart';
 import '../platform/os.dart';
 import '../core/settings.dart';
@@ -193,15 +194,27 @@ String? rescueRecording(String path) {
   }
 }
 
-/// Whisper на тишине сочиняет: «(музыка)», «[BLANK_AUDIO]», «Субтитры
-/// сделал…». Всё, что целиком в скобках, — не речь, а галлюцинация.
+/// Whisper на тишине сочиняет: «(музыка)», «[BLANK_AUDIO]». Всё, что
+/// целиком в скобках, — не речь, а галлюцинация.
 final _bracketed = RegExp(r'^[\[\(\*][^\]\)\*]*[\]\)\*]$');
+
+/// Ведущее тире. Модель открывает им реплику, приняв надиктованное за
+/// прямую речь. Диктуют не диалог, и тире в начале не нужно никогда —
+/// корень беды в подсказке (см. `punctuationPrimer`), но подсказка
+/// направляет модель, а не приказывает ей, и подстраховка нужна.
+final _leadingDash = RegExp(r'^[-—–]+\s*');
 
 /// Сервер отдаёт текст сегментами, разделёнными переводом строки. В поле
 /// ввода это выглядит рваным — диктовка должна вставлять одну фразу.
 String tidyDictated(String raw) {
-  final text = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
-  return _bracketed.hasMatch(text) ? '' : text;
+  final text = raw
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim()
+      .replaceFirst(_leadingDash, '')
+      .trim();
+  if (_bracketed.hasMatch(text)) return '';
+  if (looksLikeSilenceHallucination(text)) return '';
+  return text;
 }
 
 /// Свободный порт: занимаем его на мгновение и сразу отпускаем. Между
@@ -473,7 +486,7 @@ class WhisperServer {
 /// Клавиши нет вовсе — значит сочетание из одних модификаторов (fn+ctrl):
 /// такое приходит событием flagsChanged, а не нажатием клавиши.
 class Hotkey {
-  const Hotkey(this.mods, {this.keys = const []});
+  const Hotkey(this.mods, {this.keys = const [], this.taps = 1});
 
   /// 'fn', 'ctrl', 'opt', 'shift', 'cmd' — в этом же виде их читает Swift.
   final List<String> mods;
@@ -483,22 +496,29 @@ class Hotkey {
   /// только функциональные — обычную букву назначить было нельзя вовсе.
   final List<String> keys;
 
+  /// Сколько раз стукнуть. Двойное нажатие назначается двойным же стуком
+  /// при захвате: отдельной галочки для него нет — жест и есть настройка.
+  final int taps;
+
+  bool get isDouble => taps >= 2;
+
   static const holdDefault = Hotkey(['fn', 'ctrl']);
   static const toggleDefault = Hotkey(['fn'], keys: ['space']);
 
   bool get empty => mods.isEmpty && keys.isEmpty;
 
-  Map<String, dynamic> toJson() => {'mods': mods, 'keys': keys};
+  Map<String, dynamic> toJson() => {'mods': mods, 'keys': keys, 'taps': taps};
 
   factory Hotkey.fromJson(Object? raw, Hotkey fallback) {
     if (raw is! Map) return fallback;
     final mods = (raw['mods'] as List?)?.map((e) => '$e').toList();
     if (mods == null) return fallback;
+    final taps = (raw['taps'] as num?)?.toInt() ?? 1;
     final keys = (raw['keys'] as List?)?.map((e) => '$e').toList();
-    if (keys != null) return Hotkey(mods, keys: keys);
+    if (keys != null) return Hotkey(mods, keys: keys, taps: taps);
     // Настройки прежних сборок: там клавиша была одна.
     final single = raw['key'] as String?;
-    return Hotkey(mods, keys: single == null ? const [] : [single]);
+    return Hotkey(mods, keys: single == null ? const [] : [single], taps: taps);
   }
 
   /// Как назвать клавишу человеку. Незнакомая приходит своим кодом
@@ -527,7 +547,11 @@ class Hotkey {
   /// Сравнение по существу: порядок набора значения не имеет — «X+Y»
   /// и «Y+X» это одно сочетание. Нужно затем, чтобы не дать назначить
   /// одно и то же на два разных действия.
+  ///
+  /// Число стуков в счёт идёт: одиночное и двойное «fn» — разные жесты,
+  /// и держать их на двух действиях можно.
   bool sameAs(Hotkey other) =>
+      taps == other.taps &&
       mods.toSet().difference(other.mods.toSet()).isEmpty &&
       other.mods.toSet().difference(mods.toSet()).isEmpty &&
       keys.toSet().difference(other.keys.toSet()).isEmpty &&
@@ -541,7 +565,8 @@ class Hotkey {
     // Порядок клавиш наводим сами: захват приходит множеством, и без
     // этого подпись у одного и того же сочетания могла читаться по-разному.
     final named = [...keys.map(keyLabel)]..sort();
-    return os.shortcutLabel(mods, named);
+    final combo = os.shortcutLabel(mods, named);
+    return isDouble ? '$combo дважды' : combo;
   }
 }
 

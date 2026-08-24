@@ -124,8 +124,12 @@ struct HUDView: View {
     // Двадцать, а не двадцать два: шаг сетки во всём приложении — четыре.
     .padding(.horizontal, 20)
     .frame(height: 52)
+    // Отклик 0,25, а не 0,4: смену состояния человек вызвал сам, нажав
+    // «Остановить», и ждать почти полсекунды, пока надпись доедет,
+    // читается как задумчивость приложения. 0,4 — это для перемещений,
+    // которые случаются сами.
     .animation(
-      reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.4, dampingFraction: 1),
+      reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.25, dampingFraction: 1),
       value: model.state)
   }
 }

@@ -549,11 +549,19 @@ class _Model extends StatelessWidget {
               ),
               if (s.serverUp) ...[
                 const SizedBox(width: Gap.inner),
-                PushButton(
-                  controlSize: ControlSize.small,
-                  secondary: true,
-                  onPressed: cubit.unload,
-                  child: const Text('Выгрузить'),
+                // Пока идёт запись или распознавание, модель занята делом,
+                // и выгружать её нельзя: кнопка, которая делает вид, что
+                // может, — обещание, которого приложение не сдержит.
+                MacosTooltip(
+                  message: s.phase == Phase.idle
+                      ? 'Освободить память до следующей фразы'
+                      : 'Модель сейчас в работе',
+                  child: PushButton(
+                    controlSize: ControlSize.small,
+                    secondary: true,
+                    onPressed: s.phase == Phase.idle ? cubit.unload : null,
+                    child: const Text('Выгрузить'),
+                  ),
                 ),
               ],
             ],
