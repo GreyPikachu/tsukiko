@@ -41,9 +41,7 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-        create: (_) => QueueBloc(NativeBridge())
-          ..add(const QueueOpened())
-          ..add(FilesAdded(initialFiles)),
+        create: (_) => QueueBloc(NativeBridge())..add(FilesAdded(initialFiles)),
         child: const _HomeView(),
       );
 }
@@ -280,7 +278,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     _send(CopyRequested(format ?? formatById(s.copyFormat)));
   }
 
-  Future<void> _openSettings([String tab = 'dictation']) =>
+  /// Из главного окна настройки открываются на вкладке расшифровщика:
+  /// это его окно, и «Настройки…» отсюда — про него. На диктовку ведёт
+  /// её собственная панель у строки меню.
+  Future<void> _openSettings([String tab = 'transcriber']) =>
       _bloc.bridge.openSettings(tab);
 
   /// Показать исходную запись. Её могли убрать мимо приложения — тогда
@@ -914,9 +915,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       );
 
 
-  /// В инспекторе — только то, что осмысленно менять от записи к записи.
-  /// Всё остальное (диктовка, модели, библиотека, поведение приложения)
-  /// живёт в отдельном окне настроек: инспектор принадлежит расшифровщику.
+  /// В инспекторе — только то, что осмысленно менять от записи к записи:
+  /// чем, на каком языке и как разбирать именно эту запись. Всё, что для
+  /// всех записей одно (куда сохранять текст, метки времени, ожидание
+  /// занятой модели), живёт на вкладке «Расшифровщик» в окне настроек,
+  /// а диктовка — на своей. Инспектор целиком принадлежит расшифровщику,
+  /// и ни одна настройка диктовки сюда не попадает.
   Widget _inspector(QueueState s, ScrollController controller) {
     final o = s.shown;
     final own = s.lead?.overrides;
@@ -932,7 +936,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           onReset: own == null ? null : _sendResetOverrides,
           onMakeDefault: own == null ? null : _sendMakeDefault,
         ),
-        const SectionTitle('Распознавание записи'),
+        const SectionTitle('Модель расшифровщика'),
         ModelField(
           installed: s.models,
           value: o.model,
@@ -953,8 +957,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           controlSize: ControlSize.regular,
           secondary: true,
           onPressed: _pickModel,
-          child: const Text('Выбрать другой файл…'),
+          child: const Text('Выбрать свой файл модели…'),
         ),
+        const Hint('Диктовка может работать этой же моделью или своей — '
+            'это решается на вкладке «Диктовка» в настройках.'),
         const SectionTitle('Язык речи'),
         MacosPopupButton<String>(
           value: o.lang,
@@ -1016,17 +1022,18 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         ),
         const Hint('Слова из подсказки модель пишет правильнее.'),
 
-        // Диктовка, модели, библиотека и поведение приложения переехали
-        // в своё окно. Дорога туда должна быть видна и отсюда.
+        // Остальное — куда сохранять текст, диктовка, склад моделей,
+        // поведение приложения — живёт в своём окне. Дорога туда должна
+        // быть видна и отсюда.
         const SizedBox(height: Gap.section),
-        // Открываем «Файлы», а не «Диктовку»: из расшифровщика следующий
-        // вопрос — куда денется готовый текст, а диктовка отсюда не видна
-        // вовсе. Вкладки в окне рядом, промахнуться некуда.
+        // Открываем вкладку расшифровщика: из главного окна следующий
+        // вопрос — что станет с готовым текстом, а не как настроена
+        // диктовка. Вкладки в окне рядом, промахнуться некуда.
         PushButton(
           controlSize: ControlSize.regular,
           secondary: true,
-          onPressed: () => _openSettings('library'),
-          child: const Text('Настройки… ⌘,'),
+          onPressed: () => _openSettings('transcriber'),
+          child: Text('Настройки расшифровщика… ${os.settingsShortcut}'),
         ),
         const SizedBox(height: Gap.item),
         Text(

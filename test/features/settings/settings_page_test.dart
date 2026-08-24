@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/platform/bridge.dart';
+import 'package:tsukiko/platform/os.dart';
 import 'package:tsukiko/features/settings/settings_page.dart';
 
 /// Окно настроек живёт отдельным файлом теста намеренно: рисующий тест
@@ -15,14 +16,13 @@ void main() {
     await tester.pumpWidget(const SettingsApp());
     await tester.pump();
 
-    expect(find.text('Диктовка'), findsOneWidget);
-    expect(find.text('Держать и говорить'), findsOneWidget);
-    expect(tester.takeException(), isNull, reason: 'вкладка «Диктовка»');
-
+    // Вкладки названы по хозяину настройки: сперва два потребителя
+    // моделей, потом общий склад и само приложение.
     for (final (label, marker) in [
-      ('Модели', 'МОЖНО ЗАГРУЗИТЬ'),
-      ('Файлы', 'Сохранять готовый текст на диск'),
-      ('Общие', 'Показывать значок в Dock'),
+      ('Расшифровщик', 'Сохранять готовый текст на диск'),
+      ('Диктовка', 'Держать и говорить'),
+      ('Модели', 'УСТАНОВЛЕНЫ'),
+      ('Приложение', 'Показывать значок в ${os.appIconAreaName}'),
     ]) {
       await tester.tap(find.text(label));
       await tester.pump();

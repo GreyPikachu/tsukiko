@@ -524,6 +524,15 @@ class Hotkey {
 
   static String keyLabel(String key) => _keyNames[key] ?? key.toUpperCase();
 
+  /// Сравнение по существу: порядок набора значения не имеет — «X+Y»
+  /// и «Y+X» это одно сочетание. Нужно затем, чтобы не дать назначить
+  /// одно и то же на два разных действия.
+  bool sameAs(Hotkey other) =>
+      mods.toSet().difference(other.mods.toSet()).isEmpty &&
+      other.mods.toSet().difference(mods.toSet()).isEmpty &&
+      keys.toSet().difference(other.keys.toSet()).isEmpty &&
+      other.keys.toSet().difference(keys.toSet()).isEmpty;
+
   /// Подпись для панели: «fn + ⌃», «fn + Пробел», «X + Y». Значки
   /// модификаторов рисует система: на macOS это ⌘ и ⌥, на Windows —
   /// слова Ctrl и Alt.

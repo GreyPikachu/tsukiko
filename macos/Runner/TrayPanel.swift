@@ -214,6 +214,13 @@ final class PanelController: NSObject, NSWindowDelegate {
       })
   }
 
+  func windowDidBecomeKey(_ notification: Notification) {
+    // Панель — nonactivating: приложение от неё «активным» не становится,
+    // и Flutter считает вид невидимым, останавливая кадры. Внешне это
+    // выглядит как замерший интерфейс: состояние меняется, а не рисуется.
+    setLifecycle("resumed")
+  }
+
   func windowDidResignKey(_ notification: Notification) {
     hide()
   }

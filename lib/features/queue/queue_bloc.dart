@@ -32,8 +32,7 @@ import 'queue_state.dart';
 /// человека, он кладёт вопрос в состояние ([QueueState.ask]), а ответ
 /// приходит обратно событием.
 class QueueBloc extends Bloc<QueueEvent, QueueState> {
-  QueueBloc(this.bridge) : super(const QueueState()) {
-    on<QueueOpened>(_onOpened);
+  QueueBloc(this.bridge) : super(_loaded()) {
     on<FilesAdded>(_onFilesAdded);
     on<TranscriptOpened>(_onTranscriptOpened);
     on<SelectedRemoved>(_onSelectedRemoved);
@@ -85,6 +84,52 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     on<StatusReported>((e, emit) => emit(state.copyWith(status: e.text)));
 
     _settingsSub = bridge.settingsReloaded.listen((_) => add(const SettingsReloaded()));
+    _syncPolling();
+  }
+
+  /// Что прочитано с диска к самому первому кадру.
+  ///
+  /// Именно к первому: когда это делалось событием, окно успевало
+  /// нарисоваться на пустом состоянии — и модель в инспекторе показывалась
+  /// как «Не выбрана», хотя выбрана была.
+  static QueueState _loaded() {
+    var threads = (Platform.numberOfProcessors ~/ 2).clamp(2, 16);
+    if (threads.isOdd) threads -= 1;
+
+    final s = Settings.load();
+    final models = findModels();
+    final defaults = RunOptions.fromJson(
+      s,
+      RunOptions(
+        model: models.isNotEmpty ? models.first : '',
+        lang: 'auto',
+        threads: threads,
+      ),
+    );
+    // Раньше форматы хранились расширениями («.txt») — переводим в имена.
+    final formats = (s['libraryFormats'] as List?)
+        ?.cast<String>()
+        .map((v) => v.startsWith('.') ? v.substring(1) : v)
+        .where((v) => exportFormats.any((f) => f.id == v))
+        .toList();
+
+    return QueueState(
+      models: _withOwn(models, defaults.model),
+      defaults: defaults,
+      whisperFound: findWhisper() != null,
+      timestamps: (s['timestamps'] as bool?) ?? true,
+      yieldBusyModel: (s['yieldBusyModel'] as bool?) ?? true,
+      saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
+      toLibrary: (s['toLibrary'] as bool?) ?? true,
+      libraryPath: (s['libraryPath'] as String?) ?? defaultLibraryPath,
+      libraryFormats:
+          formats != null && formats.isNotEmpty ? formats : const ['txt'],
+      copyFormat: _knownFormat(s['copyFormat']),
+      saveFormat: _knownFormat(s['saveFormat']),
+      recent: ((s['recent'] as List?)?.cast<String>() ?? const [])
+          .where((p) => File(p).existsSync())
+          .toList(),
+    );
   }
 
   final NativeBridge bridge;
@@ -111,54 +156,13 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
   // ── запуск ────────────────────────────────────────────────────────────────
 
-  Future<void> _onOpened(QueueOpened e, Emitter<QueueState> emit) async {
-    var threads = (Platform.numberOfProcessors ~/ 2).clamp(2, 16);
-    if (threads.isOdd) threads -= 1;
-
-    final s = Settings.load();
-    final models = findModels();
-    final defaults = RunOptions.fromJson(
-      s,
-      RunOptions(
-        model: models.isNotEmpty ? models.first : '',
-        lang: 'auto',
-        threads: threads,
-      ),
-    );
-    // Раньше форматы хранились расширениями («.txt») — переводим в имена.
-    final formats = (s['libraryFormats'] as List?)
-        ?.cast<String>()
-        .map((v) => v.startsWith('.') ? v.substring(1) : v)
-        .where((v) => exportFormats.any((f) => f.id == v))
-        .toList();
-
-    emit(state.copyWith(
-      models: _withOwn(models, defaults.model),
-      defaults: defaults,
-      whisperFound: findWhisper() != null,
-      timestamps: (s['timestamps'] as bool?) ?? true,
-      yieldBusyModel: (s['yieldBusyModel'] as bool?) ?? true,
-      saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
-      toLibrary: (s['toLibrary'] as bool?) ?? true,
-      libraryPath: (s['libraryPath'] as String?) ?? defaultLibraryPath,
-      libraryFormats:
-          formats != null && formats.isNotEmpty ? formats : const ['txt'],
-      copyFormat: _knownFormat(s['copyFormat']),
-      saveFormat: _knownFormat(s['saveFormat']),
-      recent: ((s['recent'] as List?)?.cast<String>() ?? const [])
-          .where((p) => File(p).existsSync())
-          .toList(),
-    ));
-    _syncPolling();
-  }
-
-  String _knownFormat(Object? id) =>
+  static String _knownFormat(Object? id) =>
       exportFormats.any((f) => f.id == id) ? id as String : formatPlainText.id;
 
   /// Список моделей с диска. Выбранный вручную файл из чужой папки
   /// дописываем — иначе он исчез бы из списка. Пропавший файл не дописываем:
   /// список из одной мёртвой строки выглядит так, будто модель есть.
-  List<String> _withOwn(List<String> found, String own) =>
+  static List<String> _withOwn(List<String> found, String own) =>
       own.isEmpty || found.contains(own) || !File(own).existsSync()
           ? found
           : [...found, own];

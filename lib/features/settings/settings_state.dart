@@ -10,8 +10,9 @@ import '../../core/whisper_server.dart' show Hotkey;
 /// не заметило бы — окно замирало бы на устаревшем виде.
 class SettingsState extends Equatable {
   const SettingsState({
-    this.tab = 'dictation',
+    this.tab = 'transcriber',
     this.models = const [],
+    this.vad,
     this.downloadTitle,
     this.downloadProgress,
     this.downloadPercent = 0,
@@ -21,6 +22,7 @@ class SettingsState extends Equatable {
     this.hold = Hotkey.holdDefault,
     this.toggle = Hotkey.toggleDefault,
     this.dictationModel = '',
+    this.queueModel = '',
     this.threads = 4,
     this.punctuate = true,
     this.prompt = '',
@@ -45,9 +47,33 @@ class SettingsState extends Equatable {
   /// Что лежит на диске: со своим размером и с отметкой, цел ли файл.
   final List<InstalledModel> models;
 
+  /// Модель распознавания пауз, если она загружена. Речью не занимается,
+  /// поэтому в общем списке ей не место — но и молчать о ней нельзя.
+  final InstalledModel? vad;
+
   /// Пути годных моделей — для выпадающих списков.
   List<String> get usable =>
       [for (final m in models) if (!m.broken) m.path];
+
+  /// Модель расшифровщика. Правит её главное окно, здесь она только
+  /// показывается: без неё в списке моделей не сказать, какая из них
+  /// кому служит, — а это первый вопрос, который к списку возникает.
+  final String queueModel;
+
+  /// Какой моделью распознаётся диктовка на самом деле — с учётом того,
+  /// что пустой выбор означает «взять у расшифровщика».
+  String get dictationModelInUse =>
+      dictationModel.isNotEmpty ? dictationModel : queueModel;
+
+  /// Кому служит модель [path]: подпись для строки списка. Пусто — никому.
+  String? userOf(String path) {
+    final forDictation = path == dictationModelInUse;
+    final forQueue = path == queueModel;
+    if (forDictation && forQueue) return 'расшифровщик и диктовка';
+    if (forQueue) return 'расшифровщик';
+    if (forDictation) return 'диктовка';
+    return null;
+  }
 
   /// Идущая загрузка модели: подпись, ход строкой и процент. Самого
   /// загрузчика здесь нет — он меняется внутри себя.
@@ -57,14 +83,14 @@ class SettingsState extends Equatable {
   /// Почему выбранный руками файл не годится в модель. Пусто — годится.
   final String? problem;
 
-  /// Выдан ли «Универсальный доступ».
+  /// Выдано ли разрешение на перехват клавиш и вставку текста.
   final bool allowed;
 
   // ── диктовка ──────────────────────────────────────────────────────────────
 
   final Hotkey hold, toggle;
 
-  /// Пусто — «как у расшифровщика».
+  /// Модель диктовки. Пусто — «та же, что у расшифровщика».
   final String dictationModel;
 
   final int threads;
@@ -89,6 +115,8 @@ class SettingsState extends Equatable {
   SettingsState copyWith({
     String? tab,
     List<InstalledModel>? models,
+    InstalledModel? vad,
+    bool clearVadModel = false,
     String? downloadTitle,
     String? downloadProgress,
     int? downloadPercent,
@@ -97,6 +125,7 @@ class SettingsState extends Equatable {
     Hotkey? hold,
     Hotkey? toggle,
     String? dictationModel,
+    String? queueModel,
     int? threads,
     bool? punctuate,
     String? prompt,
@@ -119,6 +148,7 @@ class SettingsState extends Equatable {
       SettingsState(
         tab: tab ?? this.tab,
         models: models ?? this.models,
+        vad: clearVadModel ? null : (vad ?? this.vad),
         downloadTitle: clearDownload ? null : (downloadTitle ?? this.downloadTitle),
         downloadProgress:
             clearDownload ? null : (downloadProgress ?? this.downloadProgress),
@@ -128,6 +158,7 @@ class SettingsState extends Equatable {
         hold: hold ?? this.hold,
         toggle: toggle ?? this.toggle,
         dictationModel: dictationModel ?? this.dictationModel,
+        queueModel: queueModel ?? this.queueModel,
         threads: threads ?? this.threads,
         punctuate: punctuate ?? this.punctuate,
         prompt: prompt ?? this.prompt,
@@ -148,6 +179,7 @@ class SettingsState extends Equatable {
   List<Object?> get props => [
         tab,
         models,
+        vad,
         downloadTitle,
         downloadProgress,
         downloadPercent,
@@ -156,6 +188,7 @@ class SettingsState extends Equatable {
         hold.label,
         toggle.label,
         dictationModel,
+        queueModel,
         threads,
         punctuate,
         prompt,
