@@ -96,6 +96,7 @@ class NativeBridge {
         _capture?.complete(Hotkey(
           (a['mods'] as List).map((e) => '$e').toList(),
           keys: ((a['keys'] as List?) ?? const []).map((e) => '$e').toList(),
+          taps: (a['taps'] as num?)?.toInt() ?? 1,
         ));
         _capture = null;
       case 'panelShown':

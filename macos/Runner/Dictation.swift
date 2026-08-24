@@ -54,6 +54,15 @@ private let keyNames: [CGKeyCode: String] = {
 /// Имя клавиши для передачи в Dart и обратно. Незнакомую называем её
 /// кодом — тогда назначить можно действительно любую, а не только ту,
 /// что мы заранее перечислили.
+/// За сколько должен уложиться второй стук. Столько же ждёт система
+/// от своего «двойного fn»: короче — не успеть, длиннее — начнёт ловить
+/// два независимых нажатия как одно двойное.
+private let doubleTapWindow: TimeInterval = 0.4
+
+/// Дольше этого держат, а не стукают. Затянувшееся нажатие двойным
+/// не считается — иначе «держать и говорить» ловилось бы как стук.
+private let tapMaxHold: TimeInterval = 0.25
+
 private func keyName(_ code: CGKeyCode) -> String {
   keyNames[code] ?? "#\(code)"
 }
@@ -74,18 +83,25 @@ private struct HotkeySpec {
   var mods = Set<String>()
   var keys = Set<CGKeyCode>()
 
+  /// Сколько раз стукнуть. Двойное нажатие — это когда сочетание нажали
+  /// и отпустили дважды подряд быстрее, чем за [doubleTapWindow].
+  var taps = 1
+
   var isEmpty: Bool { mods.isEmpty && keys.isEmpty }
+  var isDouble: Bool { taps >= 2 }
 
   init() {}
 
-  init(mods: Set<String>, keys: Set<CGKeyCode>) {
+  init(mods: Set<String>, keys: Set<CGKeyCode>, taps: Int = 1) {
     self.mods = mods
     self.keys = keys
+    self.taps = taps
   }
 
   init(_ raw: [String: Any]?) {
     guard let raw else { return }
     mods = Set((raw["mods"] as? [String]) ?? [])
+    taps = (raw["taps"] as? Int) ?? 1
     if let names = raw["keys"] as? [String] {
       keys = Set(names.compactMap(keyCode))
     } else if let name = raw["key"] as? String, let code = keyCode(name) {
@@ -107,6 +123,45 @@ private struct HotkeySpec {
   /// поле ввода.
   func claims(_ code: CGKeyCode, _ mods: Set<String>) -> Bool {
     !isEmpty && keys.contains(code) && mods == self.mods
+  }
+}
+
+/// Что происходит с одним сочетанием.
+///
+/// Нужна память о нажатии: без неё каждое событие flagsChanged, где набор
+/// модификаторов снова совпал, считалось бы новым нажатием — и у toggle
+/// это стоило записи (нажали и отпустили лишний модификатор поверх, набор
+/// вернулся к назначенному, запись остановилась сама).
+///
+/// Двойное нажатие живёт здесь же: первый короткий стук ничего не включает,
+/// он только взводит; включает второе нажатие, если оно пришло вовремя.
+/// Для «держать и говорить» это привычный жест «стук, стук-и-держать».
+private struct TapState {
+  private(set) var active = false
+  private var pressedAt: Date?
+  private var armedAt: Date?
+
+  /// Отдаёт true, когда «сочетание работает» изменилось на этом событии.
+  mutating func update(raw: Bool, double: Bool, now: Date = Date()) -> Bool {
+    guard raw != (pressedAt != nil) else { return false }
+
+    if raw {
+      pressedAt = now
+      let armed = armedAt.map { now.timeIntervalSince($0) < doubleTapWindow } ?? false
+      let on = double ? armed : true
+      guard on != active else { return false }
+      active = on
+      return true
+    }
+
+    let held = now.timeIntervalSince(pressedAt ?? now)
+    pressedAt = nil
+    // Короткое нажатие, которое ничего не включило, — это первый стук.
+    // Затянувшееся или уже сработавшее взводит не больше, чем один раз.
+    armedAt = (!active && held < tapMaxHold) ? now : nil
+    guard active else { return false }
+    active = false
+    return true
   }
 }
 
@@ -150,13 +205,9 @@ final class DictationBridge: NSObject {
   private var hold = HotkeySpec()
   private var toggle = HotkeySpec()
 
-  /// Сочетание нажато и ещё не отпущено. Нужны обе защёлки: без них
-  /// каждое событие flagsChanged, где набор модификаторов снова совпал,
-  /// считалось бы новым нажатием. У toggle это стоило записи — нажали
-  /// и отпустили любой лишний модификатор поверх, набор вернулся
-  /// к назначенному, и запись останавливалась сама.
-  private var holdDown = false
-  private var toggleDown = false
+  /// Состояние каждого сочетания: нажато ли оно и ждёт ли второго стука.
+  private var holdState = TapState()
+  private var toggleState = TapState()
 
   private var tap: CFMachPort?
   private var tapSource: CFRunLoopSource?
@@ -172,6 +223,13 @@ final class DictationBridge: NSObject {
   private var captureMods = Set<String>()
   private var captureKeys = Set<CGKeyCode>()
   private weak var captureChannel: FlutterMethodChannel?
+
+  /// Когда начался нынешний подход и что набрано прошлым: короткий стук
+  /// не отдаём сразу, а ждём, не повторят ли его, — иначе двойное
+  /// нажатие назначить было бы нечем.
+  private var captureStartedAt: Date?
+  private var pendingCapture: (mods: Set<String>, keys: [String])?
+  private var pendingTicket = 0
 
   private var recorder: AVAudioRecorder?
   private var recordURL: URL?
@@ -256,8 +314,8 @@ final class DictationBridge: NSObject {
       toggle = HotkeySpec(args?["toggle"] as? [String: Any])
       // Защёлки относятся к прежним сочетаниям: с новыми они соврут
       // о том, что клавиша уже нажата.
-      holdDown = false
-      toggleDown = false
+      holdState = TapState()
+      toggleState = TapState()
       swallowed = []
       reply(nil)
     case "capture":
@@ -267,6 +325,9 @@ final class DictationBridge: NSObject {
       capturing = true
       captureMods = []
       captureKeys = []
+      captureStartedAt = nil
+      pendingCapture = nil
+      pendingTicket += 1
       reply(nil)
     case "cancelCapture":
       capturing = false
@@ -499,18 +560,16 @@ final class DictationBridge: NSObject {
     // Одно правило на все случаи: сочетание сработало, когда зажаты ровно
     // его модификаторы и ровно его клавиши. Раньше «модификаторы плюс
     // клавиша» и «одни модификаторы» разбирались двумя разными ветками.
-    let holdNow = hold.pressed(mods, heldKeys)
-    if holdNow != holdDown {
-      holdDown = holdNow
-      send("hold", down: holdNow)
+    if holdState.update(raw: hold.pressed(mods, heldKeys), double: hold.isDouble) {
+      send("hold", down: holdState.active)
     }
 
-    let toggleNow = toggle.pressed(mods, heldKeys)
-    if toggleNow != toggleDown {
-      toggleDown = toggleNow
-      // Отпускание само по себе ничего не переключает — оно лишь
-      // разрешает следующему нажатию сработать.
-      if toggleNow { send("toggle", down: true) }
+    // Отпускание само по себе ничего не переключает — оно лишь
+    // разрешает следующему нажатию сработать.
+    if toggleState.update(raw: toggle.pressed(mods, heldKeys), double: toggle.isDouble),
+      toggleState.active
+    {
+      send("toggle", down: true)
     }
 
     // Свою клавишу поглощаем, чтобы буква не попала в чужое поле ввода.
@@ -541,9 +600,17 @@ final class DictationBridge: NSObject {
   /// Единственное ограничение — сочетание из одних модификаторов должно
   /// состоять хотя бы из двух: одна ⇧ или ⌘ срабатывала бы непрерывно
   /// и отняла бы модификатор у всей системы.
+  ///
+  /// Двойное нажатие назначается тем же стуком: набрали, отпустили быстро —
+  /// ждём [doubleTapWindow], и если то же самое пришло второй раз, значит
+  /// человек назначает двойное. Отдельной галочки для этого нет.
   private func capture(
     type: CGEventType, mods: Set<String>, code: CGKeyCode
   ) -> Unmanaged<CGEvent>? {
+    if captureStartedAt == nil, !mods.isEmpty || type == .keyDown {
+      captureStartedAt = Date()
+    }
+
     switch type {
     case .keyDown:
       captureKeys.insert(code)
@@ -557,13 +624,43 @@ final class DictationBridge: NSObject {
     }
 
     // Всё отпущено — сочетание набрано.
-    if heldKeys.isEmpty, mods.isEmpty, !captureKeys.isEmpty || captureMods.count >= 2 {
-      capturing = false
-      sendCaptured(mods: captureMods, keys: captureKeys.map(keyName))
-      captureKeys = []
-      captureMods = []
+    guard heldKeys.isEmpty, mods.isEmpty, !captureKeys.isEmpty || captureMods.count >= 2
+    else { return nil }
+
+    let quick = Date().timeIntervalSince(captureStartedAt ?? Date()) < tapMaxHold
+    let combo = (mods: captureMods, keys: captureKeys.map(keyName).sorted())
+    captureKeys = []
+    captureMods = []
+    captureStartedAt = nil
+
+    if let pending = pendingCapture, pending.mods == combo.mods, pending.keys == combo.keys {
+      // Тот же набор во второй раз и вовремя — это двойное нажатие.
+      finishCapture(combo.mods, combo.keys, taps: 2)
+      return nil
+    }
+
+    guard quick else {
+      finishCapture(combo.mods, combo.keys, taps: 1)
+      return nil
+    }
+
+    // Короткий стук: ждём второго. Не дождались — назначаем одинарное.
+    pendingCapture = combo
+    pendingTicket += 1
+    let ticket = pendingTicket
+    DispatchQueue.main.asyncAfter(deadline: .now() + doubleTapWindow) { [weak self] in
+      guard let self, self.pendingTicket == ticket, let pending = self.pendingCapture
+      else { return }
+      self.finishCapture(pending.mods, pending.keys, taps: 1)
     }
     return nil
+  }
+
+  private func finishCapture(_ mods: Set<String>, _ keys: [String], taps: Int) {
+    capturing = false
+    pendingCapture = nil
+    pendingTicket += 1
+    sendCaptured(mods: mods, keys: keys, taps: taps)
   }
 
   private func send(_ id: String, down: Bool) {
@@ -572,11 +669,11 @@ final class DictationBridge: NSObject {
     }
   }
 
-  private func sendCaptured(mods: Set<String>, keys: [String]) {
+  private func sendCaptured(mods: Set<String>, keys: [String], taps: Int) {
     let target = captureChannel ?? channel
     DispatchQueue.main.async {
       target?.invokeMethod(
-        "captured", arguments: ["mods": Array(mods), "keys": keys])
+        "captured", arguments: ["mods": Array(mods), "keys": keys, "taps": taps])
     }
   }
 

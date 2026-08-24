@@ -13,6 +13,8 @@ import 'package:tsukiko/platform/os.dart';
 import 'package:tsukiko/platform/os_macos.dart' show cpuSeconds;
 
 void main() {
+  _hotkeyTaps();
+
   test('таймкоды', () {
     expect(fmtTs(0), '00:00:00.000');
     expect(fmtTs(3723456), '01:02:03.456');
@@ -50,10 +52,19 @@ void main() {
     // по умолчанию — подсказка на языке записи
     const ru = RunOptions(model: 'm', lang: 'ru', threads: 4);
     expect(buildArgs(ru, '/a.wav', '/o').contains('--prompt'), isTrue);
-    expect(ru.effectivePrompt, contains('пунктуацией'));
+    expect(ru.effectivePrompt, contains('правилам русского языка'));
+    // Затравка не должна наводить модель на диалог и на субтитры: оттуда
+    // приходили и тире в начале реплики, и «Продолжение следует…».
+    expect(ru.effectivePrompt, isNot(contains('тире')));
+    expect(ru.effectivePrompt.toLowerCase(), isNot(contains('расшифровк')));
+    expect(ru.effectivePrompt.toLowerCase(), isNot(contains('субтитр')));
     expect(
       const RunOptions(model: 'm', lang: 'en', threads: 4).effectivePrompt,
       contains('punctuation'),
+    );
+    expect(
+      const RunOptions(model: 'm', lang: 'en', threads: 4).effectivePrompt,
+      isNot(contains('dashes')),
     );
     // своя подсказка важнее затравки
     expect(
@@ -340,6 +351,22 @@ void main() {
     expect(tidyDictated('*звук двигателя*'), '');
     // а скобки внутри фразы — обычный текст
     expect(tidyDictated('привет (кажется)'), 'привет (кажется)');
+
+    // Выдумки на тишине выбрасываются целиком: сказано этого не было.
+    expect(tidyDictated('Продолжение следует...'), '');
+    expect(tidyDictated('Спасибо за просмотр!'), '');
+    expect(tidyDictated('  субтитры сделал DimaTorzok '), '');
+    // Но только когда совпал весь кусок: сказанное всерьёз остаётся.
+    expect(
+      tidyDictated('здесь продолжение следует из предыдущего'),
+      'здесь продолжение следует из предыдущего',
+    );
+
+    // Ведущее тире модель ставит, приняв надиктованное за прямую речь.
+    expect(tidyDictated('— привет'), 'привет');
+    expect(tidyDictated('-- ну вот'), 'ну вот');
+    // А тире внутри фразы — обычный знак.
+    expect(tidyDictated('привет — это я'), 'привет — это я');
   });
 
   test('подписи сочетаний читаются как в системе', () {
@@ -617,5 +644,29 @@ void main() {
     if (File(vadModelPath).existsSync()) {
       expect(modelFileProblem(vadModelPath), isNotNull);
     }
+  });
+}
+
+void _hotkeyTaps() {
+  group('двойное нажатие', () {
+    test('число стуков хранится и читается', () {
+      const twice = Hotkey(['fn'], taps: 2);
+      expect(twice.isDouble, isTrue);
+      final back = Hotkey.fromJson(twice.toJson(), Hotkey.holdDefault);
+      expect(back.taps, 2);
+      expect(back.mods, ['fn']);
+      // Настройки прежних сборок про стуки не знали — там нажатие одно.
+      expect(
+        Hotkey.fromJson({'mods': ['fn'], 'keys': ['space']}, Hotkey.holdDefault)
+            .taps,
+        1,
+      );
+    });
+
+    test('одиночное и двойное — разные жесты', () {
+      // Иначе на два действия нельзя было бы повесить одни и те же клавиши.
+      expect(const Hotkey(['fn']).sameAs(const Hotkey(['fn'], taps: 2)), isFalse);
+      expect(const Hotkey(['fn'], taps: 2).label, contains('дважды'));
+    });
   });
 }

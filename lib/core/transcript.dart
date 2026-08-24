@@ -1,5 +1,38 @@
 import 'dart:convert';
 
+/// Что whisper сочиняет на тишине.
+///
+/// Модель обучена в том числе на субтитрах, и в тишине она договаривает
+/// то, чем субтитры кончаются: «Продолжение следует…», «Субтитры сделал…»,
+/// «Спасибо за просмотр». Сказано этого не было, и в тексте этому не место.
+///
+/// Список намеренно узкий, и совпадение — только по целому куску: если
+/// человек действительно произнёс «продолжение следует» в середине фразы,
+/// фраза останется как есть. Выбрасывается лишь то, что целиком совпало
+/// с известной выдумкой.
+const _silenceHallucinations = {
+  'продолжение следует',
+  'субтитры сделал dimatorzok',
+  'субтитры делал dimatorzok',
+  'редактор субтитров а.синецкая корректор а.егорова',
+  'спасибо за просмотр',
+  'спасибо за внимание',
+  'подписывайтесь на канал',
+  'thanks for watching',
+  'subscribe to my channel',
+  'thank you for watching',
+};
+
+/// Похоже ли это на выдумку модели, а не на сказанное вслух.
+bool looksLikeSilenceHallucination(String text) {
+  final bare = text
+      .toLowerCase()
+      .replaceAll(RegExp(r'[!?.…,"«»\-—–]'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  return bare.isNotEmpty && _silenceHallucinations.contains(bare);
+}
+
 /// Расшифровка как данные: сегменты, разбор чужих форматов и обратная
 /// сборка в наши.
 
@@ -74,10 +107,14 @@ Transcript parseWhisperJson(String jsonText) {
   final lang = (data['result']?['language'] ?? '?').toString();
   final segs = <Segment>[];
   for (final t in (data['transcription'] as List? ?? [])) {
+    final text = (t['text'] as String).trim();
+    // Фрагмент, целиком совпавший с известной выдумкой, — это тишина,
+    // которую модель договорила за себя. В расшифровке ему не место.
+    if (looksLikeSilenceHallucination(text)) continue;
     segs.add(Segment(
       (t['offsets']['from'] as num).toInt(),
       (t['offsets']['to'] as num).toInt(),
-      (t['text'] as String).trim(),
+      text,
     ));
   }
   return Transcript(lang, segs);
