@@ -20,11 +20,6 @@ sealed class QueueEvent extends Equatable {
 
 // ── очередь ─────────────────────────────────────────────────────────────────
 
-/// Первый запуск: прочитать настройки и найти модели.
-class QueueOpened extends QueueEvent {
-  const QueueOpened();
-}
-
 /// Добавить файлы. Папки разворачиваются, готовые расшифровки открываются,
 /// чужие расширения отбрасываются с объяснением.
 class FilesAdded extends QueueEvent {

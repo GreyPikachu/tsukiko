@@ -17,13 +17,14 @@ import 'settings_cubit.dart';
 import 'widgets/model_row.dart';
 import 'settings_state.dart';
 
-/// Окно настроек: своё окно с вкладками, как у всех приложений macOS.
+/// Окно настроек: своё окно с вкладками, как у всех приложений системы.
 ///
-/// Живёт на третьем движке Flutter — том, что создаётся при первом ⌘,.
-/// Иначе никак: движок отдаёт один вид одному окну, а главное окно и
-/// панель у строки меню свои виды уже заняли. Настройки — не главное
-/// окно расшифровщика: диктовка настраивается и тогда, когда очереди
-/// нет вовсе, а без значка в Dock главного окна может не быть на экране.
+/// Живёт на третьем движке Flutter — том, что создаётся при первом
+/// открытии окна. Иначе никак: движок отдаёт один вид одному окну,
+/// а главное окно и панель у строки меню свои виды уже заняли. Настройки —
+/// не главное окно расшифровщика: диктовка настраивается и тогда, когда
+/// очереди нет вовсе, а без значка приложения главного окна может не быть
+/// на экране.
 ///
 /// Состоянием владеет [SettingsCubit]; здесь только то, что рисуется.
 void runSettings() {
@@ -31,11 +32,19 @@ void runSettings() {
   runApp(const SettingsApp());
 }
 
+/// Вкладки названы по потребителю, а не по виду настройки.
+///
+/// Раньше их было «Диктовка», «Модели», «Файлы», «Общие» — и на вопрос
+/// «чьи это модели и чьи файлы» вкладка не отвечала: у приложения два
+/// независимых потребителя моделей, расшифровщик и диктовка, и почти
+/// у каждой настройки есть ровно один хозяин. Теперь первые две вкладки —
+/// это и есть хозяева, «Модели» — общий склад файлов на двоих, а
+/// «Приложение» — то, что не принадлежит ни одному из них.
 const settingsTabs = [
+  (id: 'transcriber', label: 'Расшифровщик', icon: CupertinoIcons.doc_text),
   (id: 'dictation', label: 'Диктовка', icon: CupertinoIcons.mic),
   (id: 'models', label: 'Модели', icon: CupertinoIcons.cube_box),
-  (id: 'library', label: 'Файлы', icon: CupertinoIcons.folder),
-  (id: 'general', label: 'Общие', icon: CupertinoIcons.gear),
+  (id: 'app', label: 'Приложение', icon: CupertinoIcons.gear),
 ];
 
 class SettingsApp extends StatelessWidget {
@@ -131,16 +140,34 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                   // Поля слева и справа одинаковые и одни на все вкладки.
                   padding: const EdgeInsets.fromLTRB(
                       Gap.edge, Gap.inner, Gap.edge, Gap.section),
-                  children: switch (s.tab) {
-                    'models' => _modelsTab(s),
-                    'library' => _libraryTab(s),
-                    'general' => _generalTab(s),
-                    _ => _dictationTab(s),
-                  },
+                  children: [
+                    // Жалоба стоит над вкладкой, а не внутри неё: назначить
+                    // занятое сочетание можно на «Диктовке», выбрать не тот
+                    // файл — там же, а показывалось это всё на «Моделях»,
+                    // то есть не показывалось никому.
+                    if (s.problem != null) _problem(s.problem!),
+                    ...switch (s.tab) {
+                      'dictation' => _dictationTab(s),
+                      'models' => _modelsTab(s),
+                      'app' => _appTab(s),
+                      _ => _transcriberTab(s),
+                    },
+                  ],
                 ),
               ),
             ],
           ),
+        ),
+      );
+
+  /// Что пошло не так с последним действием: занятое сочетание, чужой
+  /// файл вместо модели, отказ Корзины.
+  Widget _problem(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: Gap.inner),
+        child: Text(
+          text,
+          style: Type.caption
+              .copyWith(color: MacosColors.systemOrangeColor, height: 1.4),
         ),
       );
 
@@ -189,25 +216,38 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         const Hint('Своё сочетание tsukiko забирает у всей системы. '
             'Назначив одну букву, вы перестанете набирать её где бы то '
             'ни было — берите её с модификатором.', under: false),
-        const SectionTitle('Распознавание диктовки'),
-        const Hint('Свои значения, не общие с очередью: диктуют не то же, '
-            'что расшифровывают. Язык диктовка определяет сама.'),
+        const SectionTitle('Как распознавать диктовку'),
+        const Hint('Значения свои, не общие с расшифровщиком: диктуют не то '
+            'же, что расшифровывают, и одно значение на двоих устраивало бы '
+            'обоих плохо. Язык диктовка определяет сама, паузы режет всегда.'),
         const SizedBox(height: Gap.item),
         _Field(
-          'Модель',
+          'Модель диктовки',
           ModelField(
             installed: s.usable,
             value: s.dictationModel,
-            fallback: 'Как у расшифровщика',
+            fallback: 'Та же, что у расшифровщика',
             onChosen: (v) => _cubit.setDictationModel(v),
             onDownload: _cubit.download,
           ),
         ),
-        const Hint('«Как у расшифровщика» — брать ту же модель, что выбрана '
-            'в главном окне: меняете её там, меняется и здесь.'),
+        const Hint('«Та же, что у расшифровщика» — брать модель, выбранную '
+            'в инспекторе главного окна: меняете её там, меняется и здесь. '
+            'Любой другой выбор диктовка держит сама и на расшифровщика '
+            'не влияет.'),
+        const SizedBox(height: Gap.inner),
+        // Кнопка стоит здесь, а не на вкладке «Модели»: она не пополняет
+        // список, а выбирает модель диктовки — раньше из общего склада
+        // это делалось молча, и понять, кому достался файл, было нельзя.
+        PushButton(
+          controlSize: ControlSize.regular,
+          secondary: true,
+          onPressed: _pickModel,
+          child: const Text('Выбрать свой файл модели…'),
+        ),
         const SizedBox(height: Gap.item),
         _Field(
-          'Потоки',
+          'Скорость',
           MacosPopupButton<int>(
             value: s.threads,
             items: [
@@ -236,7 +276,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           ),
         ),
         const Hint('Слова из подсказки модель пишет правильнее.'),
-        const SectionTitle('Модель в памяти'),
+        const SectionTitle('Модель диктовки в памяти'),
         _Field(
           'Держать модель',
           MacosPopupButton<int>(
@@ -251,9 +291,12 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             onChanged: (v) => _cubit.setIdleSeconds(v ?? 180),
           ),
         ),
-        const Hint('Пока модель в памяти, фраза распознаётся за доли секунды. '
-            'Она занимает полтора гигабайта.'),
-        const SectionTitle('Готовый текст'),
+        // Размер берём у той модели, которая выбрана, а не пишем числом
+        // в тексте: раньше здесь стояло «полтора гигабайта» — верно ровно
+        // для Large v3 Turbo и неправда для всех остальных.
+        Hint('Пока модель в памяти, фраза распознаётся за доли секунды. '
+            '${_memoryCost(s)}'),
+        const SectionTitle('Что делать с надиктованным'),
         Check('Вставлять текст в активное окно', s.insert,
             _cubit.setInsert),
         const Hint('Без этого готовый текст только ложится в буфер обмена.',
@@ -272,6 +315,13 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
     // полтора гигабайта работы впустую. Есть всё — раздела нет вовсе.
     final offers = modelOffers(s.usable);
     return [
+      // Первое, что спрашивают об этом списке: чьи это модели. Файлы —
+      // общие, а выбор у расшифровщика и у диктовки свой, и сказать об
+      // этом надо прежде, чем показывать сам список.
+      const Hint('Файлы моделей общие, а вот кто какой работает — решается '
+          'порознь: модель расшифровщика выбирается в инспекторе главного '
+          'окна, модель диктовки — на вкладке «Диктовка». Здесь модели '
+          'только загружают, показывают и убирают.'),
       const SectionTitle('Установлены'),
       if (s.models.isEmpty)
         const Hint('Ни одной модели не найдено. Возьмите любую из списка ниже: '
@@ -283,7 +333,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             path: m.path.replaceFirst(home, '~'),
             size: m.sizeLabel,
             problem: m.problem,
-            chosen: m.path == s.dictationModel,
+            usedBy: s.userOf(m.path),
             onReveal: () => _cubit.revealModel(m.path),
             onDelete: () => _confirmDelete(s, m),
           ),
@@ -324,18 +374,22 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             ),
           ),
       ],
-      const SizedBox(height: Gap.section),
-      PushButton(
-        controlSize: ControlSize.regular,
-        secondary: true,
-        onPressed: _pickModel,
-        child: const Text('Выбрать другой файл…'),
-      ),
-      if (s.problem != null) ...[
-        const SizedBox(height: Gap.inner),
-        Text(s.problem!,
-            style: Type.caption.copyWith(
-                color: MacosColors.systemOrangeColor, height: 1.4)),
+      // Модель тишины лежит в той же папке, и не сказать о ней — значит
+      // оставить человека с файлом, которого нет ни в одном списке.
+      if (s.vad != null) ...[
+        const SectionTitle('Вспомогательные'),
+        ModelRow(
+          name: 'Распознавание пауз',
+          path: s.vad!.path.replaceFirst(home, '~'),
+          size: s.vad!.sizeLabel,
+          problem: s.vad!.problem,
+          usedBy: null,
+          onReveal: () => _cubit.revealModel(s.vad!.path),
+          onDelete: () => _confirmDelete(s, s.vad!),
+        ),
+        const Hint('Вырезает тишину до распознавания, чтобы модель не '
+            'дописывала на паузах лишнего. Речь она не распознаёт, поэтому '
+            'в списке выше её нет. Приложение загружает её само.'),
       ],
       const SizedBox(height: Gap.section),
       Row(
@@ -360,11 +414,30 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
     ];
   }
 
+  /// Сколько памяти держит модель, которой работает диктовка. Пока она
+  /// не выбрана или файла нет, числа не выдумываем.
+  String _memoryCost(SettingsState s) {
+    // Именно «в деле», а не «выбрана»: при пустом выборе диктовка держит
+    // в памяти модель расшифровщика, и её размер здесь и надо назвать.
+    final chosen = s.dictationModelInUse;
+    if (chosen.isEmpty) {
+      return 'Столько же памяти при этом занято — сколько именно, '
+          'зависит от модели.';
+    }
+    final size = s.models
+        .where((m) => m.path == chosen)
+        .map((m) => m.sizeLabel)
+        .firstWhere((label) => label.isNotEmpty, orElse: () => '');
+    return size.isEmpty
+        ? 'Столько же памяти при этом занято.'
+        : 'Выбранная сейчас занимает $size.';
+  }
+
   /// Удаление спрашивают, а не делают молча: полтора гигабайта, стёртые
   /// по промаху, качать заново. Файл при этом уходит в Корзину, поэтому
   /// вопрос один и без запугивания.
   Future<void> _confirmDelete(SettingsState s, InstalledModel m) async {
-    final chosen = m.path == s.dictationModel;
+    final usedBy = s.userOf(m.path);
     final where = m.ours
         ? 'Файл уйдёт в Корзину.'
         : 'Файл лежит не в папке $appName, а в общем каталоге — им могут '
@@ -378,7 +451,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         message: Text(
           [
             where,
-            if (chosen) 'Сейчас эта модель выбрана для диктовки.',
+            if (usedBy != null) 'Сейчас на ней работает: $usedBy.',
             if (m.sizeLabel.isNotEmpty) 'Освободится ${m.sizeLabel}.',
           ].join('\n'),
           textAlign: TextAlign.center,
@@ -403,18 +476,36 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
     if (yes) await _cubit.deleteModel(m.path);
   }
 
-  // ── библиотека ────────────────────────────────────────────────────────────
+  // ── расшифровщик ──────────────────────────────────────────────────────────
 
-  /// Вкладка отвечает на один вопрос: что происходит с текстом, когда
-  /// запись распознана. Поэтому каждая галка говорит и что делает, и что
-  /// будет, если её выключить, — иначе выключать её страшно.
-  List<Widget> _libraryTab(SettingsState s) => [
+  /// Вкладка отвечает на один вопрос: что расшифровщик делает с текстом,
+  /// когда запись распознана. Поэтому каждая галка говорит и что делает,
+  /// и что будет, если её выключить, — иначе выключать её страшно.
+  ///
+  /// Как именно распознавать, здесь не спрашивают: модель, язык, пунктуация,
+  /// разбивка, скорость и подсказка меняются от записи к записи, и место
+  /// им в инспекторе главного окна, рядом с самой очередью. Первый же
+  /// раздел говорит об этом прямо — раньше человек искал их тут и не
+  /// находил.
+  List<Widget> _transcriberTab(SettingsState s) => [
+        const SectionTitle('Как распознавать записи'),
+        const Hint('Модель, язык, пунктуация, разбивка на фрагменты, '
+            'скорость и подсказка стоят в инспекторе главного окна, справа '
+            'от очереди: их меняют от записи к записи, и одного значения на '
+            'все записи у них нет. Здесь — то, что для всех записей одно.'),
+        const SizedBox(height: Gap.item),
+        Check('Ждать, если модель занята', s.yieldBusyModel,
+            _cubit.setYieldBusyModel),
+        const Hint('Пока модель держит другая программа, очередь стоит и '
+            'не отбирает у неё память и GPU. Своей диктовке очередь уступает '
+            'всегда: одна фраза короче одной записи.', under: true),
         const SectionTitle('Сохранять расшифровки автоматически'),
         Check('Сохранять готовый текст на диск', s.toLibrary,
             _cubit.setToLibrary),
         const Hint('Как только запись распознана, текст сам ложится файлом '
-            'в папку ниже. Выключено — текст остаётся только в окне tsukiko, '
-            'и сохранять его придётся вручную: «Сохранить как…» или ⌘C.',
+            'в папку ниже. Выключено — текст остаётся только в окне $appName, '
+            'и сохранять его придётся вручную: «Сохранить как…» или '
+            'копированием.',
             under: true),
         const SectionTitle('Куда сохранять'),
         LibraryPath(
@@ -450,47 +541,52 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             'ляжет .txt с её именем — чистый текст без таймкодов. '
             'Выключено — рядом с записью ничего не появляется.',
             under: true),
-      ];
-
-  // ── общие ─────────────────────────────────────────────────────────────────
-
-  List<Widget> _generalTab(SettingsState s) => [
-        const SectionTitle('Приложение'),
-        Check('Запускать при входе в систему', s.loginItem,
-            _cubit.setLoginItem),
-        const Hint('Диктовка поднимется сама и будет ждать в строке меню. '
-            'Окно расшифровщика при этом не открывается — оно всегда '
-            'доступно по значку в Dock.',
-            under: true),
-        const SizedBox(height: Gap.item),
-        Check('Показывать значок в Dock', s.dockIcon, _cubit.setDockIcon),
-        const Hint('Без значка tsukiko исчезает из Dock и из ⌘Tab и живёт '
-            'только в строке меню. Окно и настройки открываются оттуда же.',
-            under: true),
-        const SizedBox(height: Gap.item),
-        Check('Ждать, если модель занята', s.yieldBusyModel,
-            _cubit.setYieldBusyModel),
-        const Hint('Пока модель держит другая программа, очередь стоит и '
-            'не отбирает у неё память и GPU. Своей диктовке очередь уступает '
-            'всегда: одна фраза короче одной записи.', under: true),
-        const SizedBox(height: Gap.item),
+        // Метки времени переехали сюда из «Общих»: они рисуются в окне
+        // расшифровщика и больше нигде — в диктовке текста с таймкодами
+        // нет вовсе.
+        const SectionTitle('В окне расшифровщика'),
         Check('Показывать метки времени', s.timestamps, _cubit.setTimestamps),
         const Hint('Только на экране. Что попадёт в файл, решает выбранный '
             'формат, а не эта галка.', under: true),
+      ];
+
+  // ── приложение ────────────────────────────────────────────────────────────
+
+  /// Здесь остаётся только то, что не принадлежит ни расшифровщику,
+  /// ни диктовке: как приложение живёт в системе и что ему разрешено.
+  /// Всё остальное разъехалось по хозяевам.
+  List<Widget> _appTab(SettingsState s) => [
+        const SectionTitle('В системе'),
+        Check('Запускать при входе в систему', s.loginItem,
+            _cubit.setLoginItem),
+        Hint('Диктовка поднимется сама и будет ждать в ${os.menuBarName}. '
+            'Окно расшифровщика при этом не открывается — оно всегда '
+            'доступно по значку приложения.',
+            under: true),
+        const SizedBox(height: Gap.item),
+        Check('Показывать значок в ${os.appIconAreaName}', s.dockIcon,
+            _cubit.setDockIcon),
+        Hint('Без значка $appName исчезает из ${os.appIconAreaName} и живёт '
+            'только в ${os.menuBarName}. Окно и настройки открываются '
+            'оттуда же.',
+            under: true),
         const SectionTitle('Разрешения'),
         Row(
           children: [
             Expanded(
               child: Text(
                 s.allowed
-                    ? 'Универсальный доступ выдан.'
-                    : 'Без «Универсального доступа» tsukiko не перехватывает '
-                        'клавиши и не вставляет текст в активное окно.',
+                    ? '${os.accessibilityName} выдан.'
+                    : 'Без разрешения «${os.accessibilityName}» $appName '
+                        'не перехватывает клавиши и не вставляет текст '
+                        'в активное окно.',
                 style: Type.control.copyWith(height: 1.4),
               ),
             ),
           ],
         ),
+        const Hint('Нужно диктовке: она и слушает клавиши, и кладёт готовый '
+            'текст в чужое окно. Расшифровщику разрешение не нужно.'),
         const SizedBox(height: Gap.item),
         if (!s.allowed)
           Row(
@@ -575,7 +671,9 @@ class _TabButtonState extends State<_TabButton> {
         child: AnimatedContainer(
           duration: Motion.dur(context, Motion.press),
           curve: Curves.easeOut,
-          width: 84,
+          // Ширины хватает самой длинной подписи («Расшифровщик»):
+          // ужатая до многоточия вкладка не называет ничего.
+          width: 96,
           margin: const EdgeInsets.symmetric(horizontal: 3),
           padding: const EdgeInsets.symmetric(vertical: 6),
           decoration: BoxDecoration(

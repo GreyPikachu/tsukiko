@@ -13,6 +13,8 @@ import 'package:tsukiko/features/queue/queue_event.dart';
 import 'package:tsukiko/features/queue/queue_state.dart';
 import 'package:tsukiko/platform/bridge.dart';
 
+import '../../support/fake_os.dart';
+
 /// Очередь распознавания. До выноса из виджета проверять её было нечем:
 /// ни одну из этих веток нельзя было пройти без `pumpWidget`.
 void main() {
@@ -20,6 +22,10 @@ void main() {
 
   late Directory tmp;
   late _FakeNative native;
+
+  // Очередь читает настройки при создании и пишет их при правке.
+  // Без подмены папок это был бы настоящий файл пользователя.
+  useTempSupportDir('tsukiko-queue-app');
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('tsukiko-queue');
@@ -406,10 +412,6 @@ void main() {
 
   group('запись настроек на диск', () {
     test('очередь пишет своё и не трогает чужие ключи', () async {
-      final before = Settings.load();
-      addTearDown(() async {
-        await Settings.save(before);
-      });
       await Settings.save({'libraryPath': '/чужое/значение'});
 
       final bloc = make();

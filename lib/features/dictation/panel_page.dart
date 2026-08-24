@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
 import '../../platform/bridge.dart';
+import '../../platform/os.dart';
 import '../../design/design.dart';
 import '../../core/whisper_server.dart' show sweepRecordings;
 import 'dictation_cubit.dart';
@@ -589,7 +590,7 @@ class _Footer extends StatelessWidget {
             _MenuRow(
               'Настройки диктовки…',
               () => context.read<DictationCubit>().openSettings('dictation'),
-              shortcut: '⌘,',
+              shortcut: os.settingsShortcut,
             ),
             _MenuRow('Открыть tsukiko…',
                 context.read<DictationCubit>().openMainWindow),

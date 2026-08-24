@@ -85,6 +85,18 @@ class MacOs implements Os {
   String modifierLabel(String mod) => _modSymbols[mod] ?? mod;
 
   @override
+  String get appIconAreaName => 'Dock';
+
+  @override
+  String get menuBarName => 'строка меню';
+
+  @override
+  String get settingsShortcut => '⌘,';
+
+  @override
+  String get accessibilityName => 'Универсальный доступ';
+
+  @override
   String shortcutLabel(List<String> mods, [List<String> keys = const []]) {
     // Порядок наводим сами: захват сочетания приходит множеством, у него
     // порядка нет вовсе, и подпись могла прочитаться как «⌘ + fn».

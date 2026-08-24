@@ -13,8 +13,13 @@ import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import 'settings_state.dart';
 
-/// Окно настроек: сочетания клавиш, модели, библиотека и поведение
-/// приложения.
+/// Окно настроек: расшифровщик, диктовка, склад моделей и приложение.
+///
+/// Вкладки разложены по хозяину настройки, и кубит повторяет ту же
+/// раскладку: одна половина его значений принадлежит диктовке и лежит
+/// в `dictation.json`, другая — расшифровщику и приложению и лежит
+/// в `settings.json`. Модель расшифровщика кубит только читает: правит
+/// её главное окно, и вторая рука на том же ключе стирала бы правки.
 ///
 /// Cubit, а не Bloc: каждое действие здесь — «поставить галку» или
 /// «выбрать значение», отбрасывать и переупорядочивать нечего.
@@ -63,6 +68,11 @@ class SettingsCubit extends Cubit<SettingsState> {
         .toList();
     _emit(state.copyWith(
       models: scanModels(),
+      vad: findVadModel(),
+      clearVadModel: findVadModel() == null,
+      // Модель расшифровщика окно только показывает: правит её главное
+      // окно, и переписать её здесь значило бы драться с ним за один ключ.
+      queueModel: (s['model'] as String?) ?? '',
       toLibrary: (s['toLibrary'] as bool?) ?? true,
       saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
       timestamps: (s['timestamps'] as bool?) ?? true,
@@ -148,9 +158,21 @@ class SettingsCubit extends Cubit<SettingsState> {
   void setTab(String tab) => _emit(state.copyWith(tab: tab));
 
   /// Назначение сочетания: следующая нажатая комбинация становится новой.
+  ///
+  /// Одно и то же сочетание на оба действия назначить нельзя: «держать
+  /// и говорить» и «нажать, ещё раз — остановить» тогда сработали бы
+  /// вместе, и что из этого получится, не знает никто.
   Future<void> reassign(String id) async {
     final hk = await bridge.capture();
     if (hk == null) return;
+    final other = id == 'hold' ? _dictation.toggle : _dictation.hold;
+    if (hk.sameAs(other)) {
+      return _emit(state.copyWith(
+        problem: '«${hk.label}» уже назначено на другое действие. '
+            'Одно сочетание не может делать два разных дела.',
+      ));
+    }
+    _emit(state.copyWith(clearProblem: true));
     _saveDictation((d) => id == 'hold' ? d.hold = hk : d.toggle = hk);
   }
 
@@ -171,6 +193,13 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   // ── модели ────────────────────────────────────────────────────────────────
 
+  /// Взять своим файлом модель диктовки.
+  ///
+  /// Именно диктовки: у расшифровщика такой же выбор есть в инспекторе
+  /// главного окна, и кнопка на эту сторону стоит рядом с моделью
+  /// диктовки, а не в общем списке моделей — там было непонятно, кому
+  /// достаётся выбранный файл.
+  ///
   /// Выбранный руками файл проверяем: «.bin» бывает чем угодно, а
   /// whisper-cli на чужом файле падает с руганью про тензоры.
   void pickModel(String path) {
@@ -215,6 +244,8 @@ class SettingsCubit extends Cubit<SettingsState> {
     _emit(state.copyWith(
       clearDownload: true,
       models: path != null ? scanModels() : null,
+      vad: findVadModel(),
+      clearVadModel: findVadModel() == null,
     ));
     // Список моделей стал другим — соседним окнам надо его перечитать.
     if (path != null) unawaited(bridge.settingsChanged());
@@ -222,7 +253,7 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   void cancelDownload() => _download?.cancel();
 
-  // ── библиотека и поведение ────────────────────────────────────────────────
+  // ── расшифровщик и приложение ─────────────────────────────────────────────
 
   void setToLibrary(bool v) {
     _emit(state.copyWith(toLibrary: v));
@@ -288,7 +319,12 @@ class SettingsCubit extends Cubit<SettingsState> {
     if (_dictation.model == path) {
       _saveDictation((d) => d.model = '');
     }
-    _emit(state.copyWith(clearProblem: true, models: scanModels()));
+    _emit(state.copyWith(
+      clearProblem: true,
+      models: scanModels(),
+      vad: findVadModel(),
+      clearVadModel: findVadModel() == null,
+    ));
     // Список моделей стал другим — соседним окнам надо его перечитать.
     unawaited(bridge.settingsChanged());
   }
@@ -309,6 +345,8 @@ class SettingsCubit extends Cubit<SettingsState> {
     _emit(state.copyWith(
       problem: 'Файла «${os.basename(path)}» больше нет на диске.',
       models: scanModels(),
+      vad: findVadModel(),
+      clearVadModel: findVadModel() == null,
     ));
   }
 

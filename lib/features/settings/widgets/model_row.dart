@@ -16,7 +16,7 @@ class ModelRow extends StatefulWidget {
     required this.path,
     required this.size,
     required this.problem,
-    required this.chosen,
+    required this.usedBy,
     required this.onReveal,
     required this.onDelete,
   });
@@ -26,8 +26,10 @@ class ModelRow extends StatefulWidget {
   /// Почему файл не годится в модель. Пусто — годится.
   final String? problem;
 
-  /// Эта модель сейчас выбрана для диктовки.
-  final bool chosen;
+  /// Кто на этой модели работает: «расшифровщик», «диктовка», обе сразу.
+  /// Пусто — никто. Раньше здесь стояло голое «выбрана», и чей это выбор,
+  /// строка не говорила: потребителей модели в приложении два.
+  final String? usedBy;
 
   final VoidCallback onReveal, onDelete;
 
@@ -71,12 +73,17 @@ class _ModelRowState extends State<ModelRow> {
                           style: Type.fileName,
                         ),
                       ),
-                      // Выбранную помечаем: одинаковых имён в списке
+                      // Работающую помечаем: одинаковых имён в списке
                       // может быть несколько, и какая из них в деле —
                       // иначе не видно.
-                      if (widget.chosen) ...[
+                      if (widget.usedBy != null) ...[
                         const SizedBox(width: 6),
-                        Text('· выбрана', style: grey),
+                        Flexible(
+                          child: Text('· ${widget.usedBy}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: grey),
+                        ),
                       ],
                     ],
                   ),
@@ -93,13 +100,28 @@ class _ModelRowState extends State<ModelRow> {
                     const SizedBox(height: Gap.hint),
                     // Битую модель показывать наравне с рабочей нельзя:
                     // узнавалось это только при запуске распознавания,
-                    // руганью whisper про тензоры.
-                    Text(
-                      widget.problem!,
-                      style: Type.caption.copyWith(
-                        color: MacosColors.systemOrangeColor,
-                        height: 1.35,
-                      ),
+                    // руганью whisper про тензоры. И мало сказать «что-то
+                    // не так» — надо сказать, что с этим делать.
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        MacosIcon(
+                          CupertinoIcons.exclamationmark_triangle_fill,
+                          size: 12,
+                          color: MacosColors.systemOrangeColor,
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            'Работать этой моделью нельзя: уберите её и '
+                            'загрузите заново.\n${widget.problem!}',
+                            style: Type.caption.copyWith(
+                              color: MacosColors.systemOrangeColor,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ],

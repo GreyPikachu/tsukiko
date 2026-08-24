@@ -5,7 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/settings.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/features/settings/settings_cubit.dart';
+import 'package:tsukiko/features/settings/settings_state.dart';
 import 'package:tsukiko/platform/bridge.dart';
+
+import '../../support/fake_os.dart';
 
 /// Окно настроек. До выноса из виджета проверять было нечем: каждая галка
 /// сидела в `setState` и не отделялась от раскладки.
@@ -14,13 +17,12 @@ void main() {
 
   late _FakeNative native;
   late SettingsCubit cubit;
-  late Map<String, dynamic> before;
-  late DictationSettings dictationBefore;
+
+  // Настройки живут в папке приложения, и без подмены тест правил бы
+  // настоящие настройки пользователя.
+  useTempSupportDir('tsukiko-settings-app');
 
   setUp(() {
-    // Настройки живут в настоящей папке приложения — возвращаем как было.
-    before = Settings.load();
-    dictationBefore = DictationSettings.load();
     native = _FakeNative()..install();
     NativeBridge.debugReset();
     cubit = SettingsCubit(NativeBridge());
@@ -29,8 +31,6 @@ void main() {
   tearDown(() async {
     await cubit.close();
     native.remove();
-    await Settings.save(before);
-    dictationBefore.save();
   });
 
   Future<void> settle() =>
@@ -58,7 +58,7 @@ void main() {
       expect(DictationSettings.load().prompt, 'Минина, Сытый двор');
     });
 
-    test('«как у расшифровщика» — это пустая своя модель', () async {
+    test('«та же, что у расшифровщика» — это пустая своя модель', () async {
       cubit.setDictationModel('/своя.bin');
       await settle();
       expect(cubit.state.dictationModel, '/своя.bin');
@@ -125,7 +125,7 @@ void main() {
     });
   });
 
-  group('библиотека', () {
+  group('файлы расшифровок', () {
     test('последний формат снять нельзя: сохранять было бы нечего', () async {
       cubit.toggleFormat('srt', true);
       await settle();
@@ -148,8 +148,8 @@ void main() {
     });
   });
 
-  group('общие', () {
-    test('значок в Dock переключается и на лету, и в файле', () async {
+  group('приложение', () {
+    test('значок приложения переключается и на лету, и в файле', () async {
       cubit.setDockIcon(false);
       await settle();
 
@@ -169,6 +169,25 @@ void main() {
       native.loginItemAllowed = true;
       await cubit.setLoginItem(true);
       expect(cubit.state.loginItem, isTrue);
+    });
+  });
+
+  group('чья модель', () {
+    // Главная путаница приложения: модель у расшифровщика и у диктовки
+    // выбирается порознь, а пустой выбор диктовки означает «та же, что
+    // у расшифровщика». В списке моделей это должно быть написано.
+    test('пустой выбор диктовки — это модель расшифровщика', () {
+      const s = SettingsState(queueModel: '/большая.bin');
+      expect(s.dictationModelInUse, '/большая.bin');
+      expect(s.userOf('/большая.bin'), 'расшифровщик и диктовка');
+    });
+
+    test('свой выбор диктовки разводит их по разным файлам', () {
+      const s = SettingsState(
+          queueModel: '/большая.bin', dictationModel: '/мелкая.bin');
+      expect(s.userOf('/большая.bin'), 'расшифровщик');
+      expect(s.userOf('/мелкая.bin'), 'диктовка');
+      expect(s.userOf('/лишняя.bin'), isNull, reason: 'ею никто не работает');
     });
   });
 
