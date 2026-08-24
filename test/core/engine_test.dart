@@ -345,13 +345,29 @@ void main() {
   test('подписи сочетаний читаются как в системе', () {
     expect(Hotkey.holdDefault.label, 'fn + ⌃');
     expect(Hotkey.toggleDefault.label, 'fn + Пробел');
-    expect(const Hotkey([], key: 'f13').label, 'F13');
+    expect(const Hotkey([], keys: ['f13']).label, 'F13');
     expect(const Hotkey([]).label, 'Не назначено');
+
+    // Годится любая клавиша и любое их число: раньше обычную букву
+    // в одиночку назначить было нельзя вовсе.
+    expect(const Hotkey([], keys: ['y']).label, 'Y');
+    expect(const Hotkey([], keys: ['x', 'y']).label, 'X + Y');
+    expect(const Hotkey(['fn'], keys: ['o']).label, 'fn + O');
+    // Порядок клавиш не зависит от того, в каком их нажали.
+    expect(const Hotkey([], keys: ['y', 'x']).label,
+        const Hotkey([], keys: ['x', 'y']).label);
+    // Незнакомую клавишу называем её кодом — назначить можно любую.
+    expect(const Hotkey([], keys: ['#57']).label, '#57');
     // круг через JSON ничего не теряет
     final back = Hotkey.fromJson(Hotkey.toggleDefault.toJson(), Hotkey.holdDefault);
     expect(back.label, Hotkey.toggleDefault.label);
     // мусор в файле настроек не должен ронять диктовку
     expect(Hotkey.fromJson('чепуха', Hotkey.holdDefault).label, 'fn + ⌃');
+    // настройки прежних сборок: там клавиша была одна
+    expect(
+      Hotkey.fromJson({'mods': ['fn'], 'key': 'space'}, Hotkey.holdDefault).keys,
+      ['space'],
+    );
   });
 
   test('быстрая и точная модели выбираются по весу файла', () {

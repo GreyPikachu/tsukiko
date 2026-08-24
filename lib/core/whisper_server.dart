@@ -473,39 +473,66 @@ class WhisperServer {
 /// Клавиши нет вовсе — значит сочетание из одних модификаторов (fn+ctrl):
 /// такое приходит событием flagsChanged, а не нажатием клавиши.
 class Hotkey {
-  const Hotkey(this.mods, {this.key});
+  const Hotkey(this.mods, {this.keys = const []});
 
   /// 'fn', 'ctrl', 'opt', 'shift', 'cmd' — в этом же виде их читает Swift.
   final List<String> mods;
-  final String? key;
+
+  /// Обычные клавиши сочетания. Именно набор, а не одна: годится и «Y»,
+  /// и «X+Y», и «fn+O». Раньше клавиша была одна, а в одиночку принимались
+  /// только функциональные — обычную букву назначить было нельзя вовсе.
+  final List<String> keys;
 
   static const holdDefault = Hotkey(['fn', 'ctrl']);
-  static const toggleDefault = Hotkey(['fn'], key: 'space');
+  static const toggleDefault = Hotkey(['fn'], keys: ['space']);
 
-  bool get empty => mods.isEmpty && key == null;
+  bool get empty => mods.isEmpty && keys.isEmpty;
 
-  Map<String, dynamic> toJson() => {'mods': mods, 'key': key};
+  Map<String, dynamic> toJson() => {'mods': mods, 'keys': keys};
 
   factory Hotkey.fromJson(Object? raw, Hotkey fallback) {
     if (raw is! Map) return fallback;
     final mods = (raw['mods'] as List?)?.map((e) => '$e').toList();
     if (mods == null) return fallback;
-    return Hotkey(mods, key: raw['key'] as String?);
+    final keys = (raw['keys'] as List?)?.map((e) => '$e').toList();
+    if (keys != null) return Hotkey(mods, keys: keys);
+    // Настройки прежних сборок: там клавиша была одна.
+    final single = raw['key'] as String?;
+    return Hotkey(mods, keys: single == null ? const [] : [single]);
   }
 
+  /// Как назвать клавишу человеку. Незнакомая приходит своим кодом
+  /// («#57») — показываем его же, иначе назначить её было бы можно,
+  /// а прочитать назначенное нет.
   static const _keyNames = {
     'space': 'Пробел',
     'return': '⏎',
+    'enter': '⌤',
     'tab': '⇥',
     'escape': '⎋',
+    'delete': '⌫',
+    'forwarddelete': '⌦',
+    'left': '←',
+    'right': '→',
+    'up': '↑',
+    'down': '↓',
+    'home': '↖',
+    'end': '↘',
+    'pageup': '⇞',
+    'pagedown': '⇟',
   };
 
-  /// Подпись для панели: «fn ⌃», «fn Пробел». Значки модификаторов рисует
-  /// система: на macOS это ⌘ и ⌥, на Windows — слова Ctrl и Alt.
+  static String keyLabel(String key) => _keyNames[key] ?? key.toUpperCase();
+
+  /// Подпись для панели: «fn + ⌃», «fn + Пробел», «X + Y». Значки
+  /// модификаторов рисует система: на macOS это ⌘ и ⌥, на Windows —
+  /// слова Ctrl и Alt.
   String get label {
     if (empty) return 'Не назначено';
-    final name = key == null ? null : (_keyNames[key!] ?? key!.toUpperCase());
-    return os.shortcutLabel(mods, name);
+    // Порядок клавиш наводим сами: захват приходит множеством, и без
+    // этого подпись у одного и того же сочетания могла читаться по-разному.
+    final named = [...keys.map(keyLabel)]..sort();
+    return os.shortcutLabel(mods, named);
   }
 }
 

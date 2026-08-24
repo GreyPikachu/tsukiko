@@ -95,9 +95,8 @@ abstract class Os {
   /// На macOS это значки (⌘, ⌥), на Windows — слова (Ctrl, Alt).
   String modifierLabel(String mod);
 
-  /// Собрать подпись сочетания из модификаторов и клавиши. Разделитель
-  /// тоже разный: macOS ставит значки вплотную, Windows — через плюс.
-  String shortcutLabel(List<String> mods, [String? key]);
+  /// Собрать подпись сочетания из модификаторов и клавиш.
+  String shortcutLabel(List<String> mods, [List<String> keys = const []]);
 
   // ── звук ──────────────────────────────────────────────────────────────────
 

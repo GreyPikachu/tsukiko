@@ -108,29 +108,38 @@ class _ModelRowState extends State<ModelRow> {
             const SizedBox(width: 10),
             if (widget.size.isNotEmpty) Text(widget.size, style: grey),
             const SizedBox(width: 4),
-            // Кнопки появляются под курсором: в спокойном списке они
-            // только шумят, а удаление рядом с каждой строкой ещё и пугает.
-            AnimatedOpacity(
-              duration: Motion.dur(context, Motion.quick),
-              opacity: _hover ? 1 : 0,
-              child: Row(
-                children: [
-                  MacosTooltip(
-                    message: 'Показать файл',
-                    child: MacosIconButton(
-                      icon: const MacosIcon(CupertinoIcons.folder, size: 14),
-                      onPressed: _hover ? widget.onReveal : null,
+            // Кнопки видны всегда. Прятать их до наведения значит прятать
+            // и сам факт, что моделью можно управлять: человек не станет
+            // водить курсором по списку в надежде, что там что-то есть.
+            // Приглушены, пока на строку не навели, — список остаётся
+            // спокойным, но не немым.
+            Row(
+              children: [
+                MacosTooltip(
+                  message: 'Показать файл',
+                  child: MacosIconButton(
+                    icon: MacosIcon(
+                      CupertinoIcons.folder,
+                      size: 14,
+                      color: Surface.secondaryText(context)
+                          .withValues(alpha: _hover ? 1 : 0.55),
                     ),
+                    onPressed: widget.onReveal,
                   ),
-                  MacosTooltip(
-                    message: 'Убрать в Корзину',
-                    child: MacosIconButton(
-                      icon: const MacosIcon(CupertinoIcons.trash, size: 14),
-                      onPressed: _hover ? widget.onDelete : null,
+                ),
+                MacosTooltip(
+                  message: 'Убрать в Корзину',
+                  child: MacosIconButton(
+                    icon: MacosIcon(
+                      CupertinoIcons.trash,
+                      size: 14,
+                      color: Surface.secondaryText(context)
+                          .withValues(alpha: _hover ? 1 : 0.55),
                     ),
+                    onPressed: widget.onDelete,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),
