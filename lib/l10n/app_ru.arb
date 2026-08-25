@@ -243,5 +243,21 @@
       }
     }
   },
-  "buttonChoose": "Выбрать"
+  "buttonChoose": "Выбрать",
+  "sectionLanguage": "Язык интерфейса",
+  "languageSystem": "Как в системе",
+  "hintLanguage": "Язык кнопок и подсказок. На язык речи в записях он не влияет — тот выбирается для каждой записи отдельно.",
+  "@sectionLanguage": {
+    "description": "Заголовок раздела выбора языка интерфейса."
+  },
+  "@languageSystem": {
+    "description": "Вариант «взять язык из системных настроек»."
+  },
+  "@hintLanguage": {
+    "description": "Пояснение: язык интерфейса — не язык распознавания."
+  },
+  "fieldLanguage": "Язык",
+  "@fieldLanguage": {
+    "description": "Подпись поля выбора языка интерфейса."
+  }
 }

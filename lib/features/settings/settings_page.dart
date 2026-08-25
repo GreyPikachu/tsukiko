@@ -54,19 +54,23 @@ class SettingsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => BlocProvider(
         create: (_) => SettingsCubit(NativeBridge()),
-        child: MacosApp(
-          // Локализованный заголовок окна недоступен здесь: builder ниже
-          // ещё не построен, а MacosApp.title читается до первого кадра.
-          // Заголовок панели инструментов настоящий, локализованный —
-          // системная рамка окна этот берёт только для VoiceOver и Dock.
-          title: currentL10n().settingsWindowTitle,
-          theme: MacosThemeData.light(),
-          darkTheme: MacosThemeData.dark(),
-          themeMode: ThemeMode.system,
-          debugShowCheckedModeBanner: false,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: const SettingsBody(),
+        child: ValueListenableBuilder<Locale?>(
+          valueListenable: appLocale,
+          builder: (context, locale, _) => MacosApp(
+            locale: locale,
+            // Локализованный заголовок окна недоступен здесь: builder ниже
+            // ещё не построен, а MacosApp.title читается до первого кадра.
+            // Заголовок панели инструментов настоящий, локализованный —
+            // системная рамка окна этот берёт только для VoiceOver и Dock.
+            title: currentL10n().settingsWindowTitle,
+            theme: MacosThemeData.light(),
+            darkTheme: MacosThemeData.dark(),
+            themeMode: ThemeMode.system,
+            debugShowCheckedModeBanner: false,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: const SettingsBody(),
+          ),
         ),
       );
 }
@@ -516,6 +520,22 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// ни диктовке: как приложение живёт в системе и что ему разрешено.
   /// Всё остальное разъехалось по хозяевам.
   List<Widget> _appTab(SettingsState s) => [
+        SectionTitle(l10n.sectionLanguage),
+        _Field(
+          l10n.fieldLanguage,
+          MacosPopupButton<String>(
+            value: s.locale,
+            items: [
+              MacosPopupMenuItem(value: '', child: Text(l10n.languageSystem)),
+              // Языки названы на себе самих: так их узнают и те, кто
+              // случайно переключился на незнакомый.
+              const MacosPopupMenuItem(value: 'ru', child: Text('Русский')),
+              const MacosPopupMenuItem(value: 'en', child: Text('English')),
+            ],
+            onChanged: (v) => _cubit.setLocale(v ?? ''),
+          ),
+        ),
+        Hint(l10n.hintLanguage),
         SectionTitle(l10n.sectionInSystem),
         Check(l10n.checkLoginItem, s.loginItem, _cubit.setLoginItem),
         Hint(l10n.hintLoginItem(os.menuBarName), under: true),
