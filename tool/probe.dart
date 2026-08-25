@@ -4,7 +4,6 @@
 // ignore_for_file: avoid_print
 import 'package:tsukiko/core/model_usage.dart';
 import 'package:tsukiko/core/models.dart';
-import 'package:tsukiko/core/text.dart';
 
 Future<void> main() async {
   final models = findModels();
@@ -12,7 +11,7 @@ Future<void> main() async {
     print('Моделей не найдено — проверять нечего.');
     return;
   }
-  print('Слежу за ${models.length} ${plural(models.length, 'моделью', 'моделями', 'моделями')}:');
+  print('Слежу за моделями (${models.length}):');
   for (final m in models) {
     print('  ${m.split('/').last}');
   }

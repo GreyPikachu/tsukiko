@@ -147,7 +147,9 @@ class _Header extends StatelessWidget {
   final DictationState s;
 
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Padding(
         padding: const EdgeInsets.fromLTRB(
             Gap.edgeNarrow, Gap.item, Gap.edgeNarrow, Gap.item),
         child: Row(
@@ -156,10 +158,10 @@ class _Header extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Диктовка', style: Type.emptyTitle),
+                  Text(l10n.settingsTabDictation, style: Type.emptyTitle),
                   const SizedBox(height: 2),
                   Text(
-                    s.enabled ? 'Включена' : 'Выключена',
+                    s.enabled ? l10n.dictationEnabledState : l10n.dictationDisabledState,
                     style: Type.caption.copyWith(color: Surface.secondaryText(context)),
                   ),
                 ],
@@ -172,6 +174,7 @@ class _Header extends StatelessWidget {
           ],
         ),
       );
+  }
 }
 
 /// Крупное главное состояние: «Готово», «Записываю 0:04», «Распознаю…».
@@ -183,13 +186,14 @@ class _Live extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final accent = MacosTheme.of(context).primaryColor;
     final recording = s.recording;
     final (title, color) = switch (s.phase) {
-      Phase.recording => ('Записываю', MacosColors.systemRedColor),
-      Phase.transcribing => ('Распознаю…', accent),
+      Phase.recording => (l10n.liveRecording, MacosColors.systemRedColor),
+      Phase.transcribing => (l10n.liveTranscribing, accent),
       Phase.idle => (
-          s.enabled ? 'Готово' : 'Диктовка выключена',
+          s.enabled ? l10n.liveReady : l10n.liveDictationOff,
           s.enabled
               ? MacosColors.systemGreenColor
               : Surface.secondaryText(context)
@@ -268,7 +272,7 @@ class _KeysState extends State<_Keys> {
 
   @override
   Widget build(BuildContext context) {
-    
+    final l10n = AppLocalizations.of(context);
     final grey = Type.caption.copyWith(color: Surface.secondaryText(context));
     Widget row(String keys, String what) => Padding(
           padding: const EdgeInsets.only(bottom: Gap.hint),
@@ -284,7 +288,7 @@ class _KeysState extends State<_Keys> {
         );
 
     return MacosTooltip(
-      message: 'Изменить в настройках',
+      message: l10n.tooltipChangeInSettings,
       child: MouseRegion(
         onEnter: (_) => setState(() => _hover = true),
         onExit: (_) => setState(() => _hover = false),
@@ -294,8 +298,8 @@ class _KeysState extends State<_Keys> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              row(widget.s.holdLabel, 'держать и говорить'),
-              row(widget.s.toggleLabel, 'нажать, ещё раз — остановить'),
+              row(widget.s.holdLabel, l10n.keyActionHold),
+              row(widget.s.toggleLabel, l10n.keyActionToggle),
             ],
           ),
         ),
@@ -321,10 +325,10 @@ class _AbortButtonState extends State<_AbortButton> {
 
   @override
   Widget build(BuildContext context) => MacosTooltip(
-        message: 'Отменить распознавание',
+        message: AppLocalizations.of(context).abortRecognitionAction,
         child: Semantics(
           button: true,
-          label: 'Отменить распознавание',
+          label: AppLocalizations.of(context).abortRecognitionAction,
           child: MouseRegion(
             onEnter: (_) => setState(() => _hover = true),
             onExit: (_) => setState(() => _hover = false),
@@ -398,6 +402,7 @@ class _Notices extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final cubit = context.read<DictationCubit>();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Gap.edgeNarrow),
@@ -408,11 +413,10 @@ class _Notices extends StatelessWidget {
           // потом настройки, где остаётся щёлкнуть переключатель.
           if (!s.allowed)
             _Warning(
-              'Без «Универсального доступа» tsukiko не перехватывает клавиши '
-              'и не вставляет текст в активное окно.',
-              button: 'Запросить',
+              l10n.warningNoAccessibility(os.accessibilityName, appName),
+              button: l10n.buttonRequestPermission,
               onPressed: cubit.requestPermission,
-              second: 'Открыть настройки',
+              second: l10n.buttonOpenSettings,
               onSecond: cubit.openPermissionSettings,
             ),
           // Молчаливая потеря записи — худшее, что может случиться:
@@ -425,32 +429,30 @@ class _Notices extends StatelessWidget {
           if (s.failure != null)
             _Warning(
               s.failure!,
-              button: s.failurePath != null ? 'Показать запись' : 'Скопировать',
+              button: s.failurePath != null ? l10n.buttonShowRecording : l10n.buttonCopy,
               onPressed:
                   s.failurePath != null ? cubit.revealFailure : cubit.copyLast,
-              second: s.failurePath != null ? 'Удалить' : null,
+              second: s.failurePath != null ? l10n.buttonDelete : null,
               onSecond: s.failurePath != null ? cubit.discardFailure : null,
             ),
           if (s.sweptMb > 0)
             _Warning(
-              'Нашли забытый распознаватель диктовки от прошлого запуска '
-              'и выгрузили его: вернули ${sizeLabelMb(s.sweptMb)} памяти.',
-              button: 'Понятно',
+              l10n.sweptRecoveredMemory(sizeLabelMb(s.sweptMb)),
+              button: l10n.buttonUnderstood,
               onPressed: cubit.forgetSweep,
             ),
           if (s.vadProgress != null)
             Padding(
               padding: const EdgeInsets.only(top: Gap.inner),
               child: Text(
-                'Загрузка распознавания тишины · ${s.vadProgress}',
+                l10n.vadLoadingProgress(s.vadProgress!),
                 style: Type.caption.copyWith(color: Surface.secondaryText(context)),
               ),
             )
           else if (s.vadError != null)
             _Warning(
-              'Распознавание тишины не загрузилось: ${s.vadError}. '
-              'Диктовать можно и так, но на паузах модель дописывает лишнее.',
-              button: 'Попробовать ещё раз',
+              l10n.vadLoadFailed(s.vadError!),
+              button: l10n.buttonRetry,
               onPressed: cubit.retryVad,
             ),
         ],
@@ -464,17 +466,19 @@ class _Last extends StatelessWidget {
   final DictationState s;
 
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Padding(
         padding: const EdgeInsets.symmetric(
             horizontal: Gap.edgeNarrow, vertical: Gap.item),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Последняя расшифровка',
+            Text(l10n.lastTranscriptTitle,
                 style: Type.caption.copyWith(color: Surface.secondaryText(context))),
             const SizedBox(height: Gap.hint),
             Text(
-              s.last.isEmpty ? 'Пока ничего не надиктовано.' : s.last,
+              s.last.isEmpty ? l10n.noDictationYet : s.last,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: s.last.isEmpty
@@ -492,12 +496,13 @@ class _Last extends StatelessWidget {
                 controlSize: ControlSize.small,
                 secondary: true,
                 onPressed: context.read<DictationCubit>().copyLast,
-                child: const Text('Скопировать'),
+                child: Text(l10n.buttonCopy),
               ),
             ],
           ],
         ),
       );
+  }
 }
 
 /// Модель: что загружено, сколько занимает и когда освободится. Та самая
@@ -511,18 +516,19 @@ class _Model extends StatelessWidget {
     // Всё готовым значением из состояния: считать размеры файлов и читать
     // settings.json на каждом кадре панели здесь было нечем оправдать —
     // во время записи это выходило десять чтений диска в секунду.
+    final l10n = AppLocalizations.of(context);
     final cubit = context.read<DictationCubit>();
     final left = s.untilUnload;
     final grey = Type.caption.copyWith(color: Surface.secondaryText(context));
 
     final serverState = !s.serverUp
-        ? 'Выгружена'
+        ? l10n.modelUnloaded
         : [
             if (s.memoryMb > 0)
-              '${(s.memoryMb / 1024).toStringAsFixed(1).replaceAll('.', ',')} ГБ в памяти'
+              l10n.modelSizeInMemory(l10n.sizeGb(s.memoryMb / 1024))
             else
-              'В памяти',
-            if (left != null) 'освободится через ${humanDuration(left.inMilliseconds)}',
+              l10n.modelInMemory,
+            if (left != null) l10n.modelFreesIn(humanDuration(left.inMilliseconds)),
           ].join(' · ');
 
     return Padding(
@@ -533,16 +539,16 @@ class _Model extends StatelessWidget {
         children: [
           Text(
             !s.hasModels
-                ? 'Модель не найдена'
+                ? l10n.modelNotFound
                 : s.chosenModel.isEmpty
-                    ? 'Модель не выбрана'
+                    ? l10n.modelNotChosen
                     : modelDisplayName(s.chosenModel),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Type.fileName,
           ),
           const SizedBox(height: Gap.hint),
-          Text(!s.hasModels ? 'Распознавать нечем' : serverState, style: grey),
+          Text(!s.hasModels ? l10n.nothingToRecognizeWith : serverState, style: grey),
           // Кнопки под текстом, как в блоке последней расшифровки: два
           // соседних блока, устроенных по-разному, читаются как два разных
           // языка в одной панели.
@@ -553,7 +559,7 @@ class _Model extends StatelessWidget {
                 controlSize: ControlSize.small,
                 secondary: true,
                 onPressed: () => cubit.openSettings('models'),
-                child: const Text('Загрузить другую…'),
+                child: Text(l10n.buttonDownloadAnother),
               ),
               if (s.serverUp) ...[
                 const SizedBox(width: Gap.inner),
@@ -562,13 +568,13 @@ class _Model extends StatelessWidget {
                 // может, — обещание, которого приложение не сдержит.
                 MacosTooltip(
                   message: s.phase == Phase.idle
-                      ? 'Освободить память до следующей фразы'
-                      : 'Модель сейчас в работе',
+                      ? l10n.tooltipFreeMemoryNextPhrase
+                      : l10n.tooltipModelBusy,
                   child: PushButton(
                     controlSize: ControlSize.small,
                     secondary: true,
                     onPressed: s.phase == Phase.idle ? cubit.unload : null,
-                    child: const Text('Выгрузить'),
+                    child: Text(l10n.buttonUnload),
                   ),
                 ),
               ],
@@ -580,8 +586,8 @@ class _Model extends StatelessWidget {
             const SizedBox(height: Gap.item),
             _Segmented(
               options: [
-                (s.fastModel, 'Быстрая'),
-                (s.accurateModel, 'Точная'),
+                (s.fastModel, l10n.modelFast),
+                (s.accurateModel, l10n.modelAccurate),
               ],
               value:
                   s.chosenModel == s.accurateModel ? s.accurateModel : s.fastModel,
@@ -599,22 +605,25 @@ class _Footer extends StatelessWidget {
   final DictationState s;
 
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Padding(
         padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 5),
         child: Column(
           children: [
             _MenuRow(
-              'Настройки диктовки…',
+              l10n.menuDictationSettingsEllipsis,
               () => context.read<DictationCubit>().openSettings('dictation'),
               shortcut: os.settingsShortcut,
             ),
-            _MenuRow('Открыть tsukiko…',
+            _MenuRow(l10n.menuOpenApp(appName),
                 context.read<DictationCubit>().openMainWindow),
-            _MenuRow('Завершить tsukiko', context.read<DictationCubit>().quit,
+            _MenuRow(l10n.menuQuitApp(appName), context.read<DictationCubit>().quit,
                 shortcut: '⌘Q'),
           ],
         ),
       );
+  }
 }
 
 // ── мелочи ──────────────────────────────────────────────────────────────────
@@ -751,18 +760,23 @@ class _Warning extends StatelessWidget {
   const _Warning(
     this.text, {
     required this.onPressed,
-    this.button = 'Открыть настройки',
+    this.button,
     this.second,
     this.onSecond,
   });
   final String text;
-  final String button;
+
+  /// Пусто — берём общую подпись «Открыть настройки»: ей отвечают все
+  /// нынешние места, кроме тех, что просят своё.
+  final String? button;
   final VoidCallback onPressed;
   final String? second;
   final VoidCallback? onSecond;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Container(
         margin: const EdgeInsets.only(bottom: Gap.inner),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -780,7 +794,7 @@ class _Warning extends StatelessWidget {
                   controlSize: ControlSize.small,
                   secondary: true,
                   onPressed: onPressed,
-                  child: Text(button),
+                  child: Text(button ?? l10n.buttonOpenSettings),
                 ),
                 if (second != null) ...[
                   const SizedBox(width: Gap.inner),
@@ -796,4 +810,5 @@ class _Warning extends StatelessWidget {
           ],
         ),
       );
+  }
 }

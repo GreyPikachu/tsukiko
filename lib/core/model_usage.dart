@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../platform/os.dart';
+import 'app_locale.dart';
 
 
 // ── занятость модели ────────────────────────────────────────────────────────
@@ -74,20 +75,26 @@ class ModelUse {
 
   bool get busy => state != ModelState.free;
 
-  String get label => switch (state) {
-        ModelState.free => 'Модель свободна',
-        ModelState.loading => 'Модель загружается · $by',
-        ModelState.busy => 'Модель занята · $by',
-      };
+  String get label {
+    final l10n = currentL10n();
+    return switch (state) {
+      ModelState.free => l10n.modelFree,
+      ModelState.loading => l10n.modelLoading(by),
+      ModelState.busy => l10n.modelBusy(by),
+    };
+  }
 
   /// Подробности для подсказки: по чему именно видно, что процесс работает.
-  String get detail => switch (state) {
-        ModelState.free => 'Никто не распознаёт речь прямо сейчас.',
-        ModelState.loading => '$by читает файл модели в память.',
-        ModelState.busy => share >= _busyCpuShare
-            ? '$by занимает ${(share * 100).round()} % процессора.'
-            : '$by держит ${(rssKb / 1024).round()} МБ в памяти.',
-      };
+  String get detail {
+    final l10n = currentL10n();
+    return switch (state) {
+      ModelState.free => l10n.modelFreeDetail,
+      ModelState.loading => l10n.modelLoadingDetail(by),
+      ModelState.busy => share >= _busyCpuShare
+          ? l10n.modelBusyDetailCpu(by, (share * 100).round())
+          : l10n.modelBusyDetailMemory(by, (rssKb / 1024).round()),
+    };
+  }
 }
 
 /// Приложение обычно хранит модель у себя в Application Support — по пути

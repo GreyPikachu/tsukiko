@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../core/app_locale.dart';
 import 'os.dart';
 
 /// macOS: как здесь устроено всё, что описано в `os.dart`.
@@ -63,7 +64,7 @@ class MacOs implements Os {
   }
 
   @override
-  String get whisperInstallHint => 'Установка: brew install whisper-cpp';
+  String get whisperInstallHint => currentL10n().whisperInstallHint;
 
   // ── как система называет свои вещи ────────────────────────────────────────
 
@@ -88,13 +89,13 @@ class MacOs implements Os {
   String get appIconAreaName => 'Dock';
 
   @override
-  String get menuBarName => 'строка меню';
+  String get menuBarName => systemL10n().menuBarNameLabel;
 
   @override
   String get settingsShortcut => '⌘,';
 
   @override
-  String get accessibilityName => 'Универсальный доступ';
+  String get accessibilityName => systemL10n().accessibilityPermissionName;
 
   @override
   String shortcutLabel(List<String> mods, [List<String> keys = const []]) {

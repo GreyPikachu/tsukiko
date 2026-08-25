@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/core/library.dart';
@@ -13,6 +14,17 @@ import 'package:tsukiko/platform/os.dart';
 import 'package:tsukiko/platform/os_macos.dart' show cpuSeconds;
 
 void main() {
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  // TestWidgetsFlutterBinding подменяет HttpOverrides и заворачивает
+  // любой HttpClient в фальшивый 400 — а этот файл настоящую сеть
+  // и проверяет (Download, whisper-server). Возвращаем обычные сокеты.
+  HttpOverrides.global = null;
+  // Строки идут через currentL10n(), который читает системный локаль.
+  // Тестовый движок отдаёт en_US — здесь же тексты сверены с русским,
+  // поэтому закрепляем его явно.
+  setUp(() =>
+      binding.platformDispatcher.localesTestValue = const [Locale('ru')]);
+
   _hotkeyTaps();
 
   test('таймкоды', () {

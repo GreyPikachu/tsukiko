@@ -3,6 +3,7 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../../core/whisper.dart';
 import '../../../design/design.dart';
+import '../../../l10n/gen/app_localizations.dart';
 import '../job.dart';
 
 /// Строка очереди и значок её состояния.
@@ -77,7 +78,7 @@ class QueueRowState extends State<QueueRow> {
                   // узнаёшь только открыв инспектор.
                   if (widget.customised)
                     MacosTooltip(
-                      message: 'Свои настройки распознавания',
+                      message: AppLocalizations.of(context).tooltipCustomSettings,
                       child: MacosIcon(
                         CupertinoIcons.slider_horizontal_3,
                         size: 12,

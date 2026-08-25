@@ -8,6 +8,7 @@ import 'package:macos_ui/macos_ui.dart';
 import '../../../core/transcript.dart';
 import '../../../design/design.dart';
 import '../../../design/mascot.dart';
+import '../../../l10n/gen/app_localizations.dart';
 
 /// Фрагмент расшифровки и полог, который встречает перетаскиваемый файл.
 class SegmentRow extends StatefulWidget {
@@ -185,7 +186,7 @@ class DropVeil extends StatelessWidget {
                     interactive: false,
                   ),
                   const SizedBox(height: 8),
-                  Text('Отпустите, чтобы добавить в очередь',
+                  Text(AppLocalizations.of(context).dropVeilHint,
                       style: Type.emptyTitle.copyWith(color: accent)),
                 ],
               ),

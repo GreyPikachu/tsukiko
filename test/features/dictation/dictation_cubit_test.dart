@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/platform/bridge.dart';
 import 'package:tsukiko/core/whisper_server.dart';
@@ -11,13 +12,17 @@ import 'package:tsukiko/core/whisper.dart';
 /// Родная сторона подменена: канал отвечает нашими значениями, и весь
 /// разговор с macOS сводится к списку вызовов, который можно прочитать.
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
 
   late _FakeNative native;
   late _FakeServer server;
   late DictationCubit cubit;
 
   setUp(() {
+    // Строки из кубита идут через currentL10n(), который читает системный
+    // локаль. Тестовый движок отдаёт en_US — здесь же тексты сверены
+    // с русским, поэтому закрепляем его явно.
+    binding.platformDispatcher.localesTestValue = const [Locale('ru')];
     native = _FakeNative()..install();
     server = _FakeServer();
     // Мост в приложении один на изолят, и он это стережёт. Каждому тесту

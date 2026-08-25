@@ -3,6 +3,7 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../../core/text.dart';
 import '../../../design/design.dart';
+import '../../../l10n/gen/app_localizations.dart';
 
 /// Правая панель: к чему относятся настройки, путь к библиотеке
 /// и мелочи, из которых она собрана.
@@ -23,23 +24,21 @@ class ScopeBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final name = this.name ?? l10n.genericRecordName;
     // Первая строка отвечает на единственный вопрос, который здесь
     // возникает: то, что я сейчас трогаю, — общее или только этой записи?
     final (title, hint) = switch (selection) {
-      0 => (
-          'Настройки для всех новых записей',
-          'Записи не выбрано — правки применятся ко всем новым. Выберите '
-              'запись в очереди, чтобы менять только её.'
-        ),
+      0 => (l10n.scopeAllTitle, l10n.scopeAllHint),
       1 => (
-          'Меняете только эту запись',
+          l10n.scopeOneTitle,
           changed.isEmpty
-              ? '${name ?? 'Запись'} · пока настройки как общие.'
-              : '${name ?? 'Запись'} · своё: ${changed.join(', ')}.'
+              ? l10n.scopeOneHintDefault(name)
+              : l10n.scopeOneHintCustom(name, changed.join(', '))
         ),
       _ => (
-          'Меняете ${recordsLabel(selection)}',
-          'Изменения применятся ко всем выбранным записям, общих не тронут.'
+          l10n.scopeManyTitle(recordsLabel(selection)),
+          l10n.scopeManyHint
         ),
     };
 
@@ -82,14 +81,14 @@ class ScopeBanner extends StatelessWidget {
                   controlSize: ControlSize.small,
                   secondary: true,
                   onPressed: onReset,
-                  child: const Text('Вернуть общие'),
+                  child: Text(l10n.buttonRestoreDefaults),
                 ),
                 const SizedBox(width: Gap.inner),
                 PushButton(
                   controlSize: ControlSize.small,
                   secondary: true,
                   onPressed: onMakeDefault,
-                  child: const Text('Сделать общими'),
+                  child: Text(l10n.buttonMakeDefault),
                 ),
               ],
             ),

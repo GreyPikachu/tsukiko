@@ -2,6 +2,8 @@
 /// на командной строке whisper-cli.
 library;
 
+import 'app_locale.dart';
+
 /// С таймкодами модель на разговорной речи скатывается в сплошной нижний
 /// регистр без знаков препинания. Затравка задаёт стиль — знаки возвращаются,
 /// а таймкоды остаются (проверено на этих же записях).
@@ -38,15 +40,18 @@ String punctuationPrimer(String lang) =>
 enum JobState { queued, waiting, converting, transcribing, done, failed, cancelled }
 
 extension JobStateLabel on JobState {
-  String get label => switch (this) {
-        JobState.queued => 'В очереди',
-        JobState.waiting => 'Ожидает модель',
-        JobState.converting => 'Подготовка звука',
-        JobState.transcribing => 'Распознавание',
-        JobState.done => 'Готово',
-        JobState.failed => 'Не удалось распознать',
-        JobState.cancelled => 'Отменено',
-      };
+  String get label {
+    final l10n = currentL10n();
+    return switch (this) {
+      JobState.queued => l10n.jobStateQueued,
+      JobState.waiting => l10n.jobStateWaiting,
+      JobState.converting => l10n.jobStateConverting,
+      JobState.transcribing => l10n.jobStateTranscribing,
+      JobState.done => l10n.jobStateDone,
+      JobState.failed => l10n.jobStateFailed,
+      JobState.cancelled => l10n.jobStateCancelled,
+    };
+  }
 }
 
 /// Настройки одного распознавания. Они же — общие настройки приложения:
@@ -114,15 +119,18 @@ class RunOptions {
 
   /// Чем эта запись отличается от общих настроек — списком, для подписи
   /// «изменено: язык, модель».
-  List<String> diffAgainst(RunOptions base) => [
-        if (model != base.model) 'модель',
-        if (lang != base.lang) 'язык',
-        if (threads != base.threads) 'потоки',
-        if (maxLen != base.maxLen) 'длина фрагмента',
-        if (vad != base.vad || vadModel != base.vadModel) 'VAD',
-        if (prompt.trim() != base.prompt.trim()) 'подсказка',
-        if (punctuate != base.punctuate) 'пунктуация',
-      ];
+  List<String> diffAgainst(RunOptions base) {
+    final l10n = currentL10n();
+    return [
+      if (model != base.model) l10n.diffModel,
+      if (lang != base.lang) l10n.diffLanguage,
+      if (threads != base.threads) l10n.diffThreads,
+      if (maxLen != base.maxLen) l10n.diffSegmentLength,
+      if (vad != base.vad || vadModel != base.vadModel) 'VAD',
+      if (prompt.trim() != base.prompt.trim()) l10n.diffPrompt,
+      if (punctuate != base.punctuate) l10n.diffPunctuation,
+    ];
+  }
 
   /// Своя подсказка важнее: она уже задаёт модели и стиль, и словарь.
   String get effectivePrompt => prompt.trim().isNotEmpty

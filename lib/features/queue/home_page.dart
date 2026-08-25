@@ -17,6 +17,7 @@ import '../../core/text.dart';
 import '../../core/transcript.dart';
 import '../../design/design.dart';
 import '../../design/mascot.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import 'job.dart';
@@ -70,6 +71,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   String _promptShown = '';
 
   QueueBloc get _bloc => context.read<QueueBloc>();
+  AppLocalizations get l10n => AppLocalizations.of(context);
   void _send(QueueEvent e) => _bloc.add(e);
   void _sendAll() => _send(const AllSelected());
   void _sendDeselect() => _send(const SelectionCleared());
@@ -160,7 +162,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             Navigator.pop(dialogContext);
             _send(ask.confirm ? const RunConfirmed(true) : const AskDismissed());
           },
-          child: Text(ask.confirm ? 'Продолжить' : 'Понятно'),
+          child: Text(ask.confirm ? l10n.buttonContinue : l10n.buttonUnderstood),
         ),
         secondaryButton: ask.confirm
             ? PushButton(
@@ -170,7 +172,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                   Navigator.pop(dialogContext);
                   _send(const RunConfirmed(false));
                 },
-                child: const Text('Отмена'),
+                child: Text(l10n.buttonCancel),
               )
             : null,
       ),
@@ -183,15 +185,14 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           appIcon: const MacosIcon(CupertinoIcons.waveform_circle_fill, size: 56),
           title: const Text(appName, style: Type.emptyTitle),
           message: Text(
-            'Распознавание речи на самом компьютере.\n'
-            'Движок: whisper.cpp · ничего не уходит в сеть.',
+            l10n.aboutBody,
             textAlign: TextAlign.center,
             style: Type.control,
           ),
           primaryButton: PushButton(
             controlSize: ControlSize.large,
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Закрыть'),
+            child: Text(l10n.buttonClose),
           ),
         ),
       );
@@ -199,7 +200,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   Future<void> _pickFiles() async {
     final files = await openFiles(acceptedTypeGroups: [
       XTypeGroup(
-        label: 'Аудио и видео',
+        label: l10n.fileTypeAudioVideo,
         extensions: audioExt.map((e) => e.substring(1)).toList(),
       ),
     ]);
@@ -209,7 +210,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   Future<void> _openTranscript() async {
     final f = await openFile(acceptedTypeGroups: [
       XTypeGroup(
-        label: 'Расшифровки',
+        label: l10n.fileTypeTranscripts,
         extensions: transcriptExt.map((e) => e.substring(1)).toList(),
       ),
     ]);
@@ -224,7 +225,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         acceptedTypeGroups: const [XTypeGroup(label: 'GGML', extensions: ['bin'])]);
     if (f == null) return;
     final problem = modelFileProblem(f.path);
-    if (problem != null) return _showAsk(Ask('Это не модель распознавания', problem));
+    if (problem != null) return _showAsk(Ask(l10n.askNotRecognitionModelTitle, problem));
     _send(ModelChosen(f.path));
   }
 
@@ -259,7 +260,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   Future<void> _exportInto(List<Job> jobs, List<ExportFormat> formats) async {
     if (formats.isEmpty) return;
-    final dir = await getDirectoryPath(confirmButtonText: 'Экспортировать');
+    final dir = await getDirectoryPath(confirmButtonText: l10n.buttonExport);
     if (dir != null) _send(ExportRequested(jobs, dir, formats));
   }
 
@@ -288,27 +289,27 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// говорим об этом, а не открываем пустое место.
   Future<void> _revealSource(String path) async {
     if (await revealInFinder(path)) return;
-    _send(StatusReported('Файла «${os.basename(path)}» больше нет на диске'));
+    _send(StatusReported(l10n.statusSourceGone(os.basename(path))));
   }
 
   // ── как называется занятость ──────────────────────────────────────────────
 
   String _modelUseBy(QueueState s) => s.transcribing
-      ? 'расшифровка'
+      ? l10n.modelUseByTranscription
       : s.dictationHoldsModel
-          ? 'диктовка'
+          ? l10n.usedByDictation
           : s.modelUse.by;
 
   String _modelUseLabel(QueueState s) => s.transcribing
-      ? 'Занято расшифровкой'
+      ? l10n.modelUseLabelTranscription
       : s.dictationHoldsModel
-          ? 'Занято диктовкой'
+          ? l10n.modelUseLabelDictation
           : s.modelUse.label;
 
   String _modelUseDetail(QueueState s) => s.transcribing
-      ? 'Расшифровываем запись прямо сейчас.'
+      ? l10n.modelUseDetailTranscription
       : s.dictationHoldsModel
-          ? 'Диктовка держит модель в памяти. Очередь ей уступает.'
+          ? l10n.modelUseDetailDictation
           : s.modelUse.detail;
 
   static const _cmd = SingleActivator(LogicalKeyboardKey.keyO, meta: true);
@@ -394,14 +395,14 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       dividerColor: _scrolled ? Surface.hairline(context) : MacosColors.transparent,
       actions: [
         ToolBarIconButton(
-          label: 'Добавить',
+          label: l10n.buttonAdd,
           icon: const MacosIcon(CupertinoIcons.add),
           showLabel: false,
-          tooltipMessage: 'Добавить аудио · ⌘O',
+          tooltipMessage: l10n.tooltipAddAudioShortcut,
           onPressed: _pickFiles,
         ),
         ToolBarIconButton(
-          label: s.running ? 'Остановить' : 'Распознать',
+          label: s.running ? l10n.menuStop : l10n.buttonRecognize,
           icon: MacosIcon(s.running
               ? CupertinoIcons.stop_fill
               : s.yieldBusyModel && s.modelUse.busy
@@ -410,34 +411,34 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           showLabel: false,
           tooltipMessage: s.running
               ? (s.waitingForModel
-                  ? 'Ожидание: ${_modelUseBy(s)} ещё работает · остановить ⌘.'
-                  : 'Остановить · ⌘.')
+                  ? l10n.tooltipWaitingFor(_modelUseBy(s))
+                  : l10n.tooltipStopShortcut)
               : s.yieldBusyModel && s.modelUse.busy
-                  ? 'Модель занята (${_modelUseBy(s)}) — распознавание начнётся, как только она освободится · ⌘⏎'
-                  : 'Распознать очередь · ⌘⏎',
+                  ? l10n.tooltipModelBusyWillStart(_modelUseBy(s))
+                  : l10n.tooltipRunQueueShortcut,
           onPressed: s.running ? _sendStop : (s.hasPending ? _sendStart : null),
         ),
         ToolBarIconButton(
-          label: 'Распознать заново',
+          label: l10n.menuRetryRecognition,
           icon: const MacosIcon(CupertinoIcons.arrow_counterclockwise),
           showLabel: false,
-          tooltipMessage: 'Распознать заново с текущими настройками · ⌥⌘R',
+          tooltipMessage: l10n.tooltipRetryShortcut,
           onPressed: s.running || !s.targets.any((j) => !j.imported) ? null : _sendRetry,
         ),
         const ToolBarSpacer(spacerUnits: 1),
 
         // Кнопка повторяет прошлый выбор, стрелка рядом даёт его сменить.
         ToolBarIconButton(
-          label: 'Копировать',
+          label: l10n.buttonCopyToolbar,
           icon: const MacosIcon(CupertinoIcons.doc_on_clipboard),
           showLabel: false,
-          tooltipMessage: 'Копировать: ${copyFormat.label.toLowerCase()}',
+          tooltipMessage: l10n.tooltipCopyFormat(copyFormat.label.toLowerCase()),
           onPressed: ready ? () => _copy() : null,
         ),
         ToolBarPullDownButton(
-          label: 'Формат копирования',
+          label: l10n.labelCopyFormat,
           icon: CupertinoIcons.doc_on_clipboard,
-          tooltipMessage: 'Выбрать, что копировать',
+          tooltipMessage: l10n.tooltipChooseCopyFormat,
           items: ready
               ? [
                   for (final f in const [formatPlainText, formatTimedText, formatSrt, formatVtt])
@@ -446,33 +447,33 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
               : null,
         ),
         ToolBarIconButton(
-          label: 'Сохранить',
+          label: l10n.buttonSaveToolbar,
           icon: const MacosIcon(CupertinoIcons.arrow_down_doc),
           showLabel: false,
-          tooltipMessage: 'Сохранить: ${saveFormat.label.toLowerCase()} · ⌘S',
+          tooltipMessage: l10n.tooltipSaveFormat(saveFormat.label.toLowerCase()),
           onPressed: ready ? () => _saveAs(s) : null,
         ),
         ToolBarPullDownButton(
-          label: 'Формат сохранения',
+          label: l10n.labelSaveFormat,
           icon: CupertinoIcons.arrow_down_doc,
-          tooltipMessage: 'Выбрать формат файла',
+          tooltipMessage: l10n.tooltipChooseSaveFormat,
           items: ready
               ? [
                   for (final f in exportFormats) _formatItem(f, s.saveFormat, () => _saveAs(s, f)),
                   const MacosPulldownMenuDivider(),
                   MacosPulldownMenuItem(
-                    title: const Text('Экспортировать в папку…'),
-                    label: 'Экспортировать в папку',
+                    title: Text(l10n.menuExportToFolder),
+                    label: l10n.labelExportToFolder,
                     onTap: () => _exportAll(s),
                   ),
                 ]
               : null,
         ),
         ToolBarIconButton(
-          label: 'Найти',
+          label: l10n.buttonFind,
           icon: const MacosIcon(CupertinoIcons.search),
           showLabel: false,
-          tooltipMessage: 'Найти в расшифровке · ⌘F',
+          tooltipMessage: l10n.tooltipFindShortcut,
           onPressed: s.lead == null ? null : _openFind,
         ),
       ],
@@ -503,7 +504,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                 child: MacosSearchField(
                   controller: _searchCtrl,
                   focusNode: _searchFocus,
-                  placeholder: 'Найти в расшифровке',
+                  placeholder: l10n.placeholderFindInTranscript,
                   placeholderStyle: Surface.placeholder(context),
                   onChanged: (v) => setState(() => _query = v),
                 ),
@@ -525,9 +526,9 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   String _findSummary(QueueState s) {
     final job = s.lead;
-    if (job == null || _query.trim().isEmpty) return 'Esc — закрыть';
+    if (job == null || _query.trim().isEmpty) return l10n.hintEscToClose;
     final hits = _visibleSegments(job).length;
-    return hits == 0 ? 'Ничего не найдено' : 'Найдено: ${segmentsLabel(hits)}';
+    return hits == 0 ? l10n.nothingFound : l10n.statusFoundSegments(segmentsLabel(hits));
   }
 
   void _openFind() {
@@ -564,11 +565,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       );
 
   String? _subtitle(QueueState s) {
-    if (s.selected.length > 1) return 'Выбрано: ${recordsLabel(s.selected.length)}';
+    if (s.selected.length > 1) return l10n.statusSelectedRecords(recordsLabel(s.selected.length));
     final job = s.lead;
     if (job != null) return job.name;
     if (s.jobs.isEmpty) return null;
-    return 'В очереди: ${recordsLabel(s.jobs.length)}';
+    return l10n.statusInQueueRecords(recordsLabel(s.jobs.length));
   }
 
   // ── очередь ───────────────────────────────────────────────────────────────
@@ -579,7 +580,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22),
           child: Text(
-            'Очередь пуста.\nПеретащите сюда аудио или нажмите «Добавить».',
+            l10n.emptyQueueHint(l10n.buttonAdd),
             textAlign: TextAlign.center,
             style: Type.caption.copyWith(color: Surface.secondaryText(context), height: 1.5),
           ),
@@ -653,28 +654,28 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     final ready = s.readyTargets.isNotEmpty;
     return [
       MenuAction(
-        'Скопировать ${formatById(s.copyFormat).label.toLowerCase()}',
+        l10n.menuCopyFormat(formatById(s.copyFormat).label.toLowerCase()),
         onSelected: ready ? () => _copy() : null,
         shortcut: '⇧⌘C',
       ),
-      MenuAction('Сохранить как…',
+      MenuAction(l10n.menuSaveAs,
           onSelected: ready ? () => _saveAs(s) : null, shortcut: '⌘S'),
       const MenuAction.separator(),
       MenuAction(
-        many ? 'Распознать заново выбранные' : 'Распознать заново',
+        many ? l10n.menuRetrySelected : l10n.menuRetryRecognition,
         onSelected: s.running || !s.targets.any((j) => !j.imported) ? null : _sendRetry,
         shortcut: '⌥⌘R',
       ),
       MenuAction(
-        'Показать в ${os.fileManagerName}',
+        l10n.buttonShowInFileManager(os.fileManagerName),
         onSelected: () => _revealSource(job.path),
         shortcut: '⌘R',
       ),
       const MenuAction.separator(),
       if (job.overrides != null)
-        MenuAction('Вернуть общие настройки', onSelected: _sendResetOverrides),
+        MenuAction(l10n.menuRestoreDefaultSettings, onSelected: _sendResetOverrides),
       MenuAction(
-        many ? 'Убрать выбранные' : 'Убрать из очереди',
+        many ? l10n.menuRemoveSelected : l10n.menuRemoveFromQueue,
         onSelected: s.targets.any((j) => j.active) ? null : _sendRemove,
         shortcut: '⌫',
       ),
@@ -689,7 +690,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
               child: PushButton(
                 controlSize: ControlSize.regular,
                 onPressed: _pickFiles,
-                child: const Text('Добавить'),
+                child: Text(l10n.buttonAdd),
               ),
             ),
             const SizedBox(width: 8),
@@ -699,7 +700,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
               onPressed: s.targets.isEmpty || s.targets.any((j) => j.active)
                   ? null
                   : _sendRemove,
-              child: const Text('Убрать'),
+              child: Text(l10n.buttonRemove),
             ),
           ],
         ),
@@ -741,9 +742,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       content = Center(
         child: MascotPlaceholder(
           mood: _mood(s, job),
-          title: 'Нужна модель распознавания',
-          subtitle: 'Она работает на этом компьютере, поэтому её надо один раз\n'
-              'загрузить. Tiny — просто попробовать, Large v3 Turbo — точность.',
+          title: l10n.titleNeedRecognitionModel,
+          subtitle: l10n.subtitleNeedRecognitionModel,
           action: _modelDownload(),
         ),
       );
@@ -751,19 +751,16 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       content = Center(
         child: MascotPlaceholder(
           mood: _mood(s, job),
-          title: 'Перетащите аудио сюда',
-          subtitle: 'ogg, m4a, mp3, wav и видео — распознаём локально,\n'
-              'ничего не уходит в сеть.',
+          title: l10n.titleDropAudioHere,
+          subtitle: l10n.subtitleDropAudioHere,
         ),
       );
     } else if (job.segments.isEmpty && job.raw == null) {
       content = Center(
         child: MascotPlaceholder(
           mood: _mood(s, job),
-          title: job.active ? 'Слушаем…' : 'Готово к распознаванию',
-          subtitle: job.active
-              ? 'Текст начнёт появляться, как только модель\nразберёт первый фрагмент.'
-              : 'Нажмите «Распознать» в панели сверху · ⌘⏎',
+          title: job.active ? l10n.titleListening : l10n.titleReadyToRecognize,
+          subtitle: job.active ? l10n.subtitleListening : l10n.subtitleReadyToRecognize,
         ),
       );
     } else if (job.transcript == null && job.raw != null) {
@@ -778,8 +775,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         content = Center(
           child: EmptyNotice(
             icon: CupertinoIcons.search,
-            title: 'Ничего не найдено',
-            subtitle: 'В этой расшифровке нет «$_query».',
+            title: l10n.nothingFound,
+            subtitle: l10n.subtitleQueryNotFound(_query),
           ),
         );
       } else {
@@ -795,7 +792,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             segment: segments[i],
             showTimestamp: s.timestamps,
             highlight: _query.trim(),
-            onCopied: () => _send(const StatusReported('Фрагмент скопирован')),
+            onCopied: () => _send(StatusReported(l10n.statusSegmentCopied)),
           ),
         );
       }
@@ -828,7 +825,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       if (job.transcript != null) segmentsLabel(segs.length),
       wordsLabel(words),
       humanDuration(segs.last.to),
-      if (job.took != null) 'за ${humanDuration(job.took!.inMilliseconds)}',
+      if (job.took != null) l10n.statsTook(humanDuration(job.took!.inMilliseconds)),
     ];
     return parts.join(' · ');
   }
@@ -874,7 +871,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                 Padding(
                   padding: const EdgeInsets.only(right: 14),
                   child: Text(
-                    'осталось ≈ ${humanDuration(eta.inMilliseconds)}',
+                    l10n.statusRemainingTime(humanDuration(eta.inMilliseconds)),
                     style: Type.caption.copyWith(color: Surface.secondaryText(context)),
                   ),
                 ),
@@ -911,7 +908,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   Widget _modelDownload() => PushButton(
         controlSize: ControlSize.large,
         onPressed: () => _openSettings('models'),
-        child: const Text('Загрузить модель…'),
+        child: Text(l10n.buttonDownloadModelEllipsis),
       );
 
 
@@ -936,7 +933,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           onReset: own == null ? null : _sendResetOverrides,
           onMakeDefault: own == null ? null : _sendMakeDefault,
         ),
-        const SectionTitle('Модель расшифровщика'),
+        SectionTitle(l10n.sectionTranscriptionModel),
         ModelField(
           installed: s.models,
           value: o.model,
@@ -946,7 +943,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         if (s.downloadProgress != null) ...[
           const SizedBox(height: Gap.inner),
           ModelDownload(
-            title: s.download?.title ?? 'модель',
+            title: s.download?.title ?? l10n.genericModelTitle,
             progress: s.downloadProgress!,
             percent: s.downloadPercent,
             onCancel: () => _send(const DownloadCancelled()),
@@ -957,11 +954,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           controlSize: ControlSize.regular,
           secondary: true,
           onPressed: _pickModel,
-          child: const Text('Выбрать свой файл модели…'),
+          child: Text(l10n.buttonPickModelFile),
         ),
-        const Hint('Диктовка может работать этой же моделью или своей — '
-            'это решается на вкладке «Диктовка» в настройках.'),
-        const SectionTitle('Язык речи'),
+        Hint(l10n.hintDictationSharesModel),
+        SectionTitle(l10n.sectionSpeechLanguage),
         MacosPopupButton<String>(
           value: o.lang,
           items: [
@@ -970,26 +966,25 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           ],
           onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(lang: v ?? 'auto'))),
         ),
-        const Hint('На смешанной речи выберите язык вручную — так точнее.'),
-        const SectionTitle('Пунктуация'),
-        Check('Ставить знаки препинания', o.punctuate,
+        Hint(l10n.hintMixedLanguageManual),
+        SectionTitle(l10n.sectionPunctuation),
+        Check(l10n.checkPunctuate, o.punctuate,
             (v) => _send(OptionsEdited((x) => x.copyWith(punctuate: v)))),
-        const Hint('Без этого модель на разговорной речи пишет сплошным нижним '
-            'регистром. Своя подсказка ниже заменяет режим.', under: true),
-        const SectionTitle('Разбивка на фрагменты'),
+        Hint(l10n.hintPunctuateOff, under: true),
+        SectionTitle(l10n.sectionSegmentSplit),
         MacosPopupButton<int>(
           value: o.maxLen,
-          items: const [
-            MacosPopupMenuItem(value: 0, child: Text('На усмотрение модели')),
-            MacosPopupMenuItem(value: 32, child: Text('До 32 символов')),
-            MacosPopupMenuItem(value: 42, child: Text('До 42 — под субтитры')),
-            MacosPopupMenuItem(value: 64, child: Text('До 64 символов')),
-            MacosPopupMenuItem(value: 100, child: Text('До 100 символов')),
+          items: [
+            MacosPopupMenuItem(value: 0, child: Text(l10n.optionModelDiscretion)),
+            MacosPopupMenuItem(value: 32, child: Text(l10n.optionUpToChars(32))),
+            MacosPopupMenuItem(value: 42, child: Text(l10n.optionUpTo42Subtitles)),
+            MacosPopupMenuItem(value: 64, child: Text(l10n.optionUpToChars(64))),
+            MacosPopupMenuItem(value: 100, child: Text(l10n.optionUpToChars(100))),
           ],
           onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(maxLen: v ?? 0))),
         ),
         const SizedBox(height: Gap.item),
-        Check('Резать по паузам (VAD)', o.vad, (v) {
+        Check(l10n.checkSplitByPauses, o.vad, (v) {
           if (v && o.vadModel.isEmpty) {
             _sendEnableVad();
           } else {
@@ -1000,27 +995,27 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           Padding(
             padding: const EdgeInsets.only(left: 25, top: Gap.hint),
             child: Text(
-              o.vadModel.isEmpty ? 'Нужен файл модели VAD' : os.basename(o.vadModel),
+              o.vadModel.isEmpty ? l10n.hintNeedVadFile : os.basename(o.vadModel),
               style: Type.caption.copyWith(color: Surface.secondaryText(context)),
             ),
           ),
-        const SectionTitle('Скорость'),
+        SectionTitle(l10n.fieldSpeed),
         MacosPopupButton<int>(
           value: o.threads,
           items: [
             for (var t = 2; t <= Platform.numberOfProcessors; t += 2)
-              MacosPopupMenuItem(value: t, child: Text('$t ${plural(t, 'поток', 'потока', 'потоков')}')),
+              MacosPopupMenuItem(value: t, child: Text(l10n.threadsCount(t))),
           ],
           onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(threads: v ?? o.threads))),
         ),
-        const SectionTitle('Подсказка модели'),
+        SectionTitle(l10n.fieldModelPrompt),
         AppTextField(
           controller: _promptCtrl,
-          placeholder: 'Имена, термины, названия',
+          placeholder: l10n.placeholderPromptExample,
           maxLines: 3,
           onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(prompt: v))),
         ),
-        const Hint('Слова из подсказки модель пишет правильнее.'),
+        Hint(l10n.hintPromptHelps),
 
         // Остальное — куда сохранять текст, диктовка, склад моделей,
         // поведение приложения — живёт в своём окне. Дорога туда должна
@@ -1033,11 +1028,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           controlSize: ControlSize.regular,
           secondary: true,
           onPressed: () => _openSettings('transcriber'),
-          child: Text('Настройки расшифровщика… ${os.settingsShortcut}'),
+          child: Text(l10n.buttonTranscriptionSettingsEllipsis(os.settingsShortcut)),
         ),
         const SizedBox(height: Gap.item),
         Text(
-          !s.whisperFound ? 'whisper-cli не найден' : 'Локально · whisper.cpp',
+          !s.whisperFound ? l10n.statusWhisperNotFound : l10n.statusLocalWhisperCpp,
           style: Type.caption.copyWith(color: Surface.secondaryText(context)),
         ),
       ],

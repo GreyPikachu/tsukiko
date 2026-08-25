@@ -259,5 +259,867 @@
   "fieldLanguage": "Язык",
   "@fieldLanguage": {
     "description": "Подпись поля выбора языка интерфейса."
+  },
+  "modelChipYieldOn": "Очередь ждёт, пока модель освободится. Нажмите, чтобы не ждать.",
+  "modelChipYieldOff": "Работаем, даже если модель занята. Нажмите, чтобы уступать.",
+  "dropVeilHint": "Отпустите, чтобы добавить в очередь",
+  "tooltipCustomSettings": "Свои настройки распознавания",
+  "semanticsMascotLabel": "Маскот приложения",
+  "jobStateQueued": "В очереди",
+  "jobStateWaiting": "Ожидает модель",
+  "jobStateConverting": "Подготовка звука",
+  "jobStateTranscribing": "Распознавание",
+  "jobStateDone": "Готово",
+  "jobStateFailed": "Не удалось распознать",
+  "jobStateCancelled": "Отменено",
+  "diffModel": "модель",
+  "diffLanguage": "язык",
+  "diffThreads": "потоки",
+  "diffSegmentLength": "длина фрагмента",
+  "diffPrompt": "подсказка",
+  "diffPunctuation": "пунктуация",
+  "modelFree": "Модель свободна",
+  "modelLoading": "Модель загружается · {by}",
+  "@modelLoading": {
+    "placeholders": {
+      "by": {
+        "type": "String"
+      }
+    }
+  },
+  "modelBusy": "Модель занята · {by}",
+  "@modelBusy": {
+    "placeholders": {
+      "by": {
+        "type": "String"
+      }
+    }
+  },
+  "modelFreeDetail": "Никто не распознаёт речь прямо сейчас.",
+  "modelLoadingDetail": "{by} читает файл модели в память.",
+  "@modelLoadingDetail": {
+    "placeholders": {
+      "by": {
+        "type": "String"
+      }
+    }
+  },
+  "modelBusyDetailCpu": "{by} занимает {percent} % процессора.",
+  "@modelBusyDetailCpu": {
+    "placeholders": {
+      "by": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "modelBusyDetailMemory": "{by} держит {mb} МБ в памяти.",
+  "@modelBusyDetailMemory": {
+    "placeholders": {
+      "by": {
+        "type": "String"
+      },
+      "mb": {
+        "type": "int"
+      }
+    }
+  },
+  "hotkeyCapturePrompt": "Нажмите сочетание…",
+  "buttonPickAnotherFolder": "Выбрать другую папку…",
+  "modelNotSelected": "Не выбрана",
+  "downloadingTitle": "Загрузка: {title}",
+  "@downloadingTitle": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "buttonCancelDownload": "Отменить",
+  "barrierLabelCloseMenu": "Закрыть меню",
+  "segmentsLabel": "{count, plural, one{{count} фрагмент} few{{count} фрагмента} many{{count} фрагментов} other{{count} фрагмента}}",
+  "@segmentsLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "wordsLabel": "{count, plural, one{{count} слово} few{{count} слова} many{{count} слов} other{{count} слова}}",
+  "@wordsLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "filesLabel": "{count, plural, one{{count} файл} few{{count} файла} many{{count} файлов} other{{count} файла}}",
+  "@filesLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "recordsLabel": "{count, plural, one{{count} запись} few{{count} записи} many{{count} записей} other{{count} записи}}",
+  "@recordsLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "languageAuto": "Определять автоматически",
+  "scopeAllTitle": "Настройки для всех новых записей",
+  "scopeAllHint": "Записи не выбрано — правки применятся ко всем новым. Выберите запись в очереди, чтобы менять только её.",
+  "scopeOneTitle": "Меняете только эту запись",
+  "scopeOneHintDefault": "{name} · пока настройки как общие.",
+  "@scopeOneHintDefault": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "scopeOneHintCustom": "{name} · своё: {changed}.",
+  "@scopeOneHintCustom": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "changed": {
+        "type": "String"
+      }
+    }
+  },
+  "scopeManyTitle": "Меняете {count}",
+  "@scopeManyTitle": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "scopeManyHint": "Изменения применятся ко всем выбранным записям, общих не тронут.",
+  "genericRecordName": "Запись",
+  "buttonRestoreDefaults": "Вернуть общие",
+  "buttonMakeDefault": "Сделать общими",
+  "dictationAbortedNoSave": "Распознавание отменено, а сохранить запись не вышло: {path}",
+  "@dictationAbortedNoSave": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "dictationAbortedSaved": "Распознавание отменено. Запись сохранена, распознать её можно в главном окне — или удалить, если не нужна.",
+  "dictationFailedNoSave": "Распознать не удалось, и сохранить запись тоже: {path}",
+  "@dictationFailedNoSave": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "dictationFailedSaved": "Распознать не удалось — модель не ответила. Запись сохранена: {saved}",
+  "@dictationFailedSaved": {
+    "placeholders": {
+      "saved": {
+        "type": "String"
+      }
+    }
+  },
+  "insertFailed": "Текст не удалось вставить в активное окно — похоже, снят «{permission}». Он скопирован в буфер обмена: вставьте его сами, ⌘V.",
+  "@insertFailed": {
+    "placeholders": {
+      "permission": {
+        "type": "String"
+      }
+    }
+  },
+  "recordingTrashFailed": "Не удалось убрать запись в Корзину. Она лежит здесь: {path}",
+  "@recordingTrashFailed": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "recordingGoneExternally": "Записи больше нет на диске — её убрали мимо приложения.",
+  "formatPlainTextLabel": "Текст без таймкодов",
+  "formatTimedTextLabel": "Текст с таймкодами",
+  "formatSrtLabel": "Субтитры SRT",
+  "formatVttLabel": "Субтитры VTT",
+  "formatJsonLabel": "JSON с миллисекундами",
+  "markdownHeader": "# {name}\n\nЯзык: {lang} · {segments}\n\n",
+  "@markdownHeader": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "lang": {
+        "type": "String"
+      },
+      "segments": {
+        "type": "String"
+      }
+    }
+  },
+  "sizeMb": "{mb} МБ",
+  "@sizeMb": {
+    "placeholders": {
+      "mb": {
+        "type": "int"
+      }
+    }
+  },
+  "sizeGb": "{gb} ГБ",
+  "@sizeGb": {
+    "placeholders": {
+      "gb": {
+        "type": "double",
+        "format": "decimalPatternDigits",
+        "optionalParameters": {
+          "decimalDigits": 1
+        }
+      }
+    }
+  },
+  "vadTooSmall": "Файл слишком мал — загрузка оборвалась. Уберите его, и приложение загрузит модель заново.",
+  "modelNotSpeechModel": "«{name}» — не модель распознавания речи: у файлов ggml в начале стоит своя метка, а здесь её нет.",
+  "@modelNotSpeechModel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "modelIsVad": "«{name}» — модель ggml, но не речевая: в ней {vocab} слов словаря. Так выглядит модель распознавания тишины (VAD), речь она не расшифровывает.",
+  "@modelIsVad": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "vocab": {
+        "type": "int"
+      }
+    }
+  },
+  "modelUnreadable": "Файл «{name}» не удалось прочитать.",
+  "@modelUnreadable": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "modelTooSmall": "«{name}» слишком мал для модели распознавания: {size}, а самая маленькая весит 74 МБ.",
+  "@modelTooSmall": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "offerTiny": "Проверить, что всё работает",
+  "offerBase": "Быстрая, но путает слова",
+  "offerSmall": "Разумный минимум для русского",
+  "offerMedium": "Точнее Small, заметно медленнее",
+  "offerLargeV3Turbo": "Лучшая и при этом быстрая",
+  "offerLargeV3": "Точнее Turbo на трудной записи, но вдвое тяжелее и медленнее",
+  "downloadNoFolder": "некуда положить файл: папка {folder} недоступна",
+  "@downloadNoFolder": {
+    "placeholders": {
+      "folder": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadHostResponded": "{host} ответил {status}",
+  "@downloadHostResponded": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      },
+      "status": {
+        "type": "int"
+      }
+    }
+  },
+  "downloadInterrupted": "связь оборвалась на {percent} %",
+  "@downloadInterrupted": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "downloadNoConnection": "нет связи с {host}",
+  "@downloadNoConnection": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadFailedGeneric": "не удалось скачать с {host}",
+  "@downloadFailedGeneric": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadProgressWithTotal": "{percent} % · {done} из {total} МБ",
+  "@downloadProgressWithTotal": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      },
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "menuAbout": "О программе {appName}",
+  "@menuAbout": {
+    "placeholders": {
+      "appName": {
+        "type": "String"
+      }
+    }
+  },
+  "menuSettingsEllipsis": "Настройки…",
+  "menuFile": "Файл",
+  "menuAddAudio": "Добавить аудио…",
+  "menuOpenTranscript": "Открыть расшифровку…",
+  "menuOpenRecent": "Открыть недавние",
+  "menuClearRecentList": "Очистить список",
+  "menuSaveAs": "Сохранить как…",
+  "menuExportToFolder": "Экспортировать в папку…",
+  "menuShowLibraryIn": "Показать библиотеку в {fileManager}",
+  "@menuShowLibraryIn": {
+    "placeholders": {
+      "fileManager": {
+        "type": "String"
+      }
+    }
+  },
+  "menuShowSourceIn": "Показать исходный файл в {fileManager}",
+  "@menuShowSourceIn": {
+    "placeholders": {
+      "fileManager": {
+        "type": "String"
+      }
+    }
+  },
+  "menuEdit": "Правка",
+  "menuCopyText": "Скопировать текст",
+  "menuCopyWithTimestamps": "Скопировать с таймкодами",
+  "menuSelectAllRecordings": "Выбрать все записи",
+  "menuDeselectAll": "Снять выделение",
+  "menuRemoveFromQueue": "Убрать из очереди",
+  "menuRemoveAllFinished": "Убрать все готовые",
+  "menuFindInTranscript": "Найти в расшифровке…",
+  "menuRecognition": "Распознавание",
+  "menuRunQueue": "Распознать очередь",
+  "menuRetryRecognition": "Распознать заново",
+  "menuStop": "Остановить",
+  "menuDontWaitForModel": "Не ждать занятую модель",
+  "menuWaitForModel": "Ждать, если модель занята",
+  "menuView": "Вид",
+  "menuHideTimestamps": "Скрыть метки времени",
+  "menuShowTimestamps": "Показать метки времени",
+  "menuWindow": "Окно",
+  "menuHelp": "Справка",
+  "menuWhereTranscriptsLive": "Где лежат расшифровки",
+  "dictationEnabledState": "Включена",
+  "dictationDisabledState": "Выключена",
+  "liveRecording": "Записываю",
+  "liveTranscribing": "Распознаю…",
+  "liveReady": "Готово",
+  "liveDictationOff": "Диктовка выключена",
+  "tooltipChangeInSettings": "Изменить в настройках",
+  "keyActionHold": "держать и говорить",
+  "keyActionToggle": "нажать, ещё раз — остановить",
+  "abortRecognitionAction": "Отменить распознавание",
+  "warningNoAccessibility": "Без «{permission}» {appName} не перехватывает клавиши и не вставляет текст в активное окно.",
+  "@warningNoAccessibility": {
+    "placeholders": {
+      "permission": {
+        "type": "String"
+      },
+      "appName": {
+        "type": "String"
+      }
+    }
+  },
+  "buttonOpenSettings": "Открыть настройки",
+  "buttonShowRecording": "Показать запись",
+  "buttonCopy": "Скопировать",
+  "buttonDelete": "Удалить",
+  "sweptRecoveredMemory": "Нашли забытый распознаватель диктовки от прошлого запуска и выгрузили его: вернули {size} памяти.",
+  "@sweptRecoveredMemory": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "buttonUnderstood": "Понятно",
+  "vadLoadingProgress": "Загрузка распознавания тишины · {progress}",
+  "@vadLoadingProgress": {
+    "placeholders": {
+      "progress": {
+        "type": "String"
+      }
+    }
+  },
+  "vadLoadFailed": "Распознавание тишины не загрузилось: {error}. Диктовать можно и так, но на паузах модель дописывает лишнее.",
+  "@vadLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "buttonRetry": "Попробовать ещё раз",
+  "lastTranscriptTitle": "Последняя расшифровка",
+  "noDictationYet": "Пока ничего не надиктовано.",
+  "modelUnloaded": "Выгружена",
+  "modelSizeInMemory": "{size} в памяти",
+  "@modelSizeInMemory": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "modelInMemory": "В памяти",
+  "modelFreesIn": "освободится через {time}",
+  "@modelFreesIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "modelNotFound": "Модель не найдена",
+  "modelNotChosen": "Модель не выбрана",
+  "nothingToRecognizeWith": "Распознавать нечем",
+  "buttonDownloadAnother": "Загрузить другую…",
+  "tooltipFreeMemoryNextPhrase": "Освободить память до следующей фразы",
+  "tooltipModelBusy": "Модель сейчас в работе",
+  "buttonUnload": "Выгрузить",
+  "modelFast": "Быстрая",
+  "modelAccurate": "Точная",
+  "menuDictationSettingsEllipsis": "Настройки диктовки…",
+  "menuOpenApp": "Открыть {appName}…",
+  "@menuOpenApp": {
+    "placeholders": {
+      "appName": {
+        "type": "String"
+      }
+    }
+  },
+  "menuQuitApp": "Завершить {appName}",
+  "@menuQuitApp": {
+    "placeholders": {
+      "appName": {
+        "type": "String"
+      }
+    }
+  },
+  "whisperInstallHint": "Установка: brew install whisper-cpp",
+  "menuBarNameLabel": "строка меню",
+  "accessibilityPermissionName": "Универсальный доступ",
+  "statusLoadingProgress": "Загрузка · {progress}",
+  "@statusLoadingProgress": {
+    "placeholders": {
+      "progress": {
+        "type": "String"
+      }
+    }
+  },
+  "statusFileAdded": "Файл добавлен",
+  "statusFilesAdded": "Добавлено: {files}",
+  "@statusFilesAdded": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "statusFileAlreadyQueued": "Этот файл уже в очереди",
+  "statusFilesAlreadyQueued": "Эти файлы уже в очереди",
+  "statusUnsupportedFiles": "Такие файлы не поддерживаются",
+  "statusTranscriptAlreadyOpen": "Эта расшифровка уже открыта",
+  "errorNotTextFile": "Не удалось открыть «{name}»: это не текстовый файл",
+  "@errorNotTextFile": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "statusOpenedSegments": "Открыто · {segments}",
+  "@statusOpenedSegments": {
+    "placeholders": {
+      "segments": {
+        "type": "String"
+      }
+    }
+  },
+  "statusOpenedText": "Открыто · текст",
+  "statusRecordingRemoved": "Запись убрана из очереди",
+  "statusRecordingsRemoved": "Убрано из очереди: {records}",
+  "@statusRecordingsRemoved": {
+    "placeholders": {
+      "records": {
+        "type": "String"
+      }
+    }
+  },
+  "statusFinishedRemoved": "Готовые записи убраны",
+  "statusOverridesReset": "Настройки записи сброшены",
+  "statusSettingsMadeDefault": "Эти настройки стали общими",
+  "statusRetrying": "Распознаём заново",
+  "statusRetryingRecords": "Распознаём заново: {records}",
+  "@statusRetryingRecords": {
+    "placeholders": {
+      "records": {
+        "type": "String"
+      }
+    }
+  },
+  "askWhisperNotFoundTitle": "Не найден whisper-cli",
+  "askWhisperNotFoundBody": "Программа не нашлась ни в PATH, ни в обычных местах.\n{hint}",
+  "@askWhisperNotFoundBody": {
+    "placeholders": {
+      "hint": {
+        "type": "String"
+      }
+    }
+  },
+  "askNeedModelTitle": "Нужна модель",
+  "askModelNotSelectedTitle": "Не выбрана модель",
+  "askNeedModelBody": "Нажмите «Загрузить модель…» в панели справа.\nTiny — 74 МБ, чтобы попробовать.",
+  "askModelNotSelectedBody": "Укажите файл ggml-*.bin в настройках справа.",
+  "askModelBusyTitle": "Модель уже занята",
+  "askModelBusyBody": "{detail}\nОдновременная работа замедлит обе стороны. Продолжить?",
+  "@askModelBusyBody": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "jobDetailNoModelSelected": "Не выбрана модель",
+  "jobDetailWhisperFailed": "whisper-cli не справился с этим файлом",
+  "statusRecognitionFailed": "Не удалось распознать «{name}»",
+  "@statusRecognitionFailed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "jobDetailParseFailed": "Не удалось разобрать ответ модели",
+  "jobDetailLangSegments": "{lang} · {segments}",
+  "@jobDetailLangSegments": {
+    "placeholders": {
+      "lang": {
+        "type": "String"
+      },
+      "segments": {
+        "type": "String"
+      }
+    }
+  },
+  "statusStopping": "Остановка…",
+  "statusPausedDictation": "Пауза — идёт диктовка",
+  "statusDictationDoneResuming": "Диктовка закончилась — продолжаем",
+  "statusYieldingTo": "Уступаем: {who} распознаёт речь",
+  "@statusYieldingTo": {
+    "placeholders": {
+      "who": {
+        "type": "String"
+      }
+    }
+  },
+  "statusModelFreedResuming": "Модель освободилась — продолжаем",
+  "errorCopyBesideFailed": "Не удалось положить текст рядом с записью",
+  "statusSavedInLibrary": "Сохранено в «{path}»",
+  "@statusSavedInLibrary": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "errorLibrarySaveFailed": "Не удалось записать в библиотеку",
+  "statusCopiedFormat": "Скопировано: {format}",
+  "@statusCopiedFormat": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "statusCopiedRecords": "Скопировано записей: {count} · {format}",
+  "@statusCopiedRecords": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "statusSavedFile": "Сохранено: «{name}»",
+  "@statusSavedFile": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "errorSaveFileFailed": "Не удалось сохранить файл",
+  "statusExported": "Экспортировано: {files}",
+  "@statusExported": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "errorExportFailed": "Экспорт не удался",
+  "vadDownloadTitle": "распознавание пауз",
+  "statusPickVadManually": "Выберите файл модели пауз вручную",
+  "statusDownloadingTitle": "Загрузка: {title}…",
+  "@statusDownloadingTitle": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "statusDownloadedTitle": "Загружено: {title}",
+  "@statusDownloadedTitle": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "statusDownloadCancelled": "Загрузка отменена",
+  "statusDownloadFailedTitle": "Не удалось загрузить: {title}",
+  "@statusDownloadFailedTitle": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "statusStopped": "Остановлено",
+  "statusIdle": "Готово",
+  "buttonContinue": "Продолжить",
+  "aboutBody": "Распознавание речи на самом компьютере.\nДвижок: whisper.cpp · ничего не уходит в сеть.",
+  "buttonClose": "Закрыть",
+  "fileTypeAudioVideo": "Аудио и видео",
+  "fileTypeTranscripts": "Расшифровки",
+  "askNotRecognitionModelTitle": "Это не модель распознавания",
+  "buttonExport": "Экспортировать",
+  "statusSourceGone": "Файла «{name}» больше нет на диске",
+  "@statusSourceGone": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "modelUseByTranscription": "расшифровка",
+  "modelUseLabelTranscription": "Занято расшифровкой",
+  "modelUseLabelDictation": "Занято диктовкой",
+  "modelUseDetailTranscription": "Расшифровываем запись прямо сейчас.",
+  "modelUseDetailDictation": "Диктовка держит модель в памяти. Очередь ей уступает.",
+  "buttonAdd": "Добавить",
+  "tooltipAddAudioShortcut": "Добавить аудио · ⌘O",
+  "buttonRecognize": "Распознать",
+  "tooltipWaitingFor": "Ожидание: {who} ещё работает · остановить ⌘.",
+  "@tooltipWaitingFor": {
+    "placeholders": {
+      "who": {
+        "type": "String"
+      }
+    }
+  },
+  "tooltipStopShortcut": "Остановить · ⌘.",
+  "tooltipModelBusyWillStart": "Модель занята ({who}) — распознавание начнётся, как только она освободится · ⌘⏎",
+  "@tooltipModelBusyWillStart": {
+    "placeholders": {
+      "who": {
+        "type": "String"
+      }
+    }
+  },
+  "tooltipRunQueueShortcut": "Распознать очередь · ⌘⏎",
+  "tooltipRetryShortcut": "Распознать заново с текущими настройками · ⌥⌘R",
+  "buttonCopyToolbar": "Копировать",
+  "tooltipCopyFormat": "Копировать: {format}",
+  "@tooltipCopyFormat": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "labelCopyFormat": "Формат копирования",
+  "tooltipChooseCopyFormat": "Выбрать, что копировать",
+  "buttonSaveToolbar": "Сохранить",
+  "tooltipSaveFormat": "Сохранить: {format} · ⌘S",
+  "@tooltipSaveFormat": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "labelSaveFormat": "Формат сохранения",
+  "tooltipChooseSaveFormat": "Выбрать формат файла",
+  "buttonFind": "Найти",
+  "tooltipFindShortcut": "Найти в расшифровке · ⌘F",
+  "placeholderFindInTranscript": "Найти в расшифровке",
+  "hintEscToClose": "Esc — закрыть",
+  "nothingFound": "Ничего не найдено",
+  "statusFoundSegments": "Найдено: {segments}",
+  "@statusFoundSegments": {
+    "placeholders": {
+      "segments": {
+        "type": "String"
+      }
+    }
+  },
+  "statusSelectedRecords": "Выбрано: {records}",
+  "@statusSelectedRecords": {
+    "placeholders": {
+      "records": {
+        "type": "String"
+      }
+    }
+  },
+  "statusInQueueRecords": "В очереди: {records}",
+  "@statusInQueueRecords": {
+    "placeholders": {
+      "records": {
+        "type": "String"
+      }
+    }
+  },
+  "emptyQueueHint": "Очередь пуста.\nПеретащите сюда аудио или нажмите «{addButton}».",
+  "@emptyQueueHint": {
+    "placeholders": {
+      "addButton": {
+        "type": "String"
+      }
+    }
+  },
+  "menuCopyFormat": "Скопировать {format}",
+  "@menuCopyFormat": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "menuRetrySelected": "Распознать заново выбранные",
+  "menuRestoreDefaultSettings": "Вернуть общие настройки",
+  "menuRemoveSelected": "Убрать выбранные",
+  "titleNeedRecognitionModel": "Нужна модель распознавания",
+  "subtitleNeedRecognitionModel": "Она работает на этом компьютере, поэтому её надо один раз\nзагрузить. Tiny — просто попробовать, Large v3 Turbo — точность.",
+  "titleDropAudioHere": "Перетащите аудио сюда",
+  "subtitleDropAudioHere": "ogg, m4a, mp3, wav и видео — распознаём локально,\nничего не уходит в сеть.",
+  "titleListening": "Слушаем…",
+  "titleReadyToRecognize": "Готово к распознаванию",
+  "subtitleListening": "Текст начнёт появляться, как только модель\nразберёт первый фрагмент.",
+  "subtitleReadyToRecognize": "Нажмите «Распознать» в панели сверху · ⌘⏎",
+  "subtitleQueryNotFound": "В этой расшифровке нет «{query}».",
+  "@subtitleQueryNotFound": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "statusSegmentCopied": "Фрагмент скопирован",
+  "statsTook": "за {time}",
+  "@statsTook": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "statusRemainingTime": "осталось ≈ {time}",
+  "@statusRemainingTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "buttonDownloadModelEllipsis": "Загрузить модель…",
+  "sectionTranscriptionModel": "Модель расшифровщика",
+  "hintDictationSharesModel": "Диктовка может работать этой же моделью или своей — это решается на вкладке «Диктовка» в настройках.",
+  "sectionSpeechLanguage": "Язык речи",
+  "hintMixedLanguageManual": "На смешанной речи выберите язык вручную — так точнее.",
+  "sectionPunctuation": "Пунктуация",
+  "hintPunctuateOff": "Без этого модель на разговорной речи пишет сплошным нижним регистром. Своя подсказка ниже заменяет режим.",
+  "sectionSegmentSplit": "Разбивка на фрагменты",
+  "optionModelDiscretion": "На усмотрение модели",
+  "optionUpToChars": "До {n} символов",
+  "@optionUpToChars": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "optionUpTo42Subtitles": "До 42 — под субтитры",
+  "checkSplitByPauses": "Резать по паузам (VAD)",
+  "hintNeedVadFile": "Нужен файл модели VAD",
+  "buttonTranscriptionSettingsEllipsis": "Настройки расшифровщика… {shortcut}",
+  "@buttonTranscriptionSettingsEllipsis": {
+    "placeholders": {
+      "shortcut": {
+        "type": "String"
+      }
+    }
+  },
+  "statusWhisperNotFound": "whisper-cli не найден",
+  "statusLocalWhisperCpp": "Локально · whisper.cpp",
+  "labelExportToFolder": "Экспортировать в папку",
+  "keyNameSpace": "Пробел",
+  "hotkeyNotAssigned": "Не назначено",
+  "hotkeyDoubleTapSuffix": "{combo} дважды",
+  "@hotkeyDoubleTapSuffix": {
+    "placeholders": {
+      "combo": {
+        "type": "String"
+      }
+    }
+  },
+  "timedTextSuffix": " (таймкоды)",
+  "@timedTextSuffix": {
+    "description": "Часть имени файла: текст с таймкодами. С ведущим пробелом."
   }
 }
