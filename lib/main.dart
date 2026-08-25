@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
+import 'core/app_locale.dart';
 import 'core/text.dart';
 import 'l10n/gen/app_localizations.dart';
 import 'legacy_migration.dart';
@@ -41,15 +42,19 @@ class TsukikoApp extends StatelessWidget {
   final Iterable<String> initialFiles;
 
   @override
-  Widget build(BuildContext context) => MacosApp(
-        title: appName,
-        theme: MacosThemeData.light(),
-        darkTheme: MacosThemeData.dark(),
-        themeMode: ThemeMode.system,
-        debugShowCheckedModeBanner: false,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: HomePage(initialFiles: initialFiles),
+  Widget build(BuildContext context) => ValueListenableBuilder<Locale?>(
+        valueListenable: appLocale,
+        builder: (context, locale, _) => MacosApp(
+          locale: locale,
+          title: appName,
+          theme: MacosThemeData.light(),
+          darkTheme: MacosThemeData.dark(),
+          themeMode: ThemeMode.system,
+          debugShowCheckedModeBanner: false,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: HomePage(initialFiles: initialFiles),
+        ),
       );
 }
 

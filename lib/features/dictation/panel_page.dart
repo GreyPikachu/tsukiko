@@ -11,6 +11,7 @@ import '../../design/design.dart';
 import '../../core/whisper_server.dart' show sweepRecordings;
 import 'dictation_cubit.dart';
 import 'dictation_state.dart';
+import '../../core/app_locale.dart';
 import '../../core/models.dart';
 import '../../core/text.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -47,18 +48,22 @@ class _PanelApp extends StatelessWidget {
   const _PanelApp();
 
   @override
-  Widget build(BuildContext context) => MacosApp(
-        title: appName,
-        theme: MacosThemeData.light(),
-        darkTheme: MacosThemeData.dark(),
-        themeMode: ThemeMode.system,
-        debugShowCheckedModeBanner: false,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        // Фон рисует NSVisualEffectView под этим слоем — своим здесь
-        // ничего не закрашиваем, иначе материал не будет виден.
-        color: const Color(0x00000000),
-        home: const PanelBody(),
+  Widget build(BuildContext context) => ValueListenableBuilder<Locale?>(
+        valueListenable: appLocale,
+        builder: (context, locale, _) => MacosApp(
+          locale: locale,
+          title: appName,
+          theme: MacosThemeData.light(),
+          darkTheme: MacosThemeData.dark(),
+          themeMode: ThemeMode.system,
+          debugShowCheckedModeBanner: false,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          // Фон рисует NSVisualEffectView под этим слоем — своим здесь
+          // ничего не закрашиваем, иначе материал не будет виден.
+          color: const Color(0x00000000),
+          home: const PanelBody(),
+        ),
       );
 }
 

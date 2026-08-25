@@ -95,5 +95,9 @@
   "hotkeyTakenProblem": "\"{combo}\" is already assigned to another action. One shortcut can't do two different jobs.",
   "modelTrashFailed": "Couldn't move the model to the Trash: {path}",
   "modelFileGone": "The file \"{name}\" is no longer on disk.",
-  "buttonChoose": "Choose"
+  "buttonChoose": "Choose",
+  "sectionLanguage": "Interface language",
+  "languageSystem": "Same as system",
+  "hintLanguage": "The language of buttons and labels. It does not affect the spoken language in recordings — that is set for each recording separately.",
+  "fieldLanguage": "Language"
 }

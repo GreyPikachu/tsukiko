@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc/bloc.dart';
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../../core/app_locale.dart';
@@ -80,6 +81,7 @@ class SettingsCubit extends Cubit<SettingsState> {
       yieldBusyModel: (s['yieldBusyModel'] as bool?) ?? true,
       dockIcon: (s['dockIcon'] as bool?) ?? true,
       libraryPath: (s['libraryPath'] as String?) ?? defaultLibraryPath,
+      locale: (s[localeSetting] as String?) ?? '',
       libraryFormats:
           formats != null && formats.isNotEmpty ? formats : state.libraryFormats,
     ));
@@ -273,6 +275,14 @@ class SettingsCubit extends Cubit<SettingsState> {
   void setYieldBusyModel(bool v) {
     _emit(state.copyWith(yieldBusyModel: v));
     unawaited(_saveApp({'yieldBusyModel': v}));
+  }
+
+  /// Язык интерфейса. Своё окно перерисовываем сразу, соседние узнают
+  /// из общего файла: [refreshLocale] вызывается у всех на «reload».
+  void setLocale(String v) {
+    _emit(state.copyWith(locale: v));
+    appLocale.value = v.isEmpty ? null : Locale(v);
+    unawaited(_saveApp({localeSetting: v}));
   }
 
   void setDockIcon(bool v) {

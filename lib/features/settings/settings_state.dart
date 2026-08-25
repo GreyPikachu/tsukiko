@@ -39,6 +39,7 @@ class SettingsState extends Equatable {
     this.loginItem = false,
     this.libraryPath = '',
     this.libraryFormats = const ['txt'],
+    this.locale = '',
   });
 
   /// Какая вкладка открыта. Приходит и снаружи: окно могут попросить
@@ -112,6 +113,10 @@ class SettingsState extends Equatable {
   final String libraryPath;
   final List<String> libraryFormats;
 
+  /// Язык интерфейса: 'ru', 'en' или пусто — «как в системе». Язык речи
+  /// это не задаёт: его выбирают отдельно, в инспекторе записи.
+  final String locale;
+
   bool get downloading => downloadProgress != null;
 
   SettingsState copyWith({
@@ -142,6 +147,7 @@ class SettingsState extends Equatable {
     bool? loginItem,
     String? libraryPath,
     List<String>? libraryFormats,
+    String? locale,
     // Обнулять поля иначе нечем: `null` в именованном параметре
     // не отличить от «не передали».
     bool clearDownload = false,
@@ -175,6 +181,7 @@ class SettingsState extends Equatable {
         loginItem: loginItem ?? this.loginItem,
         libraryPath: libraryPath ?? this.libraryPath,
         libraryFormats: libraryFormats ?? this.libraryFormats,
+        locale: locale ?? this.locale,
       );
 
   @override
@@ -205,5 +212,6 @@ class SettingsState extends Equatable {
         loginItem,
         libraryPath,
         libraryFormats,
+        locale,
       ];
 }
