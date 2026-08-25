@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:bloc/bloc.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
+import '../../core/app_locale.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
 import '../../core/settings.dart';
@@ -168,8 +169,7 @@ class SettingsCubit extends Cubit<SettingsState> {
     final other = id == 'hold' ? _dictation.toggle : _dictation.hold;
     if (hk.sameAs(other)) {
       return _emit(state.copyWith(
-        problem: '«${hk.label}» уже назначено на другое действие. '
-            'Одно сочетание не может делать два разных дела.',
+        problem: currentL10n().hotkeyTakenProblem(hk.label),
       ));
     }
     _emit(state.copyWith(clearProblem: true));
@@ -313,7 +313,7 @@ class SettingsCubit extends Cubit<SettingsState> {
     final gone = await bridge.trash(path);
     if (!gone) {
       return _emit(state.copyWith(
-          problem: 'Не удалось убрать модель в Корзину: $path'));
+          problem: currentL10n().modelTrashFailed(path)));
     }
     // Выбранной эта модель быть больше не может.
     if (_dictation.model == path) {
@@ -343,7 +343,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> revealModel(String path) async {
     if (await revealInFinder(path)) return;
     _emit(state.copyWith(
-      problem: 'Файла «${os.basename(path)}» больше нет на диске.',
+      problem: currentL10n().modelFileGone(os.basename(path)),
       models: scanModels(),
       vad: findVadModel(),
       clearVadModel: findVadModel() == null,

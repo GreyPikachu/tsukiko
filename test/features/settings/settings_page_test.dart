@@ -12,6 +12,9 @@ void main() {
     // Размер настоящего окна: раскладка обязана сходиться именно в нём.
     await tester.binding.setSurfaceSize(const Size(580, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
+    // Тестовый движок по умолчанию отдаёт en_US — тексты ниже сверены
+    // с русским, поэтому закрепляем его явно.
+    tester.platformDispatcher.localesTestValue = const [Locale('ru')];
     NativeBridge.debugReset();
     await tester.pumpWidget(const SettingsApp());
     await tester.pump();

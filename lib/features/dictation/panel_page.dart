@@ -13,6 +13,7 @@ import 'dictation_cubit.dart';
 import 'dictation_state.dart';
 import '../../core/models.dart';
 import '../../core/text.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../../legacy_migration.dart';
 
 /// Панель у строки меню и вся диктовка. Живёт на отдельном движке Flutter,
@@ -52,6 +53,8 @@ class _PanelApp extends StatelessWidget {
         darkTheme: MacosThemeData.dark(),
         themeMode: ThemeMode.system,
         debugShowCheckedModeBanner: false,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         // Фон рисует NSVisualEffectView под этим слоем — своим здесь
         // ничего не закрашиваем, иначе материал не будет виден.
         color: const Color(0x00000000),
@@ -434,7 +437,7 @@ class _Notices extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: Gap.inner),
               child: Text(
-                'Загружаем распознавание тишины · ${s.vadProgress}',
+                'Загрузка распознавания тишины · ${s.vadProgress}',
                 style: Type.caption.copyWith(color: Surface.secondaryText(context)),
               ),
             )

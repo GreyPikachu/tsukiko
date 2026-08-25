@@ -1,0 +1,247 @@
+{
+  "@@locale": "ru",
+  "settingsWindowTitle": "Настройки",
+  "settingsTabTranscription": "Расшифровщик",
+  "settingsTabDictation": "Диктовка",
+  "settingsTabModels": "Модели",
+  "settingsTabApp": "Приложение",
+  "sectionHotkeys": "Сочетания клавиш",
+  "hotkeyHold": "Держать и говорить",
+  "hotkeyToggle": "Нажать, ещё раз — остановить",
+  "hintHotkeyCapture": "Нажмите на сочетание и наберите новое: пока клавиши держите, они копятся, отпустите всё — набранное и станет сочетанием. Годится любая клавиша и любое их число.",
+  "hintHotkeyDoubleTap": "Стукнули дважды — назначится двойное нажатие: тогда сочетание сработает только от двух быстрых нажатий подряд и не помешает обычной работе с этими клавишами.",
+  "hintHotkeyExclusive": "Своё сочетание tsukiko забирает у всей системы. Назначив одну букву, вы перестанете набирать её где бы то ни было — берите её с модификатором.",
+  "sectionDictationRecognition": "Как распознавать диктовку",
+  "hintDictationOwnSettings": "Значения свои, не общие с расшифровщиком: диктуют не то же, что расшифровывают, и одно значение на двоих устраивало бы обоих плохо. Язык диктовка определяет сама, паузы режет всегда.",
+  "fieldDictationModel": "Модель диктовки",
+  "fallbackSameAsTranscription": "Та же, что у расшифровщика",
+  "hintDictationModelFallback": "«Та же, что у расшифровщика» — брать модель, выбранную в инспекторе главного окна: меняете её там, меняется и здесь. Любой другой выбор диктовка держит сама и на расшифровщика не влияет.",
+  "buttonPickModelFile": "Выбрать свой файл модели…",
+  "fieldSpeed": "Скорость",
+  "threadsCount": "{count, plural, one{{count} поток} few{{count} потока} many{{count} потоков} other{{count} потока}}",
+  "@threadsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "checkPunctuate": "Ставить знаки препинания",
+  "fieldModelPrompt": "Подсказка модели",
+  "placeholderPromptExample": "Имена, термины, названия",
+  "hintPromptHelps": "Слова из подсказки модель пишет правильнее.",
+  "sectionModelInMemory": "Модель диктовки в памяти",
+  "fieldKeepModel": "Держать модель",
+  "duration30s": "30 секунд",
+  "duration1m": "1 минуту",
+  "duration3m": "3 минуты",
+  "duration10m": "10 минут",
+  "duration1h": "1 час",
+  "hintMemoryCostPrefix": "Пока модель в памяти, фраза распознаётся за доли секунды.",
+  "memoryCostUnknown": "Столько же памяти при этом занято — сколько именно, зависит от модели.",
+  "memoryCostGeneric": "Столько же памяти при этом занято.",
+  "memoryCostSized": "Выбранная сейчас занимает {size}.",
+  "@memoryCostSized": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "sectionAfterDictation": "Что делать с надиктованным",
+  "checkInsertText": "Вставлять текст в активное окно",
+  "hintInsertOff": "Без этого готовый текст только ложится в буфер обмена.",
+  "checkShowHud": "Показывать панель записи",
+  "hintHud": "Плавающая полоска поверх окон: видно, что вас слушают, и есть чем остановить мышью.",
+  "hintModelsOwnership": "Файлы моделей общие, а вот кто какой работает — решается порознь: модель расшифровщика выбирается в инспекторе главного окна, модель диктовки — на вкладке «Диктовка». Здесь модели только загружают, показывают и убирают.",
+  "sectionInstalled": "Установлены",
+  "hintNoModels": "Ни одной модели не найдено. Возьмите любую из списка ниже: Tiny — просто проверить, что всё работает, Large v3 Turbo — точность.",
+  "sectionCanDownload": "Можно загрузить",
+  "genericModelTitle": "модель",
+  "buttonDownload": "Загрузить",
+  "sectionAuxiliary": "Вспомогательные",
+  "vadModelName": "Распознавание пауз",
+  "hintVad": "Вырезает тишину до распознавания, чтобы модель не дописывала на паузах лишнего. Речь она не распознаёт, поэтому в списке выше её нет. Приложение загружает её само.",
+  "modelsFolderLabel": "Модели лежат в {path}",
+  "@modelsFolderLabel": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "buttonShowInFileManager": "Показать в {fileManager}",
+  "@buttonShowInFileManager": {
+    "placeholders": {
+      "fileManager": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteModelTitle": "Убрать {name}?",
+  "@deleteModelTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteModelToTrash": "Файл уйдёт в Корзину.",
+  "deleteModelSharedFolder": "Файл лежит не в папке {appName}, а в общем каталоге — им могут пользоваться другие программы. Он уйдёт в Корзину.",
+  "@deleteModelSharedFolder": {
+    "placeholders": {
+      "appName": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteModelUsedBy": "Сейчас на ней работает: {who}.",
+  "@deleteModelUsedBy": {
+    "placeholders": {
+      "who": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteModelFrees": "Освободится {size}.",
+  "@deleteModelFrees": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "buttonRemove": "Убрать",
+  "buttonCancel": "Отмена",
+  "sectionHowToRecognize": "Как распознавать записи",
+  "hintPerRecordingSettings": "Модель, язык, пунктуация, разбивка на фрагменты, скорость и подсказка стоят в инспекторе главного окна, справа от очереди: их меняют от записи к записи, и одного значения на все записи у них нет. Здесь — то, что для всех записей одно.",
+  "checkWaitBusyModel": "Ждать, если модель занята",
+  "hintWaitBusyModel": "Пока модель держит другая программа, очередь стоит и не отбирает у неё память и GPU. Своей диктовке очередь уступает всегда: одна фраза короче одной записи.",
+  "sectionAutoSave": "Сохранять расшифровки автоматически",
+  "checkSaveToDisk": "Сохранять готовый текст на диск",
+  "hintSaveToDisk": "Как только запись распознана, текст сам ложится файлом в папку ниже. Выключено — текст остаётся только в окне {appName}, и сохранять его придётся вручную: «Сохранить как…» или копированием.",
+  "@hintSaveToDisk": {
+    "placeholders": {
+      "appName": {
+        "type": "String"
+      }
+    }
+  },
+  "sectionWhereToSave": "Куда сохранять",
+  "libraryHint": "Внутри папка на каждый месяц: {appName}/{month}/. Щёлкните по пути, чтобы открыть папку в {fileManager}.",
+  "@libraryHint": {
+    "placeholders": {
+      "appName": {
+        "type": "String"
+      },
+      "month": {
+        "type": "String"
+      },
+      "fileManager": {
+        "type": "String"
+      }
+    }
+  },
+  "sectionSaveFormat": "В каком виде сохранять",
+  "hintFormatsMulti": "На каждую запись сохраняется столько файлов, сколько форматов отмечено, и у записи появляется своя папка. Совсем без форматов сохранять было бы нечего, поэтому последний снять нельзя.",
+  "hintFormatsSingle": "Один отмеченный формат — один файл на запись. Отметьте больше, и рядом лягут те же слова в другом виде.",
+  "sectionCopyBesideSource": "Копия рядом с аудиофайлом",
+  "checkSaveBesideSource": "Класть текст рядом с исходной записью",
+  "hintSaveBesideSource": "Кроме папки выше: в ту же папку, где лежит сама запись, ляжет .txt с её именем — чистый текст без таймкодов. Выключено — рядом с записью ничего не появляется.",
+  "sectionInTranscriberWindow": "В окне расшифровщика",
+  "checkShowTimestamps": "Показывать метки времени",
+  "hintShowTimestamps": "Только на экране. Что попадёт в файл, решает выбранный формат, а не эта галка.",
+  "sectionInSystem": "В системе",
+  "checkLoginItem": "Запускать при входе в систему",
+  "hintLoginItem": "Диктовка поднимется сама и будет ждать в {menuBar}. Окно расшифровщика при этом не открывается — оно всегда доступно по значку приложения.",
+  "@hintLoginItem": {
+    "placeholders": {
+      "menuBar": {
+        "type": "String"
+      }
+    }
+  },
+  "checkShowDockIcon": "Показывать значок в {dockArea}",
+  "@checkShowDockIcon": {
+    "placeholders": {
+      "dockArea": {
+        "type": "String"
+      }
+    }
+  },
+  "hintDockIcon": "Без значка {appName} исчезает из {dockArea} и живёт только в {menuBar}. Окно и настройки открываются оттуда же.",
+  "@hintDockIcon": {
+    "placeholders": {
+      "appName": {
+        "type": "String"
+      },
+      "dockArea": {
+        "type": "String"
+      },
+      "menuBar": {
+        "type": "String"
+      }
+    }
+  },
+  "sectionPermissions": "Разрешения",
+  "permissionGranted": "{permission} выдан.",
+  "@permissionGranted": {
+    "placeholders": {
+      "permission": {
+        "type": "String"
+      }
+    }
+  },
+  "permissionMissing": "Без разрешения «{permission}» {appName} не перехватывает клавиши и не вставляет текст в активное окно.",
+  "@permissionMissing": {
+    "placeholders": {
+      "permission": {
+        "type": "String"
+      },
+      "appName": {
+        "type": "String"
+      }
+    }
+  },
+  "hintPermissionWhy": "Нужно диктовке: она и слушает клавиши, и кладёт готовый текст в чужое окно. Расшифровщику разрешение не нужно.",
+  "buttonRequestPermission": "Запросить",
+  "buttonOpenSystemSettings": "Открыть настройки системы",
+  "tooltipShowFile": "Показать файл",
+  "tooltipMoveToTrash": "Убрать в Корзину",
+  "modelBrokenMessage": "Работать этой моделью нельзя: уберите её и загрузите заново.\n{problem}",
+  "@modelBrokenMessage": {
+    "placeholders": {
+      "problem": {
+        "type": "String"
+      }
+    }
+  },
+  "usedByBoth": "расшифровщик и диктовка",
+  "usedByTranscription": "расшифровщик",
+  "usedByDictation": "диктовка",
+  "hotkeyTakenProblem": "«{combo}» уже назначено на другое действие. Одно сочетание не может делать два разных дела.",
+  "@hotkeyTakenProblem": {
+    "placeholders": {
+      "combo": {
+        "type": "String"
+      }
+    }
+  },
+  "modelTrashFailed": "Не удалось убрать модель в Корзину: {path}",
+  "@modelTrashFailed": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "modelFileGone": "Файла «{name}» больше нет на диске.",
+  "@modelFileGone": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "buttonChoose": "Выбрать"
+}

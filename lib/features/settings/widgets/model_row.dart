@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:macos_ui/macos_ui.dart';
 
 import '../../../design/design.dart';
+import '../../../l10n/gen/app_localizations.dart';
 
 /// Одна установленная модель: чем она является, где лежит, сколько весит
 /// и что с ней можно сделать.
@@ -42,6 +43,7 @@ class _ModelRowState extends State<ModelRow> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final grey = Type.caption.copyWith(color: Surface.secondaryText(context));
     final broken = widget.problem != null;
 
@@ -113,8 +115,7 @@ class _ModelRowState extends State<ModelRow> {
                         const SizedBox(width: 5),
                         Expanded(
                           child: Text(
-                            'Работать этой моделью нельзя: уберите её и '
-                            'загрузите заново.\n${widget.problem!}',
+                            l10n.modelBrokenMessage(widget.problem!),
                             style: Type.caption.copyWith(
                               color: MacosColors.systemOrangeColor,
                               height: 1.35,
@@ -138,7 +139,7 @@ class _ModelRowState extends State<ModelRow> {
             Row(
               children: [
                 MacosTooltip(
-                  message: 'Показать файл',
+                  message: l10n.tooltipShowFile,
                   child: MacosIconButton(
                     icon: MacosIcon(
                       CupertinoIcons.folder,
@@ -150,7 +151,7 @@ class _ModelRowState extends State<ModelRow> {
                   ),
                 ),
                 MacosTooltip(
-                  message: 'Убрать в Корзину',
+                  message: l10n.tooltipMoveToTrash,
                   child: MacosIconButton(
                     icon: MacosIcon(
                       CupertinoIcons.trash,

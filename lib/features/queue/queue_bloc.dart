@@ -65,7 +65,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     on<DownloadAdvanced>((e, emit) => emit(state.copyWith(
           downloadProgress: e.progress,
           downloadPercent: e.percent,
-          status: 'Загружаем · ${e.progress}',
+          status: 'Загрузка · ${e.progress}',
         )));
     on<VadRequested>(_onVad, transformer: droppable());
     on<VadModelChosen>(_onVadModelChosen);
@@ -692,7 +692,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     if (!state.running) return;
     _stopRequested = true;
     _proc?.kill();
-    emit(state.copyWith(status: 'Останавливаем…'));
+    emit(state.copyWith(status: 'Остановка…'));
   }
 
   /// Диктовка главнее очереди: одновременно две копии модели в память
@@ -912,7 +912,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       download: offer,
       downloadProgress: d.progressLabel,
       downloadPercent: d.percent,
-      status: 'Загружаем ${d.title}…',
+      status: 'Загрузка: ${d.title}…',
     ));
     final path = await d.run(onProgress: () {
       if (!isClosed) add(DownloadAdvanced(d.progressLabel, d.percent));

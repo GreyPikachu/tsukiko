@@ -410,10 +410,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           showLabel: false,
           tooltipMessage: s.running
               ? (s.waitingForModel
-                  ? 'Ждём, пока $_modelUseBy(s) закончит · остановить ⌘.'
+                  ? 'Ожидание: ${_modelUseBy(s)} ещё работает · остановить ⌘.'
                   : 'Остановить · ⌘.')
               : s.yieldBusyModel && s.modelUse.busy
-                  ? 'Модель занята ($_modelUseBy(s)) — начнём, как только освободится · ⌘⏎'
+                  ? 'Модель занята (${_modelUseBy(s)}) — распознавание начнётся, как только она освободится · ⌘⏎'
                   : 'Распознать очередь · ⌘⏎',
           onPressed: s.running ? _sendStop : (s.hasPending ? _sendStart : null),
         ),

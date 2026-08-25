@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
 import 'core/text.dart';
+import 'l10n/gen/app_localizations.dart';
 import 'legacy_migration.dart';
 import 'features/dictation/panel_page.dart' show runPanel;
 import 'features/settings/settings_page.dart' show runSettings;
@@ -46,6 +47,8 @@ class TsukikoApp extends StatelessWidget {
         darkTheme: MacosThemeData.dark(),
         themeMode: ThemeMode.system,
         debugShowCheckedModeBanner: false,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: HomePage(initialFiles: initialFiles),
       );
 }

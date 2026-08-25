@@ -24,6 +24,8 @@ migrate_working_dir/
 #.vscode/
 
 # Flutter/Dart/Pub related
+# Сгенерировано `flutter gen-l10n` из lib/l10n/app_*.arb — не редактируется руками.
+/lib/l10n/gen/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/

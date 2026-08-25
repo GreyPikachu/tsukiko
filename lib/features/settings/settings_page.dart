@@ -6,11 +6,12 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
+import '../../core/app_locale.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
-import '../../core/text.dart';
 import '../../core/transcript.dart';
 import '../../design/design.dart';
+import '../../l10n/gen/app_localizations.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import 'settings_cubit.dart';
@@ -40,12 +41,12 @@ void runSettings() {
 /// у каждой настройки есть ровно один хозяин. Теперь первые две вкладки —
 /// это и есть хозяева, «Модели» — общий склад файлов на двоих, а
 /// «Приложение» — то, что не принадлежит ни одному из них.
-const settingsTabs = [
-  (id: 'transcriber', label: 'Расшифровщик', icon: CupertinoIcons.doc_text),
-  (id: 'dictation', label: 'Диктовка', icon: CupertinoIcons.mic),
-  (id: 'models', label: 'Модели', icon: CupertinoIcons.cube_box),
-  (id: 'app', label: 'Приложение', icon: CupertinoIcons.gear),
-];
+List<({String id, String label, IconData icon})> _settingsTabs(AppLocalizations l10n) => [
+      (id: 'transcriber', label: l10n.settingsTabTranscription, icon: CupertinoIcons.doc_text),
+      (id: 'dictation', label: l10n.settingsTabDictation, icon: CupertinoIcons.mic),
+      (id: 'models', label: l10n.settingsTabModels, icon: CupertinoIcons.cube_box),
+      (id: 'app', label: l10n.settingsTabApp, icon: CupertinoIcons.gear),
+    ];
 
 class SettingsApp extends StatelessWidget {
   const SettingsApp({super.key});
@@ -54,11 +55,17 @@ class SettingsApp extends StatelessWidget {
   Widget build(BuildContext context) => BlocProvider(
         create: (_) => SettingsCubit(NativeBridge()),
         child: MacosApp(
-          title: 'Настройки',
+          // Локализованный заголовок окна недоступен здесь: builder ниже
+          // ещё не построен, а MacosApp.title читается до первого кадра.
+          // Заголовок панели инструментов настоящий, локализованный —
+          // системная рамка окна этот берёт только для VoiceOver и Dock.
+          title: currentL10n().settingsWindowTitle,
           theme: MacosThemeData.light(),
           darkTheme: MacosThemeData.dark(),
           themeMode: ThemeMode.system,
           debugShowCheckedModeBanner: false,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: const SettingsBody(),
         ),
       );
@@ -77,6 +84,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   String _promptShown = '';
 
   SettingsCubit get _cubit => context.read<SettingsCubit>();
+  AppLocalizations get l10n => AppLocalizations.of(context);
 
   @override
   void initState() {
@@ -118,7 +126,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
 
   Future<void> _pickLibrary(SettingsState s) async {
     final dir = await getDirectoryPath(
-      confirmButtonText: 'Выбрать',
+      confirmButtonText: l10n.buttonChoose,
       initialDirectory:
           Directory(s.libraryPath).existsSync() ? s.libraryPath : os.documentsDir,
     );
@@ -185,7 +193,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final t in settingsTabs)
+            for (final t in _settingsTabs(l10n))
               _TabButton(
                 label: t.label,
                 icon: t.icon,
@@ -199,45 +207,34 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   // ── диктовка ──────────────────────────────────────────────────────────────
 
   List<Widget> _dictationTab(SettingsState s) => [
-        const SectionTitle('Сочетания клавиш'),
+        SectionTitle(l10n.sectionHotkeys),
         HotkeyRow(
-          label: 'Держать и говорить',
+          label: l10n.hotkeyHold,
           keys: s.hold.label,
           onTap: () => _cubit.reassign('hold'),
         ),
         HotkeyRow(
-          label: 'Нажать, ещё раз — остановить',
+          label: l10n.hotkeyToggle,
           keys: s.toggle.label,
           onTap: () => _cubit.reassign('toggle'),
         ),
-        const Hint('Нажмите на сочетание и наберите новое: пока клавиши '
-            'держите, они копятся, отпустите всё — набранное и станет '
-            'сочетанием. Годится любая клавиша и любое их число.'),
-        const Hint('Стукнули дважды — назначится двойное нажатие: тогда '
-            'сочетание сработает только от двух быстрых нажатий подряд '
-            'и не помешает обычной работе с этими клавишами.', under: false),
-        const Hint('Своё сочетание tsukiko забирает у всей системы. '
-            'Назначив одну букву, вы перестанете набирать её где бы то '
-            'ни было — берите её с модификатором.', under: false),
-        const SectionTitle('Как распознавать диктовку'),
-        const Hint('Значения свои, не общие с расшифровщиком: диктуют не то '
-            'же, что расшифровывают, и одно значение на двоих устраивало бы '
-            'обоих плохо. Язык диктовка определяет сама, паузы режет всегда.'),
+        Hint(l10n.hintHotkeyCapture),
+        Hint(l10n.hintHotkeyDoubleTap, under: false),
+        Hint(l10n.hintHotkeyExclusive, under: false),
+        SectionTitle(l10n.sectionDictationRecognition),
+        Hint(l10n.hintDictationOwnSettings),
         const SizedBox(height: Gap.item),
         _Field(
-          'Модель диктовки',
+          l10n.fieldDictationModel,
           ModelField(
             installed: s.usable,
             value: s.dictationModel,
-            fallback: 'Та же, что у расшифровщика',
+            fallback: l10n.fallbackSameAsTranscription,
             onChosen: (v) => _cubit.setDictationModel(v),
             onDownload: _cubit.download,
           ),
         ),
-        const Hint('«Та же, что у расшифровщика» — брать модель, выбранную '
-            'в инспекторе главного окна: меняете её там, меняется и здесь. '
-            'Любой другой выбор диктовка держит сама и на расшифровщика '
-            'не влияет.'),
+        Hint(l10n.hintDictationModelFallback),
         const SizedBox(height: Gap.inner),
         // Кнопка стоит здесь, а не на вкладке «Модели»: она не пополняет
         // список, а выбирает модель диктовки — раньше из общего склада
@@ -246,50 +243,47 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           controlSize: ControlSize.regular,
           secondary: true,
           onPressed: _pickModel,
-          child: const Text('Выбрать свой файл модели…'),
+          child: Text(l10n.buttonPickModelFile),
         ),
         const SizedBox(height: Gap.item),
         _Field(
-          'Скорость',
+          l10n.fieldSpeed,
           MacosPopupButton<int>(
             value: s.threads,
             items: [
               for (var t = 2; t <= Platform.numberOfProcessors; t += 2)
-                MacosPopupMenuItem(
-                    value: t,
-                    child: Text('$t ${plural(t, 'поток', 'потока', 'потоков')}')),
+                MacosPopupMenuItem(value: t, child: Text(l10n.threadsCount(t))),
             ],
             onChanged: (v) =>
                 _cubit.setThreads(v ?? s.threads),
           ),
         ),
         const SizedBox(height: Gap.item),
-        Check('Ставить знаки препинания', s.punctuate,
-            _cubit.setPunctuate),
+        Check(l10n.checkPunctuate, s.punctuate, _cubit.setPunctuate),
         const SizedBox(height: Gap.item),
         // Подпись стоит над полем, а не под ним: под полем она читалась
         // как пояснение ко всему разделу.
         _Field(
-          'Подсказка модели',
+          l10n.fieldModelPrompt,
           AppTextField(
             controller: _promptCtrl,
-            placeholder: 'Имена, термины, названия',
+            placeholder: l10n.placeholderPromptExample,
             maxLines: 2,
             onChanged: (v) => _cubit.setPrompt(v),
           ),
         ),
-        const Hint('Слова из подсказки модель пишет правильнее.'),
-        const SectionTitle('Модель диктовки в памяти'),
+        Hint(l10n.hintPromptHelps),
+        SectionTitle(l10n.sectionModelInMemory),
         _Field(
-          'Держать модель',
+          l10n.fieldKeepModel,
           MacosPopupButton<int>(
             value: s.idleSeconds,
-            items: const [
-              MacosPopupMenuItem(value: 30, child: Text('30 секунд')),
-              MacosPopupMenuItem(value: 60, child: Text('1 минуту')),
-              MacosPopupMenuItem(value: 180, child: Text('3 минуты')),
-              MacosPopupMenuItem(value: 600, child: Text('10 минут')),
-              MacosPopupMenuItem(value: 3600, child: Text('1 час')),
+            items: [
+              MacosPopupMenuItem(value: 30, child: Text(l10n.duration30s)),
+              MacosPopupMenuItem(value: 60, child: Text(l10n.duration1m)),
+              MacosPopupMenuItem(value: 180, child: Text(l10n.duration3m)),
+              MacosPopupMenuItem(value: 600, child: Text(l10n.duration10m)),
+              MacosPopupMenuItem(value: 3600, child: Text(l10n.duration1h)),
             ],
             onChanged: (v) => _cubit.setIdleSeconds(v ?? 180),
           ),
@@ -297,18 +291,13 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         // Размер берём у той модели, которая выбрана, а не пишем числом
         // в тексте: раньше здесь стояло «полтора гигабайта» — верно ровно
         // для Large v3 Turbo и неправда для всех остальных.
-        Hint('Пока модель в памяти, фраза распознаётся за доли секунды. '
-            '${_memoryCost(s)}'),
-        const SectionTitle('Что делать с надиктованным'),
-        Check('Вставлять текст в активное окно', s.insert,
-            _cubit.setInsert),
-        const Hint('Без этого готовый текст только ложится в буфер обмена.',
-            under: true),
+        Hint('${l10n.hintMemoryCostPrefix} ${_memoryCost(s)}'),
+        SectionTitle(l10n.sectionAfterDictation),
+        Check(l10n.checkInsertText, s.insert, _cubit.setInsert),
+        Hint(l10n.hintInsertOff, under: true),
         const SizedBox(height: Gap.item),
-        Check('Показывать панель записи', s.hud,
-            _cubit.setHud),
-        const Hint('Плавающая полоска поверх окон: видно, что вас слушают, '
-            'и есть чем остановить мышью.', under: true),
+        Check(l10n.checkShowHud, s.hud, _cubit.setHud),
+        Hint(l10n.hintHud, under: true),
       ];
 
   // ── модели ────────────────────────────────────────────────────────────────
@@ -321,14 +310,10 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
       // Первое, что спрашивают об этом списке: чьи это модели. Файлы —
       // общие, а выбор у расшифровщика и у диктовки свой, и сказать об
       // этом надо прежде, чем показывать сам список.
-      const Hint('Файлы моделей общие, а вот кто какой работает — решается '
-          'порознь: модель расшифровщика выбирается в инспекторе главного '
-          'окна, модель диктовки — на вкладке «Диктовка». Здесь модели '
-          'только загружают, показывают и убирают.'),
-      const SectionTitle('Установлены'),
+      Hint(l10n.hintModelsOwnership),
+      SectionTitle(l10n.sectionInstalled),
       if (s.models.isEmpty)
-        const Hint('Ни одной модели не найдено. Возьмите любую из списка ниже: '
-            'Tiny — просто проверить, что всё работает, Large v3 Turbo — точность.')
+        Hint(l10n.hintNoModels)
       else
         for (final m in s.models)
           ModelRow(
@@ -341,15 +326,15 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             onDelete: () => _confirmDelete(s, m),
           ),
       if (s.downloading) ...[
-        const SectionTitle('Можно загрузить'),
+        SectionTitle(l10n.sectionCanDownload),
         ModelDownload(
-          title: s.downloadTitle ?? 'модель',
+          title: s.downloadTitle ?? l10n.genericModelTitle,
           progress: s.downloadProgress!,
           percent: s.downloadPercent,
           onCancel: _cubit.cancelDownload,
         ),
       ] else if (offers.isNotEmpty) ...[
-        const SectionTitle('Можно загрузить'),
+        SectionTitle(l10n.sectionCanDownload),
         for (final m in offers)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
@@ -371,7 +356,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                   controlSize: ControlSize.regular,
                   secondary: true,
                   onPressed: () => _cubit.download(m),
-                  child: const Text('Загрузить'),
+                  child: Text(l10n.buttonDownload),
                 ),
               ],
             ),
@@ -380,9 +365,9 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
       // Модель тишины лежит в той же папке, и не сказать о ней — значит
       // оставить человека с файлом, которого нет ни в одном списке.
       if (s.vad != null) ...[
-        const SectionTitle('Вспомогательные'),
+        SectionTitle(l10n.sectionAuxiliary),
         ModelRow(
-          name: 'Распознавание пауз',
+          name: l10n.vadModelName,
           path: s.vad!.path.replaceFirst(home, '~'),
           size: s.vad!.sizeLabel,
           problem: s.vad!.problem,
@@ -390,16 +375,14 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           onReveal: () => _cubit.revealModel(s.vad!.path),
           onDelete: () => _confirmDelete(s, s.vad!),
         ),
-        const Hint('Вырезает тишину до распознавания, чтобы модель не '
-            'дописывала на паузах лишнего. Речь она не распознаёт, поэтому '
-            'в списке выше её нет. Приложение загружает её само.'),
+        Hint(l10n.hintVad),
       ],
       const SizedBox(height: Gap.section),
       Row(
         children: [
           Expanded(
             child: Text(
-              'Модели лежат в ${os.modelsDir.replaceFirst(home, '~')}',
+              l10n.modelsFolderLabel(os.modelsDir.replaceFirst(home, '~')),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Type.caption.copyWith(color: Surface.secondaryText(context)),
@@ -410,7 +393,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             controlSize: ControlSize.small,
             secondary: true,
             onPressed: _cubit.revealModelsFolder,
-            child: Text('Показать в ${os.fileManagerName}'),
+            child: Text(l10n.buttonShowInFileManager(os.fileManagerName)),
           ),
         ],
       ),
@@ -424,16 +407,13 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
     // в памяти модель расшифровщика, и её размер здесь и надо назвать.
     final chosen = s.dictationModelInUse;
     if (chosen.isEmpty) {
-      return 'Столько же памяти при этом занято — сколько именно, '
-          'зависит от модели.';
+      return l10n.memoryCostUnknown;
     }
     final size = s.models
         .where((m) => m.path == chosen)
         .map((m) => m.sizeLabel)
         .firstWhere((label) => label.isNotEmpty, orElse: () => '');
-    return size.isEmpty
-        ? 'Столько же памяти при этом занято.'
-        : 'Выбранная сейчас занимает $size.';
+    return size.isEmpty ? l10n.memoryCostGeneric : l10n.memoryCostSized(size);
   }
 
   /// Удаление спрашивают, а не делают молча: полтора гигабайта, стёртые
@@ -441,21 +421,18 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// вопрос один и без запугивания.
   Future<void> _confirmDelete(SettingsState s, InstalledModel m) async {
     final usedBy = s.userOf(m.path);
-    final where = m.ours
-        ? 'Файл уйдёт в Корзину.'
-        : 'Файл лежит не в папке $appName, а в общем каталоге — им могут '
-            'пользоваться другие программы. Он уйдёт в Корзину.';
+    final where = m.ours ? l10n.deleteModelToTrash : l10n.deleteModelSharedFolder(appName);
     var yes = false;
     await showMacosAlertDialog<void>(
       context: context,
       builder: (dialogContext) => MacosAlertDialog(
         appIcon: const MacosIcon(CupertinoIcons.trash, size: 56),
-        title: Text('Убрать ${m.name}?', style: Type.emptyTitle),
+        title: Text(l10n.deleteModelTitle(m.name), style: Type.emptyTitle),
         message: Text(
           [
             where,
-            if (usedBy != null) 'Сейчас на ней работает: $usedBy.',
-            if (m.sizeLabel.isNotEmpty) 'Освободится ${m.sizeLabel}.',
+            if (usedBy != null) l10n.deleteModelUsedBy(usedBy),
+            if (m.sizeLabel.isNotEmpty) l10n.deleteModelFrees(m.sizeLabel),
           ].join('\n'),
           textAlign: TextAlign.center,
           style: Type.control,
@@ -466,13 +443,13 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             yes = true;
             Navigator.pop(dialogContext);
           },
-          child: const Text('Убрать'),
+          child: Text(l10n.buttonRemove),
         ),
         secondaryButton: PushButton(
           controlSize: ControlSize.large,
           secondary: true,
           onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('Отмена'),
+          child: Text(l10n.buttonCancel),
         ),
       ),
     );
@@ -491,36 +468,24 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// раздел говорит об этом прямо — раньше человек искал их тут и не
   /// находил.
   List<Widget> _transcriberTab(SettingsState s) => [
-        const SectionTitle('Как распознавать записи'),
-        const Hint('Модель, язык, пунктуация, разбивка на фрагменты, '
-            'скорость и подсказка стоят в инспекторе главного окна, справа '
-            'от очереди: их меняют от записи к записи, и одного значения на '
-            'все записи у них нет. Здесь — то, что для всех записей одно.'),
+        SectionTitle(l10n.sectionHowToRecognize),
+        Hint(l10n.hintPerRecordingSettings),
         const SizedBox(height: Gap.item),
-        Check('Ждать, если модель занята', s.yieldBusyModel,
-            _cubit.setYieldBusyModel),
-        const Hint('Пока модель держит другая программа, очередь стоит и '
-            'не отбирает у неё память и GPU. Своей диктовке очередь уступает '
-            'всегда: одна фраза короче одной записи.', under: true),
-        const SectionTitle('Сохранять расшифровки автоматически'),
-        Check('Сохранять готовый текст на диск', s.toLibrary,
-            _cubit.setToLibrary),
-        const Hint('Как только запись распознана, текст сам ложится файлом '
-            'в папку ниже. Выключено — текст остаётся только в окне $appName, '
-            'и сохранять его придётся вручную: «Сохранить как…» или '
-            'копированием.',
-            under: true),
-        const SectionTitle('Куда сохранять'),
+        Check(l10n.checkWaitBusyModel, s.yieldBusyModel, _cubit.setYieldBusyModel),
+        Hint(l10n.hintWaitBusyModel, under: true),
+        SectionTitle(l10n.sectionAutoSave),
+        Check(l10n.checkSaveToDisk, s.toLibrary, _cubit.setToLibrary),
+        Hint(l10n.hintSaveToDisk(appName), under: true),
+        SectionTitle(l10n.sectionWhereToSave),
         LibraryPath(
           path: s.libraryPath,
           onReveal: () => _cubit.revealLibrary(s.libraryPath),
           onChange: () => _pickLibrary(s),
-          hint: 'Внутри папка на каждый месяц: $appName/'
-              '${monthFolder(DateTime.now())}/. Щёлкните по пути, чтобы '
-              'открыть папку в ${os.fileManagerName}.',
+          hint: l10n.libraryHint(
+              appName, monthFolder(DateTime.now()), os.fileManagerName),
         ),
         if (s.toLibrary) ...[
-          const SectionTitle('В каком виде сохранять'),
+          SectionTitle(l10n.sectionSaveFormat),
           for (final f in exportFormats)
             // suffix у «текста с таймкодами» начинается с пробела: он
             // дописывается к имени файла. В подписи этот пробел — дыра.
@@ -529,28 +494,20 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                 (v) => _cubit.toggleFormat(f.id, v)),
           Hint(
               s.libraryFormats.length > 1
-                  ? 'На каждую запись сохраняется столько файлов, сколько '
-                      'форматов отмечено, и у записи появляется своя папка. '
-                      'Совсем без форматов сохранять было бы нечего, поэтому '
-                      'последний снять нельзя.'
-                  : 'Один отмеченный формат — один файл на запись. Отметьте '
-                      'больше, и рядом лягут те же слова в другом виде.',
+                  ? l10n.hintFormatsMulti
+                  : l10n.hintFormatsSingle,
               under: true),
         ],
-        const SectionTitle('Копия рядом с аудиофайлом'),
-        Check('Класть текст рядом с исходной записью', s.saveNextToSource,
+        SectionTitle(l10n.sectionCopyBesideSource),
+        Check(l10n.checkSaveBesideSource, s.saveNextToSource,
             _cubit.setSaveNextToSource),
-        const Hint('Кроме папки выше: в ту же папку, где лежит сама запись, '
-            'ляжет .txt с её именем — чистый текст без таймкодов. '
-            'Выключено — рядом с записью ничего не появляется.',
-            under: true),
+        Hint(l10n.hintSaveBesideSource, under: true),
         // Метки времени переехали сюда из «Общих»: они рисуются в окне
         // расшифровщика и больше нигде — в диктовке текста с таймкодами
         // нет вовсе.
-        const SectionTitle('В окне расшифровщика'),
-        Check('Показывать метки времени', s.timestamps, _cubit.setTimestamps),
-        const Hint('Только на экране. Что попадёт в файл, решает выбранный '
-            'формат, а не эта галка.', under: true),
+        SectionTitle(l10n.sectionInTranscriberWindow),
+        Check(l10n.checkShowTimestamps, s.timestamps, _cubit.setTimestamps),
+        Hint(l10n.hintShowTimestamps, under: true),
       ];
 
   // ── приложение ────────────────────────────────────────────────────────────
@@ -559,37 +516,28 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// ни диктовке: как приложение живёт в системе и что ему разрешено.
   /// Всё остальное разъехалось по хозяевам.
   List<Widget> _appTab(SettingsState s) => [
-        const SectionTitle('В системе'),
-        Check('Запускать при входе в систему', s.loginItem,
-            _cubit.setLoginItem),
-        Hint('Диктовка поднимется сама и будет ждать в ${os.menuBarName}. '
-            'Окно расшифровщика при этом не открывается — оно всегда '
-            'доступно по значку приложения.',
-            under: true),
+        SectionTitle(l10n.sectionInSystem),
+        Check(l10n.checkLoginItem, s.loginItem, _cubit.setLoginItem),
+        Hint(l10n.hintLoginItem(os.menuBarName), under: true),
         const SizedBox(height: Gap.item),
-        Check('Показывать значок в ${os.appIconAreaName}', s.dockIcon,
+        Check(l10n.checkShowDockIcon(os.appIconAreaName), s.dockIcon,
             _cubit.setDockIcon),
-        Hint('Без значка $appName исчезает из ${os.appIconAreaName} и живёт '
-            'только в ${os.menuBarName}. Окно и настройки открываются '
-            'оттуда же.',
+        Hint(l10n.hintDockIcon(appName, os.appIconAreaName, os.menuBarName),
             under: true),
-        const SectionTitle('Разрешения'),
+        SectionTitle(l10n.sectionPermissions),
         Row(
           children: [
             Expanded(
               child: Text(
                 s.allowed
-                    ? '${os.accessibilityName} выдан.'
-                    : 'Без разрешения «${os.accessibilityName}» $appName '
-                        'не перехватывает клавиши и не вставляет текст '
-                        'в активное окно.',
+                    ? l10n.permissionGranted(os.accessibilityName)
+                    : l10n.permissionMissing(os.accessibilityName, appName),
                 style: Type.control.copyWith(height: 1.4),
               ),
             ),
           ],
         ),
-        const Hint('Нужно диктовке: она и слушает клавиши, и кладёт готовый '
-            'текст в чужое окно. Расшифровщику разрешение не нужно.'),
+        Hint(l10n.hintPermissionWhy),
         const SizedBox(height: Gap.item),
         if (!s.allowed)
           Row(
@@ -597,14 +545,14 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
               PushButton(
                 controlSize: ControlSize.regular,
                 onPressed: _cubit.requestPermission,
-                child: const Text('Запросить'),
+                child: Text(l10n.buttonRequestPermission),
               ),
               const SizedBox(width: 8),
               PushButton(
                 controlSize: ControlSize.regular,
                 secondary: true,
                 onPressed: _cubit.openPermissionSettings,
-                child: const Text('Открыть настройки системы'),
+                child: Text(l10n.buttonOpenSystemSettings),
               ),
             ],
           )
@@ -613,7 +561,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             controlSize: ControlSize.regular,
             secondary: true,
             onPressed: _cubit.openPermissionSettings,
-            child: const Text('Открыть настройки системы'),
+            child: Text(l10n.buttonOpenSystemSettings),
           ),
       ];
 }

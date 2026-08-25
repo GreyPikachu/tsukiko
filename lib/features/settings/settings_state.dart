@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 
+import '../../core/app_locale.dart';
 import '../../core/models.dart';
 import '../../core/whisper_server.dart' show Hotkey;
 
@@ -69,9 +70,10 @@ class SettingsState extends Equatable {
   String? userOf(String path) {
     final forDictation = path == dictationModelInUse;
     final forQueue = path == queueModel;
-    if (forDictation && forQueue) return 'расшифровщик и диктовка';
-    if (forQueue) return 'расшифровщик';
-    if (forDictation) return 'диктовка';
+    final l10n = currentL10n();
+    if (forDictation && forQueue) return l10n.usedByBoth;
+    if (forQueue) return l10n.usedByTranscription;
+    if (forDictation) return l10n.usedByDictation;
     return null;
   }
 
