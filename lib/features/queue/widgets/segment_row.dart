@@ -185,7 +185,7 @@ class DropVeil extends StatelessWidget {
                     interactive: false,
                   ),
                   const SizedBox(height: 8),
-                  Text('Отпустите — добавим в очередь',
+                  Text('Отпустите, чтобы добавить в очередь',
                       style: Type.emptyTitle.copyWith(color: accent)),
                 ],
               ),

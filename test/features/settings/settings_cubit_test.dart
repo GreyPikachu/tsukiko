@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/settings.dart';
 import 'package:tsukiko/core/whisper_server.dart';
@@ -13,7 +14,7 @@ import '../../support/fake_os.dart';
 /// Окно настроек. До выноса из виджета проверять было нечем: каждая галка
 /// сидела в `setState` и не отделялась от раскладки.
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
 
   late _FakeNative native;
   late SettingsCubit cubit;
@@ -23,6 +24,10 @@ void main() {
   useTempSupportDir('tsukiko-settings-app');
 
   setUp(() {
+    // Строки из кубита идут через currentL10n(), который читает системный
+    // локаль. Тестовый движок сбрасывает её перед каждым тестом на en_US —
+    // здесь же тексты сверены с русским, поэтому закрепляем его явно.
+    binding.platformDispatcher.localesTestValue = const [Locale('ru')];
     native = _FakeNative()..install();
     NativeBridge.debugReset();
     cubit = SettingsCubit(NativeBridge());

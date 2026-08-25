@@ -528,7 +528,7 @@ class ModelDownload extends StatelessWidget {
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Загружаем $title', style: Type.control),
+          Text('Загрузка: $title', style: Type.control),
           const SizedBox(height: 7),
           ProgressBar(value: percent.toDouble()),
           const SizedBox(height: 7),
