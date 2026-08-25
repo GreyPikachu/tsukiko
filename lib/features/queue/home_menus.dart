@@ -34,16 +34,17 @@ extension _Menus on _HomeViewState {
   }
 
   List<PlatformMenuItem> _buildMenus(QueueState s) {
+    final l10n = AppLocalizations.of(context);
     final ready = s.readyTargets.isNotEmpty;
     final selected = s.targets.isNotEmpty;
     return [
       PlatformMenu(
         label: appName,
         menus: [
-          PlatformMenuItem(label: 'О программе $appName', onSelected: _about),
+          PlatformMenuItem(label: l10n.menuAbout(appName), onSelected: _about),
           PlatformMenuItemGroup(members: [
             PlatformMenuItem(
-              label: 'Настройки…',
+              label: l10n.menuSettingsEllipsis,
               shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
               onSelected: () => _openSettings(),
             ),
@@ -60,17 +61,17 @@ extension _Menus on _HomeViewState {
         ],
       ),
       PlatformMenu(
-        label: 'Файл',
+        label: l10n.menuFile,
         menus: [
           PlatformMenuItemGroup(members: [
-            PlatformMenuItem(label: 'Добавить аудио…', shortcut: _HomeViewState._cmd, onSelected: _pickFiles),
+            PlatformMenuItem(label: l10n.menuAddAudio, shortcut: _HomeViewState._cmd, onSelected: _pickFiles),
             PlatformMenuItem(
-              label: 'Открыть расшифровку…',
+              label: l10n.menuOpenTranscript,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyO, meta: true, shift: true),
               onSelected: _openTranscript,
             ),
             PlatformMenu(
-              label: 'Открыть недавние',
+              label: l10n.menuOpenRecent,
               menus: [
                 for (final p in s.recent)
                   PlatformMenuItem(
@@ -82,7 +83,7 @@ extension _Menus on _HomeViewState {
                 if (s.recent.isNotEmpty)
                   PlatformMenuItemGroup(members: [
                     PlatformMenuItem(
-                      label: 'Очистить список',
+                      label: l10n.menuClearRecentList,
                       onSelected: () => _send(const RecentCleared()),
                     ),
                   ]),
@@ -91,17 +92,17 @@ extension _Menus on _HomeViewState {
           ]),
           PlatformMenuItemGroup(members: [
             PlatformMenuItem(
-              label: 'Сохранить как…',
+              label: l10n.menuSaveAs,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyS, meta: true),
               onSelected: ready ? () => _saveAs(s) : null,
             ),
             PlatformMenuItem(
-              label: 'Экспортировать в папку…',
+              label: l10n.menuExportToFolder,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyE, meta: true, shift: true),
               onSelected: s.jobs.any((j) => j.done) ? () => _exportAll(s) : null,
             ),
             PlatformMenuItem(
-              label: 'Показать библиотеку в ${os.fileManagerName}',
+              label: l10n.menuShowLibraryIn(os.fileManagerName),
               shortcut: const SingleActivator(LogicalKeyboardKey.keyR, meta: true, shift: true),
               onSelected: () =>
                   revealInFinder(s.libraryPath, createIfMissing: true),
@@ -109,7 +110,7 @@ extension _Menus on _HomeViewState {
           ]),
           PlatformMenuItemGroup(members: [
             PlatformMenuItem(
-              label: 'Показать исходный файл в ${os.fileManagerName}',
+              label: l10n.menuShowSourceIn(os.fileManagerName),
               shortcut: const SingleActivator(LogicalKeyboardKey.keyR, meta: true),
               onSelected:
                   s.lead == null ? null : () => _revealSource(s.lead!.path),
@@ -118,16 +119,16 @@ extension _Menus on _HomeViewState {
         ],
       ),
       PlatformMenu(
-        label: 'Правка',
+        label: l10n.menuEdit,
         menus: [
           PlatformMenuItemGroup(members: [
             PlatformMenuItem(
-              label: 'Скопировать текст',
+              label: l10n.menuCopyText,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyC, meta: true, shift: true),
               onSelected: ready ? () => _copy(formatPlainText) : null,
             ),
             PlatformMenuItem(
-              label: 'Скопировать с таймкодами',
+              label: l10n.menuCopyWithTimestamps,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyC,
                   meta: true, shift: true, alt: true),
               onSelected: ready ? () => _copy(formatTimedText) : null,
@@ -135,28 +136,28 @@ extension _Menus on _HomeViewState {
           ]),
           PlatformMenuItemGroup(members: [
             PlatformMenuItem(
-              label: 'Выбрать все записи',
+              label: l10n.menuSelectAllRecordings,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyA, meta: true),
               onSelected: s.jobs.isEmpty ? null : _sendAll,
             ),
             PlatformMenuItem(
-              label: 'Снять выделение',
+              label: l10n.menuDeselectAll,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyA, meta: true, shift: true),
               onSelected: s.selected.isEmpty ? null : _sendDeselect,
             ),
             PlatformMenuItem(
-              label: 'Убрать из очереди',
+              label: l10n.menuRemoveFromQueue,
               shortcut: const SingleActivator(LogicalKeyboardKey.backspace, meta: true),
               onSelected: selected ? _sendRemove : null,
             ),
             PlatformMenuItem(
-              label: 'Убрать все готовые',
+              label: l10n.menuRemoveAllFinished,
               onSelected: s.jobs.any((j) => j.done) ? _sendClearFinished : null,
             ),
           ]),
           PlatformMenuItemGroup(members: [
             PlatformMenuItem(
-              label: 'Найти в расшифровке…',
+              label: l10n.menuFindInTranscript,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyF, meta: true),
               onSelected: s.lead == null ? null : _openFind,
             ),
@@ -164,21 +165,21 @@ extension _Menus on _HomeViewState {
         ],
       ),
       PlatformMenu(
-        label: 'Распознавание',
+        label: l10n.menuRecognition,
         menus: [
           PlatformMenuItemGroup(members: [
             PlatformMenuItem(
-              label: 'Распознать очередь',
+              label: l10n.menuRunQueue,
               shortcut: const SingleActivator(LogicalKeyboardKey.enter, meta: true),
               onSelected: s.running || !s.hasPending ? null : _sendStart,
             ),
             PlatformMenuItem(
-              label: 'Распознать заново',
+              label: l10n.menuRetryRecognition,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyR, meta: true, alt: true),
               onSelected: s.running || !s.canRetry ? null : _sendRetry,
             ),
             PlatformMenuItem(
-              label: 'Остановить',
+              label: l10n.menuStop,
               shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
               onSelected: s.running ? _sendStop : null,
             ),
@@ -186,19 +187,19 @@ extension _Menus on _HomeViewState {
           PlatformMenuItemGroup(members: [
             PlatformMenuItem(
               label: s.yieldBusyModel
-                  ? 'Не ждать занятую модель'
-                  : 'Ждать, если модель занята',
+                  ? l10n.menuDontWaitForModel
+                  : l10n.menuWaitForModel,
               onSelected: () => _send(const YieldToggled()),
             ),
           ]),
         ],
       ),
       PlatformMenu(
-        label: 'Вид',
+        label: l10n.menuView,
         menus: [
           PlatformMenuItemGroup(members: [
             PlatformMenuItem(
-              label: s.timestamps ? 'Скрыть метки времени' : 'Показать метки времени',
+              label: s.timestamps ? l10n.menuHideTimestamps : l10n.menuShowTimestamps,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyT, meta: true, alt: true),
               onSelected: () => _send(const TimestampsToggled()),
             ),
@@ -208,8 +209,8 @@ extension _Menus on _HomeViewState {
           ]),
         ],
       ),
-      const PlatformMenu(
-        label: 'Окно',
+      PlatformMenu(
+        label: l10n.menuWindow,
         menus: [
           PlatformMenuItemGroup(members: [
             PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.minimizeWindow),
@@ -221,14 +222,14 @@ extension _Menus on _HomeViewState {
         ],
       ),
       PlatformMenu(
-        label: 'Справка',
+        label: l10n.menuHelp,
         menus: [
           PlatformMenuItem(
-            label: 'Где лежат расшифровки',
+            label: l10n.menuWhereTranscriptsLive,
             onSelected: () =>
                 revealInFinder(s.libraryPath, createIfMissing: true),
           ),
-          PlatformMenuItem(label: 'О программе $appName', onSelected: _about),
+          PlatformMenuItem(label: l10n.menuAbout(appName), onSelected: _about),
         ],
       ),
     ];

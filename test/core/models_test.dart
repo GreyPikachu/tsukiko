@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/models.dart';
 import 'package:tsukiko/platform/os.dart';
@@ -8,10 +9,16 @@ import 'package:tsukiko/platform/os.dart';
 /// нельзя показывать наравне с рабочей, а две с одинаковым именем надо
 /// как-то различать.
 void main() {
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+
   late Directory tmp;
   late Os real;
 
   setUp(() {
+    // Строки идут через currentL10n(), который читает системный локаль.
+    // Тестовый движок отдаёт en_US — здесь же тексты сверены с русским,
+    // поэтому закрепляем его явно.
+    binding.platformDispatcher.localesTestValue = const [Locale('ru')];
     real = os;
     tmp = Directory.systemTemp.createTempSync('tsukiko-models');
     os = _FakeOs(real, tmp.path);

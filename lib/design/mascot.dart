@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:macos_ui/macos_ui.dart';
 
+import '../l10n/gen/app_localizations.dart';
 import 'design.dart';
 
 /// Настроения лунного кота. Каждому соответствует свой анимированный webp
@@ -139,7 +140,7 @@ class _MascotState extends State<Mascot> with WidgetsBindingObserver {
       enabled: WidgetsBinding.instance.lifecycleState ==
           AppLifecycleState.resumed,
       child: Semantics(
-        label: 'Маскот приложения',
+        label: AppLocalizations.of(context).semanticsMascotLabel,
         button: widget.interactive,
         child: MouseRegion(
           cursor: widget.interactive

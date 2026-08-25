@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/model_usage.dart';
 import 'package:tsukiko/core/settings.dart';
@@ -18,7 +19,7 @@ import '../../support/fake_os.dart';
 /// Очередь распознавания. До выноса из виджета проверять её было нечем:
 /// ни одну из этих веток нельзя было пройти без `pumpWidget`.
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory tmp;
   late _FakeNative native;
@@ -28,6 +29,10 @@ void main() {
   useTempSupportDir('tsukiko-queue-app');
 
   setUp(() {
+    // Строки идут через currentL10n(), который читает системный локаль.
+    // Тестовый движок отдаёт en_US — здесь же тексты сверены с русским,
+    // поэтому закрепляем его явно.
+    binding.platformDispatcher.localesTestValue = const [Locale('ru')];
     tmp = Directory.systemTemp.createTempSync('tsukiko-queue');
     native = _FakeNative()..install();
     NativeBridge.debugReset();

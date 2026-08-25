@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:equatable/equatable.dart';
 
 import '../platform/os.dart';
+import 'app_locale.dart';
 
 /// Модели распознавания: где их искать, что из них годится, как они
 /// называются для человека, что можно докачать и как это качается.
@@ -99,10 +100,7 @@ InstalledModel? findVadModel() {
   return InstalledModel(
     path: f.path,
     sizeBytes: size,
-    problem: size < 100 * 1024
-        ? 'Файл слишком мал — загрузка оборвалась. Уберите его, '
-            'и приложение загрузит модель заново.'
-        : null,
+    problem: size < 100 * 1024 ? currentL10n().vadTooSmall : null,
     ours: true,
   );
 }
@@ -147,9 +145,10 @@ String modelPathFor(String file) => os.join(os.modelsDir, file);
 
 String get vadModelPath => modelPathFor(vadModelFile);
 
-String sizeLabelMb(int mb) => mb >= 1024
-    ? '${(mb / 1024).toStringAsFixed(1).replaceAll('.', ',')} ГБ'
-    : '$mb МБ';
+String sizeLabelMb(int mb) {
+  final l10n = currentL10n();
+  return mb >= 1024 ? l10n.sizeGb(mb / 1024) : l10n.sizeMb(mb);
+}
 
 /// Имя модели, одно на всё приложение: загрузчик, панель, переключатель,
 /// инспектор и диалоги называют «ggml-large-v3-turbo.bin» одинаково —
@@ -184,7 +183,8 @@ String modelDisplayName(String path) {
 String? modelFileProblem(String path) {
   final file = File(path);
   final name = os.basename(path);
-  if (!file.existsSync()) return 'Файла «$name» больше нет на диске.';
+  final l10n = currentL10n();
+  if (!file.existsSync()) return l10n.modelFileGone(name);
 
   final size = file.lengthSync();
   RandomAccessFile? raf;
@@ -192,26 +192,22 @@ String? modelFileProblem(String path) {
     raf = file.openSync();
     final head = raf.readSync(8);
     if (head.length < 8 || String.fromCharCodes(head.sublist(0, 4)) != 'lmgg') {
-      return '«$name» — не модель распознавания речи: у файлов ggml '
-          'в начале стоит своя метка, а здесь её нет.';
+      return l10n.modelNotSpeechModel(name);
     }
     // Little-endian uint32 сразу за меткой.
     final vocab = head[4] | (head[5] << 8) | (head[6] << 16) | (head[7] << 24);
     if (vocab < 1000) {
-      return '«$name» — модель ggml, но не речевая: в ней $vocab '
-          'слов словаря. Так выглядит модель распознавания тишины (VAD), '
-          'речь она не расшифровывает.';
+      return l10n.modelIsVad(name, vocab);
     }
   } catch (_) {
-    return 'Файл «$name» не удалось прочитать.';
+    return l10n.modelUnreadable(name);
   } finally {
     raf?.closeSync();
   }
 
   // Самая маленькая речевая модель — tiny, 74 МБ; квантованная чуть меньше.
   if (size < 20 * 1024 * 1024) {
-    return '«$name» слишком мал для модели распознавания: '
-        '${sizeLabelMb(size ~/ (1024 * 1024))}, а самая маленькая весит 74 МБ.';
+    return l10n.modelTooSmall(name, sizeLabelMb(size ~/ (1024 * 1024)));
   }
   return null;
 }
@@ -237,15 +233,17 @@ class ModelOffer {
 /// Large v1 и v2 в каталог не попали намеренно: это те же три гигабайта,
 /// что и v3, только обучены раньше, и на русском v3 их обходит. Три почти
 /// одинаковые трёхгигабайтные строки в списке — не выбор, а помеха.
-const modelCatalog = [
-  ModelOffer('ggml-tiny.bin', 74, 'Попробовать, что всё работает'),
-  ModelOffer('ggml-base.bin', 141, 'Быстрая, но путает слова'),
-  ModelOffer('ggml-small.bin', 465, 'Разумный минимум для русского'),
-  ModelOffer('ggml-medium.bin', 1463, 'Точнее Small, заметно медленнее'),
-  ModelOffer('ggml-large-v3-turbo.bin', 1549, 'Лучшая и при этом быстрая'),
-  ModelOffer('ggml-large-v3.bin', 2952,
-      'Точнее Turbo на трудной записи, но вдвое тяжелее и медленнее'),
-];
+List<ModelOffer> get modelCatalog {
+  final l10n = currentL10n();
+  return [
+    ModelOffer('ggml-tiny.bin', 74, l10n.offerTiny),
+    ModelOffer('ggml-base.bin', 141, l10n.offerBase),
+    ModelOffer('ggml-small.bin', 465, l10n.offerSmall),
+    ModelOffer('ggml-medium.bin', 1463, l10n.offerMedium),
+    ModelOffer('ggml-large-v3-turbo.bin', 1549, l10n.offerLargeV3Turbo),
+    ModelOffer('ggml-large-v3.bin', 2952, l10n.offerLargeV3),
+  ];
+}
 
 /// Есть ли эта модель уже на диске.
 ///
@@ -282,8 +280,10 @@ class Download {
   String get progressLabel {
     const mb = 1024 * 1024;
     final done = (got / mb).round();
-    return total > 0 ? '$percent % · $done из ${(total / mb).round()} МБ'
-                     : '$done МБ';
+    final l10n = currentL10n();
+    return total > 0
+        ? l10n.downloadProgressWithTotal(percent, done, (total / mb).round())
+        : l10n.sizeMb(done);
   }
 
   void cancel() => cancelled = true;
@@ -331,7 +331,7 @@ class Download {
     try {
       part.parent.createSync(recursive: true);
     } catch (_) {
-      error = 'некуда положить файл: папка ${part.parent.path} недоступна';
+      error = currentL10n().downloadNoFolder(part.parent.path);
       return null;
     }
 
@@ -358,7 +358,7 @@ class Download {
       final res = await req.close();
       if (res.statusCode != HttpStatus.ok &&
           res.statusCode != HttpStatus.partialContent) {
-        error = '${uri.host} ответил ${res.statusCode}';
+        error = currentL10n().downloadHostResponded(uri.host, res.statusCode);
         return null;
       }
       // Полный ответ вместо куска значит одно из двух: докачку не поняли
@@ -394,7 +394,7 @@ class Download {
         sink.closeSync();
       }
       if (total > 0 && got < total) {
-        error = 'связь оборвалась на $percent %';
+        error = currentL10n().downloadInterrupted(percent);
         return null;
       }
       part.renameSync(dest);
@@ -406,8 +406,8 @@ class Download {
       // Текст исключения показывать нельзя: он английский и про сокеты.
       // Человеку важно другое — сеть или сервер, и что делать дальше.
       error = e is SocketException
-          ? 'нет связи с ${uri.host}'
-          : 'не удалось скачать с ${uri.host}';
+          ? currentL10n().downloadNoConnection(uri.host)
+          : currentL10n().downloadFailedGeneric(uri.host);
       return null;
     } finally {
       client.close(force: true);

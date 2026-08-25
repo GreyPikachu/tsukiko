@@ -38,7 +38,16 @@ void refreshLocale() => appLocale.value = loadLocale();
 /// поэтому все три сходятся на одном языке без обмена сообщениями.
 AppLocalizations currentL10n() {
   final chosen = appLocale.value;
-  if (chosen != null) return lookupAppLocalizations(chosen);
+  return chosen != null ? lookupAppLocalizations(chosen) : systemL10n();
+}
+
+/// Строки для того, что называет сама система: панель «Универсальный
+/// доступ», строка меню, Dock.
+///
+/// Их язык задаёт macOS, а не мы: человек пойдёт искать эту панель
+/// в системных настройках и должен увидеть там ровно то слово, которое
+/// мы назвали. Поэтому выбранный в приложении язык здесь не в счёт.
+AppLocalizations systemL10n() {
   final resolved = basicLocaleListResolution(
     WidgetsBinding.instance.platformDispatcher.locales,
     AppLocalizations.supportedLocales,

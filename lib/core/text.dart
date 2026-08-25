@@ -5,6 +5,8 @@
 /// которую придётся трогать при переводе на другой язык.
 library;
 
+import 'app_locale.dart';
+
 /// `appName` объявлен рядом с границей ОС (там он нужен для путей),
 /// но пользуются им повсюду — отдаём дальше отсюда.
 export '../platform/os.dart' show appName, bundleId;
@@ -24,8 +26,12 @@ const languages = [
 
 /// Языки называются так, как их называют их носители, — как в системных
 /// настройках macOS. Код в интерфейсе не показываем никогда.
+// 'auto' — единственный пункт этого списка, который не имя языка,
+// а команда «сам разберись», поэтому и живёт он не здесь, а в ARB —
+// подписи остальных языков идут как есть, языком интерфейса не тронуты.
+String get _languageAuto => currentL10n().languageAuto;
+
 const _languageNames = {
-  'auto': 'Определять автоматически',
   'ru': 'Русский',
   'be': 'Беларуская',
   'uk': 'Українська',
@@ -44,28 +50,21 @@ const _languageNames = {
   'ja': '日本語',
 };
 
-String languageName(String code) =>
-    _languageNames[code.toLowerCase()] ?? code.toUpperCase();
+String languageName(String code) => code.toLowerCase() == 'auto'
+    ? _languageAuto
+    : _languageNames[code.toLowerCase()] ?? code.toUpperCase();
 
 // ── маленькие правила языка и чисел ─────────────────────────────────────────
 
-/// «1 фрагмент · 2 фрагмента · 5 фрагментов». Без этого интерфейс на русском
-/// сразу выдаёт, что его переводили наспех.
-String plural(int n, String one, String few, String many) {
-  final h = n.abs() % 100, t = n.abs() % 10;
-  if (h >= 11 && h <= 14) return many;
-  if (t == 1) return one;
-  if (t >= 2 && t <= 4) return few;
-  return many;
-}
+/// «1 фрагмент · 2 фрагмента · 5 фрагментов». Склонения считает ICU внутри
+/// ARB: у каждого языка свои правила, и руками их держать больше не надо.
+String segmentsLabel(int n) => currentL10n().segmentsLabel(n);
 
-String segmentsLabel(int n) => '$n ${plural(n, 'фрагмент', 'фрагмента', 'фрагментов')}';
+String wordsLabel(int n) => currentL10n().wordsLabel(n);
 
-String wordsLabel(int n) => '$n ${plural(n, 'слово', 'слова', 'слов')}';
+String filesLabel(int n) => currentL10n().filesLabel(n);
 
-String filesLabel(int n) => '$n ${plural(n, 'файл', 'файла', 'файлов')}';
-
-String recordsLabel(int n) => '$n ${plural(n, 'запись', 'записи', 'записей')}';
+String recordsLabel(int n) => currentL10n().recordsLabel(n);
 
 int wordCount(String text) =>
     RegExp(r'[^\s]+').allMatches(text).length;

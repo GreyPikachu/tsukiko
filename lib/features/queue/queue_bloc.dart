@@ -7,6 +7,7 @@ import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
+import '../../core/app_locale.dart';
 import '../../core/library.dart';
 import '../../core/model_usage.dart';
 import '../../core/models.dart';
@@ -65,7 +66,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     on<DownloadAdvanced>((e, emit) => emit(state.copyWith(
           downloadProgress: e.progress,
           downloadPercent: e.percent,
-          status: 'Загрузка · ${e.progress}',
+          status: currentL10n().statusLoadingProgress(e.progress),
         )));
     on<VadRequested>(_onVad, transformer: droppable());
     on<VadModelChosen>(_onVadModelChosen);
@@ -225,14 +226,15 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
     // Молчаливый отказ — худший вид отказа: файл не появился, и непонятно,
     // почему. Говорим про каждый случай.
+    final l10n = currentL10n();
     final status = added > 0
-        ? (added == 1 ? 'Файл добавлен' : 'Добавлено: ${filesLabel(added)}')
+        ? (added == 1 ? l10n.statusFileAdded : l10n.statusFilesAdded(filesLabel(added)))
         : duplicates > 0
             ? (duplicates == 1
-                ? 'Этот файл уже в очереди'
-                : 'Эти файлы уже в очереди')
+                ? l10n.statusFileAlreadyQueued
+                : l10n.statusFilesAlreadyQueued)
             : skipped > 0
-                ? 'Такие файлы не поддерживаются'
+                ? l10n.statusUnsupportedFiles
                 : next.status;
     next = next.copyWith(status: status);
     if (last != null && next.selected.isEmpty) next = _select(next, last!);
@@ -252,7 +254,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// такую расшифровку можно пересохранить в любой другой формат.
   Future<QueueState> _openTranscript(QueueState from, String path) async {
     if (from.jobs.any((j) => j.path == path)) {
-      return from.copyWith(status: 'Эта расшифровка уже открыта');
+      return from.copyWith(status: currentL10n().statusTranscriptAlreadyOpen);
     }
     final String text;
     try {
@@ -261,8 +263,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       // Двоичный файл, чужая кодировка, исчез из-под рук.
       stderr.writeln('tsukiko: «$path» не открылся — $err');
       return from.copyWith(
-        status: 'Не удалось открыть «${os.basename(path)}»: '
-            'это не текстовый файл',
+        status: currentL10n().errorNotTextFile(os.basename(path)),
       );
     }
 
@@ -286,8 +287,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       transcript: parsed,
       raw: raw,
       detail: parsed != null
-          ? 'Открыто · ${segmentsLabel(parsed.segments.length)}'
-          : 'Открыто · текст',
+          ? currentL10n().statusOpenedSegments(segmentsLabel(parsed.segments.length))
+          : currentL10n().statusOpenedText,
     );
     return _select(
       from.copyWith(
@@ -315,8 +316,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       lead: lead,
       clearLead: lead == null,
       status: doomed.length == 1
-          ? 'Запись убрана из очереди'
-          : 'Убрано из очереди: ${recordsLabel(doomed.length)}',
+          ? currentL10n().statusRecordingRemoved
+          : currentL10n().statusRecordingsRemoved(recordsLabel(doomed.length)),
     ));
   }
 
@@ -332,7 +333,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       selected: state.selected.where((j) => !doomed.contains(j)).toSet(),
       lead: lead,
       clearLead: lead == null,
-      status: 'Готовые записи убраны',
+      status: currentL10n().statusFinishedRemoved,
     ));
   }
 
@@ -396,13 +397,13 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
   void _onOverridesReset(OverridesReset e, Emitter<QueueState> emit) {
     emit(_replaceAll(state.selected, (j) => j.copyWith(clearOverrides: true))
-        .copyWith(status: 'Настройки записи сброшены'));
+        .copyWith(status: currentL10n().statusOverridesReset));
   }
 
   void _onMakeDefault(LeadOptionsMadeDefault e, Emitter<QueueState> emit) {
     final own = state.lead?.overrides;
     if (own == null) return;
-    emit(state.copyWith(defaults: own, status: 'Эти настройки стали общими'));
+    emit(state.copyWith(defaults: own, status: currentL10n().statusSettingsMadeDefault));
     _persist();
   }
 
@@ -438,8 +439,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     if (again.isEmpty || state.running) return;
     emit(_replaceAll(again, (j) => j.reset).copyWith(
       status: again.length == 1
-          ? 'Распознаём заново'
-          : 'Распознаём заново: ${recordsLabel(again.length)}',
+          ? currentL10n().statusRetrying
+          : currentL10n().statusRetryingRecords(recordsLabel(again.length)),
     ));
     await _run(emit);
   }
@@ -449,11 +450,11 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     // про модель незачем — человек ещё ничего не просил.
     if (!state.hasPending) return;
 
+    final l10n = currentL10n();
     if (!state.whisperFound) {
       return emit(state.copyWith(
-        ask: Ask('Не найден whisper-cli',
-            'Программа не нашлась ни в PATH, ни в обычных местах.\n'
-            '${os.whisperInstallHint}'),
+        ask: Ask(l10n.askWhisperNotFoundTitle,
+            l10n.askWhisperNotFoundBody(os.whisperInstallHint)),
       ));
     }
     if (state.defaults.model.isEmpty &&
@@ -462,11 +463,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       // выбирать не из чего, человека надо вести в загрузчик.
       return emit(state.copyWith(
         ask: Ask(
-          state.models.isEmpty ? 'Нужна модель' : 'Не выбрана модель',
-          state.models.isEmpty
-              ? 'Нажмите «Загрузить модель…» в панели справа.\n'
-                  'Tiny — 74 МБ, чтобы попробовать.'
-              : 'Укажите файл ggml-*.bin в настройках справа.',
+          state.models.isEmpty ? l10n.askNeedModelTitle : l10n.askModelNotSelectedTitle,
+          state.models.isEmpty ? l10n.askNeedModelBody : l10n.askModelNotSelectedBody,
         ),
       ));
     }
@@ -474,9 +472,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     if (!state.yieldBusyModel && state.modelUse.busy && !_busyByDictation) {
       return emit(state.copyWith(
         ask: Ask(
-          'Модель уже занята',
-          '${state.modelUse.detail}\n'
-              'Одновременная работа замедлит обе стороны. Продолжить?',
+          l10n.askModelBusyTitle,
+          l10n.askModelBusyBody(state.modelUse.detail),
           confirm: true,
         ),
       ));
@@ -524,7 +521,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       _proc = null;
       emit(state.copyWith(
         running: false,
-        status: _stopRequested ? 'Остановлено' : 'Готово',
+        status: _stopRequested ? currentL10n().statusStopped : currentL10n().statusIdle,
       ));
       _syncPolling();
       _releaseTemp();
@@ -549,7 +546,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     if (opts.model.isEmpty) {
       emit(_replace(state, it, it.copyWith(
         state: JobState.failed,
-        detail: 'Не выбрана модель',
+        detail: currentL10n().jobDetailNoModelSelected,
       )));
       return true;
     }
@@ -587,8 +584,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         emit(_replace(state, it,
             it.copyWith(
               state: JobState.failed,
-              detail: 'whisper-cli не справился с этим файлом',
-            )).copyWith(status: 'Не удалось распознать «${it.name}»'));
+              detail: currentL10n().jobDetailWhisperFailed,
+            )).copyWith(status: currentL10n().statusRecognitionFailed(it.name)));
         return true;
       }
 
@@ -609,8 +606,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
           took: it.startedAt == null
               ? null
               : DateTime.now().difference(it.startedAt!),
-          detail: '${languageName(t.lang)} · '
-              '${segmentsLabel(t.segments.length)}',
+          detail: currentL10n().jobDetailLangSegments(
+              languageName(t.lang), segmentsLabel(t.segments.length)),
         ),
       ).copyWith(status: beside.problem ?? placed ?? state.status));
       return true;
@@ -620,8 +617,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       emit(_replace(state, it,
           it.copyWith(
             state: JobState.failed,
-            detail: 'Не удалось разобрать ответ модели',
-          )).copyWith(status: 'Не удалось распознать «${it.name}»'));
+            detail: currentL10n().jobDetailParseFailed,
+          )).copyWith(status: currentL10n().statusRecognitionFailed(it.name)));
       return true;
     } finally {
       for (final ext in const ['.wav', '.json']) {
@@ -692,7 +689,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     if (!state.running) return;
     _stopRequested = true;
     _proc?.kill();
-    emit(state.copyWith(status: 'Остановка…'));
+    emit(state.copyWith(status: currentL10n().statusStopping));
   }
 
   /// Диктовка главнее очереди: одновременно две копии модели в память
@@ -704,14 +701,14 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         final now = _find(job);
         if (now != null) {
           emit(_replace(state, now, now.copyWith(state: JobState.waiting))
-              .copyWith(status: 'Пауза — идёт диктовка'));
+              .copyWith(status: currentL10n().statusPausedDictation));
         }
         paused = true;
       }
       await Future<void>.delayed(const Duration(milliseconds: 300));
     }
     if (paused && !_stopRequested) {
-      emit(state.copyWith(status: 'Диктовка закончилась — продолжаем'));
+      emit(state.copyWith(status: currentL10n().statusDictationDoneResuming));
     }
     return !_stopRequested;
   }
@@ -729,18 +726,19 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       final now = _find(job);
       if (now != null && now.state != JobState.waiting) {
         emit(_replace(state, now, now.copyWith(state: JobState.waiting))
-            .copyWith(status: 'Уступаем: $_useBy распознаёт речь'));
+            .copyWith(status: currentL10n().statusYieldingTo(_useBy)));
       }
       waited = true;
       await Future<void>.delayed(const Duration(milliseconds: 300));
     }
     if (waited && !_stopRequested) {
-      emit(state.copyWith(status: 'Модель освободилась — продолжаем'));
+      emit(state.copyWith(status: currentL10n().statusModelFreedResuming));
     }
     return !_stopRequested;
   }
 
-  String get _useBy => state.dictationHoldsModel ? 'диктовка' : state.modelUse.by;
+  String get _useBy =>
+      state.dictationHoldsModel ? currentL10n().usedByDictation : state.modelUse.by;
 
   // ── куда ложится результат ────────────────────────────────────────────────
 
@@ -757,7 +755,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       return (path: path, problem: null);
     } catch (e) {
       stderr.writeln('tsukiko: копия рядом с записью не легла — $e');
-      return (path: null, problem: 'Не удалось положить текст рядом с записью');
+      return (path: null, problem: currentL10n().errorCopyBesideFailed);
     }
   }
 
@@ -780,10 +778,11 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         await File(os.join(plan.dir, f.fileName(stem)))
             .writeAsString(renderAs(f, t, name: job.name));
       }
-      return 'Сохранено в «${plan.dir.replaceFirst(state.libraryPath, appName)}»';
+      return currentL10n().statusSavedInLibrary(
+          plan.dir.replaceFirst(state.libraryPath, appName));
     } catch (e) {
       stderr.writeln('tsukiko: библиотека не приняла запись — $e');
-      return 'Не удалось записать в библиотеку';
+      return currentL10n().errorLibrarySaveFailed;
     }
   }
 
@@ -809,9 +808,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     emit(state.copyWith(
       copyFormat: e.format.id,
       status: jobs.length == 1
-          ? 'Скопировано: ${e.format.label.toLowerCase()}'
-          : 'Скопировано записей: ${jobs.length} · '
-              '${e.format.label.toLowerCase()}',
+          ? currentL10n().statusCopiedFormat(e.format.label.toLowerCase())
+          : currentL10n().statusCopiedRecords(jobs.length, e.format.label.toLowerCase()),
     ));
     _persist();
   }
@@ -821,11 +819,11 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       await File(e.path).writeAsString(_render(e.job, e.format));
       emit(state.copyWith(
         saveFormat: e.format.id,
-        status: 'Сохранено: «${os.basename(e.path)}»',
+        status: currentL10n().statusSavedFile(os.basename(e.path)),
       ));
     } catch (err) {
       stderr.writeln('tsukiko: не удалось сохранить — $err');
-      emit(state.copyWith(status: 'Не удалось сохранить файл'));
+      emit(state.copyWith(status: currentL10n().errorSaveFileFailed));
     }
     _persist();
   }
@@ -845,10 +843,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
           written++;
         }
       }
-      emit(state.copyWith(status: 'Экспортировано: ${filesLabel(written)}'));
+      emit(state.copyWith(status: currentL10n().statusExported(filesLabel(written))));
     } catch (err) {
       stderr.writeln('tsukiko: экспорт оборвался — $err');
-      emit(state.copyWith(status: 'Экспорт не удался'));
+      emit(state.copyWith(status: currentL10n().errorExportFailed));
     }
   }
 
@@ -888,12 +886,12 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     // сделала, спрашивать нечего. Не вышло — остаётся выбрать файл руками.
     final path = await _fetch(
         null,
-        Download(vadModelUrl, vadModelPath, title: 'распознавание пауз'),
+        Download(vadModelUrl, vadModelPath, title: currentL10n().vadDownloadTitle),
         emit);
     if (path != null) {
       add(OptionsEdited((o) => o.copyWith(vadModel: path, vad: true)));
     } else {
-      emit(state.copyWith(status: 'Выберите файл модели пауз вручную'));
+      emit(state.copyWith(status: currentL10n().statusPickVadManually));
     }
   }
 
@@ -912,7 +910,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       download: offer,
       downloadProgress: d.progressLabel,
       downloadPercent: d.percent,
-      status: 'Загрузка: ${d.title}…',
+      status: currentL10n().statusDownloadingTitle(d.title),
     ));
     final path = await d.run(onProgress: () {
       if (!isClosed) add(DownloadAdvanced(d.progressLabel, d.percent));
@@ -922,10 +920,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       clearDownload: true,
       models: path != null ? _withOwn(findModels(), state.defaults.model) : null,
       status: path != null
-          ? 'Загружено: ${d.title}'
+          ? currentL10n().statusDownloadedTitle(d.title)
           : d.cancelled
-              ? 'Загрузка отменена'
-              : 'Не удалось загрузить: ${d.title}',
+              ? currentL10n().statusDownloadCancelled
+              : currentL10n().statusDownloadFailedTitle(d.title),
     ));
     return path;
   }

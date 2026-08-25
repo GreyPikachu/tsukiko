@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'app_locale.dart';
+
 /// Что whisper сочиняет на тишине.
 ///
 /// Модель обучена в том числе на субтитрах, и в тишине она договаривает
@@ -163,7 +165,9 @@ String renderJson(Transcript t) => const JsonEncoder.withIndent('  ').convert({
     });
 
 String renderMarkdown(String name, Transcript t) {
-  final b = StringBuffer('# $name\n\nЯзык: ${t.lang} · сегментов: ${t.segments.length}\n\n');
+  final l10n = currentL10n();
+  final b = StringBuffer(l10n.markdownHeader(
+      name, t.lang, l10n.segmentsLabel(t.segments.length)));
   for (final s in t.segments) {
     b.writeln('**[${fmtTs(s.from)}]** ${s.text}\n');
   }
@@ -174,20 +178,41 @@ String renderMarkdown(String name, Transcript t) {
 /// Раньше содержимое .txt зависело от галки «показывать метки времени»,
 /// то есть настройка вида молча меняла файл. Теперь это разные форматы.
 class ExportFormat {
-  const ExportFormat(this.id, this.label, this.suffix);
-  final String id, label, suffix;
+  const ExportFormat(this.id, this._suffix);
+  final String id;
+  final String _suffix;
+
+  /// Окончание имени файла. У текста с таймкодами оно со словом, и слово
+  /// это интерфейсное: по-английски файл должен называться
+  /// «(timestamps).txt», а не «(таймкоды).txt».
+  String get suffix =>
+      id == 'txt-ts' ? '${currentL10n().timedTextSuffix}.txt' : _suffix;
+
+  /// Считается из [id], а не хранится: имя формата — интерфейсный текст,
+  /// и меняться должно вместе с языком интерфейса, а не быть впаянным
+  /// в константу на старте.
+  String get label {
+    final l10n = currentL10n();
+    return switch (id) {
+      'txt' => l10n.formatPlainTextLabel,
+      'txt-ts' => l10n.formatTimedTextLabel,
+      'srt' => l10n.formatSrtLabel,
+      'vtt' => l10n.formatVttLabel,
+      'json' => l10n.formatJsonLabel,
+      _ => 'Markdown',
+    };
+  }
 
   String fileName(String stem) => '$stem$suffix';
   String get ext => suffix.substring(suffix.lastIndexOf('.'));
 }
 
-const formatPlainText = ExportFormat('txt', 'Текст без таймкодов', '.txt');
-const formatTimedText =
-    ExportFormat('txt-ts', 'Текст с таймкодами', ' (таймкоды).txt');
-const formatSrt = ExportFormat('srt', 'Субтитры SRT', '.srt');
-const formatVtt = ExportFormat('vtt', 'Субтитры VTT', '.vtt');
-const formatMarkdown = ExportFormat('md', 'Markdown', '.md');
-const formatJson = ExportFormat('json', 'JSON с миллисекундами', '.json');
+const formatPlainText = ExportFormat('txt', '.txt');
+const formatTimedText = ExportFormat('txt-ts', ' (таймкоды).txt');
+const formatSrt = ExportFormat('srt', '.srt');
+const formatVtt = ExportFormat('vtt', '.vtt');
+const formatMarkdown = ExportFormat('md', '.md');
+const formatJson = ExportFormat('json', '.json');
 
 const exportFormats = [
   formatPlainText,

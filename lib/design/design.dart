@@ -4,8 +4,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/physics.dart';
 import 'package:macos_ui/macos_ui.dart';
 
+import '../core/app_locale.dart';
 import '../core/library.dart';
 import '../core/models.dart';
+import '../l10n/gen/app_localizations.dart';
 import '../platform/os.dart';
 
 /// Пружины и типографика по формулировкам Apple: не «длительность и кривая»,
@@ -344,7 +346,9 @@ class _HotkeyRowState extends State<HotkeyRow> {
               children: [
                 Expanded(child: Text(widget.label, style: Type.control)),
                 KeyCap(
-                  _waiting ? 'Нажмите сочетание…' : widget.keys,
+                  _waiting
+                      ? AppLocalizations.of(context).hotkeyCapturePrompt
+                      : widget.keys,
                   lit: _hover || _waiting,
                 ),
               ],
@@ -386,7 +390,7 @@ class _LibraryPathState extends State<LibraryPath> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         MacosTooltip(
-          message: 'Показать в ${os.fileManagerName}',
+          message: AppLocalizations.of(context).buttonShowInFileManager(os.fileManagerName),
           child: MouseRegion(
             onEnter: (_) => setState(() => _hover = true),
             onExit: (_) => setState(() => _hover = false),
@@ -433,7 +437,7 @@ class _LibraryPathState extends State<LibraryPath> {
           controlSize: ControlSize.regular,
           secondary: true,
           onPressed: widget.onChange,
-          child: const Text('Выбрать другую папку…'),
+          child: Text(AppLocalizations.of(context).buttonPickAnotherFolder),
         ),
       ],
     );
@@ -473,7 +477,7 @@ class ModelField extends StatelessWidget {
     final f = fallback;
     return MacosPopupButton<String>(
       value: installed.contains(value) ? value : (f == null ? null : ''),
-      hint: Text(f ?? 'Не выбрана'),
+      hint: Text(f ?? AppLocalizations.of(context).modelNotSelected),
       items: [
         if (f != null) MacosPopupMenuItem(value: '', child: Text(f)),
         for (final m in installed)
@@ -487,7 +491,7 @@ class ModelField extends StatelessWidget {
           MacosPopupMenuItem(
             enabled: false,
             child: Text(
-              'Можно загрузить',
+              AppLocalizations.of(context).sectionCanDownload,
               style: Type.caption.copyWith(color: Surface.secondaryText(context)),
             ),
           ),
@@ -528,7 +532,7 @@ class ModelDownload extends StatelessWidget {
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Загрузка: $title', style: Type.control),
+          Text(AppLocalizations.of(context).downloadingTitle(title), style: Type.control),
           const SizedBox(height: 7),
           ProgressBar(value: percent.toDouble()),
           const SizedBox(height: 7),
@@ -544,7 +548,7 @@ class ModelDownload extends StatelessWidget {
                 controlSize: ControlSize.small,
                 secondary: true,
                 onPressed: onCancel,
-                child: const Text('Отменить'),
+                child: Text(AppLocalizations.of(context).buttonCancelDownload),
               ),
             ],
           ),
@@ -603,7 +607,7 @@ class _ContextMenuRoute extends PopupRoute<void> {
   bool get barrierDismissible => true;
 
   @override
-  String get barrierLabel => 'Закрыть меню';
+  String get barrierLabel => currentL10n().barrierLabelCloseMenu;
 
   @override
   Duration get transitionDuration => const Duration(milliseconds: 120);

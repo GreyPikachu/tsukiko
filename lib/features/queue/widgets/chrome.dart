@@ -4,6 +4,7 @@ import 'package:macos_ui/macos_ui.dart';
 import '../../../core/model_usage.dart';
 import '../../../core/text.dart';
 import '../../../design/design.dart';
+import '../../../l10n/gen/app_localizations.dart';
 
 /// Обвязка окна: заголовок в панели инструментов, значок занятости
 /// модели в строке состояния и заглушка пустого экрана.
@@ -69,6 +70,7 @@ class ModelChipState extends State<ModelChip> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final color = widget.busy && widget.info.state == ModelState.free
         ? MacosColors.systemOrangeColor
         : switch (widget.info.state) {
@@ -78,7 +80,7 @@ class ModelChipState extends State<ModelChip> {
           };
     return MacosTooltip(
       message: '${widget.detail}\n'
-          '${widget.yielding ? 'Очередь ждёт, пока модель освободится. Нажмите, чтобы не ждать.' : 'Работаем, даже если модель занята. Нажмите, чтобы уступать.'}',
+          '${widget.yielding ? l10n.modelChipYieldOn : l10n.modelChipYieldOff}',
       child: MouseRegion(
         onEnter: (_) => setState(() => _hover = true),
         onExit: (_) => setState(() => _hover = false),

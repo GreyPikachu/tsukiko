@@ -13,6 +13,7 @@ import '../../core/models.dart';
 import '../../core/whisper.dart';
 import '../../platform/os.dart';
 import '../../core/settings.dart';
+import '../../core/app_locale.dart';
 
 /// Диктовка целиком: перехват клавиш, запись, сервер с моделью, вставка
 /// текста и то, что из этого видно в панели.
@@ -403,13 +404,11 @@ class DictationCubit extends Cubit<DictationState> {
           failurePath = saved ?? path;
           failure = _aborted
               ? saved == null
-                  ? 'Распознавание отменено, а сохранить запись не вышло: $path'
-                  : 'Распознавание отменено. Запись сохранена, распознать её '
-                      'можно в главном окне — или удалить, если не нужна.'
+                  ? currentL10n().dictationAbortedNoSave(path)
+                  : currentL10n().dictationAbortedSaved
               : saved == null
-                  ? 'Распознать не удалось, и сохранить запись тоже: $path'
-                  : 'Распознать не удалось — модель не ответила. '
-                      'Запись сохранена: $saved';
+                  ? currentL10n().dictationFailedNoSave(path)
+                  : currentL10n().dictationFailedSaved(saved);
         } else {
           _discard(path);
           if (text.isNotEmpty) {
@@ -425,9 +424,7 @@ class DictationCubit extends Cubit<DictationState> {
                 // «Универсальный доступ». Текст при этом уже распознан,
                 // и терять его нельзя: кладём в буфер и говорим вслух.
                 await copyLast();
-                failure = 'Текст не удалось вставить в активное окно — '
-                    'похоже, снят «Универсальный доступ». Он скопирован '
-                    'в буфер обмена: вставьте его сами, ⌘V.';
+                failure = currentL10n().insertFailed(os.accessibilityName);
               }
             }
           }
@@ -571,7 +568,7 @@ class DictationCubit extends Cubit<DictationState> {
     _emit(gone
         ? state.copyWith(clearFailure: true)
         : state.copyWith(
-            failure: 'Не удалось убрать запись в Корзину. Она лежит здесь: $path',
+            failure: currentL10n().recordingTrashFailed(path),
           ));
   }
 
@@ -585,7 +582,7 @@ class DictationCubit extends Cubit<DictationState> {
     if (p == null) return;
     if (await revealInFinder(p)) return;
     _emit(state.copyWith(
-      failure: 'Записи больше нет на диске — её убрали мимо приложения.',
+      failure: currentL10n().recordingGoneExternally,
       clearFailurePath: true,
     ));
   }
@@ -596,7 +593,7 @@ class DictationCubit extends Cubit<DictationState> {
     final p = state.failurePath;
     if (p == null || File(p).existsSync()) return;
     _emit(state.copyWith(
-      failure: 'Записи больше нет на диске — её убрали мимо приложения.',
+      failure: currentL10n().recordingGoneExternally,
       clearFailurePath: true,
     ));
   }
