@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/core/library.dart';
-import 'package:tsukiko/core/model_usage.dart';
 import 'package:tsukiko/core/models.dart';
 import 'package:tsukiko/core/settings.dart';
 
@@ -218,32 +217,4 @@ void main() {
     });
   });
 
-  test('опрос сохраняет замер CPU, даже когда занять модель некому', () async {
-    final model = File('${tmp.path}/ggml-fake.bin')
-      ..writeAsBytesSync(List<int>.filled(1024, 0));
-
-    // Замер прошлого опроса, когда сосед ещё был виден.
-    final earlier = CpuSample(
-      DateTime.now().subtract(const Duration(seconds: 1)),
-      const {4242: (cpu: 12.5, rssKb: 900000)},
-    );
-
-    final use = await modelUsage(
-      modelPath: model.path,
-      previous: earlier,
-      probeHolders: false,
-    );
-
-    // Инвариант: после любого опроса у следующего есть база для разницы —
-    // либо свежий замер, либо сохранённый прошлый. Раньше ветка «кандидатов
-    // не нашлось» возвращала пустой замер без времени, и сосед, пропавший
-    // на один такт и вернувшийся (whisper-cli перезапускается на каждом
-    // файле чужой очереди), оставался незамеченным ещё 700 мс.
-    expect(use.cpu.at, isNotNull, reason: 'следующий опрос не остался без базы');
-    if (use.cpu.at == earlier.at) {
-      // Кандидатов не нашлось — прошлый замер вернулся целиком.
-      expect(use.state, ModelState.free);
-      expect(use.cpu.byPid[4242]?.cpu, 12.5);
-    }
-  });
 }

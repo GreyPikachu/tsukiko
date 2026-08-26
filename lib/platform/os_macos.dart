@@ -89,7 +89,7 @@ class MacOs implements Os {
   String get appIconAreaName => 'Dock';
 
   @override
-  String get menuBarName => systemL10n().menuBarNameLabel;
+  String get menuBarName => currentL10n().menuBarNameLabel;
 
   @override
   String get settingsShortcut => '⌘,';
@@ -143,55 +143,6 @@ class MacOs implements Os {
     } catch (_) {}
   }
 
-  @override
-  Future<List<int>> holdersOf(List<String> paths) =>
-      _pids('lsof', ['-t', ...paths]);
-
-  @override
-  Future<List<int>> pidsMatching(String pattern) => _pids('pgrep', ['-f', pattern]);
-
-  @override
-  Future<List<int>> pidsNamed(String name) => _pids('pgrep', ['-x', name]);
-
-  Future<List<int>> _pids(String cmd, List<String> args) async {
-    try {
-      final r = await Process.run(cmd, args);
-      return (r.stdout as String)
-          .split(RegExp(r'\s+'))
-          .map(int.tryParse)
-          .whereType<int>()
-          .toList();
-    } catch (_) {
-      return const [];
-    }
-  }
-
-  static final _sampleLine =
-      RegExp(r'^\s*(\d+)\s+(\d+)\s+([\d:.\-]+)\s+(.*)$');
-
-  @override
-  Future<List<ProcSample>> sample(Iterable<int> pids) async {
-    if (pids.isEmpty) return const [];
-    try {
-      final ps = await Process.run(
-          'ps', ['-o', 'pid=,rss=,time=,comm=', '-p', pids.join(',')]);
-      final out = <ProcSample>[];
-      for (final line in (ps.stdout as String).split('\n')) {
-        final m = _sampleLine.firstMatch(line);
-        if (m == null) continue;
-        out.add((
-          pid: int.parse(m.group(1)!),
-          rssKb: int.parse(m.group(2)!),
-          cpuSeconds: cpuSeconds(m.group(3)!) ?? 0,
-          name: basename(m.group(4)!.trim()),
-        ));
-      }
-      return out;
-    } catch (_) {
-      return const [];
-    }
-  }
-
   static final _listingLine = RegExp(r'^\s*(\d+)\s+(\d+)\s+(.*)$');
 
   @override
@@ -243,15 +194,6 @@ class MacOs implements Os {
     } catch (_) {
       return false;
     }
-  }
-
-  /// `~/Library/Application Support/<обратный.домен>/…` → «домен».
-  @override
-  String? appOwnerOf(String path) {
-    final m = RegExp(r'/Application Support/([^/]+)/').firstMatch(path);
-    if (m == null) return null;
-    final name = m.group(1)!.split('.').last.toLowerCase();
-    return name.isEmpty ? null : name;
   }
 
   @override

@@ -5,13 +5,11 @@ import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/core/library.dart';
-import 'package:tsukiko/core/model_usage.dart';
 import 'package:tsukiko/core/models.dart';
 import 'package:tsukiko/core/text.dart';
 import 'package:tsukiko/core/transcript.dart';
 import 'package:tsukiko/core/whisper.dart';
 import 'package:tsukiko/platform/os.dart';
-import 'package:tsukiko/platform/os_macos.dart' show cpuSeconds;
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -181,97 +179,12 @@ void main() {
     expect(defaultLibraryPath.endsWith('/Documents/tsukiko'), isTrue);
   });
 
-  test('владелец модели угадывается по пути к файлу', () {
-    // Соседнее приложение держит модель у себя в данных — по такому пути
-    // оно узнаётся ещё до того, как мы увидели его процесс.
-    expect(
-      ownerFromModelPath(
-          '/Users/x/Library/Application Support/com.example.речь/models/ggml-large.bin'),
-      'речь',
-    );
-    expect(ownerFromModelPath('/Users/x/.cache/whisper/ggml-large.bin'), isNull);
-  });
 
-  test('занятость модели: свободна, когда её никто не держит', () async {
-    // несуществующий файл — проверять нечего
-    expect((await modelUsage(modelPath: '/нет/такого.bin')).busy, isFalse);
 
-    // реальная модель: сейчас распознавание не идёт, значит свободна
-    final models = findModels();
-    if (models.isEmpty) return;
-    final use = await modelUsage(modelPath: models.first);
-    expect(ModelState.values.contains(use.state), isTrue);
-    expect(use.label.startsWith('Модель'), isTrue);
-  });
 
-  test('разбор процессорного времени из ps', () {
-    expect(cpuSeconds('0:00.00'), 0);
-    expect(cpuSeconds('69:20.60'), closeTo(69 * 60 + 20.6, 0.001));
-    expect(cpuSeconds('1:02:03.5'), closeTo(3723.5, 0.001));
-    expect(cpuSeconds('2-03:04:05'), closeTo(2 * 86400 + 3 * 3600 + 4 * 60 + 5, 0.001));
-    expect(cpuSeconds('  '), isNull);
-    expect(cpuSeconds('чепуха'), isNull);
-  });
 
-  test('опрос отдаёт замер CPU, по которому считается следующий', () async {
-    final models = findModels();
-    if (models.isEmpty) return;
 
-    final first = await modelUsage(modelPath: models.first, others: models);
-    // Первый опрос сравнивать не с чем — доля ядра ещё неизвестна.
-    expect(first.share, 0);
 
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    final second = await modelUsage(
-      modelPath: models.first,
-      others: models,
-      previous: first.cpu,
-    );
-    // Замер должен быть привязан ко времени, иначе разницу не поделить.
-    if (second.cpu.byPid.isNotEmpty) expect(second.cpu.at, isNotNull);
-    // Фоновые процессы не должны выглядеть занятыми — но только если рядом
-    // никто не распознаёт. Иначе тест падал у любого, кто держит диктовку
-    // или гоняет соседний тест с живым сервером.
-    if ((await Process.run('pgrep', ['-f', 'whisper'])).exitCode != 0) {
-      expect(second.share, lessThan(0.35));
-    }
-  });
-
-  test('чужая модель тоже видна, а не только выбранная', () async {
-    final models = findModels();
-    if (models.length < 2) return;
-    // Кандидатов ищем по всем известным моделям: сосед может держать свою.
-    final only = await modelUsage(modelPath: models.first);
-    final all = await modelUsage(modelPath: models.first, others: models);
-    expect(all.learned.length, greaterThanOrEqualTo(only.learned.length));
-  });
-
-  test('чужой процесс с большим RSS считается занявшим модель', () async {
-    final models = findModels();
-    if (models.isEmpty) return;
-    // Тест исходит из того, что рядом ничего не распознаётся. Если идёт
-    // диктовка — проверять нечего: детектор обязан показать «занято». Раньше
-    // тест на этом падал у любого, кто запускал его во время диктовки.
-    if ((await Process.run('pgrep', ['-f', 'whisper'])).exitCode == 0) return;
-    // Собственный процесс исключается из проверки: очередь не должна
-    // уступать сама себе.
-    final self = await modelUsage(modelPath: models.first, ignorePid: pid);
-    expect(self.busy, isFalse);
-  });
-
-  test('сами себе не сосед: своя папка моделей не делает нас занявшим', () async {
-    // Скачанные модели лежат в нашей же папке, и владельцем по пути
-    // угадываемся мы сами.
-    expect(ownerFromModelPath(vadModelPath), appName);
-    final models = findModels();
-    if (models.isEmpty) return;
-    // Поэтому своё имя в кандидаты не берётся: иначе запущенное приложение
-    // считалось бы соседом, занявшим модель, и очередь ждала бы саму себя.
-    final use = await modelUsage(modelPath: models.first, probeHolders: false);
-    expect(use.by, isNot(appName));
-    // Свободная модель никем не занята — и гасить по этому pid нечего.
-    if (!use.busy) expect(use.pid, 0);
-  });
 
   test('числительные согласуются с числом', () {
     expect(segmentsLabel(1), '1 фрагмент');
@@ -345,7 +258,7 @@ void main() {
 
   test('afconvert делает wav из системного звука', () async {
     final out = '${Directory.systemTemp.path}/tsukiko_test.wav';
-    final res = await toWav('/System/Library/Sounds/Ping.aiff', out);
+    final res = await os.toWav('/System/Library/Sounds/Ping.aiff', out);
     expect(res, out);
     expect(File(out).lengthSync() > 1000, isTrue);
     File(out).deleteSync();
@@ -519,7 +432,7 @@ void main() {
     if (findWhisperServer() == null || models.isEmpty) return;
 
     final wav = '${Directory.systemTemp.path}/tsukiko_dictation.wav';
-    await toWav('/System/Library/Sounds/Ping.aiff', wav);
+    await os.toWav('/System/Library/Sounds/Ping.aiff', wav);
 
     final server = WhisperServer(idleTimeout: const Duration(seconds: 30));
     try {

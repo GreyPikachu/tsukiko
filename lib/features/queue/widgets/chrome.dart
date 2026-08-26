@@ -1,10 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:macos_ui/macos_ui.dart';
 
-import '../../../core/model_usage.dart';
 import '../../../core/text.dart';
 import '../../../design/design.dart';
-import '../../../l10n/gen/app_localizations.dart';
 
 /// Обвязка окна: заголовок в панели инструментов, значок занятости
 /// модели в строке состояния и заглушка пустого экрана.
@@ -37,81 +35,56 @@ class ToolbarTitle extends StatelessWidget {
 class ModelChip extends StatefulWidget {
   const ModelChip({
     super.key,
-    required this.info,
     required this.label,
     required this.detail,
     required this.busy,
-    required this.yielding,
+    required this.resting,
     required this.waiting,
-    required this.onTap,
   });
-  final ModelUse info;
 
   /// Как назвать занятость и что рассказать в подсказке. Приходят готовыми:
   /// своё («Занято диктовкой») и чужое («Модель занята · имя») зовутся
   /// по-разному, а знает об этом окно, а не значок.
   final String label, detail;
 
-  /// Занято ли — с нашей собственной расшифровкой вместе.
+  /// Занято ли — расшифровкой или диктовкой, всё равно.
   final bool busy;
 
-  final bool yielding;
+  /// Модель лежит в памяти, но никто ей не пользуется.
+  final bool resting;
 
   /// Наша очередь прямо сейчас стоит из-за этого.
   final bool waiting;
-  final VoidCallback onTap;
 
   @override
   State<ModelChip> createState() => ModelChipState();
 }
 
 class ModelChipState extends State<ModelChip> {
-  bool _hover = false;
-
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final color = widget.busy && widget.info.state == ModelState.free
+    final color = widget.busy
         ? MacosColors.systemOrangeColor
-        : switch (widget.info.state) {
-            ModelState.busy => MacosColors.systemOrangeColor,
-            ModelState.loading => MacosColors.systemYellowColor,
-            ModelState.free => MacosColors.systemGreenColor,
-          };
+        : widget.resting
+            ? MacosColors.systemYellowColor
+            : MacosColors.systemGreenColor;
     return MacosTooltip(
-      message: '${widget.detail}\n'
-          '${widget.yielding ? l10n.modelChipYieldOn : l10n.modelChipYieldOff}',
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: AnimatedContainer(
-            duration: Motion.dur(context, Motion.quick),
-            curve: Motion.curve(context, Motion.quickCurve),
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-            decoration: BoxDecoration(
-              color: _hover ? Surface.hover(context) : MacosColors.transparent,
-              borderRadius: BorderRadius.circular(20),
+      message: widget.detail,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Пока очередь стоит из-за диктовки, точка пульсирует:
+            // состояние временное, а не сломанное.
+            Dot(color: color, pulsing: widget.waiting),
+            const SizedBox(width: 7),
+            Text(
+              widget.label,
+              style: Type.caption
+                  .copyWith(color: Surface.secondaryText(context)),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Пока мы стоим из-за соседа, точка пульсирует: состояние
-                // временное, а не сломанное.
-                Dot(color: color, pulsing: widget.waiting),
-                const SizedBox(width: 7),
-                Text(
-                  widget.label,
-                  style: Type.caption.copyWith(
-                    color: Surface.secondaryText(context),
-                    decoration: widget.yielding ? null : TextDecoration.lineThrough,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ],
         ),
       ),
     );

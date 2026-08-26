@@ -63,6 +63,14 @@ private let doubleTapWindow: TimeInterval = 0.4
 /// не считается — иначе «держать и говорить» ловилось бы как стук.
 private let tapMaxHold: TimeInterval = 0.25
 
+/// Клавиши-модификаторы: ⇧ ⌃ ⌥ ⌘ fn и их правые двойники, плюс Caps Lock.
+///
+/// Некоторые клавиатуры (глобус на новых Mac) шлют на модификатор ещё и
+/// обычное нажатие клавиши. Если его засчитать, «fn» превращается в
+/// «fn + #63»: модификатор и он же в виде клавиши. Считаем такие коды
+/// только модификаторами — какие из них нажаты, и без того видно по флагам.
+private let modifierKeyCodes: Set<CGKeyCode> = [54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+
 private func keyName(_ code: CGKeyCode) -> String {
   keyNames[code] ?? "#\(code)"
 }
@@ -339,15 +347,24 @@ final class DictationBridge: NSObject {
         other.invokeMethod("reload", arguments: nil)
       }
       reply(nil)
-    case "requestModel":
+    case "dictationStatus":
       // Спрашивает очередь, отвечает диктовка: только её изолят знает,
-      // говорит ли человек прямо сейчас. Без панели отказывать некому.
+      // говорит ли человек прямо сейчас. Без панели отвечать некому —
+      // значит, и модели в памяти нет.
       guard let panel = channel else {
-        reply(true)
+        reply("away")
         return
       }
-      panel.invokeMethod("yieldModel", arguments: nil, result: { answer in
-        reply((answer as? Bool) ?? true)
+      panel.invokeMethod("dictationStatus", arguments: nil, result: { answer in
+        reply((answer as? String) ?? "away")
+      })
+    case "releaseModel":
+      guard let panel = channel else {
+        reply(nil)
+        return
+      }
+      panel.invokeMethod("releaseModel", arguments: nil, result: { _ in
+        reply(nil)
       })
     case "openSettings":
       showSettings(tab: (args?["tab"] as? String) ?? "dictation")
@@ -548,7 +565,9 @@ final class DictationBridge: NSObject {
     // Что зажато прямо сейчас. Без этого «сочетание» ограничивалось одной
     // клавишей: набор X+Y отследить по одному событию нельзя.
     switch type {
-    case .keyDown: heldKeys.insert(code)
+    // Модификаторы видно по флагам; клавишей тот же код считать нельзя —
+    // иначе сочетание с fn перестало бы совпадать само с собой.
+    case .keyDown where !modifierKeyCodes.contains(code): heldKeys.insert(code)
     case .keyUp: heldKeys.remove(code)
     default: break
     }
@@ -597,13 +616,15 @@ final class DictationBridge: NSObject {
   /// набранное и есть сочетание. Годится любая клавиша и любое их число,
   /// хоть «Y», хоть «X+Y», хоть «fn+O».
   ///
-  /// Единственное ограничение — сочетание из одних модификаторов должно
-  /// состоять хотя бы из двух: одна ⇧ или ⌘ срабатывала бы непрерывно
-  /// и отняла бы модификатор у всей системы.
-  ///
   /// Двойное нажатие назначается тем же стуком: набрали, отпустили быстро —
   /// ждём [doubleTapWindow], и если то же самое пришло второй раз, значит
   /// человек назначает двойное. Отдельной галочки для этого нет.
+  ///
+  /// Одинокий модификатор — только двойным стуком. Одна ⇧ или ⌘ сама по
+  /// себе срабатывала бы непрерывно и отняла бы модификатор у всей системы,
+  /// а вот два быстрых стука по ней свободны — на этом же держится
+  /// системное «дважды fn». Поэтому одиночное нажатие одного модификатора
+  /// не назначается вовсе: окно продолжает ждать, пока наберут годное.
   private func capture(
     type: CGEventType, mods: Set<String>, code: CGKeyCode
   ) -> Unmanaged<CGEvent>? {
@@ -613,7 +634,7 @@ final class DictationBridge: NSObject {
 
     switch type {
     case .keyDown:
-      captureKeys.insert(code)
+      if !modifierKeyCodes.contains(code) { captureKeys.insert(code) }
       captureMods.formUnion(mods)
       // Поглощаем: набираемая буква не должна попасть в чужое поле.
       return nil
@@ -624,11 +645,13 @@ final class DictationBridge: NSObject {
     }
 
     // Всё отпущено — сочетание набрано.
-    guard heldKeys.isEmpty, mods.isEmpty, !captureKeys.isEmpty || captureMods.count >= 2
+    guard heldKeys.isEmpty, mods.isEmpty, !captureKeys.isEmpty || !captureMods.isEmpty
     else { return nil }
 
     let quick = Date().timeIntervalSince(captureStartedAt ?? Date()) < tapMaxHold
     let combo = (mods: captureMods, keys: captureKeys.map(keyName).sorted())
+    // Годится ли этот набор одиночным нажатием.
+    let aloneIsEnough = !combo.keys.isEmpty || combo.mods.count >= 2
     captureKeys = []
     captureMods = []
     captureStartedAt = nil
@@ -639,19 +662,24 @@ final class DictationBridge: NSObject {
       return nil
     }
 
-    guard quick else {
-      finishCapture(combo.mods, combo.keys, taps: 1)
+    // Затянувшееся нажатие вторым стуком уже не станет: годное назначаем
+    // сразу, одинокий модификатор просто ждёт дальше.
+    if !quick {
+      if aloneIsEnough { finishCapture(combo.mods, combo.keys, taps: 1) }
       return nil
     }
 
-    // Короткий стук: ждём второго. Не дождались — назначаем одинарное.
+    // Короткий стук: ждём второго. Не дождались — годный набор назначаем
+    // одиночным, а одинокий модификатор отпускаем: он без второго стука
+    // не сочетание, и окно продолжает ждать.
     pendingCapture = combo
     pendingTicket += 1
     let ticket = pendingTicket
     DispatchQueue.main.asyncAfter(deadline: .now() + doubleTapWindow) { [weak self] in
       guard let self, self.pendingTicket == ticket, let pending = self.pendingCapture
       else { return }
-      self.finishCapture(pending.mods, pending.keys, taps: 1)
+      self.pendingCapture = nil
+      if aloneIsEnough { self.finishCapture(pending.mods, pending.keys, taps: 1) }
     }
     return nil
   }

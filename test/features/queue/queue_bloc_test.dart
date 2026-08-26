@@ -4,7 +4,6 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tsukiko/core/model_usage.dart';
 import 'package:tsukiko/core/settings.dart';
 import 'package:tsukiko/core/transcript.dart';
 import 'package:tsukiko/core/whisper.dart';
@@ -12,6 +11,7 @@ import 'package:tsukiko/features/queue/job.dart';
 import 'package:tsukiko/features/queue/queue_bloc.dart';
 import 'package:tsukiko/features/queue/queue_event.dart';
 import 'package:tsukiko/features/queue/queue_state.dart';
+import 'package:tsukiko/features/dictation/dictation_repository.dart';
 import 'package:tsukiko/platform/bridge.dart';
 
 import '../../support/fake_os.dart';
@@ -44,6 +44,11 @@ void main() {
   });
 
   QueueBloc make() => QueueBloc(NativeBridge());
+
+  /// Диктовка живёт в другом изоляте, и в тестах её нет вовсе. Репозиторий
+  /// затем и заведён, чтобы очередь спрашивала не канал, а его.
+  QueueBloc makeWith(DictationStatus status) =>
+      QueueBloc(NativeBridge(), dictation: _FakeDictation(status));
 
   /// Файл нужного расширения — очередь смотрит только на него и на то,
   /// существует ли путь.
@@ -284,20 +289,31 @@ void main() {
     );
 
     blocTest<QueueBloc, QueueState>(
-      'занятая модель без уступки спрашивает, а не начинает молча',
-      build: make,
+      'модель в памяти у молчащей диктовки — спрашиваем, а не забираем молча',
+      build: () => makeWith(DictationStatus.resting),
       seed: () => QueueState(
         jobs: [job('а.m4a')],
         whisperFound: true,
         defaults: const RunOptions(model: '/m.bin', lang: 'auto', threads: 4),
-        yieldBusyModel: false,
-        modelUse: const ModelUse(ModelState.busy, by: 'сосед', pid: 4242),
       ),
       act: (b) => b.add(const RunRequested()),
       verify: (b) {
         expect(b.state.ask?.confirm, isTrue);
         expect(b.state.running, isFalse);
       },
+    );
+
+    blocTest<QueueBloc, QueueState>(
+      'идущая диктовка молча пропускается вперёд: вопроса нет, очередь ждёт',
+      build: () => makeWith(DictationStatus.busy),
+      seed: () => QueueState(
+        jobs: [job('а.m4a')],
+        whisperFound: true,
+        defaults: const RunOptions(model: '/m.bin', lang: 'auto', threads: 4),
+      ),
+      act: (b) => b.add(const RunRequested()),
+      // Спрашивать нечего: прервать фразу нельзя, её можно только дождаться.
+      verify: (b) => expect(b.state.ask, isNull),
     );
 
     blocTest<QueueBloc, QueueState>(
@@ -393,17 +409,11 @@ void main() {
 
   group('настройки приложения', () {
     blocTest<QueueBloc, QueueState>(
-      'метки времени и уступка переключаются и переживают перечитывание',
+      'метки времени переключаются и переживают перечитывание',
       build: make,
-      seed: () => const QueueState(timestamps: true, yieldBusyModel: true),
-      act: (b) {
-        b.add(const TimestampsToggled());
-        b.add(const YieldToggled());
-      },
-      verify: (b) {
-        expect(b.state.timestamps, isFalse);
-        expect(b.state.yieldBusyModel, isFalse);
-      },
+      seed: () => const QueueState(timestamps: true),
+      act: (b) => b.add(const TimestampsToggled()),
+      verify: (b) => expect(b.state.timestamps, isFalse),
     );
 
     blocTest<QueueBloc, QueueState>(
@@ -455,4 +465,17 @@ class _FakeNative {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, null);
   }
+}
+
+/// Диктовка, которая всегда в одном и том же состоянии.
+class _FakeDictation implements DictationRepository {
+  _FakeDictation(this._status);
+  final DictationStatus _status;
+  var released = false;
+
+  @override
+  Future<DictationStatus> status() async => _status;
+
+  @override
+  Future<void> release() async => released = true;
 }

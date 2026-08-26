@@ -34,7 +34,6 @@ class SettingsState extends Equatable {
     this.toLibrary = true,
     this.saveNextToSource = false,
     this.timestamps = true,
-    this.yieldBusyModel = true,
     this.dockIcon = true,
     this.loginItem = false,
     this.libraryPath = '',
@@ -104,7 +103,7 @@ class SettingsState extends Equatable {
 
   // ── приложение ────────────────────────────────────────────────────────────
 
-  final bool toLibrary, saveNextToSource, timestamps, yieldBusyModel, dockIcon;
+  final bool toLibrary, saveNextToSource, timestamps, dockIcon;
 
   /// Автозапуск живёт в системе, а не в settings.json: его можно выключить
   /// в системных настройках мимо нас.
@@ -142,7 +141,6 @@ class SettingsState extends Equatable {
     bool? toLibrary,
     bool? saveNextToSource,
     bool? timestamps,
-    bool? yieldBusyModel,
     bool? dockIcon,
     bool? loginItem,
     String? libraryPath,
@@ -176,7 +174,6 @@ class SettingsState extends Equatable {
         toLibrary: toLibrary ?? this.toLibrary,
         saveNextToSource: saveNextToSource ?? this.saveNextToSource,
         timestamps: timestamps ?? this.timestamps,
-        yieldBusyModel: yieldBusyModel ?? this.yieldBusyModel,
         dockIcon: dockIcon ?? this.dockIcon,
         loginItem: loginItem ?? this.loginItem,
         libraryPath: libraryPath ?? this.libraryPath,
@@ -207,7 +204,6 @@ class SettingsState extends Equatable {
         toLibrary,
         saveNextToSource,
         timestamps,
-        yieldBusyModel,
         dockIcon,
         loginItem,
         libraryPath,

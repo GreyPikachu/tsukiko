@@ -115,7 +115,6 @@
   "buttonCancel": "Отмена",
   "sectionHowToRecognize": "Как распознавать записи",
   "hintPerRecordingSettings": "Модель, язык, пунктуация, разбивка на фрагменты, скорость и подсказка стоят в инспекторе главного окна, справа от очереди: их меняют от записи к записи, и одного значения на все записи у них нет. Здесь — то, что для всех записей одно.",
-  "checkWaitBusyModel": "Ждать, если модель занята",
   "hintWaitBusyModel": "Пока модель держит другая программа, очередь стоит и не отбирает у неё память и GPU. Своей диктовке очередь уступает всегда: одна фраза короче одной записи.",
   "sectionAutoSave": "Сохранять расшифровки автоматически",
   "checkSaveToDisk": "Сохранять готовый текст на диск",
@@ -260,8 +259,6 @@
   "@fieldLanguage": {
     "description": "Подпись поля выбора языка интерфейса."
   },
-  "modelChipYieldOn": "Очередь ждёт, пока модель освободится. Нажмите, чтобы не ждать.",
-  "modelChipYieldOff": "Работаем, даже если модель занята. Нажмите, чтобы уступать.",
   "dropVeilHint": "Отпустите, чтобы добавить в очередь",
   "tooltipCustomSettings": "Свои настройки распознавания",
   "semanticsMascotLabel": "Маскот приложения",
@@ -278,54 +275,6 @@
   "diffSegmentLength": "длина фрагмента",
   "diffPrompt": "подсказка",
   "diffPunctuation": "пунктуация",
-  "modelFree": "Модель свободна",
-  "modelLoading": "Модель загружается · {by}",
-  "@modelLoading": {
-    "placeholders": {
-      "by": {
-        "type": "String"
-      }
-    }
-  },
-  "modelBusy": "Модель занята · {by}",
-  "@modelBusy": {
-    "placeholders": {
-      "by": {
-        "type": "String"
-      }
-    }
-  },
-  "modelFreeDetail": "Никто не распознаёт речь прямо сейчас.",
-  "modelLoadingDetail": "{by} читает файл модели в память.",
-  "@modelLoadingDetail": {
-    "placeholders": {
-      "by": {
-        "type": "String"
-      }
-    }
-  },
-  "modelBusyDetailCpu": "{by} занимает {percent} % процессора.",
-  "@modelBusyDetailCpu": {
-    "placeholders": {
-      "by": {
-        "type": "String"
-      },
-      "percent": {
-        "type": "int"
-      }
-    }
-  },
-  "modelBusyDetailMemory": "{by} держит {mb} МБ в памяти.",
-  "@modelBusyDetailMemory": {
-    "placeholders": {
-      "by": {
-        "type": "String"
-      },
-      "mb": {
-        "type": "int"
-      }
-    }
-  },
   "hotkeyCapturePrompt": "Нажмите сочетание…",
   "buttonPickAnotherFolder": "Выбрать другую папку…",
   "modelNotSelected": "Не выбрана",
@@ -633,8 +582,6 @@
   "menuRunQueue": "Распознать очередь",
   "menuRetryRecognition": "Распознать заново",
   "menuStop": "Остановить",
-  "menuDontWaitForModel": "Не ждать занятую модель",
-  "menuWaitForModel": "Ждать, если модель занята",
   "menuView": "Вид",
   "menuHideTimestamps": "Скрыть метки времени",
   "menuShowTimestamps": "Показать метки времени",
@@ -813,15 +760,6 @@
   "askModelNotSelectedTitle": "Не выбрана модель",
   "askNeedModelBody": "Нажмите «Загрузить модель…» в панели справа.\nTiny — 74 МБ, чтобы попробовать.",
   "askModelNotSelectedBody": "Укажите файл ggml-*.bin в настройках справа.",
-  "askModelBusyTitle": "Модель уже занята",
-  "askModelBusyBody": "{detail}\nОдновременная работа замедлит обе стороны. Продолжить?",
-  "@askModelBusyBody": {
-    "placeholders": {
-      "detail": {
-        "type": "String"
-      }
-    }
-  },
   "jobDetailNoModelSelected": "Не выбрана модель",
   "jobDetailWhisperFailed": "whisper-cli не справился с этим файлом",
   "statusRecognitionFailed": "Не удалось распознать «{name}»",
@@ -847,15 +785,6 @@
   "statusStopping": "Остановка…",
   "statusPausedDictation": "Пауза — идёт диктовка",
   "statusDictationDoneResuming": "Диктовка закончилась — продолжаем",
-  "statusYieldingTo": "Уступаем: {who} распознаёт речь",
-  "@statusYieldingTo": {
-    "placeholders": {
-      "who": {
-        "type": "String"
-      }
-    }
-  },
-  "statusModelFreedResuming": "Модель освободилась — продолжаем",
   "errorCopyBesideFailed": "Не удалось положить текст рядом с записью",
   "statusSavedInLibrary": "Сохранено в «{path}»",
   "@statusSavedInLibrary": {
@@ -947,7 +876,6 @@
       }
     }
   },
-  "modelUseByTranscription": "расшифровка",
   "modelUseLabelTranscription": "Занято расшифровкой",
   "modelUseLabelDictation": "Занято диктовкой",
   "modelUseDetailTranscription": "Расшифровываем запись прямо сейчас.",
@@ -955,23 +883,7 @@
   "buttonAdd": "Добавить",
   "tooltipAddAudioShortcut": "Добавить аудио · ⌘O",
   "buttonRecognize": "Распознать",
-  "tooltipWaitingFor": "Ожидание: {who} ещё работает · остановить ⌘.",
-  "@tooltipWaitingFor": {
-    "placeholders": {
-      "who": {
-        "type": "String"
-      }
-    }
-  },
   "tooltipStopShortcut": "Остановить · ⌘.",
-  "tooltipModelBusyWillStart": "Модель занята ({who}) — распознавание начнётся, как только она освободится · ⌘⏎",
-  "@tooltipModelBusyWillStart": {
-    "placeholders": {
-      "who": {
-        "type": "String"
-      }
-    }
-  },
   "tooltipRunQueueShortcut": "Распознать очередь · ⌘⏎",
   "tooltipRetryShortcut": "Распознать заново с текущими настройками · ⌥⌘R",
   "buttonCopyToolbar": "Копировать",
@@ -1108,18 +1020,57 @@
   "statusWhisperNotFound": "whisper-cli не найден",
   "statusLocalWhisperCpp": "Локально · whisper.cpp",
   "labelExportToFolder": "Экспортировать в папку",
-  "keyNameSpace": "Пробел",
-  "hotkeyNotAssigned": "Не назначено",
-  "hotkeyDoubleTapSuffix": "{combo} дважды",
-  "@hotkeyDoubleTapSuffix": {
+  "timedTextSuffix": " (таймкоды)",
+  "@timedTextSuffix": {
+    "description": "Часть имени файла: текст с таймкодами. С ведущим пробелом."
+  },
+  "keySpace": "Пробел",
+  "hotkeyUnassigned": "Не назначено",
+  "hotkeyDoubleTap": "{combo} дважды",
+  "@keySpace": {
+    "description": "Название клавиши пробела в подписи сочетания."
+  },
+  "@hotkeyUnassigned": {
+    "description": "Сочетание не назначено."
+  },
+  "@hotkeyDoubleTap": {
+    "description": "Подпись сочетания, которое срабатывает от двух быстрых нажатий.",
     "placeholders": {
       "combo": {
         "type": "String"
       }
     }
   },
-  "timedTextSuffix": " (таймкоды)",
-  "@timedTextSuffix": {
-    "description": "Часть имени файла: текст с таймкодами. С ведущим пробелом."
+  "askDictationHoldsModelTitle": "Диктовка держит модель в памяти",
+  "askDictationHoldsModelBody": "Сейчас она молчит, но модель занимает память — двум копиям сразу места нет. Выгрузить её и начать распознавание? Для следующей фразы диктовка поднимет модель заново.",
+  "@askDictationHoldsModelTitle": {
+    "description": "Заголовок вопроса перед запуском очереди, когда модель занята покоящейся диктовкой."
+  },
+  "@askDictationHoldsModelBody": {
+    "description": "Пояснение к этому вопросу."
+  },
+  "modelUseLabelResting": "Модель в памяти",
+  "modelUseLabelFree": "Модель свободна",
+  "modelUseDetailResting": "Диктовка держит модель наготове, но сейчас молчит. Запустите распознавание — она уступит.",
+  "modelUseDetailFree": "Модель никем не занята.",
+  "tooltipWaitingForDictation": "Ждём, пока диктовка договорит · остановить ⌘.",
+  "tooltipDictationBusyWillStart": "Идёт диктовка — распознавание начнётся, как только она закончит · ⌘⏎",
+  "@modelUseLabelResting": {
+    "description": "Подпись значка: модель лежит в памяти без дела."
+  },
+  "@modelUseLabelFree": {
+    "description": "Подпись значка: модель никем не занята."
+  },
+  "@modelUseDetailResting": {
+    "description": "Подсказка к значку в этом состоянии."
+  },
+  "@modelUseDetailFree": {
+    "description": "Подсказка к значку в этом состоянии."
+  },
+  "@tooltipWaitingForDictation": {
+    "description": "Подсказка кнопки, пока очередь стоит и ждёт диктовку."
+  },
+  "@tooltipDictationBusyWillStart": {
+    "description": "Подсказка кнопки запуска, пока идёт диктовка."
   }
 }

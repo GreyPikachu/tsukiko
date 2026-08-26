@@ -78,7 +78,6 @@ class SettingsCubit extends Cubit<SettingsState> {
       toLibrary: (s['toLibrary'] as bool?) ?? true,
       saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
       timestamps: (s['timestamps'] as bool?) ?? true,
-      yieldBusyModel: (s['yieldBusyModel'] as bool?) ?? true,
       dockIcon: (s['dockIcon'] as bool?) ?? true,
       libraryPath: (s['libraryPath'] as String?) ?? defaultLibraryPath,
       locale: (s[localeSetting] as String?) ?? '',
@@ -272,10 +271,6 @@ class SettingsCubit extends Cubit<SettingsState> {
     unawaited(_saveApp({'timestamps': v}));
   }
 
-  void setYieldBusyModel(bool v) {
-    _emit(state.copyWith(yieldBusyModel: v));
-    unawaited(_saveApp({'yieldBusyModel': v}));
-  }
 
   /// Язык интерфейса. Своё окно перерисовываем сразу, соседние узнают
   /// из общего файла: [refreshLocale] вызывается у всех на «reload».
