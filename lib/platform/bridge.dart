@@ -79,10 +79,11 @@ class NativeBridge {
   final _tab = StreamController<String>.broadcast();
   Completer<Hotkey?>? _capture;
 
-  /// Спросили, можно ли забрать модель. Отвечает сторона диктовки: только
-  /// она знает, говорит ли человек прямо сейчас. Нет обработчика — значит
-  /// это не она, и отказывать некому.
-  bool Function()? onModelRequested;
+  /// Спросили, чем занята диктовка, и попросили освободить память.
+  /// Отвечает сторона диктовки: только она знает, говорит ли человек
+  /// прямо сейчас. Нет обработчика — значит это не она, и отвечать некому.
+  String Function()? onStatusAsked;
+  Future<void> Function()? onReleaseAsked;
 
   Future<Object?> _onCall(MethodCall call) async {
     switch (call.method) {
@@ -113,8 +114,10 @@ class NativeBridge {
         _reload.add(null);
       case 'tab':
         _tab.add(call.arguments as String);
-      case 'yieldModel':
-        return onModelRequested?.call() ?? true;
+      case 'dictationStatus':
+        return onStatusAsked?.call() ?? 'away';
+      case 'releaseModel':
+        await onReleaseAsked?.call();
     }
     return null;
   }
@@ -184,10 +187,13 @@ class NativeBridge {
   Future<void> openPermissionSettings() =>
       _channel.invokeMethod('openPermissionSettings');
 
-  /// Попросить у диктовки модель. true — она свободна и уступила, false —
-  /// человек говорит прямо сейчас, и очереди надо подождать.
-  Future<bool> requestModel() async =>
-      await _channel.invokeMethod<bool>('requestModel') ?? true;
+  /// Спросить у диктовки, чем она занята. Отвечает изолят панели — только
+  /// он и знает; без панели отвечать некому, и это «свободно».
+  Future<String> dictationStatus() async =>
+      await _channel.invokeMethod<String>('dictationStatus') ?? 'away';
+
+  /// Попросить диктовку выгрузить модель из памяти.
+  Future<void> releaseModel() => _channel.invokeMethod('releaseModel');
 
   /// Настройки диктовки правит и главное окно — панели надо перечитать файл.
   Future<void> settingsChanged() => _channel.invokeMethod('settingsChanged');

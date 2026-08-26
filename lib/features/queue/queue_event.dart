@@ -197,12 +197,17 @@ class VadModelChosen extends QueueEvent {
 
 // ── прочее ──────────────────────────────────────────────────────────────────
 
-/// Опрос занятости модели. Приходит по таймеру, пока окно на виду.
-class ModelPolled extends QueueEvent {
-  const ModelPolled();
+/// Спросить у диктовки, чем она занята.
+///
+/// Раньше на это место приходил опрос чужих процессов: `pgrep`, `ps`
+/// и `lsof` дважды в секунду — приложение искало, не держит ли модель
+/// кто-то посторонний. Посторонних больше нет, диктовка своя, и весь
+/// ответ — один вызов через родную сторону.
+class DictationPolled extends QueueEvent {
+  const DictationPolled();
 }
 
-/// Окно ушло с глаз или вернулось: опрос занятости идёт только на виду.
+/// Окно на виду или свёрнуто: невидимому окну значок не нужен.
 class WindowVisibilityChanged extends QueueEvent {
   const WindowVisibilityChanged(this.visible);
   final bool visible;
@@ -219,9 +224,6 @@ class TimestampsToggled extends QueueEvent {
   const TimestampsToggled();
 }
 
-class YieldToggled extends QueueEvent {
-  const YieldToggled();
-}
 
 class RecentCleared extends QueueEvent {
   const RecentCleared();

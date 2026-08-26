@@ -26,6 +26,7 @@ void settingsMain() => runSettings();
 /// до запуска движка (AppDelegate.applicationWillFinishLaunching), подняв
 /// окно уже работающей. Проверять это в Dart больше нечем и незачем.
 Future<void> main(List<String> args) async {
+  refreshLocale();
   WidgetsFlutterBinding.ensureInitialized();
   // Настоящий материал окна: содержимое во всю высоту, титульная полоса прозрачная.
   await const MacosWindowUtilsConfig(toolbarStyle: NSWindowToolbarStyle.unified).apply();

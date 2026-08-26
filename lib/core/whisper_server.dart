@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data' show BytesBuilder;
 
+import '../core/app_locale.dart';
 import '../core/library.dart';
 import '../core/transcript.dart';
 import '../core/whisper.dart';
@@ -524,8 +525,10 @@ class Hotkey {
   /// Как назвать клавишу человеку. Незнакомая приходит своим кодом
   /// («#57») — показываем его же, иначе назначить её было бы можно,
   /// а прочитать назначенное нет.
+  ///
+  /// Почти все клавиши здесь названы значками, и значок одинаков на любом
+  /// языке. Слово всего одно — пробел, и его берём из перевода.
   static const _keyNames = {
-    'space': 'Пробел',
     'return': '⏎',
     'enter': '⌤',
     'tab': '⇥',
@@ -542,7 +545,9 @@ class Hotkey {
     'pagedown': '⇟',
   };
 
-  static String keyLabel(String key) => _keyNames[key] ?? key.toUpperCase();
+  static String keyLabel(String key) => key == 'space'
+      ? currentL10n().keySpace
+      : _keyNames[key] ?? key.toUpperCase();
 
   /// Сравнение по существу: порядок набора значения не имеет — «X+Y»
   /// и «Y+X» это одно сочетание. Нужно затем, чтобы не дать назначить
@@ -561,12 +566,12 @@ class Hotkey {
   /// модификаторов рисует система: на macOS это ⌘ и ⌥, на Windows —
   /// слова Ctrl и Alt.
   String get label {
-    if (empty) return 'Не назначено';
+    if (empty) return currentL10n().hotkeyUnassigned;
     // Порядок клавиш наводим сами: захват приходит множеством, и без
     // этого подпись у одного и того же сочетания могла читаться по-разному.
     final named = [...keys.map(keyLabel)]..sort();
     final combo = os.shortcutLabel(mods, named);
-    return isDouble ? '$combo дважды' : combo;
+    return isDouble ? currentL10n().hotkeyDoubleTap(combo) : combo;
   }
 }
 

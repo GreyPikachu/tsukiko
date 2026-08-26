@@ -104,18 +104,6 @@ class _TempOs implements Os {
       _real.signal(pid, force: force);
 
   @override
-  Future<List<int>> holdersOf(List<String> paths) => _real.holdersOf(paths);
-
-  @override
-  Future<List<int>> pidsMatching(String pattern) => _real.pidsMatching(pattern);
-
-  @override
-  Future<List<int>> pidsNamed(String name) => _real.pidsNamed(name);
-
-  @override
-  Future<List<ProcSample>> sample(Iterable<int> pids) => _real.sample(pids);
-
-  @override
   Future<List<ProcListing>> listProcesses() => _real.listProcesses();
 
   @override
@@ -123,9 +111,6 @@ class _TempOs implements Os {
 
   @override
   Future<bool> reveal(String path) async => false;
-
-  @override
-  String? appOwnerOf(String path) => _real.appOwnerOf(path);
 
   @override
   void onTerminate(void Function() onSignal) {}

@@ -29,6 +29,7 @@ import 'settings_state.dart';
 ///
 /// Состоянием владеет [SettingsCubit]; здесь только то, что рисуется.
 void runSettings() {
+  refreshLocale();
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const SettingsApp());
 }
@@ -475,7 +476,6 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         SectionTitle(l10n.sectionHowToRecognize),
         Hint(l10n.hintPerRecordingSettings),
         const SizedBox(height: Gap.item),
-        Check(l10n.checkWaitBusyModel, s.yieldBusyModel, _cubit.setYieldBusyModel),
         Hint(l10n.hintWaitBusyModel, under: true),
         SectionTitle(l10n.sectionAutoSave),
         Check(l10n.checkSaveToDisk, s.toLibrary, _cubit.setToLibrary),

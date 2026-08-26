@@ -23,6 +23,7 @@ import '../../legacy_migration.dart';
 ///
 /// Состоянием владеет [DictationCubit]; здесь только то, что рисуется.
 Future<void> runPanel() async {
+  refreshLocale();
   WidgetsFlutterBinding.ensureInitialized();
   sweepRecordings();
   // Модели прежней установки переезжают к нам до того, как кто-нибудь

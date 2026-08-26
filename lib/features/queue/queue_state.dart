@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../../core/model_usage.dart';
+import '../dictation/dictation_repository.dart';
 import '../../core/models.dart';
 import '../../core/whisper.dart';
 import 'job.dart';
@@ -31,13 +31,11 @@ class QueueState extends Equatable {
     this.defaults = const RunOptions(model: '', lang: 'auto', threads: 4),
     this.models = const [],
     this.whisperFound = false,
-    this.modelUse = const ModelUse(ModelState.free),
-    this.dictationHoldsModel = false,
+    this.dictation = DictationStatus.away,
     this.download,
     this.downloadProgress,
     this.downloadPercent = 0,
     this.timestamps = true,
-    this.yieldBusyModel = true,
     this.saveNextToSource = false,
     this.toLibrary = true,
     this.libraryPath = '',
@@ -67,9 +65,9 @@ class QueueState extends Equatable {
   /// надо до запуска, а не после.
   final bool whisperFound;
 
-  /// Кто держит модель и не мы ли это сами.
-  final ModelUse modelUse;
-  final bool dictationHoldsModel;
+  /// Чем занята диктовка. Её и только её: посторонних распознавателей
+  /// приложение больше не ищет — их и не бывает.
+  final DictationStatus dictation;
 
   /// Идущая загрузка модели и её ход строкой. Сам объект в сравнение
   /// не входит — он меняется внутри себя, и заметить это можно только
@@ -79,7 +77,7 @@ class QueueState extends Equatable {
   final int downloadPercent;
 
   // Настройки приложения: правит их окно настроек, здесь ими пользуются.
-  final bool timestamps, yieldBusyModel, saveNextToSource, toLibrary;
+  final bool timestamps, saveNextToSource, toLibrary;
   final String libraryPath;
   final List<String> libraryFormats;
 
@@ -103,7 +101,7 @@ class QueueState extends Equatable {
 
   bool get canRetry => targets.any((j) => !j.imported);
 
-  /// Очередь запущена, но стоит и уступает чужому распознаванию.
+  /// Очередь запущена, но стоит и уступает диктовке.
   bool get waitingForModel =>
       running && jobs.any((j) => j.state == JobState.waiting);
 
@@ -129,13 +127,11 @@ class QueueState extends Equatable {
     RunOptions? defaults,
     List<String>? models,
     bool? whisperFound,
-    ModelUse? modelUse,
-    bool? dictationHoldsModel,
+    DictationStatus? dictation,
     ModelOffer? download,
     String? downloadProgress,
     int? downloadPercent,
     bool? timestamps,
-    bool? yieldBusyModel,
     bool? saveNextToSource,
     bool? toLibrary,
     String? libraryPath,
@@ -157,14 +153,12 @@ class QueueState extends Equatable {
         defaults: defaults ?? this.defaults,
         models: models ?? this.models,
         whisperFound: whisperFound ?? this.whisperFound,
-        modelUse: modelUse ?? this.modelUse,
-        dictationHoldsModel: dictationHoldsModel ?? this.dictationHoldsModel,
+        dictation: dictation ?? this.dictation,
         download: clearDownload ? null : (download ?? this.download),
         downloadProgress:
             clearDownload ? null : (downloadProgress ?? this.downloadProgress),
         downloadPercent: clearDownload ? 0 : (downloadPercent ?? this.downloadPercent),
         timestamps: timestamps ?? this.timestamps,
-        yieldBusyModel: yieldBusyModel ?? this.yieldBusyModel,
         saveNextToSource: saveNextToSource ?? this.saveNextToSource,
         toLibrary: toLibrary ?? this.toLibrary,
         libraryPath: libraryPath ?? this.libraryPath,
@@ -185,13 +179,11 @@ class QueueState extends Equatable {
         defaults,
         models,
         whisperFound,
-        modelUse,
-        dictationHoldsModel,
+        dictation,
         download,
         downloadProgress,
         downloadPercent,
         timestamps,
-        yieldBusyModel,
         saveNextToSource,
         toLibrary,
         libraryPath,

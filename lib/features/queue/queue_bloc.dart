@@ -9,13 +9,12 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../core/app_locale.dart';
 import '../../core/library.dart';
-import '../../core/model_usage.dart';
 import '../../core/models.dart';
 import '../../core/settings.dart';
 import '../../core/text.dart';
 import '../../core/transcript.dart';
 import '../../core/whisper.dart';
-import '../../core/whisper_server.dart' show recordedServerPid;
+import '../dictation/dictation_repository.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import 'job.dart';
@@ -33,7 +32,9 @@ import 'queue_state.dart';
 /// человека, он кладёт вопрос в состояние ([QueueState.ask]), а ответ
 /// приходит обратно событием.
 class QueueBloc extends Bloc<QueueEvent, QueueState> {
-  QueueBloc(this.bridge) : super(_loaded()) {
+  QueueBloc(this.bridge, {DictationRepository? dictation})
+      : dictation = dictation ?? DictationRepository(bridge),
+        super(_loaded()) {
     on<FilesAdded>(_onFilesAdded);
     on<TranscriptOpened>(_onTranscriptOpened);
     on<SelectedRemoved>(_onSelectedRemoved);
@@ -71,11 +72,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     on<VadRequested>(_onVad, transformer: droppable());
     on<VadModelChosen>(_onVadModelChosen);
 
-    on<ModelPolled>(_onPolled, transformer: droppable());
+    on<DictationPolled>(_onDictationPolled, transformer: droppable());
     on<WindowVisibilityChanged>(_onVisibility);
     on<SettingsReloaded>(_onSettingsReloaded);
     on<TimestampsToggled>(_onTimestampsToggled);
-    on<YieldToggled>(_onYieldToggled);
     on<RecentCleared>(_onRecentCleared);
 
     on<CopyRequested>(_onCopy);
@@ -87,6 +87,9 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     _settingsSub = bridge.settingsReloaded.listen((_) => add(const SettingsReloaded()));
     _syncPolling();
   }
+
+  /// Единственный, кто может держать модель занятой, — своя же диктовка.
+  final DictationRepository dictation;
 
   /// Что прочитано с диска к самому первому кадру.
   ///
@@ -119,7 +122,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       defaults: defaults,
       whisperFound: findWhisper() != null,
       timestamps: (s['timestamps'] as bool?) ?? true,
-      yieldBusyModel: (s['yieldBusyModel'] as bool?) ?? true,
       saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
       toLibrary: (s['toLibrary'] as bool?) ?? true,
       libraryPath: (s['libraryPath'] as String?) ?? defaultLibraryPath,
@@ -137,6 +139,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
   StreamSubscription<void>? _settingsSub;
   Timer? _pollTimer, _saveTimer;
+  bool _windowVisible = true;
 
   /// Работающий whisper-cli и его временная папка.
   Process? _proc;
@@ -149,11 +152,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
   Download? _download;
 
-  /// Замер занятости с прошлого опроса и выученные имена соседей.
-  CpuSample _cpu = const CpuSample.empty();
-  Set<String> _modelUsers = {};
-  int _tick = 0;
-  bool _windowVisible = true;
 
   // ── запуск ────────────────────────────────────────────────────────────────
 
@@ -469,11 +467,13 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       ));
     }
 
-    if (!state.yieldBusyModel && state.modelUse.busy && !_busyByDictation) {
+    // Диктовка главнее очереди, и спрашиваем о ней здесь, до запуска:
+    // посреди работы такой вопрос застал бы человека врасплох.
+    if (await dictation.status() == DictationStatus.resting) {
       return emit(state.copyWith(
         ask: Ask(
-          l10n.askModelBusyTitle,
-          l10n.askModelBusyBody(state.modelUse.detail),
+          l10n.askDictationHoldsModelTitle,
+          l10n.askDictationHoldsModelBody,
           confirm: true,
         ),
       ));
@@ -484,13 +484,14 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   Future<void> _onRunConfirmed(
       RunConfirmed e, Emitter<QueueState> emit) async {
     emit(state.copyWith(clearAsk: true));
-    if (e.yes) await _run(emit);
+    if (!e.yes) return;
+    // Согласились — освобождаем память и только потом начинаем: двух
+    // копий модели сразу в памяти не бывает.
+    if (await dictation.status() == DictationStatus.resting) {
+      await dictation.release();
+    }
+    await _run(emit);
   }
-
-  bool get _busyByDictation =>
-      state.modelUse.busy &&
-      state.modelUse.pid != 0 &&
-      state.modelUse.pid == recordedServerPid();
 
   /// Проход по очереди. Всё, что может пойти не так внутри, оставляет
   /// очередь в состоянии покоя: без этого одно исключение подвешивало её
@@ -523,7 +524,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         running: false,
         status: _stopRequested ? currentL10n().statusStopped : currentL10n().statusIdle,
       ));
-      _syncPolling();
+        _syncPolling();
       _releaseTemp();
       _persistNow();
     }
@@ -551,7 +552,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       return true;
     }
 
-    if (!await _yieldWhileBusy(it, emit)) return false;
+    if (!await _yieldToDictation(it, emit)) return false;
     it = _find(it) ?? it;
 
     it = it.copyWith(state: JobState.converting, startedAt: DateTime.now());
@@ -563,11 +564,11 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     final base = os.join(_tmp!.path, '${_runSeq++}');
     final jsonFile = File('$base.json');
     try {
-      final wav = await toWav(it.path, '$base.wav');
+      final wav = await os.toWav(it.path, '$base.wav');
 
       // Подготовка звука занимает секунды — за это время сосед мог начать
       // распознавать заново. Проверяем ещё раз вплотную к запуску.
-      if (!await _yieldWhileBusy(it, emit)) return false;
+      if (!await _yieldToDictation(it, emit)) return false;
       it = _find(it) ?? it;
 
       it = it.copyWith(state: JobState.transcribing);
@@ -694,9 +695,19 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
   /// Диктовка главнее очереди: одновременно две копии модели в память
   /// не помещаются, а фраза длится секунды и прерванная пропадает совсем.
+  ///
+  /// Ждём только настоящую работу — запись или распознавание фразы. Модель,
+  /// которая просто лежит в памяти, забираем молча: согласие на это уже
+  /// спросили перед запуском очереди.
   Future<bool> _yieldToDictation(Job job, Emitter<QueueState> emit) async {
     var paused = false;
-    while (!_stopRequested && !await bridge.requestModel()) {
+    while (!_stopRequested) {
+      final status = await dictation.status();
+      if (status == DictationStatus.away) break;
+      if (status == DictationStatus.resting) {
+        await dictation.release();
+        break;
+      }
       if (!paused) {
         final now = _find(job);
         if (now != null) {
@@ -713,32 +724,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     return !_stopRequested;
   }
 
-  /// Пока модель занята кем-то другим — стоим и не поднимаем свою.
-  Future<bool> _yieldWhileBusy(Job job, Emitter<QueueState> emit) async {
-    if (!await _yieldToDictation(job, emit)) return false;
-    var waited = false;
-    // Свою диктовку из этого счёта исключаем: с ней договорились выше,
-    // а опрос отстаёт и показывал бы уже погашенный сервер.
-    while (state.yieldBusyModel &&
-        !_stopRequested &&
-        state.modelUse.busy &&
-        !_busyByDictation) {
-      final now = _find(job);
-      if (now != null && now.state != JobState.waiting) {
-        emit(_replace(state, now, now.copyWith(state: JobState.waiting))
-            .copyWith(status: currentL10n().statusYieldingTo(_useBy)));
-      }
-      waited = true;
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-    }
-    if (waited && !_stopRequested) {
-      emit(state.copyWith(status: currentL10n().statusModelFreedResuming));
-    }
-    return !_stopRequested;
-  }
-
-  String get _useBy =>
-      state.dictationHoldsModel ? currentL10n().usedByDictation : state.modelUse.by;
 
   // ── куда ложится результат ────────────────────────────────────────────────
 
@@ -928,12 +913,11 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     return path;
   }
 
-  // ── занятость модели ──────────────────────────────────────────────────────
+  // ── что делает диктовка ───────────────────────────────────────────────────
 
-  /// Опрос — самая дорогая мелочь в простое: каждый заход это `pgrep`
-  /// и `ps`, а каждый третий ещё и `lsof`. Смысл у него один — показать
-  /// значок в строке состояния, поэтому пока окно не на виду, опрашивать
-  /// некого. Исключение — идущая очередь: на этот же ответ смотрит уступка.
+  /// Значок в строке состояния — единственное, ради чего идёт опрос.
+  /// Свёрнутому окну он не нужен; идущей очереди — нужен всегда, она сама
+  /// смотрит на тот же ответ, когда уступает.
   void _syncPolling() {
     final needed = state.running || _windowVisible;
     if (needed == (_pollTimer != null)) return;
@@ -942,9 +926,11 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       _pollTimer = null;
       return;
     }
-    add(const ModelPolled());
+    add(const DictationPolled());
+    // Полторы секунды: это подпись на значке, а не управление. Прежний
+    // опрос ходил дважды в секунду, и каждый заход стоил трёх процессов.
     _pollTimer = Timer.periodic(
-        const Duration(milliseconds: 700), (_) => add(const ModelPolled()));
+        const Duration(milliseconds: 1500), (_) => add(const DictationPolled()));
   }
 
   void _onVisibility(WindowVisibilityChanged e, Emitter<QueueState> emit) {
@@ -952,34 +938,18 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     _syncPolling();
   }
 
-  Future<void> _onPolled(ModelPolled e, Emitter<QueueState> emit) async {
-    final use = await modelUsage(
-      modelPath: state.shown.model,
-      others: state.models,
-      learned: _modelUsers,
-      ignorePid: _proc?.pid,
-      previous: _cpu,
-      // lsof — самая дорогая часть опроса, а нужен он только чтобы поймать
-      // короткий момент загрузки модели в память.
-      probeHolders: _tick++ % 3 == 0,
-    );
-    _cpu = use.cpu;
-    _modelUsers = use.learned;
-    // Чтение файла в сотню байт вместо запуска `ps`: pid пришёл из `ps`
-    // внутри самого опроса, значит процесс жив и распознаёт речь.
-    final ours = use.busy && use.pid != 0 && use.pid == recordedServerPid();
-    emit(state.copyWith(modelUse: use, dictationHoldsModel: ours));
+  Future<void> _onDictationPolled(
+      DictationPolled e, Emitter<QueueState> emit) async {
+    // Снимок берём после ответа, а не до: пока идёт вопрос, состояние
+    // успевает измениться, и старый снимок затёр бы чужую правку.
+    final status = await dictation.status();
+    emit(state.copyWith(dictation: status));
   }
 
   // ── настройки приложения ──────────────────────────────────────────────────
 
   void _onTimestampsToggled(TimestampsToggled e, Emitter<QueueState> emit) {
     emit(state.copyWith(timestamps: !state.timestamps));
-    _persist();
-  }
-
-  void _onYieldToggled(YieldToggled e, Emitter<QueueState> emit) {
-    emit(state.copyWith(yieldBusyModel: !state.yieldBusyModel));
     _persist();
   }
 
@@ -998,7 +968,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         .toList();
     emit(state.copyWith(
       timestamps: (s['timestamps'] as bool?) ?? state.timestamps,
-      yieldBusyModel: (s['yieldBusyModel'] as bool?) ?? state.yieldBusyModel,
       saveNextToSource:
           (s['saveNextToSource'] as bool?) ?? state.saveNextToSource,
       toLibrary: (s['toLibrary'] as bool?) ?? state.toLibrary,
@@ -1014,6 +983,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// все правки за сеанс. Теперь пишем сразу, но не чаще раза в полсекунды —
   /// иначе каждая буква в подсказке уходила бы на диск.
   void _persist() {
+    _pollTimer?.cancel();
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 500), _persistNow);
   }
@@ -1024,7 +994,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     unawaited(Settings.save({
       ...state.defaults.toJson(),
       'timestamps': state.timestamps,
-      'yieldBusyModel': state.yieldBusyModel,
       'copyFormat': state.copyFormat,
       'saveFormat': state.saveFormat,
       'recent': state.recent,
@@ -1036,7 +1005,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
   @override
   Future<void> close() {
-    _pollTimer?.cancel();
     _saveTimer?.cancel();
     _settingsSub?.cancel();
     _proc?.kill();

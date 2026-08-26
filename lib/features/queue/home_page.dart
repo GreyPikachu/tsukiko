@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
+import '../dictation/dictation_repository.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
 import '../../core/text.dart';
@@ -294,23 +295,23 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   // ── как называется занятость ──────────────────────────────────────────────
 
-  String _modelUseBy(QueueState s) => s.transcribing
-      ? l10n.modelUseByTranscription
-      : s.dictationHoldsModel
-          ? l10n.usedByDictation
-          : s.modelUse.by;
-
+  /// Кто держит модель. Занять её могут только двое, и оба свои:
+  /// расшифровщик и диктовка.
   String _modelUseLabel(QueueState s) => s.transcribing
       ? l10n.modelUseLabelTranscription
-      : s.dictationHoldsModel
-          ? l10n.modelUseLabelDictation
-          : s.modelUse.label;
+      : switch (s.dictation) {
+          DictationStatus.busy => l10n.modelUseLabelDictation,
+          DictationStatus.resting => l10n.modelUseLabelResting,
+          DictationStatus.away => l10n.modelUseLabelFree,
+        };
 
   String _modelUseDetail(QueueState s) => s.transcribing
       ? l10n.modelUseDetailTranscription
-      : s.dictationHoldsModel
-          ? l10n.modelUseDetailDictation
-          : s.modelUse.detail;
+      : switch (s.dictation) {
+          DictationStatus.busy => l10n.modelUseDetailDictation,
+          DictationStatus.resting => l10n.modelUseDetailResting,
+          DictationStatus.away => l10n.modelUseDetailFree,
+        };
 
   static const _cmd = SingleActivator(LogicalKeyboardKey.keyO, meta: true);
 
@@ -405,16 +406,16 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           label: s.running ? l10n.menuStop : l10n.buttonRecognize,
           icon: MacosIcon(s.running
               ? CupertinoIcons.stop_fill
-              : s.yieldBusyModel && s.modelUse.busy
+              : s.dictation == DictationStatus.busy
                   ? CupertinoIcons.pause_circle
                   : CupertinoIcons.play_fill),
           showLabel: false,
           tooltipMessage: s.running
               ? (s.waitingForModel
-                  ? l10n.tooltipWaitingFor(_modelUseBy(s))
+                  ? l10n.tooltipWaitingForDictation
                   : l10n.tooltipStopShortcut)
-              : s.yieldBusyModel && s.modelUse.busy
-                  ? l10n.tooltipModelBusyWillStart(_modelUseBy(s))
+              : s.dictation == DictationStatus.busy
+                  ? l10n.tooltipDictationBusyWillStart
                   : l10n.tooltipRunQueueShortcut,
           onPressed: s.running ? _sendStop : (s.hasPending ? _sendStart : null),
         ),
@@ -884,15 +885,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                   ),
                 ),
               ModelChip(
-                info: s.modelUse,
                 label: _modelUseLabel(s),
                 detail: _modelUseDetail(s),
-                busy: s.modelUse.busy || s.transcribing,
-                yielding: s.yieldBusyModel,
+                busy: s.transcribing || s.dictation == DictationStatus.busy,
+                resting: s.dictation == DictationStatus.resting,
                 waiting: s.waitingForModel,
-                onTap: () {
-                  _send(const YieldToggled());
-                },
               ),
             ],
           ),

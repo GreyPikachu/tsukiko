@@ -24,7 +24,6 @@ extension _Menus on _HomeViewState {
       s.selected.isEmpty,
       s.lead == null,
       s.timestamps,
-      s.yieldBusyModel,
       s.lead?.file.path,
       ...s.recent,
     ];
@@ -182,14 +181,6 @@ extension _Menus on _HomeViewState {
               label: l10n.menuStop,
               shortcut: const SingleActivator(LogicalKeyboardKey.period, meta: true),
               onSelected: s.running ? _sendStop : null,
-            ),
-          ]),
-          PlatformMenuItemGroup(members: [
-            PlatformMenuItem(
-              label: s.yieldBusyModel
-                  ? l10n.menuDontWaitForModel
-                  : l10n.menuWaitForModel,
-              onSelected: () => _send(const YieldToggled()),
             ),
           ]),
         ],
