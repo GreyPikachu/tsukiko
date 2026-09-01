@@ -112,7 +112,14 @@ class DictationCubit extends Cubit<DictationState> {
   /// и выходил ни с чем, а `start` следом ставил «запись». Панель после
   /// этого писала «Записываю» вечно, хотя микрофон уже молчал.
   Future<void>? _startingRecording;
-  bool _stopWanted = false;
+
+  /// Чем кончить запись, которую попросили кончить, пока заводился
+  /// микрофон: [stop] или [cancel]. Раньше это был один флаг «просили
+  /// прекратить», и отмена на нём превращалась в обычную остановку —
+  /// фраза уходила распознаваться и ложилась в «не удалось». Успеть
+  /// нетрудно: fn+ctrl+opt разом не нажать, и отмена приходит через
+  /// миллисекунды после начала.
+  Future<void> Function()? _finishAfterStart;
 
   // ── настройки распознавания ────────────────────────────────────────────────
 
@@ -336,15 +343,18 @@ class DictationCubit extends Cubit<DictationState> {
 
   Future<void> start() async {
     if (state.phase != Phase.idle || _startingRecording != null) return;
-    _stopWanted = false;
+    _finishAfterStart = null;
     _startingRecording = _beginRecording();
     try {
       await _startingRecording;
     } finally {
       _startingRecording = null;
     }
-    // Пока заводился микрофон, клавишу успели отпустить.
-    if (_stopWanted && state.recording) await stop();
+    // Пока заводился микрофон, клавишу успели отпустить — или набрать
+    // поверх лишнюю, и тогда это была не остановка, а отмена.
+    final finish = _finishAfterStart;
+    _finishAfterStart = null;
+    if (finish != null) await finish();
   }
 
   Future<void> _beginRecording() async {
@@ -384,7 +394,7 @@ class DictationCubit extends Cubit<DictationState> {
     // Запись ещё только заводится — запомним, что её просили прекратить,
     // и сделаем это, как только будет что прекращать.
     if (_startingRecording != null) {
-      _stopWanted = true;
+      _finishAfterStart = stop;
       return;
     }
     if (!state.recording) return;
@@ -468,7 +478,7 @@ class DictationCubit extends Cubit<DictationState> {
   /// вставляем — молча, как будто ничего и не начиналось.
   Future<void> cancel() async {
     if (_startingRecording != null) {
-      _stopWanted = true;
+      _finishAfterStart = cancel;
       _aborted = false;
       return;
     }
@@ -588,10 +598,23 @@ class DictationCubit extends Cubit<DictationState> {
     final p = state.failurePath;
     if (p == null) return;
     if (await revealInFinder(p)) return;
+    _reportGone();
+  }
+
+  /// Записи больше нет. Кнопок к ней не остаётся — ни одна ничего не
+  /// исправит, — и само сообщение тоже не вечное: сказали и убрали,
+  /// иначе панель так и стоит с надписью о том, чего уже не вернуть.
+  void _reportGone() {
     _emit(state.copyWith(
       failure: currentL10n().recordingGoneExternally,
       clearFailurePath: true,
     ));
+    Future.delayed(const Duration(seconds: 6), () {
+      if (isClosed || state.failurePath != null) return;
+      if (state.failure == currentL10n().recordingGoneExternally) {
+        _emit(state.copyWith(clearFailure: true));
+      }
+    });
   }
 
   /// Убедиться, что спасённая запись всё ещё на месте. Панель открывают
@@ -599,10 +622,7 @@ class DictationCubit extends Cubit<DictationState> {
   void _forgetGoneRecording() {
     final p = state.failurePath;
     if (p == null || File(p).existsSync()) return;
-    _emit(state.copyWith(
-      failure: currentL10n().recordingGoneExternally,
-      clearFailurePath: true,
-    ));
+    _reportGone();
   }
 
   /// Чем занята диктовка — для очереди.

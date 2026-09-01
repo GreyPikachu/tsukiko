@@ -6,7 +6,8 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/material.dart' show SelectableText;
+import 'package:flutter/material.dart'
+    show ReorderableListView, ReorderableDragStartListener, SelectableText;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
@@ -63,7 +64,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   final _queueFocus = FocusNode(debugLabel: 'очередь');
   final _transcriptScroll = ScrollController();
 
-  bool _dragging = false, _scrolled = false, _findOpen = false;
+  bool _dragging = false, _draggingQueue = false, _scrolled = false, _findOpen = false;
   String _query = '';
 
   /// Подсказка модели правится полем ввода, а приходит из состояния:
@@ -320,7 +321,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   /// Настроение кота выводится из того, что приложение делает прямо сейчас.
   Mood _mood(QueueState s, Job? job) => moodFor(
-        dragging: _dragging,
+        dragging: _dragging || _draggingQueue,
         running: s.running,
         jobActive: job?.active ?? false,
         hasJobs: job != null,
@@ -418,6 +419,24 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                   ? l10n.tooltipDictationBusyWillStart
                   : l10n.tooltipRunQueueShortcut,
           onPressed: s.running ? _sendStop : (s.hasPending ? _sendStart : null),
+        ),
+        // Пауза отдельной кнопкой, а не вместо остановки: это разные
+        // вещи. Остановленное начинают заново, приостановленное —
+        // досчитывают с той же секунды.
+        ToolBarIconButton(
+          label: s.hasPaused && !s.running ? l10n.buttonResume : l10n.buttonPause,
+          icon: MacosIcon(s.hasPaused && !s.running
+              ? CupertinoIcons.play_circle
+              : CupertinoIcons.pause_fill),
+          showLabel: false,
+          tooltipMessage: s.hasPaused && !s.running
+              ? l10n.tooltipResume
+              : l10n.tooltipPauseShortcut,
+          onPressed: s.running
+              ? () => _send(const PauseRequested())
+              : s.hasPaused
+                  ? () => _send(const ResumeRequested())
+                  : null,
         ),
         ToolBarIconButton(
           label: l10n.menuRetryRecognition,
@@ -575,7 +594,27 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   // ── очередь ───────────────────────────────────────────────────────────────
 
-  Widget _queue(QueueState s, ScrollController controller) {
+  /// Колонка очереди принимает файлы наравне с окном расшифровки.
+  ///
+  /// Не принимала — и это сбивало: под списком написано «перетащите сюда
+  /// аудио», а брошенное мимо середины окна пропадало. Место, которое
+  /// зовёт бросить файл, обязано его брать.
+  Widget _queue(QueueState s, ScrollController controller) => DropTarget(
+        onDragEntered: (_) => setState(() => _draggingQueue = true),
+        onDragExited: (_) => setState(() => _draggingQueue = false),
+        onDragDone: (details) {
+          setState(() => _draggingQueue = false);
+          _send(FilesAdded(details.files.map((f) => f.path)));
+        },
+        child: Stack(
+          children: [
+            Positioned.fill(child: _queueList(s, controller)),
+            Positioned.fill(child: DropVeil(active: _draggingQueue, compact: true)),
+          ],
+        ),
+      );
+
+  Widget _queueList(QueueState s, ScrollController controller) {
     if (s.jobs.isEmpty) {
       return Center(
         child: Padding(
@@ -610,13 +649,22 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         }
         return KeyEventResult.ignored;
       },
-      child: ListView.builder(
-        controller: controller,
+      // Порядок очереди — дело хозяйское: срочное поднимают наверх
+      // перетаскиванием, как в любом списке macOS. Свои «ручки» Flutter
+      // не рисуем: тянется вся строка, а простой щелчок так и остаётся
+      // выделением — тащить начинают только когда повели курсор.
+      child: ReorderableListView.builder(
+        scrollController: controller,
+        buildDefaultDragHandles: false,
         padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        onReorderItem: (from, to) => _send(JobsReordered(from, to)),
         itemCount: s.jobs.length,
         itemBuilder: (context, i) {
           final job = s.jobs[i];
-          return ContextMenuRegion(
+          return ReorderableDragStartListener(
+            key: ValueKey(job.path),
+            index: i,
+            child: ContextMenuRegion(
             // Правый щелчок по невыделенной записи сначала выделяет её —
             // как в Finder. Это действие жеста, а не построения меню:
             // раньше выделение менялось внутри actions(), то есть setState
@@ -641,6 +689,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                   _send(JobSelected(job));
                 }
               },
+            ),
             ),
           );
         },

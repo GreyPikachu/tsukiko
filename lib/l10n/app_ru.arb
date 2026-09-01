@@ -1072,5 +1072,47 @@
   },
   "@tooltipDictationBusyWillStart": {
     "description": "Подсказка кнопки запуска, пока идёт диктовка."
+  },
+  "jobStatePaused": "Приостановлено",
+  "buttonPause": "Пауза",
+  "buttonResume": "Продолжить",
+  "menuPause": "Приостановить",
+  "menuResume": "Продолжить распознавание",
+  "tooltipPauseShortcut": "Приостановить распознавание — продолжится с того же места",
+  "tooltipResume": "Продолжить с того места, где остановились",
+  "statusPaused": "Приостановлено",
+  "statusResumedFrom": "Продолжаем с {at}",
+  "@statusResumedFrom": {
+    "placeholders": {
+      "at": {
+        "type": "String"
+      }
+    }
+  },
+  "askDictationTookOverTitle": "Расшифровка приостановлена",
+  "askDictationTookOverBody": "Начали диктовать, а модель одна на двоих — распознавание записи остановлено на {at} и память освобождена. Как только диктовка кончится, оно продолжится с этого же места само.",
+  "@askDictationTookOverBody": {
+    "placeholders": {
+      "at": {
+        "type": "String"
+      }
+    }
+  },
+  "jobDetailPausedAt": "Приостановлено на {at}",
+  "@jobDetailPausedAt": {
+    "placeholders": {
+      "at": {
+        "type": "String"
+      }
+    }
+  },
+  "statusQueueReordered": "Порядок очереди изменён",
+  "statusRestoredUnfinished": "Возвращено незаконченное: {name}",
+  "@statusRestoredUnfinished": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   }
 }

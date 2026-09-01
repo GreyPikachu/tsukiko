@@ -115,6 +115,27 @@ class StopRequested extends QueueEvent {
   const StopRequested();
 }
 
+/// Приостановить распознавание. От остановки отличается тем, что
+/// посчитанное остаётся, и второй заход начнётся с того же места,
+/// а не с начала записи.
+class PauseRequested extends QueueEvent {
+  const PauseRequested();
+}
+
+class ResumeRequested extends QueueEvent {
+  const ResumeRequested();
+}
+
+/// Строку очереди перетащили на другое место. Порядок — это и есть
+/// очерёдность: следующей берётся первая недоделанная сверху.
+class JobsReordered extends QueueEvent {
+  const JobsReordered(this.from, this.to);
+  final int from, to;
+
+  @override
+  List<Object?> get props => [from, to];
+}
+
 /// Внутреннее: whisper-cli выдал очередной фрагмент, процент или язык.
 class JobAdvanced extends QueueEvent {
   const JobAdvanced(this.job, {this.segment, this.progress, this.language});

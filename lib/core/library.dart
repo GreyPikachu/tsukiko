@@ -94,3 +94,35 @@ Future<bool> revealInFinder(String path, {bool createIfMissing = false}) async {
 }
 
 String? findWhisper() => os.findExecutable('whisper-cli');
+
+/// Имя, под которым движок работает у нас.
+///
+/// В «Мониторинге системы» гигабайт памяти числился за `whisper-cli`, и по
+/// этой строке нельзя было понять, чей он: tsukiko поднял или соседняя
+/// программа на том же whisper.cpp. Спрашивают об этом ровно тогда, когда
+/// память кончается, — то есть когда разбираться некогда.
+///
+/// Ссылка, а не копия: копия теряет свои библиотеки (они ищутся рядом
+/// с самим файлом) и ломает подпись, а по ссылке система запускает тот же
+/// бинарник и называет процесс её именем.
+String? runnableWhisper(String? exe, String as) {
+  if (exe == null) return null;
+  try {
+    final dir = Directory(os.join(os.supportDir, 'bin'));
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final link = Link(os.join(dir.path, as));
+    // Движок могли обновить или переставить — ссылка обязана вести туда же,
+    // куда ведёт поиск, иначе запустится вчерашний.
+    if (link.existsSync()) {
+      if (link.targetSync() == exe) return link.path;
+      link.deleteSync();
+    }
+    link.createSync(exe);
+    return link.path;
+  } catch (e) {
+    // Не вышло — работаем под чужим именем: имя в мониторе не стоит
+    // того, чтобы из-за него не считалось вовсе.
+    stderr.writeln('tsukiko: ссылка на движок не создалась — $e');
+    return exe;
+  }
+}

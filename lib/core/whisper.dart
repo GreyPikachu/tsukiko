@@ -37,7 +37,16 @@ String punctuationPrimer(String lang) =>
 /// Состояние записи в очереди. Раньше это была строка, и проверка «ошибка?»
 /// сводилась к сравнению с текстом на экране — стоило переписать надпись,
 /// и значок ломался.
-enum JobState { queued, waiting, converting, transcribing, done, failed, cancelled }
+enum JobState {
+  queued,
+  waiting,
+  converting,
+  transcribing,
+  paused,
+  done,
+  failed,
+  cancelled
+}
 
 extension JobStateLabel on JobState {
   String get label {
@@ -47,6 +56,7 @@ extension JobStateLabel on JobState {
       JobState.waiting => l10n.jobStateWaiting,
       JobState.converting => l10n.jobStateConverting,
       JobState.transcribing => l10n.jobStateTranscribing,
+      JobState.paused => l10n.jobStatePaused,
       JobState.done => l10n.jobStateDone,
       JobState.failed => l10n.jobStateFailed,
       JobState.cancelled => l10n.jobStateCancelled,
@@ -148,7 +158,10 @@ List<String> noLoopArgs(RunOptions o) => [
       if (o.effectivePrompt.isNotEmpty) '--carry-initial-prompt',
     ];
 
-List<String> buildArgs(RunOptions o, String wav, String outBase) => [
+/// [from] — с какой миллисекунды считать. Так продолжается запись,
+/// остановленная посреди: whisper умеет начать с середины и метки времени
+/// отдаёт всё равно от начала файла, так что склеивать ничего не нужно.
+List<String> buildArgs(RunOptions o, String wav, String outBase, {int from = 0}) => [
       '-m', o.model,
       '-l', o.lang,
       '-t', '${o.threads}',
@@ -163,6 +176,7 @@ List<String> buildArgs(RunOptions o, String wav, String outBase) => [
       '-of', outBase,
       '-oj', // остальные форматы приложение собирает само — из одного источника
 
+      if (from > 0) ...['-ot', '$from'],
       if (o.maxLen > 0) ...['-ml', '${o.maxLen}', '-sow'],
       if (o.vad && o.vadModel.isNotEmpty) ...['--vad', '-vm', o.vadModel],
       if (o.effectivePrompt.isNotEmpty) ...['--prompt', o.effectivePrompt],

@@ -152,8 +152,12 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
 /// жест уже нёс импульс.
 class DropVeil extends StatelessWidget {
   const DropVeil({
-    super.key,required this.active});
+    super.key,required this.active, this.compact = false});
   final bool active;
+
+  /// Узкая колонка очереди: коту в ней не поместиться, и он там не нужен —
+  /// подсветки края и подписи хватает, чтобы понять, что файл здесь примут.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -168,7 +172,9 @@ class DropVeil extends StatelessWidget {
           curve: Motion.curve(context, Motion.tossCurve),
           scale: active ? 1 : 0.97,
           child: Container(
-            margin: const EdgeInsets.fromLTRB(14, 14, 14, 54),
+            margin: compact
+                ? const EdgeInsets.all(8)
+                : const EdgeInsets.fromLTRB(14, 14, 14, 54),
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(14),
@@ -180,14 +186,20 @@ class DropVeil extends StatelessWidget {
                 children: [
                   // Кот тянется навстречу файлу. Тыкать в него сейчас нельзя —
                   // вуаль и так перехватывает всё под собой.
-                  const Mascot(
-                    mood: Mood.surprised,
-                    height: 116,
-                    interactive: false,
+                  if (!compact) ...[
+                    const Mascot(
+                      mood: Mood.surprised,
+                      height: 116,
+                      interactive: false,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  Text(
+                    AppLocalizations.of(context).dropVeilHint,
+                    textAlign: TextAlign.center,
+                    style: (compact ? Type.caption : Type.emptyTitle)
+                        .copyWith(color: accent),
                   ),
-                  const SizedBox(height: 8),
-                  Text(AppLocalizations.of(context).dropVeilHint,
-                      style: Type.emptyTitle.copyWith(color: accent)),
                 ],
               ),
             ),
