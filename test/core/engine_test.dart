@@ -594,4 +594,30 @@ void _hotkeyTaps() {
       expect(const Hotkey(['fn'], taps: 2).label, contains('дважды'));
     });
   });
+
+
+  test('окно не наследует текст предыдущего — иначе повтор кормит сам себя', () {
+    final args = buildArgs(
+        const RunOptions(model: 'm', lang: 'ru', threads: 4), '/a.wav', '/o');
+    expect(args.contains('-mc'), isTrue);
+    expect(args[args.indexOf('-mc') + 1], '0');
+    // Затравка при этом должна доставаться каждому окну, иначе с
+    // контекстом уйдут и знаки препинания.
+    expect(args.contains('--carry-initial-prompt'), isTrue);
+  });
+
+  test('подряд идущий повтор сворачивается в один сегмент', () {
+    final segs = [
+      const Segment(0, 1000, 'Начало.'),
+      for (var i = 0; i < 5; i++) Segment(1000 + i * 1000, 2000 + i * 1000, 'Врезок.'),
+      const Segment(7000, 8000, 'Конец.'),
+      const Segment(8000, 9000, 'Да.'),
+      const Segment(9000, 10000, 'Да.'),
+    ];
+    final out = collapseRepeats(segs);
+    expect(out.map((s) => s.text).toList(),
+        ['Начало.', 'Врезок.', 'Конец.', 'Да.', 'Да.']);
+    expect(out[1].from, 1000);
+    expect(out[1].to, 6000);
+  });
 }

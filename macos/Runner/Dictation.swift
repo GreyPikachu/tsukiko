@@ -126,6 +126,18 @@ private struct HotkeySpec {
     !isEmpty && mods == self.mods && held == keys
   }
 
+  /// Сочетание зажато, но сверху добавили лишнее.
+  ///
+  /// Нажать fn+ctrl+opt разом физически нельзя: по дороге набор проходит
+  /// через fn+ctrl, и запись успевает начаться. Отпустить её как обычное
+  /// окончание нельзя — человек этого сочетания не назначал и текста не
+  /// диктовал. Такое отпускание — отмена: записанное выбрасывается,
+  /// и панель уходит с экрана сразу.
+  func exceeded(_ mods: Set<String>, _ held: Set<CGKeyCode>) -> Bool {
+    !isEmpty && mods.isSuperset(of: self.mods) && held.isSuperset(of: keys)
+      && !pressed(mods, held)
+  }
+
   /// Эта клавиша принадлежит сочетанию, и модификаторы сейчас те самые.
   /// По этому признаку событие поглощается, чтобы буква не попала в чужое
   /// поле ввода.
@@ -580,15 +592,20 @@ final class DictationBridge: NSObject {
     // его модификаторы и ровно его клавиши. Раньше «модификаторы плюс
     // клавиша» и «одни модификаторы» разбирались двумя разными ветками.
     if holdState.update(raw: hold.pressed(mods, heldKeys), double: hold.isDouble) {
-      send("hold", down: holdState.active)
+      send(
+        "hold", down: holdState.active,
+        cancel: !holdState.active && hold.exceeded(mods, heldKeys))
     }
 
     // Отпускание само по себе ничего не переключает — оно лишь
-    // разрешает следующему нажатию сработать.
-    if toggleState.update(raw: toggle.pressed(mods, heldKeys), double: toggle.isDouble),
-      toggleState.active
-    {
-      send("toggle", down: true)
+    // разрешает следующему нажатию сработать. Кроме отмены: набрали
+    // сверху лишнее — включённое той же клавишей выключается назад.
+    if toggleState.update(raw: toggle.pressed(mods, heldKeys), double: toggle.isDouble) {
+      if toggleState.active {
+        send("toggle", down: true)
+      } else if toggle.exceeded(mods, heldKeys) {
+        send("toggle", down: false, cancel: true)
+      }
     }
 
     // Свою клавишу поглощаем, чтобы буква не попала в чужое поле ввода.
@@ -691,9 +708,10 @@ final class DictationBridge: NSObject {
     sendCaptured(mods: mods, keys: keys, taps: taps)
   }
 
-  private func send(_ id: String, down: Bool) {
+  private func send(_ id: String, down: Bool, cancel: Bool = false) {
     DispatchQueue.main.async {
-      self.channel?.invokeMethod("hotkey", arguments: ["id": id, "down": down])
+      self.channel?.invokeMethod(
+        "hotkey", arguments: ["id": id, "down": down, "cancel": cancel])
     }
   }
 

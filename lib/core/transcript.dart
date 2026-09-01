@@ -104,6 +104,33 @@ Transcript? parseSubtitles(String text) {
   return segs.isEmpty ? null : Transcript('?', segs);
 }
 
+/// Сколько одинаковых подряд — уже не речь.
+///
+/// Два одинаковых предложения человек говорит («Да. Да.»), три и больше
+/// секунда в секунду — нет. Такой хвост оставляет сорвавшееся окно:
+/// перенос текста между окнами уже отключён (см. `noLoopArgs`), но внутри
+/// одного окна модель всё ещё способна повторяться, и это её след.
+const _loopRun = 3;
+
+/// Свернуть подряд идущие повторы в один сегмент на всё их время.
+/// Сказанное один раз так и остаётся сказанным один раз.
+List<Segment> collapseRepeats(List<Segment> segs) {
+  final out = <Segment>[];
+  var i = 0;
+  while (i < segs.length) {
+    var j = i + 1;
+    while (j < segs.length && segs[j].text == segs[i].text) {
+      j++;
+    }
+    final run = j - i;
+    out.add(run >= _loopRun
+        ? Segment(segs[i].from, segs[j - 1].to, segs[i].text)
+        : segs[i]);
+    i = run >= _loopRun ? j : i + 1;
+  }
+  return out;
+}
+
 Transcript parseWhisperJson(String jsonText) {
   final data = jsonDecode(jsonText) as Map<String, dynamic>;
   final lang = (data['result']?['language'] ?? '?').toString();
@@ -119,7 +146,7 @@ Transcript parseWhisperJson(String jsonText) {
       text,
     ));
   }
-  return Transcript(lang, segs);
+  return Transcript(lang, collapseRepeats(segs));
 }
 
 String fmtTs(int ms, {String msSep = '.'}) {
