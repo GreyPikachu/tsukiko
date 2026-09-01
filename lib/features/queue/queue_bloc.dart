@@ -55,6 +55,9 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     on<RunConfirmed>(_onRunConfirmed);
     on<RetryRequested>(_onRetry);
     on<StopRequested>(_onStop);
+    on<PauseRequested>(_onPause);
+    on<JobsReordered>(_onReordered);
+    on<ResumeRequested>(_onResume, transformer: droppable());
     on<JobAdvanced>(_onJobAdvanced);
 
     on<OptionsEdited>(_onOptionsEdited);
@@ -118,6 +121,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         .toList();
 
     return QueueState(
+      jobs: _unfinished(),
       models: _withOwn(models, defaults.model),
       defaults: defaults,
       whisperFound: findWhisper() != null,
@@ -135,6 +139,60 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     );
   }
 
+  /// Файл с недосчитанным. Очередь между запусками не переживает — и не
+  /// должна, — но брошенная посреди работа это не «очередь», а начатое
+  /// дело: половина часовой записи стоит десятков минут счёта, и терять
+  /// её на выходе из приложения нельзя.
+  static File get _unfinishedFile => File(os.join(os.supportDir, 'unfinished.json'));
+
+  /// Вернуть недосчитанное с прошлого запуска — если запись всё ещё на
+  /// месте. Нет файла — нечего и продолжать.
+  static List<Job> _unfinished() {
+    try {
+      final j = jsonDecode(_unfinishedFile.readAsStringSync()) as Map<String, dynamic>;
+      final path = j['path'] as String;
+      if (!File(path).existsSync()) return const [];
+      final at = (j['resumeFrom'] as num).toInt();
+      return [
+        Job(
+          File(path),
+          state: JobState.paused,
+          resumeFrom: at,
+          progress: (j['progress'] as num?)?.toDouble() ?? 0,
+          detail: currentL10n().jobDetailPausedAt(humanDuration(at)),
+          live: [
+            for (final seg in (j['segments'] as List? ?? const []))
+              Segment((seg[0] as num).toInt(), (seg[1] as num).toInt(), seg[2] as String),
+          ],
+        ),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Записать недосчитанное на диск. Пусто — файл убираем: доделанному
+  /// незачем возвращаться при следующем запуске.
+  void _persistPaused() {
+    final job = state.jobs.where((j) => j.paused).firstOrNull;
+    try {
+      if (job == null) {
+        if (_unfinishedFile.existsSync()) _unfinishedFile.deleteSync();
+        return;
+      }
+      _unfinishedFile.writeAsStringSync(jsonEncode({
+        'path': job.path,
+        'resumeFrom': job.resumeFrom,
+        'progress': job.progress,
+        'segments': [
+          for (final seg in job.live) [seg.from, seg.to, seg.text],
+        ],
+      }));
+    } catch (e) {
+      stderr.writeln('tsukiko: недосчитанное не сохранилось — $e');
+    }
+  }
+
   final NativeBridge bridge;
 
   StreamSubscription<void>? _settingsSub;
@@ -145,6 +203,14 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   Process? _proc;
   Directory? _tmp;
   bool _stopRequested = false;
+
+  /// Распознавание прервали не насовсем: его продолжат с той же секунды.
+  /// [_pauseWanted] ставит человек кнопкой, [_dictationTookOver] — начатая
+  /// диктовка. Разница только в том, продолжится ли оно само.
+  bool _pauseWanted = false;
+  bool _dictationTookOver = false;
+
+  bool get _pausing => _pauseWanted || _dictationTookOver;
 
   /// Номер следующего запуска: имена временных файлов должны быть новыми
   /// даже после правки очереди.
@@ -497,8 +563,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// очередь в состоянии покоя: без этого одно исключение подвешивало её
   /// в «идёт распознавание» до перезапуска.
   Future<void> _run(Emitter<QueueState> emit) async {
-    emit(state.copyWith(running: true));
+    emit(state.copyWith(running: true, clearAsk: true));
     _stopRequested = false;
+    _pauseWanted = false;
+    _dictationTookOver = false;
     _syncPolling();
     try {
       _tmp ??= await Directory.systemTemp.createTemp(appName);
@@ -522,11 +590,19 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       _proc = null;
       emit(state.copyWith(
         running: false,
-        status: _stopRequested ? currentL10n().statusStopped : currentL10n().statusIdle,
+        // Приостановленное — не «Готово»: работа не кончилась, она ждёт.
+        status: _stopRequested
+            ? currentL10n().statusStopped
+            : state.hasPaused
+                ? currentL10n().statusPaused
+                : currentL10n().statusIdle,
       ));
         _syncPolling();
       _releaseTemp();
       _persistNow();
+      // Доделанное с диска убирается здесь же: файл недосчитанного живёт
+      // ровно столько, сколько есть что досчитывать.
+      _persistPaused();
     }
   }
 
@@ -571,11 +647,30 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       if (!await _yieldToDictation(it, emit)) return false;
       it = _find(it) ?? it;
 
-      it = it.copyWith(state: JobState.transcribing);
-      emit(_replace(state, job, it).copyWith(status: it.name));
+      // Заход за заходом с одного и того же места: остановленное посреди
+      // распознавание не начинают заново — whisper продолжает с той
+      // миллисекунды, до которой досчитал (`-ot`), а метки времени всё
+      // равно отдаёт от начала файла.
+      var code = 0;
+      while (true) {
+        it = _find(it) ?? it;
+        it = it.copyWith(state: JobState.transcribing, clearDetail: true);
+        emit(_replace(state, job, it).copyWith(status: it.name));
 
-      final code = await _runWhisper(it, buildArgs(opts, wav, base));
-      it = _find(it) ?? it;
+        code = await _runWhisper(it, buildArgs(opts, wav, base, from: it.resumeFrom));
+        it = _find(it) ?? it;
+        if (!_pausing || _stopRequested) break;
+
+        it = _pause(it, emit);
+        // Своя пауза ждёт человека, а вытеснение диктовкой кончается само.
+        if (_pauseWanted) return false;
+        if (!await _yieldToDictation(it, emit)) return false;
+        _dictationTookOver = false;
+        // Диктовка кончилась, работа пошла — окошку о ней больше незачем
+        // висеть, даже если его не закрыли.
+        emit(state.copyWith(clearAsk: true));
+        it = _find(it) ?? it;
+      }
 
       if (_stopRequested) {
         emit(_replace(state, it, it.copyWith(state: JobState.cancelled)));
@@ -590,7 +685,15 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         return true;
       }
 
-      final t = parseWhisperJson(await jsonFile.readAsString());
+      var t = parseWhisperJson(await jsonFile.readAsString());
+      // Заход после паузы знает только свою половину записи. Начало
+      // осталось в том, что уже показали на экране, — оттуда и берём.
+      if (it.resumeFrom > 0) {
+        t = Transcript(t.lang, [
+          ...it.live.where((seg) => seg.from < it.resumeFrom),
+          ...t.segments,
+        ]);
+      }
       final beside = state.saveNextToSource
           ? await _saveBesideSource(it, t)
           : (path: null, problem: null);
@@ -631,6 +734,65 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     }
   }
 
+  /// Отметить запись приостановленной на том месте, до которого досчитали.
+  ///
+  /// Место берём по последнему показанному фрагменту, а не по проценту:
+  /// процент — оценка, а метка фрагмента — факт. Досчитанное остаётся
+  /// на экране, и второй заход начнётся ровно оттуда.
+  Job _pause(Job job, Emitter<QueueState> emit) {
+    final at = job.live.isEmpty ? job.resumeFrom : job.live.last.to;
+    final paused = job.copyWith(
+      state: JobState.paused,
+      resumeFrom: at,
+      detail: currentL10n().jobDetailPausedAt(humanDuration(at)),
+    );
+    emit(_replace(state, job, paused).copyWith(
+      status: _dictationTookOver
+          ? currentL10n().statusPausedDictation
+          : currentL10n().statusPaused,
+      // Молча отнимать у человека работу нельзя: диктовка вытеснила
+      // расшифровку, и об этом надо сказать — вместе с тем, что она
+      // продолжится сама.
+      ask: _dictationTookOver
+          ? Ask(
+              currentL10n().askDictationTookOverTitle,
+              currentL10n().askDictationTookOverBody(humanDuration(at)),
+            )
+          : null,
+    ));
+    _persistPaused();
+    return paused;
+  }
+
+  /// Приостановить. Процесс гасим целиком, а не усыпляем: усыплённый
+  /// держит в памяти полтора гигабайта модели — ровно то, ради чего паузу
+  /// и жмут. Считанное при этом не пропадает.
+  void _onPause(PauseRequested e, Emitter<QueueState> emit) {
+    if (!state.running) return;
+    _pauseWanted = true;
+    _proc?.kill();
+  }
+
+  /// Переставить строку. Место вставки список считает сам — уже с оглядкой
+  /// на то, что перетащенную строку из него вынут.
+  void _onReordered(JobsReordered e, Emitter<QueueState> emit) {
+    final jobs = [...state.jobs];
+    if (e.from < 0 || e.from >= jobs.length) return;
+    jobs.insert(e.to.clamp(0, jobs.length - 1), jobs.removeAt(e.from));
+    emit(state.copyWith(jobs: jobs, status: currentL10n().statusQueueReordered));
+  }
+
+  Future<void> _onResume(ResumeRequested e, Emitter<QueueState> emit) async {
+    if (state.running) return;
+    _pauseWanted = false;
+    final at = state.jobs.firstWhere((j) => j.paused, orElse: () => state.jobs.first);
+    emit(state.copyWith(
+      clearAsk: true,
+      status: currentL10n().statusResumedFrom(humanDuration(at.resumeFrom)),
+    ));
+    await _run(emit);
+  }
+
   /// Нынешний вид записи: пока шёл шаг, состояние могло смениться.
   Job? _find(Job job) {
     for (final j in state.jobs) {
@@ -652,8 +814,29 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       if (l != null) add(JobAdvanced(job, language: l.group(1)));
     }
 
-    final proc = await Process.start(findWhisper()!, args);
+    // Под своим именем: иначе в «Мониторинге системы» память числится
+    // за безымянным whisper-cli, и чей он — не понять.
+    final proc = await Process.start(
+        runnableWhisper(findWhisper(), 'tsukiko-recognizer')!, args);
     _proc = proc;
+    // Диктовка главнее очереди, и спрашивать её раз в начале мало:
+    // часовая запись считается минутами, а диктовать хотят посреди.
+    // Заметили — гасим счёт немедленно, память достаётся диктовке
+    // целиком, а досчитаем потом с той же секунды.
+    var asking = false;
+    final watch = Timer.periodic(const Duration(milliseconds: 400), (_) async {
+      // Вопрос уходит в чужой изолят и возвращается не мгновенно: без
+      // этого сторожа их накопилась бы очередь.
+      if (asking || _pausing || _stopRequested) return;
+      asking = true;
+      try {
+        if (await dictation.status() != DictationStatus.busy) return;
+        _dictationTookOver = true;
+        proc.kill();
+      } finally {
+        asking = false;
+      }
+    });
     final out = proc.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter())
@@ -665,6 +848,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     try {
       return await proc.exitCode;
     } finally {
+      watch.cancel();
       await out.cancel();
       await err.cancel();
       _proc = null;

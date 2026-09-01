@@ -382,6 +382,27 @@ void main() {
       expect(j.live.map((s) => s.text), ['раз', 'два']);
     });
 
+    test('перестановка меняет очерёдность, а не состав', () async {
+      final b = make();
+      b.add(FilesAdded([file('а.m4a'), file('б.m4a'), file('в.m4a')]));
+      await pumpEventQueue();
+      b.add(const JobsReordered(2, 0));
+      await pumpEventQueue();
+      expect(b.state.jobs.map((j) => j.name), ['в.m4a', 'а.m4a', 'б.m4a']);
+      await b.close();
+    });
+
+    test('«распознать заново» забывает и место остановки', () {
+      final half = job('а.m4a').copyWith(
+        state: JobState.paused,
+        resumeFrom: 600000,
+        live: const [Segment(0, 1000, 'раз')],
+      );
+      expect(half.paused, isTrue);
+      expect(half.reset.resumeFrom, 0);
+      expect(half.reset.live, isEmpty);
+    });
+
     test('«распознать заново» забывает результат, но помнит свои настройки',
         () {
       const mine = RunOptions(model: '/m.bin', lang: 'ru', threads: 8);

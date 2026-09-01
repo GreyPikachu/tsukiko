@@ -365,5 +365,47 @@
   "modelUseDetailResting": "Dictation is keeping the model ready but is silent right now. Start transcribing and it will step aside.",
   "modelUseDetailFree": "Nothing is using the model.",
   "tooltipWaitingForDictation": "Waiting for dictation to finish · press ⌘. to stop",
-  "tooltipDictationBusyWillStart": "Dictation is running — transcription starts as soon as it finishes · ⌘⏎"
+  "tooltipDictationBusyWillStart": "Dictation is running — transcription starts as soon as it finishes · ⌘⏎",
+  "jobStatePaused": "Paused",
+  "buttonPause": "Pause",
+  "buttonResume": "Resume",
+  "menuPause": "Pause",
+  "menuResume": "Resume recognition",
+  "tooltipPauseShortcut": "Pause recognition — it will resume from the same spot",
+  "tooltipResume": "Resume from where it stopped",
+  "statusPaused": "Paused",
+  "statusResumedFrom": "Resuming from {at}",
+  "@statusResumedFrom": {
+    "placeholders": {
+      "at": {
+        "type": "String"
+      }
+    }
+  },
+  "askDictationTookOverTitle": "Recognition paused",
+  "askDictationTookOverBody": "You started dictating, and there is only one model to go around — recognition stopped at {at} and the memory is free. It will resume from that same spot on its own once dictation is done.",
+  "@askDictationTookOverBody": {
+    "placeholders": {
+      "at": {
+        "type": "String"
+      }
+    }
+  },
+  "jobDetailPausedAt": "Paused at {at}",
+  "@jobDetailPausedAt": {
+    "placeholders": {
+      "at": {
+        "type": "String"
+      }
+    }
+  },
+  "statusQueueReordered": "Queue order changed",
+  "statusRestoredUnfinished": "Unfinished work restored: {name}",
+  "@statusRestoredUnfinished": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  }
 }

@@ -430,9 +430,18 @@ class _Notices extends StatelessWidget {
           if (s.failure != null)
             _Warning(
               s.failure!,
-              button: s.failurePath != null ? l10n.buttonShowRecording : l10n.buttonCopy,
-              onPressed:
-                  s.failurePath != null ? cubit.revealFailure : cubit.copyLast,
+              button: s.failurePath != null
+                  ? l10n.buttonShowRecording
+                  : s.last.isNotEmpty
+                      ? l10n.buttonCopy
+                      : null,
+              // Ни записи, ни текста — предлагать нечего. Такая беда
+              // остаётся просто сообщением и уходит сама.
+              onPressed: s.failurePath != null
+                  ? cubit.revealFailure
+                  : s.last.isNotEmpty
+                      ? cubit.copyLast
+                      : null,
               second: s.failurePath != null ? l10n.buttonDelete : null,
               onSecond: s.failurePath != null ? cubit.discardFailure : null,
             ),
@@ -760,7 +769,7 @@ class _Segmented extends StatelessWidget {
 class _Warning extends StatelessWidget {
   const _Warning(
     this.text, {
-    required this.onPressed,
+    this.onPressed,
     this.button,
     this.second,
     this.onSecond,
@@ -770,7 +779,10 @@ class _Warning extends StatelessWidget {
   /// Пусто — берём общую подпись «Открыть настройки»: ей отвечают все
   /// нынешние места, кроме тех, что просят своё.
   final String? button;
-  final VoidCallback onPressed;
+
+  /// Пусто — кнопок нет вовсе. Не всякая беда поправима: записи, которой
+  /// уже нет, не поможет ни одна кнопка, а мёртвая только обманывает.
+  final VoidCallback? onPressed;
   final String? second;
   final VoidCallback? onSecond;
 
@@ -788,6 +800,7 @@ class _Warning extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(text, style: Type.caption.copyWith(height: 1.35)),
+            if (onPressed != null) ...[
             const SizedBox(height: Gap.item),
             Row(
               children: [
@@ -808,6 +821,7 @@ class _Warning extends StatelessWidget {
                 ],
               ],
             ),
+            ],
           ],
         ),
       );

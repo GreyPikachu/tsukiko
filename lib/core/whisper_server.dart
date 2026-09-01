@@ -21,6 +21,11 @@ import '../core/settings.dart';
 
 String? findWhisperServer() => os.findExecutable('whisper-server');
 
+/// Имя, под которым сервер диктовки работает у нас, — чтобы в мониторе
+/// системы память числилась за tsukiko, а не за безымянным whisper-server
+/// (см. `runnableWhisper`).
+const dictationExeName = 'tsukiko-dictation';
+
 /// Модель весит гигабайты, поэтому осиротевший сервер — это не «лишний
 /// процесс», а полтора гигабайта, которые никто не вернёт. Pid пишется
 /// на диск, и следующий запуск добивает того, кто пережил падение.
@@ -78,7 +83,12 @@ Future<bool> killForSure(int pid) async {
 /// в список не попадают: наших меток у них нет.
 List<ProcListing> ourServersIn(List<ProcListing> processes) => [
       for (final p in processes)
-        if (p.args.contains('whisper-server') && ourServerMarks.any(p.args.contains)) p,
+        // Имя может быть и своим, и родным: под своим сервер работает
+        // с этой сборки, а пережить обновление приложения может и тот,
+        // что поднят прежней.
+        if ((p.args.contains('whisper-server') || p.args.contains(dictationExeName)) &&
+            ourServerMarks.any(p.args.contains))
+          p,
     ];
 
 /// Pid, записанный нашим сервером. Просто число из файла: ни живости,
@@ -339,7 +349,8 @@ class WhisperServer {
 
     _port = await freePort();
     _model = o.model;
-    final proc = await Process.start(exe, serverArgs(o, _port));
+    final proc = await Process.start(
+        runnableWhisper(exe, dictationExeName)!, serverArgs(o, _port));
     _proc = proc;
     // Вывод сервера никому не нужен, но не читать его нельзя: труба
     // заполнится, и процесс встанет.

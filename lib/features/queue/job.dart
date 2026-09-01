@@ -25,6 +25,7 @@ class Job extends Equatable {
     this.besideSource,
     this.startedAt,
     this.took,
+    this.resumeFrom = 0,
   });
 
   final File file;
@@ -63,10 +64,18 @@ class Job extends Equatable {
   final DateTime? startedAt;
   final Duration? took;
 
+  /// С какой миллисекунды продолжать. Ноль — с начала. Ставится, когда
+  /// распознавание остановили посреди: считанное остаётся в [live],
+  /// а досчитывать незачем то, что уже посчитано.
+  final int resumeFrom;
+
   String get path => file.path;
   String get name => os.basename(file.path);
   bool get active =>
       state == JobState.converting || state == JobState.transcribing;
+
+  /// Начатое и не досчитанное. Такое не бросают: его продолжают.
+  bool get paused => state == JobState.paused;
   bool get done => transcript != null || raw != null;
   List<Segment> get segments => transcript?.segments ?? live;
 
@@ -92,6 +101,7 @@ class Job extends Equatable {
     String? besideSource,
     DateTime? startedAt,
     Duration? took,
+    int? resumeFrom,
     // Обнулять поля иначе нечем: `null` в именованном параметре
     // не отличить от «не передали».
     bool clearDetail = false,
@@ -110,6 +120,7 @@ class Job extends Equatable {
         besideSource: besideSource ?? this.besideSource,
         startedAt: startedAt ?? this.startedAt,
         took: took ?? this.took,
+        resumeFrom: resumeFrom ?? this.resumeFrom,
       );
 
   /// Записать ещё один распознанный фрагмент.
@@ -134,5 +145,6 @@ class Job extends Equatable {
         besideSource,
         startedAt,
         took,
+        resumeFrom,
       ];
 }

@@ -606,6 +606,26 @@ void _hotkeyTaps() {
     expect(args.contains('--carry-initial-prompt'), isTrue);
   });
 
+  test('движок работает под своим именем и остаётся тем же движком', () {
+    final exe = findWhisper();
+    if (exe == null) return;
+    final named = runnableWhisper(exe, 'tsukiko-recognizer');
+    expect(named, isNotNull);
+    expect(os.basename(named!), 'tsukiko-recognizer');
+    // Ссылка, а не копия: копия теряет свои библиотеки. И ведёт туда же,
+    // куда ведёт поиск, — иначе запустился бы вчерашний движок.
+    expect(Link(named).targetSync(), exe);
+    // Второй заход не спотыкается о готовую ссылку.
+    expect(runnableWhisper(exe, 'tsukiko-recognizer'), named);
+  });
+
+  test('продолжение считает с места остановки, а не с начала записи', () {
+    const o = RunOptions(model: 'm', lang: 'ru', threads: 4);
+    expect(buildArgs(o, '/a.wav', '/o').contains('-ot'), isFalse);
+    final again = buildArgs(o, '/a.wav', '/o', from: 600000);
+    expect(again[again.indexOf('-ot') + 1], '600000');
+  });
+
   test('подряд идущий повтор сворачивается в один сегмент', () {
     final segs = [
       const Segment(0, 1000, 'Начало.'),

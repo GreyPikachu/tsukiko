@@ -101,6 +101,9 @@ class QueueState extends Equatable {
 
   bool get canRetry => targets.any((j) => !j.imported);
 
+  /// Есть недосчитанное: остановленное посреди работы ждёт продолжения.
+  bool get hasPaused => jobs.any((j) => j.paused);
+
   /// Очередь запущена, но стоит и уступает диктовке.
   bool get waitingForModel =>
       running && jobs.any((j) => j.state == JobState.waiting);
