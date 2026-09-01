@@ -319,6 +319,12 @@ class DictationCubit extends Cubit<DictationState> {
 
   void _onHotkey(HotkeyEvent e) {
     if (!_settings.enabled) return;
+    // Поверх сочетания набрали лишнее — значит целили не в диктовку.
+    // Начатое выбрасываем, и панель уходит сразу.
+    if (e.cancel) {
+      cancel();
+      return;
+    }
     if (e.id == 'hold') {
       e.edge == HotkeyEdge.down ? start() : stop();
       return;

@@ -25,11 +25,15 @@ import '../core/whisper_server.dart';
 enum HotkeyEdge { down, up }
 
 class HotkeyEvent {
-  const HotkeyEvent(this.id, this.edge);
+  const HotkeyEvent(this.id, this.edge, {this.cancel = false});
 
   /// 'hold' или 'toggle' — какое из двух сочетаний сработало.
   final String id;
   final HotkeyEdge edge;
+
+  /// Сочетание разошлось не отпусканием, а лишней клавишей поверх:
+  /// начатое надо не заканчивать, а отменять.
+  final bool cancel;
 }
 
 
@@ -92,6 +96,7 @@ class NativeBridge {
         _hotkeys.add(HotkeyEvent(
           a['id'] as String,
           a['down'] as bool ? HotkeyEdge.down : HotkeyEdge.up,
+          cancel: (a['cancel'] as bool?) ?? false,
         ));
       case 'captured':
         final a = (call.arguments as Map).cast<String, dynamic>();
