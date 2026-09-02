@@ -28,8 +28,10 @@ void settingsMain() => runSettings();
 Future<void> main(List<String> args) async {
   refreshLocale();
   WidgetsFlutterBinding.ensureInitialized();
-  // Настоящий материал окна: содержимое во всю высоту, титульная полоса прозрачная.
-  await const MacosWindowUtilsConfig(toolbarStyle: NSWindowToolbarStyle.unified).apply();
+  // Настоящий материал окна: содержимое во всю высоту, титульная полоса прозрачная (macOS).
+  if (Platform.isMacOS) {
+    await const MacosWindowUtilsConfig(toolbarStyle: NSWindowToolbarStyle.unified).apply();
+  }
   // До первого findModels(): список моделей должен собираться уже
   // из своей папки. Когда переезжать нечего, это одна проверка папки.
   await migrateLegacyModels();

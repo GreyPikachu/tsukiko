@@ -32,7 +32,7 @@ import 'settings_state.dart';
 /// соседним изолятам говорят перечитать файл. Без этого половина правок
 /// доходила бы только до следующего запуска.
 class SettingsCubit extends Cubit<SettingsState> {
-  SettingsCubit(this.bridge) : super(const SettingsState()) {
+  SettingsCubit(this.bridge) : super(SettingsState()) {
     _dictation = DictationSettings.load();
     _subs.add(bridge.settingsReloaded.listen((_) => _readApp()));
     _subs.add(bridge.settingsTab.listen((t) => _emit(state.copyWith(tab: t))));

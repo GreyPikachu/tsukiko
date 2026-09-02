@@ -1116,5 +1116,6 @@
     }
   },
   "statusEngineOurs": "Локально · свой whisper.cpp",
-  "statusEngineSystem": "Локально · whisper.cpp из системы"
+  "statusEngineSystem": "Локально · whisper.cpp из системы",
+  "whisperInstallHintWindows": "Движок не найден. Переустановите tsukiko — он ставится вместе с приложением."
 }

@@ -37,5 +37,17 @@ void main() {
       expect(win.shortcutLabel(['cmd', 'ctrl', 'alt'], ['O']),
           'Ctrl + Alt + Win + O');
     });
+
+    test('движок выбирается по тому, запустится ли Vulkan-сборка', () {
+      // Проверка идёт по загрузчику Vulkan в системе. Тест бежит на macOS,
+      // где его нет, — значит Vulkan-сборка не предлагается вовсе, а не
+      // предлагается первой: запустить её всё равно не вышло бы, Windows
+      // убивает такой процесс до первой строки кода.
+      final names = win.engineNames('tsukiko-recognizer');
+      expect(names.contains('tsukiko-recognizer-vulkan.exe'), isFalse);
+      expect(names.first, 'tsukiko-recognizer-cpu.exe');
+      // Имя без суффикса остаётся запасным: подхватится и собранное руками.
+      expect(names, contains('tsukiko-recognizer.exe'));
+    });
   });
 }

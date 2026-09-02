@@ -74,6 +74,16 @@ class _TempOs implements Os {
   String get engineDir => join(_root, 'Helpers');
 
   @override
+  List<String> engineNames(String base) => _real.engineNames(base);
+
+  @override
+  ({List<String> mods, List<String> keys}) get defaultHold => _real.defaultHold;
+
+  @override
+  ({List<String> mods, List<String> keys}) get defaultToggle =>
+      _real.defaultToggle;
+
+  @override
   String get whisperInstallHint => _real.whisperInstallHint;
 
   @override

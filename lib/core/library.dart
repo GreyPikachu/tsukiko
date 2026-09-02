@@ -112,12 +112,9 @@ const dictationExeName = 'tsukiko-dictation';
 String? bundledEngine(String name) {
   // Где именно движок лежит внутри приложения, знает только граница
   // системы: у macOS и Windows это разные места.
-  for (final candidate in [
-    name,
-    '$name.exe',
-    '$name-vulkan.exe',
-    '$name-cpu.exe',
-  ]) {
+  // Какие сборки бывают и какая из них годится этой машине — знает
+  // граница системы. Здесь только «первая, которая нашлась».
+  for (final candidate in os.engineNames(name)) {
     final path = os.join(os.engineDir, candidate);
     if (File(path).existsSync()) return path;
   }

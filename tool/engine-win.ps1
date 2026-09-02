@@ -42,7 +42,7 @@ $STAMPED = "$VERSION $PatchHash"
 
 if (-not $Force -and (Test-Path $STAMP)) {
     $CurrentStamp = (Get-Content $STAMP -Raw).Trim()
-    if ($CurrentStamp -eq $STAMPED -and (Test-Path "$OUT/tsukiko-recognizer.exe") -and (Test-Path "$OUT/tsukiko-dictation.exe")) {
+    if ($CurrentStamp -eq $STAMPED -and (Test-Path "$OUT/tsukiko-recognizer-cpu.exe") -and (Test-Path "$OUT/tsukiko-dictation-cpu.exe")) {
         Write-Host "Движок $VERSION уже собран — $OUT"
         exit 0
     }
@@ -113,9 +113,11 @@ Copy-Item "$BUILD_VK/bin/Release/whisper-server.exe" "$OUT/tsukiko-dictation-vul
 Copy-Item "$BUILD_CPU/bin/Release/whisper-cli.exe" "$OUT/tsukiko-recognizer-cpu.exe" -Force
 Copy-Item "$BUILD_CPU/bin/Release/whisper-server.exe" "$OUT/tsukiko-dictation-cpu.exe" -Force
 
-# По умолчанию в качестве основного имени выставляем Vulkan:
-Copy-Item "$OUT/tsukiko-recognizer-vulkan.exe" "$OUT/tsukiko-recognizer.exe" -Force
-Copy-Item "$OUT/tsukiko-dictation-vulkan.exe" "$OUT/tsukiko-dictation.exe" -Force
+# Третьей копии под именем без суффикса не делаем. Выбирает приложение,
+# и выбирает по делу: Vulkan-сборку Windows убивает на запуске, если
+# в системе нет vulkan-1.dll (её кладут драйверы видеокарты), — тогда
+# берётся процессорная. Копия «на всякий случай» только раздула бы
+# установщик на лишние мегабайты и подменяла бы этот выбор.
 
 Copy-Item "$SRC/LICENSE" "$OUT/whisper.cpp-LICENSE.txt" -Force
 Set-Content -Path $STAMP -Value $STAMPED -NoNewline
