@@ -10,6 +10,10 @@
 # Чужой при этом не трогается: tsukiko ничего не ставит в систему
 # и ничего оттуда не удаляет.
 #
+# Расшифровщик собирается с одной своей правкой — tool/recognizer-pcm.patch:
+# он отпускает память из-под сырого звука, как только посчитан мел. Текст
+# от этого не меняется ни на слово, объяснение — в шапке самого патча.
+#
 # Итог: два самодостаточных универсальных бинарника в macos/Engine.
 # Самодостаточных буквально — линкуются только с системными фреймворками
 # (сборка статическая, шейдеры Metal вшиты внутрь), поэтому ни
@@ -21,13 +25,18 @@ set -e
 cd "$(dirname "$0")/.."
 
 VERSION=v1.9.3
+PATCH=tool/recognizer-pcm.patch
 SHA=1650f884effba487025143bd8facd2f9fb40a83b3737a732803c67a8d659d9c0
 
 OUT=macos/Engine
 WORK=build/engine
 STAMP="$OUT/.version"
 
-if [ "$1" != "--force" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$VERSION" ] &&
+# В метке не только версия, но и отпечаток патча: правка патча должна
+# пересобирать движок так же, как смена версии.
+STAMPED="$VERSION $(shasum -a 256 "$PATCH" | cut -c1-12)"
+
+if [ "$1" != "--force" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$STAMPED" ] &&
   [ -x "$OUT/tsukiko-recognizer" ] && [ -x "$OUT/tsukiko-dictation" ]; then
   echo "движок $VERSION уже собран — $OUT"
   exit 0
@@ -49,6 +58,9 @@ if [ ! -d "$SRC" ]; then
   # Сверяем то, что скачали: подменённый архив собрался бы молча.
   echo "$SHA  $TAR" | shasum -a 256 -c - >/dev/null
   tar xzf "$TAR" -C "$WORK"
+  # Патч ложится один раз, на свежие исходники: второй заход по уже
+  # пропатченному не пройдёт и остановит сборку, что и нужно.
+  patch -p1 -d "$SRC" < "$PATCH"
 fi
 
 # Универсальный, как и само приложение: Flutter собирает обе архитектуры.
@@ -66,7 +78,7 @@ cp "$SRC/build/bin/whisper-cli" "$OUT/tsukiko-recognizer"
 cp "$SRC/build/bin/whisper-server" "$OUT/tsukiko-dictation"
 # MIT обязывает возить с собой текст лицензии.
 cp "$SRC/LICENSE" "$OUT/whisper.cpp-LICENSE.txt"
-echo "$VERSION" > "$STAMP"
+echo "$STAMPED" > "$STAMP"
 
-echo "движок $VERSION собран:"
+echo "движок $VERSION собран (с $PATCH):"
 ls -la "$OUT" | grep tsukiko-
