@@ -63,6 +63,14 @@ class MacOs implements Os {
     return null;
   }
 
+  /// .../tsukiko.app/Contents/MacOS/tsukiko → .../Contents/Helpers.
+  /// Helpers — то место, куда macOS велит класть вложенные программы:
+  /// они подписываются вместе с приложением, и по правилам подписи
+  /// ничего, кроме них, там лежать не должно.
+  @override
+  String get engineDir =>
+      join(dirname(dirname(Platform.resolvedExecutable)), 'Helpers');
+
   @override
   String get whisperInstallHint => currentL10n().whisperInstallHint;
 

@@ -68,6 +68,11 @@ class _TempOs implements Os {
   @override
   String? findExecutable(String name) => _real.findExecutable(name);
 
+  /// Тест бежит не из .app: своего движка у него нет, и работать он
+  /// будет на системном — как и приложение, у которого своего не нашлось.
+  @override
+  String get engineDir => join(_root, 'Helpers');
+
   @override
   String get whisperInstallHint => _real.whisperInstallHint;
 

@@ -110,11 +110,9 @@ const dictationExeName = 'tsukiko-dictation';
 /// Homebrew на него не влияет, потому что своего движка он не касается.
 /// И наоборот — чужой мы не ставим, не правим и не удаляем.
 String? bundledEngine(String name) {
-  // .../tsukiko.app/Contents/MacOS/tsukiko → .../Contents/Helpers/имя.
-  // Helpers — то место, куда macOS велит класть вложенные программы,
-  // и подписываются они вместе с приложением.
-  final path = os.join(
-      os.dirname(os.dirname(Platform.resolvedExecutable)), 'Helpers', name);
+  // Где именно движок лежит внутри приложения, знает только граница
+  // системы: у macOS и Windows это разные места.
+  final path = os.join(os.engineDir, name);
   return File(path).existsSync() ? path : null;
 }
 

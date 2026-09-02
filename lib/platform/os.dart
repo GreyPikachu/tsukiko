@@ -81,6 +81,14 @@ abstract class Os {
   /// пакетные менеджеры этой системы. Возвращает путь или null.
   String? findExecutable(String name);
 
+  /// Где внутри самого приложения лежит движок whisper.cpp.
+  ///
+  /// У каждой системы своё место: macOS велит класть вложенные программы
+  /// в `Contents/Helpers`, Windows держит их просто рядом с .exe. Знать
+  /// об этом должна только эта граница — остальному Dart всё равно,
+  /// откуда взялся путь.
+  String get engineDir;
+
   /// Что сказать человеку, у которого whisper.cpp не установлен.
   String get whisperInstallHint;
 
