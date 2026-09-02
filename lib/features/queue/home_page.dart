@@ -1078,7 +1078,13 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         ),
         const SizedBox(height: Gap.item),
         Text(
-          !s.whisperFound ? l10n.statusWhisperNotFound : l10n.statusLocalWhisperCpp,
+          // Чей движок работает — видно сразу. На системном мы за поведение
+          // не отвечаем: в старых сборках нет и половины наших флагов.
+          !s.whisperFound
+              ? l10n.statusWhisperNotFound
+              : engineIsOurs
+                  ? l10n.statusEngineOurs
+                  : l10n.statusEngineSystem,
           style: Type.caption.copyWith(color: Surface.secondaryText(context)),
         ),
       ],

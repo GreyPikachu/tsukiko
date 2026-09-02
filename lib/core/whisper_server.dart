@@ -19,12 +19,8 @@ import '../core/settings.dart';
 /// Сервер поднимается в тот момент, когда пользователь начал говорить,
 /// и успевает загрузиться, пока фраза не кончилась.
 
-String? findWhisperServer() => os.findExecutable('whisper-server');
-
-/// Имя, под которым сервер диктовки работает у нас, — чтобы в мониторе
-/// системы память числилась за tsukiko, а не за безымянным whisper-server
-/// (см. `runnableWhisper`).
-const dictationExeName = 'tsukiko-dictation';
+String? findWhisperServer() =>
+    bundledEngine(dictationExeName) ?? os.findExecutable('whisper-server');
 
 /// Модель весит гигабайты, поэтому осиротевший сервер — это не «лишний
 /// процесс», а полтора гигабайта, которые никто не вернёт. Pid пишется
