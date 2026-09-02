@@ -409,5 +409,6 @@
     }
   },
   "statusEngineOurs": "Local · bundled whisper.cpp",
-  "statusEngineSystem": "Local · system whisper.cpp"
+  "statusEngineSystem": "Local · system whisper.cpp",
+  "whisperInstallHintWindows": "Engine not found. Reinstall tsukiko — it ships with the app."
 }

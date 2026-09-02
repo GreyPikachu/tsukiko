@@ -10,7 +10,9 @@ import '../../core/whisper_server.dart' show Hotkey;
 /// объект: он меняется внутри себя, и сравнение снимков такую правку
 /// не заметило бы — окно замирало бы на устаревшем виде.
 class SettingsState extends Equatable {
-  const SettingsState({
+  /// Не `const`: сочетания по умолчанию у каждой системы свои, а `const`
+  /// про систему знать не может.
+  SettingsState({
     this.tab = 'transcriber',
     this.models = const [],
     this.vad,
@@ -20,8 +22,8 @@ class SettingsState extends Equatable {
     this.problem,
     this.allowed = true,
     // диктовка
-    this.hold = Hotkey.holdDefault,
-    this.toggle = Hotkey.toggleDefault,
+    Hotkey? hold,
+    Hotkey? toggle,
     this.dictationModel = '',
     this.queueModel = '',
     this.threads = 4,
@@ -39,7 +41,8 @@ class SettingsState extends Equatable {
     this.libraryPath = '',
     this.libraryFormats = const ['txt'],
     this.locale = '',
-  });
+  })  : hold = hold ?? Hotkey.holdDefault,
+        toggle = toggle ?? Hotkey.toggleDefault;
 
   /// Какая вкладка открыта. Приходит и снаружи: окно могут попросить
   /// открыться сразу на «Моделях».

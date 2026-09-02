@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import '../core/app_locale.dart';
@@ -87,8 +88,63 @@ class WindowsOs implements Os {
     return Directory(sub).existsSync() ? sub : appDir;
   }
 
+  /// Fn на Windows программам не видна: её разбирает прошивка
+  /// клавиатуры. Берём то, что видно и не занято системой: Ctrl+Alt
+  /// держать, Ctrl+Alt+Пробел переключать. Win+H занят своей диктовкой
+  /// Windows, Ctrl+Shift — раскладкой.
   @override
-  String get whisperInstallHint => currentL10n().whisperInstallHint;
+  ({List<String> mods, List<String> keys}) get defaultHold =>
+      (mods: const ['ctrl', 'alt'], keys: const []);
+
+  @override
+  ({List<String> mods, List<String> keys}) get defaultToggle =>
+      (mods: const ['ctrl', 'alt'], keys: const ['space']);
+
+  /// Vulkan-сборку можно запускать, только если в системе есть загрузчик
+  /// Vulkan.
+  ///
+  /// Это не придирка, а условие запуска: ggml зовёт `vkGetInstanceProcAddr`
+  /// напрямую и линкуется с `vulkan-1.dll` неявно, поэтому без неё Windows
+  /// убивает процесс ещё до первой строки кода — до всякого «а поищу-ка я
+  /// видеокарту». Своей обработки ошибок движку тут не достанется.
+  ///
+  /// Обратное неверно: загрузчик есть, а видеокарты подходящей нет — это
+  /// уже не беда. Тогда ggml не находит устройство, ловит своё исключение
+  /// и считает на процессоре тем же самым бинарником.
+  ///
+  /// Загрузчик кладут драйверы — и NVIDIA, и AMD, и Intel. Нет его там,
+  /// где нет и драйвера: чистая установка на базовом видеоадаптере,
+  /// виртуальные машины, серверные сборки Windows.
+  ///
+  /// проверка по файлу, а не запуском. Сломанный драйвер при
+  /// живой библиотеке она пропустит; если такое всплывёт — пробовать
+  /// запуском (`--version`) и запоминать ответ на весь сеанс.
+  late final bool _vulkanUsable = File(join(
+          Platform.environment['SystemRoot'] ?? r'C:\Windows',
+          'System32',
+          'vulkan-1.dll'))
+      .existsSync();
+
+  /// Сборок движка две, и выбор между ними — не вкус, а совместимость.
+  ///
+  /// Vulkan берётся первым: он ускоряет на любой видеокарте — NVIDIA, AMD,
+  /// Intel, — и при этом ничего не тянет за собой. CUDA дала бы то же
+  /// самое только на NVIDIA и ценой сотен мегабайт своих библиотек
+  /// (официальная сборка whisper.cpp с CUDA 12.4 весит 640 МБ против 8 МБ
+  /// процессорной).
+  ///
+  /// Имя без суффикса — последнее в списке: так подхватится и сборка,
+  /// сделанная руками, и та, что осталась от прежних версий.
+  @override
+  List<String> engineNames(String base) => [
+        if (_vulkanUsable) '$base-vulkan.exe',
+        '$base-cpu.exe',
+        '$base.exe',
+        base,
+      ];
+
+  @override
+  String get whisperInstallHint => currentL10n().whisperInstallHintWindows;
 
   // ── как система называет свои вещи ────────────────────────────────────────
 
@@ -188,28 +244,42 @@ class WindowsOs implements Os {
     } catch (_) {}
   }
 
+  /// Перечень процессов — вместе с их командными строками.
+  ///
+  /// Именно с ними, и это здесь главное. `tasklist` отдаёт только имя
+  /// образа, а по имени свой сервер от чужого не отличить: у двух копий
+  /// одной программы оно одинаковое. Свой узнаётся по метке в аргументах
+  /// (см. `ourServersIn`), и без аргументов забытый сервер диктовки
+  /// не нашёлся бы никогда — полтора гигабайта висели бы в памяти
+  /// до перезагрузки.
+  ///
+  /// Поэтому PowerShell и CIM, а не `tasklist`. И не `wmic`: его из
+  /// Windows 11 убрали. Зовётся это редко — при запуске и при подметании,
+  /// — так что цена запуска PowerShell тут не в счёт.
   @override
   Future<List<ProcListing>> listProcesses() async {
     try {
-      final r = await Process.run('tasklist', ['/FO', 'CSV', '/NH']);
+      final r = await Process.run('powershell', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        // Своё разделение полей: в командной строке бывают и запятые,
+        // и кавычки, и CSV пришлось бы разбирать по-настоящему.
+        r'Get-CimInstance Win32_Process | ForEach-Object { '
+            r'"$($_.ProcessId)|$([int]($_.WorkingSetSize/1024))|$($_.CommandLine)" }',
+      ]);
       final out = <ProcListing>[];
-      for (final line in (r.stdout as String).split('\r\n')) {
-        final trimmed = line.trim();
-        if (trimmed.isEmpty) continue;
-        // Формат строки CSV: "imagename.exe","pid","session","session#","mem K"
-        final cols = trimmed
-            .split('","')
-            .map((s) => s.replaceAll('"', '').trim())
-            .toList();
-        if (cols.length < 5) continue;
-        final pid = int.tryParse(cols[1]);
+      for (final line in const LineSplitter().convert(r.stdout as String)) {
+        final at = line.indexOf('|');
+        if (at < 0) continue;
+        final rest = line.indexOf('|', at + 1);
+        if (rest < 0) continue;
+        final pid = int.tryParse(line.substring(0, at).trim());
         if (pid == null) continue;
-        final memStr = cols[4].replaceAll(RegExp(r'[^\d]'), '');
-        final memKb = int.tryParse(memStr) ?? 0;
         out.add((
           pid: pid,
-          rssKb: memKb,
-          args: cols[0],
+          rssKb: int.tryParse(line.substring(at + 1, rest).trim()) ?? 0,
+          args: line.substring(rest + 1).trim(),
         ));
       }
       return out;
@@ -244,7 +314,10 @@ class WindowsOs implements Os {
       if (type == FileSystemEntityType.directory) {
         await Process.run('explorer.exe', [path]);
       } else {
-        await Process.run('explorer.exe', ['/select,', path]);
+        // Именно одним доводом: `/select,` и путь — это части одного
+        // ключа. Разными доводами проводник открывает «Документы»
+        // и никого не выделяет.
+        await Process.run('explorer.exe', ['/select,$path']);
       }
       return true;
     } catch (_) {

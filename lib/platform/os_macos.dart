@@ -72,6 +72,19 @@ class MacOs implements Os {
       join(dirname(dirname(Platform.resolvedExecutable)), 'Helpers');
 
   @override
+  ({List<String> mods, List<String> keys}) get defaultHold =>
+      (mods: const ['fn', 'ctrl'], keys: const []);
+
+  @override
+  ({List<String> mods, List<String> keys}) get defaultToggle =>
+      (mods: const ['fn'], keys: const ['space']);
+
+  /// Сборка одна на все машины: Metal есть на каждом Mac, а универсальный
+  /// бинарник покрывает и Apple Silicon, и Intel. Выбирать не из чего.
+  @override
+  List<String> engineNames(String base) => [base];
+
+  @override
   String get whisperInstallHint => currentL10n().whisperInstallHint;
 
   // ── как система называет свои вещи ────────────────────────────────────────

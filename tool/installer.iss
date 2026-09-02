@@ -27,7 +27,9 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\build\installer
 OutputBaseFilename=tsukiko-setup
-SetupIconFile=..\assets\mascot\idle.webp
+; Значок установщика — только .ico: Inno Setup другого формата не берёт
+; и на .webp просто не соберётся.
+SetupIconFile=..\windows\runner\resources\app_icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern

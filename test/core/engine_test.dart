@@ -295,8 +295,12 @@ void main() {
   });
 
   test('подписи сочетаний читаются как в системе', () {
+    // Сочетание по умолчанию — не одно на все системы: на Windows
+    // клавиши fn у программ нет вовсе, и сочетание с ней там никогда
+    // бы не сработало.
     expect(Hotkey.holdDefault.label, 'fn + ⌃');
     expect(Hotkey.toggleDefault.label, 'fn + Пробел');
+    expect(Hotkey.holdDefault.mods, os.defaultHold.mods);
     expect(const Hotkey([], keys: ['f13']).label, 'F13');
     expect(const Hotkey([]).label, 'Не назначено');
 

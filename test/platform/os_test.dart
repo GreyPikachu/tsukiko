@@ -195,6 +195,7 @@ class _FakeOs implements Os {
     #onTerminate: _real.onTerminate,
     #modifierLabel: _real.modifierLabel,
     #shortcutLabel: _real.shortcutLabel,
+    #engineNames: _real.engineNames,
   };
 
   late final Map<Symbol, Function> _getters = {
@@ -203,5 +204,8 @@ class _FakeOs implements Os {
     #sharedModelDirs: () => <String>[],
     #whisperInstallHint: () => _real.whisperInstallHint,
     #fileManagerName: () => _real.fileManagerName,
+    #engineDir: () => _real.engineDir,
+    #defaultHold: () => _real.defaultHold,
+    #defaultToggle: () => _real.defaultToggle,
   };
 }

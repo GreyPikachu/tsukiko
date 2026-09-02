@@ -513,8 +513,12 @@ class Hotkey {
 
   bool get isDouble => taps >= 2;
 
-  static const holdDefault = Hotkey(['fn', 'ctrl']);
-  static const toggleDefault = Hotkey(['fn'], keys: ['space']);
+  /// Не `const`: у каждой системы своё (см. `Os.defaultHold`), а `const`
+  /// про систему знать не может.
+  static Hotkey get holdDefault =>
+      Hotkey(os.defaultHold.mods, keys: os.defaultHold.keys);
+  static Hotkey get toggleDefault =>
+      Hotkey(os.defaultToggle.mods, keys: os.defaultToggle.keys);
 
   bool get empty => mods.isEmpty && keys.isEmpty;
 
@@ -592,14 +596,15 @@ class DictationSettings {
     this.enabled = true,
     this.model = '',
     this.prompt = '',
-    this.hold = Hotkey.holdDefault,
-    this.toggle = Hotkey.toggleDefault,
+    Hotkey? hold,
+    Hotkey? toggle,
     this.idleSeconds = 180,
     this.insert = true,
     this.hud = true,
     this.punctuate = true,
     this.threads = 4,
-  });
+  })  : hold = hold ?? Hotkey.holdDefault,
+        toggle = toggle ?? Hotkey.toggleDefault;
 
   bool enabled;
 

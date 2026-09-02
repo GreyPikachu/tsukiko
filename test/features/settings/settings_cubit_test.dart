@@ -182,13 +182,13 @@ void main() {
     // выбирается порознь, а пустой выбор диктовки означает «та же, что
     // у расшифровщика». В списке моделей это должно быть написано.
     test('пустой выбор диктовки — это модель расшифровщика', () {
-      const s = SettingsState(queueModel: '/большая.bin');
+      final s = SettingsState(queueModel: '/большая.bin');
       expect(s.dictationModelInUse, '/большая.bin');
       expect(s.userOf('/большая.bin'), 'расшифровщик и диктовка');
     });
 
     test('свой выбор диктовки разводит их по разным файлам', () {
-      const s = SettingsState(
+      final s = SettingsState(
           queueModel: '/большая.bin', dictationModel: '/мелкая.bin');
       expect(s.userOf('/большая.bin'), 'расшифровщик');
       expect(s.userOf('/мелкая.bin'), 'диктовка');
