@@ -147,37 +147,47 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   // Всё, для чего нужно окно: блок про окна не знает и спрашивать человека
   // не умеет — он кладёт вопрос в состояние, а показывает его отсюда.
 
+  /// Контекст открытого окна вопроса. Нужен затем, что вопрос может
+  /// отпасть сам: диктовка кончилась, расшифровка пошла дальше — а окно
+  /// про вытеснение висит поверх идущей работы, пока его не закроют руками.
+  BuildContext? _askCtx;
+
   void _showAsk(Ask ask) {
     showMacosAlertDialog<void>(
       context: context,
-      builder: (dialogContext) => MacosAlertDialog(
-        appIcon: MacosIcon(
-          ask.confirm ? CupertinoIcons.waveform_circle : CupertinoIcons.waveform,
-          size: 56,
-        ),
-        title: Text(ask.title, style: Type.emptyTitle),
-        message:
-            Text(ask.message, textAlign: TextAlign.center, style: Type.control),
-        primaryButton: PushButton(
-          controlSize: ControlSize.large,
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            _send(ask.confirm ? const RunConfirmed(true) : const AskDismissed());
-          },
-          child: Text(ask.confirm ? l10n.buttonContinue : l10n.buttonUnderstood),
-        ),
-        secondaryButton: ask.confirm
-            ? PushButton(
-                controlSize: ControlSize.large,
-                secondary: true,
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  _send(const RunConfirmed(false));
-                },
-                child: Text(l10n.buttonCancel),
-              )
-            : null,
+      builder: (dialogContext) => _askDialog(dialogContext, ask),
+    ).whenComplete(() => _askCtx = null);
+  }
+
+  MacosAlertDialog _askDialog(BuildContext dialogContext, Ask ask) {
+    _askCtx = dialogContext;
+    return MacosAlertDialog(
+      appIcon: MacosIcon(
+        ask.confirm ? CupertinoIcons.waveform_circle : CupertinoIcons.waveform,
+        size: 56,
       ),
+      title: Text(ask.title, style: Type.emptyTitle),
+      message:
+          Text(ask.message, textAlign: TextAlign.center, style: Type.control),
+      primaryButton: PushButton(
+        controlSize: ControlSize.large,
+        onPressed: () {
+          Navigator.pop(dialogContext);
+          _send(ask.confirm ? const RunConfirmed(true) : const AskDismissed());
+        },
+        child: Text(ask.confirm ? l10n.buttonContinue : l10n.buttonUnderstood),
+      ),
+      secondaryButton: ask.confirm
+          ? PushButton(
+              controlSize: ControlSize.large,
+              secondary: true,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _send(const RunConfirmed(false));
+              },
+              child: Text(l10n.buttonCancel),
+            )
+          : null,
     );
   }
 
@@ -340,7 +350,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         // Новый фрагмент — держимся хвоста, пока человек сам не отлистал.
         if ((s.lead?.live.length ?? 0) > 0) _followTail();
         final ask = s.ask;
-        if (ask != null) _showAsk(ask);
+        if (ask != null) {
+          _showAsk(ask);
+        } else if (_askCtx != null) {
+          // Вопрос снят самим блоком — окно про него закрываем сами.
+          Navigator.pop(_askCtx!);
+        }
       },
       builder: (context, s) => _window(s),
     );
