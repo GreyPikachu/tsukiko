@@ -51,3 +51,4 @@ app.*.map.json
 # 244 МБ материала лежат рядом в рабочей папке и в историю не попадают.
 /Videos_for_mascot/
 /mascot_frames/
+macos/Engine/

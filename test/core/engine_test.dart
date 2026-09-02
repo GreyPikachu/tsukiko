@@ -609,14 +609,30 @@ void _hotkeyTaps() {
   test('движок работает под своим именем и остаётся тем же движком', () {
     final exe = findWhisper();
     if (exe == null) return;
-    final named = runnableWhisper(exe, 'tsukiko-recognizer');
+    final named = runnableWhisper(exe, recognizerExeName);
     expect(named, isNotNull);
-    expect(os.basename(named!), 'tsukiko-recognizer');
-    // Ссылка, а не копия: копия теряет свои библиотеки. И ведёт туда же,
-    // куда ведёт поиск, — иначе запустился бы вчерашний движок.
-    expect(Link(named).targetSync(), exe);
+    expect(os.basename(named!), recognizerExeName);
+    if (named != exe) {
+      // Системный движок зовут не так — ведём к нему ссылку. Ссылка,
+      // а не копия: копия теряет свои библиотеки. И ведёт туда же, куда
+      // ведёт поиск, иначе запустился бы вчерашний движок.
+      expect(Link(named).targetSync(), exe);
+    }
     // Второй заход не спотыкается о готовую ссылку.
-    expect(runnableWhisper(exe, 'tsukiko-recognizer'), named);
+    expect(runnableWhisper(exe, recognizerExeName), named);
+  });
+
+  test('свой движок лежит внутри приложения и главнее системного', () {
+    // В тестах приложения нет — есть только системный, если он вообще
+    // установлен. Проверяем само правило: свой берётся из бандла, а поиск
+    // по системе остаётся запасным путём.
+    expect(bundledEngine(recognizerExeName), isNull,
+        reason: 'тест бежит не из .app');
+    expect(engineIsOurs, isFalse);
+    expect(findWhisper(), os.findExecutable('whisper-cli'));
+    // Своему движку ссылка не нужна: он уже назван как надо.
+    expect(runnableWhisper('/x/$recognizerExeName', recognizerExeName),
+        '/x/$recognizerExeName');
   });
 
   test('продолжение считает с места остановки, а не с начала записи', () {

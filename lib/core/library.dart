@@ -93,7 +93,38 @@ Future<bool> revealInFinder(String path, {bool createIfMissing = false}) async {
   return os.reveal(path);
 }
 
-String? findWhisper() => os.findExecutable('whisper-cli');
+/// Имена движка. Они же — имена процессов в «Мониторинге системы»:
+/// гигабайт памяти должен числиться за понятным именем, а не за
+/// безымянным whisper-cli, про который не скажешь, чей он.
+const recognizerExeName = 'tsukiko-recognizer';
+const dictationExeName = 'tsukiko-dictation';
+
+/// Свой движок — тот, что лежит внутри самого приложения.
+///
+/// Он главнее системного, и это не гордость, а совместимость: мы передаём
+/// модели флаги, которых в старых сборках whisper.cpp нет вовсе (`--vad`,
+/// `-mc`, `--carry-initial-prompt`). На чужой сборке распознавание либо
+/// падает, либо молча работает хуже — а какая она у человека, мы не знаем.
+///
+/// Заодно отсюда следует, что приложение нечем сломать снаружи: снесённый
+/// Homebrew на него не влияет, потому что своего движка он не касается.
+/// И наоборот — чужой мы не ставим, не правим и не удаляем.
+String? bundledEngine(String name) {
+  // .../tsukiko.app/Contents/MacOS/tsukiko → .../Contents/Helpers/имя.
+  // Helpers — то место, куда macOS велит класть вложенные программы,
+  // и подписываются они вместе с приложением.
+  final path = os.join(
+      os.dirname(os.dirname(Platform.resolvedExecutable)), 'Helpers', name);
+  return File(path).existsSync() ? path : null;
+}
+
+String? findWhisper() =>
+    bundledEngine(recognizerExeName) ?? os.findExecutable('whisper-cli');
+
+/// Работаем на своём движке, а не на системном. Разница видна человеку
+/// в одной строке — и она честная: на чужой сборке мы за поведение
+/// не отвечаем.
+bool get engineIsOurs => bundledEngine(recognizerExeName) != null;
 
 /// Имя, под которым движок работает у нас.
 ///
@@ -107,6 +138,8 @@ String? findWhisper() => os.findExecutable('whisper-cli');
 /// бинарник и называет процесс её именем.
 String? runnableWhisper(String? exe, String as) {
   if (exe == null) return null;
+  // Свой уже назван как надо — ссылка ни к чему.
+  if (os.basename(exe) == as) return exe;
   try {
     final dir = Directory(os.join(os.supportDir, 'bin'));
     if (!dir.existsSync()) dir.createSync(recursive: true);

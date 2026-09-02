@@ -1114,5 +1114,7 @@
         "type": "String"
       }
     }
-  }
+  },
+  "statusEngineOurs": "Локально · свой whisper.cpp",
+  "statusEngineSystem": "Локально · whisper.cpp из системы"
 }

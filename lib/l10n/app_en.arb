@@ -407,5 +407,7 @@
         "type": "String"
       }
     }
-  }
+  },
+  "statusEngineOurs": "Local · bundled whisper.cpp",
+  "statusEngineSystem": "Local · system whisper.cpp"
 }
