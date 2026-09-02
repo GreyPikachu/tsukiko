@@ -60,6 +60,24 @@ if ($BuildFromSource) {
     )
     Write-Host "Флаги сборки: $($CONFIG_ARGS -join ' ')"
     Write-Host "Запустите ./configure $($CONFIG_ARGS -join ' ') && make -j в окружении MSYS2."
-} else {
-    Write-Host "Для автоматической сборки дистрибутива убедитесь, что минимальный LGPL ffmpeg.exe помещён в $OUT/ffmpeg.exe."
 }
+
+# Этот скрипт пока НЕ собирает ffmpeg сам: он готовит лицензию и печатает
+# флаги. Молчать об этом нельзя. Без ffmpeg.exe приложение на Windows
+# не переложит m4a и opus в WAV, whisper получит формат, который
+# не читает, и расшифровка сорвётся на ровном месте — а сборка при этом
+# завершится «успешно».
+if (-not (Test-Path "$OUT/ffmpeg.exe")) {
+    Write-Error @"
+Нет $OUT/ffmpeg.exe — без него Windows не сможет расшифровывать m4a, opus
+и дорожки из видео (wav, mp3, flac и ogg whisper читает сам).
+
+Положите туда минимальную LGPL-сборку ffmpeg (только аудиодекодеры,
+без --enable-gpl и --enable-nonfree) — флаги configure напечатаны выше
+по ключу -BuildFromSource.
+"@
+    exit 1
+}
+
+Write-Host "Аудиодекодер на месте: $OUT/ffmpeg.exe"
+

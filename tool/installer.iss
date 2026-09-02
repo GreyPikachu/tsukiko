@@ -9,7 +9,13 @@
 ;    настроек и загруженных моделей в %APPDATA%\app.yuko.tsukiko.
 
 #define MyAppName "tsukiko"
-#define MyAppVersion "1.0.0"
+; Версию передаёт tool\package-win.ps1 ключом /DMyAppVersion — он читает
+; её из pubspec.yaml. Значение ниже нужно лишь тому, кто запускает ISCC
+; руками: третий список версий рядом с pubspec.yaml и os.dart разошёлся бы
+; на первом же выпуске.
+#ifndef MyAppVersion
+  #define MyAppVersion "0.0.0"
+#endif
 #define MyAppPublisher "Yuko"
 #define MyAppExeName "tsukiko.exe"
 #define BuildDir "..\build\windows\x64\runner\Release"

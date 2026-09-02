@@ -427,6 +427,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   Widget _windowBody(QueueState s) => Builder(
         builder: (context) => MacosWindow(
+          // «Подкраска обоями» на macOS показывает сквозь окно рабочий
+          // стол — и делает это родным плагином, которого на Windows
+          // нет вовсе. Оставить включённой значит получить там
+          // MissingPluginException на каждой перерисовке.
+          disableWallpaperTinting: !Platform.isMacOS,
           sidebar: Sidebar(
             minWidth: 248,
             startWidth: 276,
