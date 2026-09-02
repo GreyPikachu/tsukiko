@@ -417,5 +417,26 @@
   "hudFailed": "Not recognized · recording saved",
   "hudCopied": "Not pasted · text is on the clipboard, Ctrl+V",
   "hudStop": "Stop",
-  "hudCancel": "Cancel"
+  "hudCancel": "Cancel",
+  "buttonCheckUpdates": "Check for updates",
+  "updateChecking": "Looking for a newer version…",
+  "updateNone": "You are on the latest version, {version}",
+  "@updateNone": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateFoundTitle": "Version {version} is out",
+  "@updateFoundTitle": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateFoundBody": "Download it from the release page and install over the current one: settings and models stay where they are.",
+  "buttonOpenReleasePage": "Open the page",
+  "buttonLater": "Later"
 }

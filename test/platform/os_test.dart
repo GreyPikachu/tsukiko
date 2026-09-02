@@ -196,6 +196,7 @@ class _FakeOs implements Os {
     #modifierLabel: _real.modifierLabel,
     #shortcutLabel: _real.shortcutLabel,
     #engineNames: _real.engineNames,
+    #openUrl: _real.openUrl,
   };
 
   late final Map<Symbol, Function> _getters = {

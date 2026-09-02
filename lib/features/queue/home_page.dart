@@ -25,6 +25,7 @@ import '../../platform/os.dart';
 import 'job.dart';
 import 'queue_bloc.dart';
 import 'queue_event.dart';
+import '../../core/update.dart';
 import 'menu_shortcuts.dart';
 import 'queue_state.dart';
 import 'widgets/chrome.dart';
@@ -192,6 +193,43 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _checkUpdates() async {
+    _send(StatusReported(l10n.updateChecking));
+    final update = await checkForUpdate(appVersion);
+    if (!mounted) return;
+    if (update == null) {
+      _send(StatusReported(l10n.updateNone(appVersion)));
+      return;
+    }
+    _send(StatusReported(l10n.updateFoundTitle(update.version)));
+    await showMacosAlertDialog<void>(
+      context: context,
+      builder: (dialogContext) => MacosAlertDialog(
+        appIcon: const MacosIcon(CupertinoIcons.arrow_down_circle, size: 56),
+        title: Text(l10n.updateFoundTitle(update.version), style: Type.emptyTitle),
+        message: Text(
+          update.notes.isEmpty ? l10n.updateFoundBody : update.notes,
+          textAlign: TextAlign.center,
+          style: Type.control,
+        ),
+        primaryButton: PushButton(
+          controlSize: ControlSize.large,
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            openReleasePage(update.url);
+          },
+          child: Text(l10n.buttonOpenReleasePage),
+        ),
+        secondaryButton: PushButton(
+          controlSize: ControlSize.large,
+          secondary: true,
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(l10n.buttonLater),
+        ),
+      ),
+    );
+  }
+
   void _about() => showMacosAlertDialog<void>(
         context: context,
         builder: (dialogContext) => MacosAlertDialog(
@@ -206,6 +244,18 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             controlSize: ControlSize.large,
             onPressed: () => Navigator.pop(dialogContext),
             child: Text(l10n.buttonClose),
+          ),
+          // Своего самообновления нет намеренно — см. lib/core/update.dart.
+          // Приложение только смотрит, не вышло ли новее, и отводит
+          // на страницу выпуска.
+          secondaryButton: PushButton(
+            controlSize: ControlSize.large,
+            secondary: true,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _checkUpdates();
+            },
+            child: Text(l10n.buttonCheckUpdates),
           ),
         ),
       );

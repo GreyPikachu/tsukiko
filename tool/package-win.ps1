@@ -19,7 +19,9 @@ Set-Location $RootDir
 
 $ENGINE_DIR = "windows/Engine"
 if (-not $SkipEngine) {
-    if (-not (Test-Path "$ENGINE_DIR/tsukiko-recognizer.exe")) {
+    # Сборок движка две — с Vulkan и без; какую запускать, приложение
+    # решает на месте (см. os.engineNames). Имени без суффикса нет.
+    if (-not (Test-Path "$ENGINE_DIR/tsukiko-recognizer-cpu.exe")) {
         Write-Host "Движок не собран, запускаем tool/engine-win.ps1..."
         & "$ScriptDir/engine-win.ps1"
     }
