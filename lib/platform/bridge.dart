@@ -79,6 +79,11 @@ class NativeBridge {
   final _shown = StreamController<void>.broadcast();
   final _hidden = StreamController<void>.broadcast();
   final _hudActions = StreamController<String>.broadcast();
+
+  /// Состояние плавающей панели записи. Слушает её собственный изолят —
+  /// тот, что её рисует. На macOS панель нарисована на SwiftUI, и этот
+  /// поток там пуст: состояние ей передаёт родная сторона напрямую.
+  final _hudStates = StreamController<HudState>.broadcast();
   final _reload = StreamController<void>.broadcast();
   final _tab = StreamController<String>.broadcast();
   Completer<Hotkey?>? _capture;
@@ -112,6 +117,12 @@ class NativeBridge {
         _hidden.add(null);
       case 'hud':
         _hudActions.add(call.arguments as String);
+      case 'hudState':
+        final name = call.arguments as String;
+        _hudStates.add(HudState.values.firstWhere(
+          (s) => s.name == name,
+          orElse: () => HudState.hidden,
+        ));
       case 'reload':
         // Язык интерфейса перечитываем здесь, а не в каждом блоке: окон
         // три, а правит настройки одно, и переключиться должны все сразу.
@@ -154,6 +165,13 @@ class NativeBridge {
   }
 
   Stream<String> get hudActions => _hudActions.stream;
+
+  Stream<HudState> get hudStates => _hudStates.stream;
+
+  /// Нажали кнопку на плавающей панели. Родная сторона переправит это
+  /// диктовке: панель рисуется своим изолятом и до неё не достаёт.
+  Future<void> hudAction(String action) =>
+      _channel.invokeMethod('hudAction', action);
 
   Future<void> hud(HudState state) =>
       _channel.invokeMethod('hud', {'state': state.name});

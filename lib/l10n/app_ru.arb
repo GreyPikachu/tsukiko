@@ -1117,5 +1117,12 @@
   },
   "statusEngineOurs": "Локально · свой whisper.cpp",
   "statusEngineSystem": "Локально · whisper.cpp из системы",
-  "whisperInstallHintWindows": "Движок не найден. Переустановите tsukiko — он ставится вместе с приложением."
+  "whisperInstallHintWindows": "Движок не найден. Переустановите tsukiko — он ставится вместе с приложением.",
+  "hudTranscribing": "Распознаю…",
+  "hudCancelled": "Отменено · запись сохранена",
+  "hudDone": "Готово",
+  "hudFailed": "Не распознано · запись сохранена",
+  "hudCopied": "Не вставилось · текст в буфере, Ctrl+V",
+  "hudStop": "Остановить",
+  "hudCancel": "Отменить"
 }

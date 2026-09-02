@@ -26,6 +26,8 @@
 #define ID_TRAY_QUIT 1003
 // Ожидание второго стука при назначении сочетания.
 #define ID_CAPTURE_TIMER 2001
+// Сколько итоговое состояние висит на плавающей панели.
+#define ID_HUD_TIMER 2002
 
 namespace {
 
@@ -373,6 +375,25 @@ void DictationBridge::RegisterHandler(
       }
       result->Success(flutter::EncodableValue(false));
     } else if (method == "hud") {
+      const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+      if (args) {
+        auto it = args->find(flutter::EncodableValue("state"));
+        if (it != args->end()) {
+          if (const auto* st = std::get_if<std::string>(&it->second)) {
+            SetHudState(*st);
+          }
+        }
+      }
+      result->Success();
+    } else if (method == "hudAction") {
+      // Нажали кнопку на плавающей панели. Рисует её свой изолят, а
+      // делает дело — диктовка: переправляем ей.
+      if (const auto* action = std::get_if<std::string>(call.arguments())) {
+        if (panel_channel_) {
+          panel_channel_->InvokeMethod(
+              "hud", std::make_unique<flutter::EncodableValue>(*action));
+        }
+      }
       result->Success();
     } else if (method == "openMainWindow") {
       ShowMainWindow();
@@ -468,6 +489,11 @@ void DictationBridge::ShowContextMenu() {
 }
 
 bool DictationBridge::HandleWindowMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+  if (message == WM_TIMER && wparam == ID_HUD_TIMER) {
+    KillTimer(main_window_, ID_HUD_TIMER);
+    if (hud_) hud_->Hide();
+    return true;
+  }
   if (message == WM_TIMER && wparam == ID_CAPTURE_TIMER) {
     KillTimer(main_window_, ID_CAPTURE_TIMER);
     OnCaptureTimeout();
@@ -789,6 +815,40 @@ void DictationBridge::ShowSettings(const std::string& tab) {
     settings_channel_->InvokeMethod(
         "tab", std::make_unique<flutter::EncodableValue>(tab));
   }
+}
+
+/// Показать или убрать плавающую панель записи и сказать ей, что
+/// показывать.
+///
+/// Движок под неё поднимается при первом показе: панель приходит только
+/// во время диктовки, а до тех пор держать ради неё сто мегабайт незачем.
+void DictationBridge::SetHudState(const std::string& state) {
+  if (state == "hidden") {
+    if (hud_) hud_->Hide();
+    return;
+  }
+  if (!project_) return;
+  if (!hud_) hud_ = std::make_unique<HudWindow>();
+  hud_->Show(*project_, [this](flutter::BinaryMessenger* messenger) {
+    hud_channel_ =
+        std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+            messenger, "tsukiko/dictation",
+            &flutter::StandardMethodCodec::GetInstance());
+    RegisterHandler(hud_channel_.get());
+  });
+  if (hud_channel_) {
+    hud_channel_->InvokeMethod(
+        "hudState", std::make_unique<flutter::EncodableValue>(state));
+  }
+
+  // Итоговые состояния держатся ровно столько же, сколько на macOS:
+  // подтверждение мелькает, а беду надо успеть прочитать.
+  KillTimer(main_window_, ID_HUD_TIMER);
+  UINT linger = 0;
+  if (state == "done") linger = 700;
+  if (state == "cancelled") linger = 2200;
+  if (state == "failed" || state == "copied") linger = 2600;
+  if (linger) SetTimer(main_window_, ID_HUD_TIMER, linger, nullptr);
 }
 
 void DictationBridge::SendReloadSettings() {

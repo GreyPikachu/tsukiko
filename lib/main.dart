@@ -6,6 +6,7 @@ import 'core/app_locale.dart';
 import 'core/text.dart';
 import 'l10n/gen/app_localizations.dart';
 import 'legacy_migration.dart';
+import 'features/dictation/hud_page.dart' show runHud;
 import 'features/dictation/panel_page.dart' show runPanel;
 import 'features/settings/settings_page.dart' show runSettings;
 import 'features/queue/home_page.dart';
@@ -21,6 +22,12 @@ void panelMain() => runPanel();
 /// строки меню там нет вовсе.
 @pragma('vm:entry-point')
 void settingsMain() => runSettings();
+
+/// Точка входа движка плавающей панели записи. Только Windows: на macOS
+/// эта панель написана на SwiftUI и остаётся там — почему, разобрано
+/// в `docs/задача-панель-записи.md`.
+@pragma('vm:entry-point')
+void hudMain() => runHud();
 
 /// Второй копии здесь не бывает: её ловит и завершает сторона macOS ещё
 /// до запуска движка (AppDelegate.applicationWillFinishLaunching), подняв

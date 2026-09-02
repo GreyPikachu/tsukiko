@@ -410,5 +410,12 @@
   },
   "statusEngineOurs": "Local · bundled whisper.cpp",
   "statusEngineSystem": "Local · system whisper.cpp",
-  "whisperInstallHintWindows": "Engine not found. Reinstall tsukiko — it ships with the app."
+  "whisperInstallHintWindows": "Engine not found. Reinstall tsukiko — it ships with the app.",
+  "hudTranscribing": "Recognizing…",
+  "hudCancelled": "Cancelled · recording saved",
+  "hudDone": "Done",
+  "hudFailed": "Not recognized · recording saved",
+  "hudCopied": "Not pasted · text is on the clipboard, Ctrl+V",
+  "hudStop": "Stop",
+  "hudCancel": "Cancel"
 }

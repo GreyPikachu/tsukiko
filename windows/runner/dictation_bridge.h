@@ -21,6 +21,7 @@
 /// 'tsukiko/dictation' и посылающий те же события в Dart.
 class PanelWindow;
 class SettingsWindow;
+class HudWindow;
 
 class DictationBridge {
  public:
@@ -95,6 +96,10 @@ class DictationBridge {
   PanelWindow* panel_ = nullptr;
   const flutter::DartProject* project_ = nullptr;
   std::unique_ptr<SettingsWindow> settings_;
+  std::unique_ptr<HudWindow> hud_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> hud_channel_;
+
+  void SetHudState(const std::string& state);
 
   /// С какой вкладки открыть настройки. Спрашивает их изолят сразу после
   /// старта: пока он не подписался на канал, посланное ему теряется.

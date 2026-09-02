@@ -7,6 +7,29 @@
 #include <functional>
 #include <memory>
 
+/// Плавающая панель записи: та, что приходит сама, пока человек диктует.
+///
+/// Фокус не забирает ни при каких условиях (`WS_EX_NOACTIVATE`): заберёт —
+/// уйдёт из поля ввода, куда мы собираемся вставлять текст, и вставка
+/// сломается целиком. По той же причине она поверх всех окон и без кнопки
+/// на панели задач.
+class HudWindow {
+ public:
+  ~HudWindow();
+
+  void Show(const flutter::DartProject& base,
+            const std::function<void(flutter::BinaryMessenger*)>& on_ready);
+  void Hide();
+  bool IsVisible() const;
+
+ private:
+  static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
+                                  LPARAM lparam);
+
+  HWND window_ = nullptr;
+  std::unique_ptr<flutter::FlutterViewController> controller_;
+};
+
 /// Окно настроек: обычное окно на своём, третьем движке.
 ///
 /// Отдельным движком, а не вкладкой в главном окне, ровно затем же, зачем
