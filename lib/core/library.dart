@@ -112,8 +112,16 @@ const dictationExeName = 'tsukiko-dictation';
 String? bundledEngine(String name) {
   // Где именно движок лежит внутри приложения, знает только граница
   // системы: у macOS и Windows это разные места.
-  final path = os.join(os.engineDir, name);
-  return File(path).existsSync() ? path : null;
+  for (final candidate in [
+    name,
+    '$name.exe',
+    '$name-vulkan.exe',
+    '$name-cpu.exe',
+  ]) {
+    final path = os.join(os.engineDir, candidate);
+    if (File(path).existsSync()) return path;
+  }
+  return null;
 }
 
 String? findWhisper() =>
@@ -136,8 +144,9 @@ bool get engineIsOurs => bundledEngine(recognizerExeName) != null;
 /// бинарник и называет процесс её именем.
 String? runnableWhisper(String? exe, String as) {
   if (exe == null) return null;
-  // Свой уже назван как надо — ссылка ни к чему.
-  if (os.basename(exe) == as) return exe;
+  // Свой уже назван как надо (в том числе с .exe или суффиксами на Windows) — ссылка ни к чему.
+  final base = os.basename(exe);
+  if (base == as || base == '$as.exe' || base.startsWith('$as-')) return exe;
   try {
     final dir = Directory(os.join(os.supportDir, 'bin'));
     if (!dir.existsSync()) dir.createSync(recursive: true);
