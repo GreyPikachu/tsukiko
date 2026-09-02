@@ -52,3 +52,4 @@ app.*.map.json
 /Videos_for_mascot/
 /mascot_frames/
 macos/Engine/
+windows/Engine/

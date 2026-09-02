@@ -45,6 +45,22 @@ if (-not (Test-Path $OUT_INSTALLER)) {
     New-Item -ItemType Directory -Force -Path $OUT_INSTALLER | Out-Null
 }
 
+# Версия — из одного места: pubspec.yaml. Установщик получает её ключом,
+# а не хранит свою копию.
+$VERSION = (Select-String -Path "pubspec.yaml" -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
+if (-not $VERSION) {
+    Write-Error "Не удалось прочитать version: из pubspec.yaml"
+    exit 1
+}
+Write-Host "Версия выпуска: $VERSION"
+
+# Без аудиодекодера установщик собирать нельзя: на Windows без него
+# не расшифровать ни m4a, ни opus, ни дорожку из видео.
+if (-not (Test-Path "$TARGET_ENGINE/ffmpeg.exe")) {
+    Write-Error "Нет $TARGET_ENGINE/ffmpeg.exe. Сначала: tool\build-ffmpeg-win.ps1"
+    exit 1
+}
+
 # Сборка инсталлятора через Inno Setup
 $ISCC = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
 if (-not $ISCC) {
@@ -62,7 +78,7 @@ if (-not $ISCC) {
 
 if ($ISCC) {
     Write-Host "Создаём установщик tsukiko-setup.exe через Inno Setup..."
-    & $ISCC "$ScriptDir/installer.iss"
+    & $ISCC "/DMyAppVersion=$VERSION" "$ScriptDir/installer.iss"
     Write-Host "Установщик создан: $OUT_INSTALLER/tsukiko-setup.exe"
 } else {
     Write-Warning "Inno Setup (ISCC.exe) не найден. Установите Inno Setup для генерации tsukiko-setup.exe."
