@@ -1,0 +1,101 @@
+Расшифровщику незачем держать сырой звук всю дорогу.
+
+pcmf32 — это вход, а не то, что видит модель: кодировщик ест мел.
+После whisper_pcm_to_mel сэмплы мертвы, но whisper-cli держит их до
+самого конца — на часе записи это лишние 230 МБ.
+
+Патч считает мел заранее, отдаёт страницы системе и зовёт whisper_full
+с n_samples == 0 — тот берёт готовый мел и второй раз его не считает.
+Мел выходит побитово тот же, поэтому текст не меняется ни на слово:
+сверено по json, посегментно, вместе с таймкодами.
+
+Измерено на записи 73 минуты, ggml-large-v3-turbo:
+устоявшаяся память 2645 → 2374 МБ, пик 2645 → 2552 МБ.
+
+Не во всяком режиме: -p делит сам массив сэмплов, --vad читает их
+до мела, а потокенным таймкодам (-ml, -ojf, --wts) нужна энергия
+сигнала. Там всё идёт как раньше.
+
+Апстриму не отправлен: там это общий путь на все случаи, и владелец
+буфера — вызывающий, библиотека его освободить не может.
+
+--- a/examples/cli/cli.cpp	2026-09-02 11:18:20
++++ b/examples/cli/cli.cpp	2026-09-02 11:18:20
+@@ -2,6 +2,13 @@
+ #include "common-whisper.h"
+ 
+ #include "whisper.h"
++
++// tsukiko: страницы из-под сырого звука возвращаются системе вручную,
++// см. ниже, у whisper_pcm_to_mel.
++#ifdef __APPLE__
++#include <sys/mman.h>
++#include <unistd.h>
++#endif
+ #include "grammar-parser.h"
+ 
+ #include <cmath>
+@@ -1170,6 +1177,9 @@
+             continue;
+         }
+ 
++        // tsukiko: длину запоминаем сразу — сами сэмплы до вывода не доживают.
++        const size_t n_samples_org = pcmf32.size();
++
+         if (!whisper_is_multilingual(ctx)) {
+             if (params.language != "en" || params.translate) {
+                 params.language = "en";
+@@ -1313,6 +1323,44 @@
+                     return is_aborted;
+                 };
+                 wparams.abort_callback_user_data = &is_aborted;
++            }
++
++            // tsukiko: отдать память из-под сырого звука до распознавания.
++            //
++            // pcmf32 — это вход. Модель его не видит: кодировщик ест мел,
++            // и после whisper_pcm_to_mel сэмплы больше не нужны никому.
++            // А CLI держит их до конца работы — на часе записи это лишние
++            // 230 МБ, которые просто лежат. whisper_full с n_samples == 0
++            // берёт уже готовый мел и второй раз его не считает.
++            //
++            // Мел получается тот же самый, побитово, поэтому текст
++            // не меняется ни на слово — сверено по json на часовой записи.
++            //
++            // Не во всяком режиме: -p делит сам массив сэмплов, --vad
++            // читает их до мела, а потокенным таймкодам (-ml, -ojf, --wts)
++            // нужна энергия сигнала. Там идём как раньше.
++            if (params.n_processors == 1 && !params.vad && !wparams.token_timestamps) {
++                if (whisper_pcm_to_mel(ctx, pcmf32.data(), pcmf32.size(), params.n_threads) != 0) {
++                    fprintf(stderr, "%s: failed to compute log mel spectrogram\n", argv[0]);
++                    return 10;
++                }
++#ifdef __APPLE__
++                // Одного free мало: libmalloc держит такой кусок в своём
++                // кеше, и в «Мониторинге системы» память как занимали, так
++                // и занимаем. madvise отдаёт страницы ядру сразу — измерено
++                // на часовой записи: 2530 МБ до, 2261 МБ после.
++                {
++                    const long ps = sysconf(_SC_PAGESIZE);
++                    char * beg = (char *) pcmf32.data();
++                    char * end = beg + pcmf32.size()*sizeof(float);
++                    char * a   = (char *)(((uintptr_t) beg + ps - 1) & ~(uintptr_t)(ps - 1));
++                    char * b   = (char *)( (uintptr_t) end          & ~(uintptr_t)(ps - 1));
++                    if (b > a) {
++                        madvise(a, b - a, MADV_FREE_REUSABLE);
++                    }
++                }
++#endif
++                std::vector<float>().swap(pcmf32);
+             }
+ 
+             if (whisper_full_parallel(ctx, wparams, pcmf32.data(), pcmf32.size(), params.n_processors) != 0) {
+@@ -1332,7 +1380,7 @@
+             output_ext(txt, pcmf32s);
+             output_ext(vtt, pcmf32s);
+             output_ext(srt, pcmf32s);
+-            output_ext(wts, pcmf32s, fname_inp.c_str(), float(pcmf32.size() + 1000)/WHISPER_SAMPLE_RATE, fout_factory.fname_out.c_str());
++            output_ext(wts, pcmf32s, fname_inp.c_str(), float(n_samples_org + 1000)/WHISPER_SAMPLE_RATE, fout_factory.fname_out.c_str());
+             output_ext(csv, pcmf32s);
+             output_func(output_json, ".json", params.output_jsn, pcmf32s);
+             output_ext(lrc, pcmf32s);
