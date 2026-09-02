@@ -1,7 +1,12 @@
 #include "dictation_bridge.h"
 
+#include <flutter/method_result_functions.h>
+
+#include "panel_window.h"
+
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <algorithm>
 #include <cmath>
 #include <chrono>
 #include <iostream>
@@ -18,6 +23,8 @@
 #define ID_TRAY_OPEN 1001
 #define ID_TRAY_SETTINGS 1002
 #define ID_TRAY_QUIT 1003
+// Ожидание второго стука при назначении сочетания.
+#define ID_CAPTURE_TIMER 2001
 
 namespace {
 
@@ -138,6 +145,24 @@ void DictationBridge::Initialize(flutter::BinaryMessenger* messenger, HWND windo
   InstallKeyboardHook();
 }
 
+void DictationBridge::AttachPanel(flutter::BinaryMessenger* messenger,
+                                  PanelWindow* panel) {
+  panel_ = panel;
+  panel_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          messenger, "tsukiko/dictation",
+          &flutter::StandardMethodCodec::GetInstance());
+  RegisterHandler(panel_channel_.get());
+
+  // Панель считает память сервера, пока её видно, и перестаёт, когда
+  // её убрали. Без этих двух событий счётчик либо не заводится вовсе,
+  // либо тикает в пустоту.
+  panel->on_visibility_changed = [this](bool shown) {
+    if (!panel_channel_) return;
+    panel_channel_->InvokeMethod(shown ? "panelShown" : "panelHidden", nullptr);
+  };
+}
+
 void DictationBridge::Shutdown() {
   UninstallKeyboardHook();
   RemoveTrayIcon();
@@ -147,7 +172,14 @@ void DictationBridge::Shutdown() {
 }
 
 void DictationBridge::RegisterMethodChannel() {
-  channel_->SetMethodCallHandler([this](const auto& call, auto result) {
+  RegisterHandler(channel_.get());
+}
+
+/// Обработчик один на оба канала: спрашивать умеют обе стороны — очередь
+/// про занятость диктовки, панель про запись и клавиши.
+void DictationBridge::RegisterHandler(
+    flutter::MethodChannel<flutter::EncodableValue>* target) {
+  target->SetMethodCallHandler([this](const auto& call, auto result) {
     const std::string& method = call.method_name();
 
     if (method == "bind") {
@@ -216,9 +248,15 @@ void DictationBridge::RegisterMethodChannel() {
       SendReloadSettings();
       result->Success();
     } else if (method == "dictationStatus") {
-      result->Success(flutter::EncodableValue(is_recording_ ? "recording" : "idle"));
+      // Спрашивает очередь, отвечает диктовка: только её изолят знает,
+      // говорит ли человек прямо сейчас. Прежде здесь возвращалось
+      // «recording»/«idle» — слова, которых Dart не знает: они обои
+      // сводились к «away», и очередь никогда не уступала диктовке.
+      ForwardToPanel("dictationStatus", std::move(result),
+                     flutter::EncodableValue("away"));
     } else if (method == "releaseModel") {
-      result->Success();
+      ForwardToPanel("releaseModel", std::move(result),
+                     flutter::EncodableValue());
     } else if (method == "openSettings") {
       ShowMainWindow();
       result->Success();
@@ -272,6 +310,16 @@ void DictationBridge::RegisterMethodChannel() {
       ShowMainWindow();
       result->Success();
     } else if (method == "panelHeight") {
+      // Приходит картой {'height': …}, а не голым числом.
+      const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+      if (panel_ && args) {
+        auto it = args->find(flutter::EncodableValue("height"));
+        if (it != args->end()) {
+          if (const auto* h = std::get_if<double>(&it->second)) {
+            panel_->SetContentHeight(static_cast<int>(*h));
+          }
+        }
+      }
       result->Success();
     } else if (method == "dockIcon") {
       result->Success();
@@ -339,9 +387,20 @@ void DictationBridge::ShowContextMenu() {
 }
 
 bool DictationBridge::HandleWindowMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+  if (message == WM_TIMER && wparam == ID_CAPTURE_TIMER) {
+    KillTimer(main_window_, ID_CAPTURE_TIMER);
+    OnCaptureTimeout();
+    return true;
+  }
   if (message == WM_TRAYICON) {
     if (lparam == WM_LBUTTONUP) {
-      ToggleMainWindow();
+      // Значку принадлежит панель диктовки, а не главное окно: так же
+      // на macOS. Главное окно открывается пунктом меню.
+      if (panel_) {
+        panel_->Toggle();
+      } else {
+        ToggleMainWindow();
+      }
       return true;
     }
     if (lparam == WM_RBUTTONUP) {
@@ -385,6 +444,55 @@ void DictationBridge::UninstallKeyboardHook() {
   }
 }
 
+bool DictationBridge::TapState::Update(bool raw, bool is_double, ULONGLONG now) {
+  const bool was_pressed = pressed_at != 0;
+  if (raw == was_pressed) return false;
+
+  if (raw) {
+    pressed_at = now;
+    const bool armed = armed_at != 0 && (now - armed_at) < kDoubleTapWindowMs;
+    // Двойному нужен взвод первым стуком; обычному хватает нажатия.
+    const bool on = is_double ? armed : true;
+    if (on == active) return false;
+    active = on;
+    return true;
+  }
+
+  const ULONGLONG held = now - pressed_at;
+  pressed_at = 0;
+  // Короткое нажатие, которое ничего не включило, — это первый стук.
+  // Затянувшееся или уже сработавшее взводит не больше, чем один раз.
+  armed_at = (!active && held < kTapMaxHoldMs) ? now : 0;
+  if (!active) return false;
+  active = false;
+  return true;
+}
+
+/// Второй стук не пришёл вовремя.
+///
+/// Годный набор назначаем одиночным нажатием, а одинокий модификатор
+/// отпускаем: сам по себе он срабатывал бы непрерывно и отнял бы клавишу
+/// у всей системы. Окно захвата при этом продолжает ждать, пока наберут
+/// годное, — как на macOS.
+void DictationBridge::OnCaptureTimeout() {
+  if (!has_pending_capture_) return;
+  has_pending_capture_ = false;
+  const bool alone_is_enough = !pending_keys_.empty() || pending_mods_.size() >= 2;
+  if (alone_is_enough) {
+    FinishCapture(pending_mods_, pending_keys_, 1);
+  }
+}
+
+void DictationBridge::FinishCapture(const std::set<std::string>& mods,
+                                    const std::vector<std::string>& keys,
+                                    int taps) {
+  is_capturing_ = false;
+  has_pending_capture_ = false;
+  KillTimer(main_window_, ID_CAPTURE_TIMER);
+  std::vector<std::string> modsList(mods.begin(), mods.end());
+  SendCapturedHotkey(modsList, keys, taps);
+}
+
 LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
   if (nCode == HC_ACTION) {
     auto& bridge = DictationBridge::GetInstance();
@@ -407,22 +515,61 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
     if ((GetAsyncKeyState(VK_LWIN) & 0x8000) || (GetAsyncKeyState(VK_RWIN) & 0x8000)) currentMods.insert("cmd");
 
     if (bridge.is_capturing_) {
+      const ULONGLONG now = GetTickCount64();
+      if (bridge.capture_started_at_ == 0 && (isDown || !currentMods.empty())) {
+        bridge.capture_started_at_ = now;
+      }
       if (isDown) {
         bridge.captured_mods_.insert(currentMods.begin(), currentMods.end());
-        if (vk != VK_CONTROL && vk != VK_MENU && vk != VK_SHIFT && vk != VK_LWIN && vk != VK_RWIN) {
-          bridge.captured_keys_.insert(vk);
-        }
-      } else if (isUp) {
-        // Когда отпустили клавиши — завершаем захват
-        std::vector<std::string> modsList(bridge.captured_mods_.begin(), bridge.captured_mods_.end());
-        std::vector<std::string> keysList;
-        for (int k : bridge.captured_keys_) {
-          keysList.push_back(VkToKeyName(k));
-        }
-        bridge.is_capturing_ = false;
-        bridge.SendCapturedHotkey(modsList, keysList, 1);
+        if (!isModifierVk(vk)) bridge.captured_keys_.insert(vk);
+        // Поглощаем: набираемая буква не должна попасть в чужое поле.
+        return 1;
       }
-      return CallNextHookEx(nullptr, nCode, wParam, lParam);
+
+      // Всё отпущено — сочетание набрано. Пока держат, набор копится.
+      const bool anythingHeld =
+          !currentMods.empty() ||
+          std::any_of(bridge.captured_keys_.begin(), bridge.captured_keys_.end(),
+                      [](int k) { return (GetAsyncKeyState(k) & 0x8000) != 0; });
+      if (anythingHeld ||
+          (bridge.captured_keys_.empty() && bridge.captured_mods_.empty())) {
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+      }
+
+      std::set<std::string> mods = bridge.captured_mods_;
+      std::vector<std::string> keys;
+      for (int k : bridge.captured_keys_) keys.push_back(VkToKeyName(k));
+      std::sort(keys.begin(), keys.end());
+      const bool quick = (now - bridge.capture_started_at_) < kTapMaxHoldMs;
+      bridge.captured_mods_.clear();
+      bridge.captured_keys_.clear();
+      bridge.capture_started_at_ = 0;
+
+      // Тот же набор во второй раз и вовремя — это двойное нажатие.
+      if (bridge.has_pending_capture_ && bridge.pending_mods_ == mods &&
+          bridge.pending_keys_ == keys) {
+        bridge.FinishCapture(mods, keys, 2);
+        return 1;
+      }
+
+      // Годится ли этот набор одиночным нажатием. Одинокий модификатор
+      // не годится: он срабатывал бы непрерывно и отнял бы клавишу
+      // у всей системы, а два быстрых стука по нему свободны.
+      const bool alone_is_enough = !keys.empty() || mods.size() >= 2;
+
+      // Затянувшееся нажатие вторым стуком уже не станет.
+      if (!quick) {
+        if (alone_is_enough) bridge.FinishCapture(mods, keys, 1);
+        return 1;
+      }
+
+      // Короткий стук: ждём второго.
+      bridge.has_pending_capture_ = true;
+      bridge.pending_mods_ = mods;
+      bridge.pending_keys_ = keys;
+      SetTimer(bridge.main_window_, ID_CAPTURE_TIMER,
+               static_cast<UINT>(kDoubleTapWindowMs), nullptr);
+      return 1;
     }
 
     // Сопоставление с hold_spec_ и toggle_spec_
@@ -458,30 +605,28 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
       return isDown && !spec.keys.count(vk) && !isModifierVk(vk);
     };
 
-    if (isDown) {
-      if (!bridge.hold_active_ && matchSpec(bridge.hold_spec_)) {
-        bridge.hold_active_ = true;
-        bridge.SendHotkeyEvent("hold", true);
-      } else if (bridge.hold_active_ && exceedsSpec(bridge.hold_spec_)) {
-        bridge.hold_active_ = false;
-        bridge.SendHotkeyEvent("hold", false, true);
-      } else if (!bridge.toggle_fired_ && matchSpec(bridge.toggle_spec_)) {
-        bridge.toggle_fired_ = true;
+    // Одно правило на все случаи, как и на macOS: сочетание работает,
+    // когда зажаты ровно его модификаторы и его клавиши. Двойное
+    // нажатие разбирает TapState — до второго стука оно не включает
+    // ничего.
+    const ULONGLONG now = GetTickCount64();
+
+    if (bridge.hold_state_.Update(matchSpec(bridge.hold_spec_),
+                                  bridge.hold_spec_.is_double(), now)) {
+      const bool active = bridge.hold_state_.active;
+      bridge.SendHotkeyEvent("hold", active,
+                             !active && exceedsSpec(bridge.hold_spec_));
+    }
+
+    // Отпускание само по себе ничего не переключает — оно лишь
+    // разрешает следующему нажатию сработать. Кроме отмены: набрали
+    // сверху лишнее — включённое той же клавишей выключается назад.
+    if (bridge.toggle_state_.Update(matchSpec(bridge.toggle_spec_),
+                                    bridge.toggle_spec_.is_double(), now)) {
+      if (bridge.toggle_state_.active) {
         bridge.SendHotkeyEvent("toggle", true);
-      } else if (bridge.toggle_fired_ && exceedsSpec(bridge.toggle_spec_)) {
-        bridge.toggle_fired_ = false;
+      } else if (exceedsSpec(bridge.toggle_spec_)) {
         bridge.SendHotkeyEvent("toggle", false, true);
-      }
-    } else if (isUp) {
-      if (bridge.hold_active_ && !matchSpec(bridge.hold_spec_)) {
-        bridge.hold_active_ = false;
-        // Отпустили обычным порядком — это окончание, не отмена.
-        bridge.SendHotkeyEvent("hold", false);
-      }
-      // Отпускание само по себе ничего не переключает — оно лишь
-      // разрешает следующему нажатию сработать.
-      if (bridge.toggle_fired_ && !matchSpec(bridge.toggle_spec_)) {
-        bridge.toggle_fired_ = false;
       }
     }
   }
@@ -489,18 +634,19 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
 }
 
 void DictationBridge::SendHotkeyEvent(const std::string& id, bool down, bool cancel) {
-  if (!channel_) return;
+  if (!DictationChannel()) return;
   flutter::EncodableMap map;
   map[flutter::EncodableValue("id")] = flutter::EncodableValue(id);
   map[flutter::EncodableValue("down")] = flutter::EncodableValue(down);
   map[flutter::EncodableValue("cancel")] = flutter::EncodableValue(cancel);
-  channel_->InvokeMethod("hotkey", std::make_unique<flutter::EncodableValue>(map));
+  DictationChannel()->InvokeMethod(
+      "hotkey", std::make_unique<flutter::EncodableValue>(map));
 }
 
 void DictationBridge::SendCapturedHotkey(const std::vector<std::string>& mods,
                                         const std::vector<std::string>& keys,
                                         int taps) {
-  if (!channel_) return;
+  if (!DictationChannel()) return;
   flutter::EncodableMap map;
   flutter::EncodableList modsList;
   for (const auto& m : mods) modsList.push_back(flutter::EncodableValue(m));
@@ -510,12 +656,42 @@ void DictationBridge::SendCapturedHotkey(const std::vector<std::string>& mods,
   map[flutter::EncodableValue("mods")] = modsList;
   map[flutter::EncodableValue("keys")] = keysList;
   map[flutter::EncodableValue("taps")] = flutter::EncodableValue(taps);
-  channel_->InvokeMethod("captured", std::make_unique<flutter::EncodableValue>(map));
+  DictationChannel()->InvokeMethod(
+      "captured", std::make_unique<flutter::EncodableValue>(map));
+}
+
+/// Переспросить сторону диктовки и отдать её ответ тому, кто спросил.
+///
+/// Панели нет — отвечаем [fallback]: без неё нет и диктовки, а значит
+/// и модели в памяти.
+void DictationBridge::ForwardToPanel(
+    const std::string& method,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result,
+    flutter::EncodableValue fallback) {
+  std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> shared(
+      result.release());
+  if (!panel_channel_) {
+    shared->Success(fallback);
+    return;
+  }
+  panel_channel_->InvokeMethod(
+      method, nullptr,
+      std::make_unique<flutter::MethodResultFunctions<flutter::EncodableValue>>(
+          [shared, fallback](const flutter::EncodableValue* answer) {
+            shared->Success(answer ? *answer : fallback);
+          },
+          [shared, fallback](const std::string&, const std::string&,
+                             const flutter::EncodableValue*) {
+            shared->Success(fallback);
+          },
+          [shared, fallback]() { shared->Success(fallback); }));
 }
 
 void DictationBridge::SendReloadSettings() {
-  if (!channel_) return;
-  channel_->InvokeMethod("reload", nullptr);
+  // Настройки правит одно окно, а знать о правке должны все: у каждого
+  // своя копия в своём изоляте.
+  if (channel_) channel_->InvokeMethod("reload", nullptr);
+  if (panel_channel_) panel_channel_->InvokeMethod("reload", nullptr);
 }
 
 void DictationBridge::SendTab(const std::string& tab) {
