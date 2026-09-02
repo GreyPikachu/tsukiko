@@ -1,5 +1,6 @@
 #include "panel_window.h"
 
+#include <dwmapi.h>
 #include <shellapi.h>
 
 #include <optional>
@@ -8,6 +9,11 @@ namespace {
 
 constexpr wchar_t kClassName[] = L"TsukikoPanelWindow";
 constexpr int kWidth = 340;
+
+constexpr wchar_t kHudClassName[] = L"TsukikoHudWindow";
+// Те же размеры, что у панели на macOS.
+constexpr int kHudWidth = 372;
+constexpr int kHudHeight = 52;
 
 constexpr wchar_t kSettingsClassName[] = L"TsukikoSettingsWindow";
 // Тот же размер, что и на macOS: раскладка настроек сходится именно в нём.
@@ -220,6 +226,92 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                                      lparam);
       if (result) return *result;
     }
+  }
+  return DefWindowProc(hwnd, message, wparam, lparam);
+}
+
+
+// ── плавающая панель записи ─────────────────────────────────────────────────
+
+HudWindow::~HudWindow() {
+  controller_ = nullptr;
+  if (window_) DestroyWindow(window_);
+}
+
+void HudWindow::Show(
+    const flutter::DartProject& base,
+    const std::function<void(flutter::BinaryMessenger*)>& on_ready) {
+  if (!window_) {
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = HudWindow::WndProc;
+    wc.hInstance = GetModuleHandle(nullptr);
+    wc.lpszClassName = kHudClassName;
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    RegisterClassW(&wc);
+
+    window_ = CreateWindowExW(
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE, kHudClassName,
+        L"tsukiko", WS_POPUP, 0, 0, kHudWidth, kHudHeight, nullptr, nullptr,
+        GetModuleHandle(nullptr), this);
+    if (!window_) return;
+
+    // Скруглённые углы — системные, как у всплывающих окон Windows 11.
+    // На Windows 10 вызов просто ничего не делает.
+    DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
+    DwmSetWindowAttribute(window_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner,
+                          sizeof(corner));
+
+    flutter::DartProject project = base;
+    project.set_dart_entrypoint("hudMain");
+    controller_ = std::make_unique<flutter::FlutterViewController>(
+        kHudWidth, kHudHeight, project);
+    if (!controller_->engine() || !controller_->view()) {
+      controller_ = nullptr;
+      DestroyWindow(window_);
+      window_ = nullptr;
+      return;
+    }
+    HWND view = controller_->view()->GetNativeWindow();
+    SetParent(view, window_);
+    MoveWindow(view, 0, 0, kHudWidth, kHudHeight, TRUE);
+    ShowWindow(view, SW_SHOW);
+    on_ready(controller_->engine()->messenger());
+  }
+
+  // Внизу по центру рабочей области — там же, где она стоит на macOS.
+  RECT work;
+  SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+  const int x = (work.left + work.right) / 2 - kHudWidth / 2;
+  const int y = work.bottom - kHudHeight - 92;
+  SetWindowPos(window_, HWND_TOPMOST, x, y, kHudWidth, kHudHeight,
+               SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+void HudWindow::Hide() {
+  if (window_) ShowWindow(window_, SW_HIDE);
+}
+
+bool HudWindow::IsVisible() const {
+  return window_ && IsWindowVisible(window_);
+}
+
+LRESULT CALLBACK HudWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
+                                    LPARAM lparam) {
+  if (message == WM_NCCREATE) {
+    auto* create = reinterpret_cast<CREATESTRUCT*>(lparam);
+    SetWindowLongPtr(hwnd, GWLP_USERDATA,
+                     reinterpret_cast<LONG_PTR>(create->lpCreateParams));
+  }
+  auto* self =
+      reinterpret_cast<HudWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+  // Ни щелчком, ни клавишей фокус этой панели не достаётся: она нужна
+  // поверх чужого окна, в которое сейчас диктуют.
+  if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+  if (self && self->controller_) {
+    std::optional<LRESULT> result =
+        self->controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
+                                                   lparam);
+    if (result) return *result;
   }
   return DefWindowProc(hwnd, message, wparam, lparam);
 }
