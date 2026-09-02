@@ -9,6 +9,11 @@ namespace {
 constexpr wchar_t kClassName[] = L"TsukikoPanelWindow";
 constexpr int kWidth = 340;
 
+constexpr wchar_t kSettingsClassName[] = L"TsukikoSettingsWindow";
+// Тот же размер, что и на macOS: раскладка настроек сходится именно в нём.
+constexpr int kSettingsWidth = 580;
+constexpr int kSettingsHeight = 560;
+
 }  // namespace
 
 PanelWindow::PanelWindow() = default;
@@ -135,4 +140,86 @@ void PanelWindow::SetContentHeight(int height) {
   SetWindowPos(window_, nullptr, 0, 0, kWidth, height_,
                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
   if (IsVisible()) PositionNearTray();
+}
+
+
+// ── окно настроек ───────────────────────────────────────────────────────────
+
+SettingsWindow::~SettingsWindow() {
+  controller_ = nullptr;
+  if (window_) DestroyWindow(window_);
+}
+
+void SettingsWindow::Show(
+    const flutter::DartProject& base,
+    const std::function<void(flutter::BinaryMessenger*)>& on_ready) {
+  if (window_) {
+    ShowWindow(window_, SW_RESTORE);
+    SetForegroundWindow(window_);
+    return;
+  }
+
+  WNDCLASSW wc = {};
+  wc.lpfnWndProc = SettingsWindow::WndProc;
+  wc.hInstance = GetModuleHandle(nullptr);
+  wc.lpszClassName = kSettingsClassName;
+  wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+  RegisterClassW(&wc);
+
+  // Ни развернуть, ни растянуть: раскладка настроек рассчитана на один
+  // размер, как и на macOS.
+  RECT rect = {0, 0, kSettingsWidth, kSettingsHeight};
+  AdjustWindowRect(&rect, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE);
+  window_ = CreateWindowExW(
+      0, kSettingsClassName, L"Настройки",
+      WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT,
+      CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, nullptr,
+      nullptr, GetModuleHandle(nullptr), this);
+  if (!window_) return;
+
+  flutter::DartProject project = base;
+  project.set_dart_entrypoint("settingsMain");
+  controller_ = std::make_unique<flutter::FlutterViewController>(
+      kSettingsWidth, kSettingsHeight, project);
+  if (!controller_->engine() || !controller_->view()) {
+    controller_ = nullptr;
+    DestroyWindow(window_);
+    window_ = nullptr;
+    return;
+  }
+  HWND view = controller_->view()->GetNativeWindow();
+  SetParent(view, window_);
+  MoveWindow(view, 0, 0, kSettingsWidth, kSettingsHeight, TRUE);
+  ShowWindow(view, SW_SHOW);
+  on_ready(controller_->engine()->messenger());
+
+  ShowWindow(window_, SW_SHOW);
+  SetForegroundWindow(window_);
+}
+
+LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
+                                         LPARAM lparam) {
+  if (message == WM_NCCREATE) {
+    auto* create = reinterpret_cast<CREATESTRUCT*>(lparam);
+    SetWindowLongPtr(hwnd, GWLP_USERDATA,
+                     reinterpret_cast<LONG_PTR>(create->lpCreateParams));
+  }
+  auto* self =
+      reinterpret_cast<SettingsWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+  if (self) {
+    // Закрытие прячет окно, а движок остаётся жить: он держит около ста
+    // мегабайт, зато повторное открытие мгновенное — то же решение,
+    // что и на macOS.
+    if (message == WM_CLOSE) {
+      ShowWindow(hwnd, SW_HIDE);
+      return 0;
+    }
+    if (self->controller_) {
+      std::optional<LRESULT> result =
+          self->controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
+                                                     lparam);
+      if (result) return *result;
+    }
+  }
+  return DefWindowProc(hwnd, message, wparam, lparam);
 }

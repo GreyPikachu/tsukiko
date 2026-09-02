@@ -5,6 +5,7 @@
 #include "panel_window.h"
 
 #include <shlobj.h>
+#include <tlhelp32.h>
 #include <shlwapi.h>
 #include <algorithm>
 #include <cmath>
@@ -169,6 +170,61 @@ void DictationBridge::Shutdown() {
   if (is_recording_) {
     StopAudioRecording();
   }
+  // Полтора гигабайта в памяти нельзя оставлять сиротой.
+  KillDictationServer();
+}
+
+/// Погасить забытый сервер диктовки.
+///
+/// На macOS своего отличают по метке в командной строке: там сервер
+/// работает под именем `whisper-server`, и такое же имя может носить
+/// чужой. Здесь проще и надёжнее — имя своё, `tsukiko-dictation`, мы его
+/// сами и дали. По нему и узнаём; настоящий `whisper-server` не трогаем
+/// вовсе, чтобы не погасить чужую работу.
+void DictationBridge::KillDictationServer() {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return;
+  PROCESSENTRY32W entry = {};
+  entry.dwSize = sizeof(entry);
+  std::vector<DWORD> victims;
+  if (Process32FirstW(snapshot, &entry)) {
+    do {
+      // Только своё имя. Просто `whisper-server` трогать нельзя: у
+      // человека рядом может работать чужой, и погасить его — то же
+      // самое, что снести чужую программу.
+      if (std::wstring(entry.szExeFile).find(L"tsukiko-dictation") ==
+          std::wstring::npos) {
+        continue;
+      }
+      victims.push_back(entry.th32ProcessID);
+    } while (Process32NextW(snapshot, &entry));
+  }
+  CloseHandle(snapshot);
+
+  for (DWORD pid : victims) {
+    HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+    if (!proc) continue;
+    TerminateProcess(proc, 0);
+    CloseHandle(proc);
+  }
+}
+
+void DictationBridge::SetTaskbarButtonVisible(bool visible) {
+  if (!main_window_) return;
+  LONG_PTR style = GetWindowLongPtr(main_window_, GWL_EXSTYLE);
+  // Стиль меняется только на скрытом окне: иначе система кнопку
+  // не перерисует.
+  const bool was_visible = IsWindowVisible(main_window_) != 0;
+  if (was_visible) ShowWindow(main_window_, SW_HIDE);
+  if (visible) {
+    style &= ~WS_EX_TOOLWINDOW;
+    style |= WS_EX_APPWINDOW;
+  } else {
+    style &= ~WS_EX_APPWINDOW;
+    style |= WS_EX_TOOLWINDOW;
+  }
+  SetWindowLongPtr(main_window_, GWL_EXSTYLE, style);
+  if (was_visible) ShowWindow(main_window_, SW_SHOW);
 }
 
 void DictationBridge::RegisterMethodChannel() {
@@ -258,16 +314,28 @@ void DictationBridge::RegisterHandler(
       ForwardToPanel("releaseModel", std::move(result),
                      flutter::EncodableValue());
     } else if (method == "openSettings") {
-      ShowMainWindow();
+      const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+      std::string tab = "dictation";
+      if (args) {
+        auto it = args->find(flutter::EncodableValue("tab"));
+        if (it != args->end()) {
+          if (const auto* t = std::get_if<std::string>(&it->second)) tab = *t;
+        }
+      }
+      ShowSettings(tab);
       result->Success();
     } else if (method == "initialTab") {
-      result->Success(flutter::EncodableValue("dictation"));
+      result->Success(flutter::EncodableValue(settings_tab_));
     } else if (method == "permissions") {
       result->Success(flutter::EncodableValue(true));
     } else if (method == "requestPermission" || method == "openPermissionSettings") {
       ShellExecuteW(nullptr, L"open", L"ms-settings:privacy-microphone", nullptr, nullptr, SW_SHOWNORMAL);
       result->Success();
     } else if (method == "serverMarks") {
+      // Метки нужны там, где своё имя от чужого не отличить. Здесь имя
+      // своё — `tsukiko-dictation`, — и метка не добавляет ничего
+      // (см. KillDictationServer). Принимаем и молчим: канал один
+      // на обе системы.
       result->Success();
     } else if (method == "trash") {
       const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
@@ -322,6 +390,19 @@ void DictationBridge::RegisterHandler(
       }
       result->Success();
     } else if (method == "dockIcon") {
+      // На macOS это значок в Dock, здесь — кнопка на панели задач.
+      // Прячется она стилем окна: WS_EX_TOOLWINDOW кнопку убирает,
+      // WS_EX_APPWINDOW возвращает. Значок в области уведомлений при этом
+      // остаётся — иначе приложение стало бы недостижимым.
+      const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+      bool visible = true;
+      if (args) {
+        auto it = args->find(flutter::EncodableValue("visible"));
+        if (it != args->end()) {
+          if (const auto* v = std::get_if<bool>(&it->second)) visible = *v;
+        }
+      }
+      SetTaskbarButtonVisible(visible);
       result->Success();
     } else if (method == "loginItem") {
       const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
@@ -380,7 +461,7 @@ void DictationBridge::ShowContextMenu() {
   if (cmd == ID_TRAY_OPEN) {
     ShowMainWindow();
   } else if (cmd == ID_TRAY_SETTINGS) {
-    ShowMainWindow();
+    ShowSettings("dictation");
   } else if (cmd == ID_TRAY_QUIT) {
     PostQuitMessage(0);
   }
@@ -687,11 +768,35 @@ void DictationBridge::ForwardToPanel(
           [shared, fallback]() { shared->Success(fallback); }));
 }
 
+/// Окно настроек по требованию: движок поднимается при первом открытии
+/// и дальше живёт — сто мегабайт против мгновенного открытия.
+void DictationBridge::ShowSettings(const std::string& tab) {
+  settings_tab_ = tab;
+  if (!project_) {
+    ShowMainWindow();
+    return;
+  }
+  if (!settings_) settings_ = std::make_unique<SettingsWindow>();
+  settings_->Show(*project_, [this](flutter::BinaryMessenger* messenger) {
+    settings_channel_ =
+        std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+            messenger, "tsukiko/dictation",
+            &flutter::StandardMethodCodec::GetInstance());
+    RegisterHandler(settings_channel_.get());
+  });
+  // Окно уже было открыто — просто просим его перейти на нужную вкладку.
+  if (settings_channel_) {
+    settings_channel_->InvokeMethod(
+        "tab", std::make_unique<flutter::EncodableValue>(tab));
+  }
+}
+
 void DictationBridge::SendReloadSettings() {
   // Настройки правит одно окно, а знать о правке должны все: у каждого
   // своя копия в своём изоляте.
   if (channel_) channel_->InvokeMethod("reload", nullptr);
   if (panel_channel_) panel_channel_->InvokeMethod("reload", nullptr);
+  if (settings_channel_) settings_channel_->InvokeMethod("reload", nullptr);
 }
 
 void DictationBridge::SendTab(const std::string& tab) {
