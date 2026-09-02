@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "dictation_bridge.h"
+#include "panel_window.h"
 #include "flutter/generated_plugin_registrant.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -27,6 +28,15 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   DictationBridge::GetInstance().Initialize(flutter_controller_->engine()->messenger(), GetHandle());
+
+  // Второй движок — панель диктовки. Без неё `panelMain` не запускал бы
+  // никто, а с ним и диктовку: она живёт там, а не в очереди.
+  panel_ = std::make_unique<PanelWindow>();
+  if (auto* messenger = panel_->Create(project_)) {
+    DictationBridge::GetInstance().AttachPanel(messenger, panel_.get());
+  } else {
+    panel_ = nullptr;
+  }
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -43,6 +53,7 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   DictationBridge::GetInstance().Shutdown();
+  panel_ = nullptr;
 
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
