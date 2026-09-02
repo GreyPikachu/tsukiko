@@ -77,6 +77,9 @@ class _TempOs implements Os {
   List<String> engineNames(String base) => _real.engineNames(base);
 
   @override
+  Future<void> openUrl(String url) => _real.openUrl(url);
+
+  @override
   ({List<String> mods, List<String> keys}) get defaultHold => _real.defaultHold;
 
   @override

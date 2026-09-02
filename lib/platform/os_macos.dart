@@ -90,6 +90,11 @@ class MacOs implements Os {
   // ── как система называет свои вещи ────────────────────────────────────────
 
   @override
+  Future<void> openUrl(String url) async {
+    await Process.run('open', [url]);
+  }
+
+  @override
   String get fileManagerName => 'Finder';
 
   static const _modSymbols = {

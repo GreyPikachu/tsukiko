@@ -149,6 +149,13 @@ class WindowsOs implements Os {
   // ── как система называет свои вещи ────────────────────────────────────────
 
   @override
+  Future<void> openUrl(String url) async {
+    // Через проводник, а не `start`: `start` — команда оболочки, и ей
+    // нужен cmd со своими правилами разбора кавычек.
+    await Process.run('explorer.exe', [url]);
+  }
+
+  @override
   String get fileManagerName => 'Проводник';
 
   static const _modLabels = {

@@ -1124,5 +1124,26 @@
   "hudFailed": "Не распознано · запись сохранена",
   "hudCopied": "Не вставилось · текст в буфере, Ctrl+V",
   "hudStop": "Остановить",
-  "hudCancel": "Отменить"
+  "hudCancel": "Отменить",
+  "buttonCheckUpdates": "Проверить обновления",
+  "updateChecking": "Смотрим, нет ли новой версии…",
+  "updateNone": "У вас последняя версия, {version}",
+  "@updateNone": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateFoundTitle": "Вышла версия {version}",
+  "@updateFoundTitle": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateFoundBody": "Скачайте её со страницы выпуска и поставьте поверх нынешней: настройки и модели останутся на месте.",
+  "buttonOpenReleasePage": "Открыть страницу",
+  "buttonLater": "Потом"
 }
