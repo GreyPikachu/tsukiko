@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'os_macos.dart';
+import 'os_windows.dart';
 
 /// Граница операционной системы.
 ///
@@ -173,8 +174,8 @@ Os os = _forCurrentPlatform();
 
 Os _forCurrentPlatform() {
   if (Platform.isMacOS) return MacOs();
-  // Здесь появится `if (Platform.isWindows) return WindowsOs();`
+  if (Platform.isWindows) return WindowsOs();
   throw UnsupportedError(
-      'tsukiko пока умеет работать только на macOS: для ${Platform.operatingSystem} '
-      'нужна своя реализация Os (см. lib/os.dart).');
+      'tsukiko пока умеет работать только на macOS и Windows: для ${Platform.operatingSystem} '
+      'нужна своя реализация Os (см. lib/platform/os.dart).');
 }
