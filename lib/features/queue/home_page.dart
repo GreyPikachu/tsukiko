@@ -25,6 +25,7 @@ import '../../platform/os.dart';
 import 'job.dart';
 import 'queue_bloc.dart';
 import 'queue_event.dart';
+import 'menu_shortcuts.dart';
 import 'queue_state.dart';
 import 'widgets/chrome.dart';
 import 'widgets/queue_row.dart';
@@ -361,9 +362,21 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     );
   }
 
-  Widget _window(QueueState s) => PlatformMenuBar(
-        menus: _menus(s),
-        child: MacosWindow(
+  /// Строка меню — вещь macOS. Там она и рисуется, и раздаёт сочетания
+  /// клавиш; на Windows `PlatformMenuBar` показывает только содержимое,
+  /// и без этой обёртки не работало бы ни одно сочетание.
+  Widget _window(QueueState s) {
+    final menus = _menus(s);
+    final window = PlatformMenuBar(menus: menus, child: _windowBody(s));
+    if (Platform.isMacOS) return window;
+    return CallbackShortcuts(
+      bindings: shortcutsFromMenus(menus, swapMetaForControl: true),
+      child: window,
+    );
+  }
+
+  Widget _windowBody(QueueState s) => Builder(
+        builder: (context) => MacosWindow(
           sidebar: Sidebar(
             minWidth: 248,
             startWidth: 276,

@@ -7,6 +7,28 @@
 #include <functional>
 #include <memory>
 
+/// Окно настроек: обычное окно на своём, третьем движке.
+///
+/// Отдельным движком, а не вкладкой в главном окне, ровно затем же, зачем
+/// на macOS: настройки открываются и из панели у значка, когда главного
+/// окна нет на экране вовсе.
+class SettingsWindow {
+ public:
+  ~SettingsWindow();
+
+  /// Показать, подняв движок при первом обращении. [on_ready] зовётся
+  /// один раз — мосту, чтобы завести на нём канал.
+  void Show(const flutter::DartProject& base,
+            const std::function<void(flutter::BinaryMessenger*)>& on_ready);
+
+ private:
+  static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
+                                  LPARAM lparam);
+
+  HWND window_ = nullptr;
+  std::unique_ptr<flutter::FlutterViewController> controller_;
+};
+
 /// Панель диктовки: маленькое окно у значка в области уведомлений.
 ///
 /// Живёт на **втором** движке Flutter — том, что запускает точку входа

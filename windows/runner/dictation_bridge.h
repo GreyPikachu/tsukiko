@@ -1,6 +1,7 @@
 #pragma once
 
 #include <flutter/binary_messenger.h>
+#include <flutter/dart_project.h>
 #include <flutter/method_channel.h>
 #include <flutter/method_result_functions.h>
 #include <flutter/standard_method_codec.h>
@@ -19,6 +20,7 @@
 /// Полный аналог Dictation.swift на macOS, отвечающий на тот же канал
 /// 'tsukiko/dictation' и посылающий те же события в Dart.
 class PanelWindow;
+class SettingsWindow;
 
 class DictationBridge {
  public:
@@ -29,6 +31,12 @@ class DictationBridge {
   /// Завести канал на движке панели. Именно её сторона ведёт диктовку,
   /// поэтому события клавиш и назначения уходят туда, а не в очередь.
   void AttachPanel(flutter::BinaryMessenger* messenger, PanelWindow* panel);
+
+  /// Проект Flutter нужен, чтобы поднять движок настроек по требованию:
+  /// окно открывают редко, а сто мегабайт оно держит всегда.
+  void SetDartProject(const flutter::DartProject* project) {
+    project_ = project;
+  }
   void Shutdown();
 
   // Обработка сообщений Win32 для трея и горячих клавиш
@@ -83,7 +91,16 @@ class DictationBridge {
   /// касается всех.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> panel_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> settings_channel_;
   PanelWindow* panel_ = nullptr;
+  const flutter::DartProject* project_ = nullptr;
+  std::unique_ptr<SettingsWindow> settings_;
+
+  /// С какой вкладки открыть настройки. Спрашивает их изолят сразу после
+  /// старта: пока он не подписался на канал, посланное ему теряется.
+  std::string settings_tab_ = "dictation";
+
+  void ShowSettings(const std::string& tab);
 
   /// Куда слать то, что касается диктовки. Панели ещё нет — пусть идёт
   /// в главное окно: молчать хуже, чем сказать не туда.
@@ -92,6 +109,9 @@ class DictationBridge {
   }
 
   void RegisterHandler(flutter::MethodChannel<flutter::EncodableValue>* channel);
+
+  void KillDictationServer();
+  void SetTaskbarButtonVisible(bool visible);
 
   void ForwardToPanel(
       const std::string& method,

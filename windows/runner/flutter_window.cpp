@@ -28,6 +28,8 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   DictationBridge::GetInstance().Initialize(flutter_controller_->engine()->messenger(), GetHandle());
+  // Окно настроек поднимает свой движок само, когда его впервые откроют.
+  DictationBridge::GetInstance().SetDartProject(&project_);
 
   // Второй движок — панель диктовки. Без неё `panelMain` не запускал бы
   // никто, а с ним и диктовку: она живёт там, а не в очереди.
