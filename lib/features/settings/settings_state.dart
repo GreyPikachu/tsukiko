@@ -1,9 +1,29 @@
+import 'dart:io';
+
 import 'package:equatable/equatable.dart';
 
 import '../../core/app_locale.dart';
 import '../../core/models.dart';
 import '../../core/skill_install.dart';
 import '../../core/whisper_server.dart' show Hotkey;
+
+/// Сколько потоков предложить на выбор.
+///
+/// Список — чётные до числа ядер, но нынешнее значение в нём обязано быть
+/// всегда, даже если оно из этого ряда выпадает. Иначе выпадающий список
+/// macos_ui падает с «нет пункта с таким значением», и окно настроек
+/// не открывается вовсе.
+///
+/// Выпасть значение может запросто: настройки переехали с машины,
+/// где ядер было больше, или их правили руками в файле.
+List<int> threadChoices(int current) {
+  final out = <int>{
+    for (var t = 2; t <= Platform.numberOfProcessors; t += 2) t,
+    if (current > 0) current,
+  }.toList()
+    ..sort();
+  return out;
+}
 
 /// Всё, что видно в окне настроек, — одним неизменяемым снимком.
 ///

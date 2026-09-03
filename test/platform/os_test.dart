@@ -44,7 +44,10 @@ void main() {
     });
   });
 
-  group('переезд моделей', () {
+  // Переезд задуман только для macOS: прежняя установка была там, и
+  // `_legacyModelsDir` на других системах возвращает null. Приложение
+  // ведёт себя верно — переносить нечего, — а проверять нечего тем более.
+  group('переезд моделей', skip: !Platform.isMacOS, () {
     late Directory root;
     late _FakeOs fake;
     late Os real;
