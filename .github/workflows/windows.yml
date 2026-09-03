@@ -1,0 +1,137 @@
+# Сборка под Windows.
+#
+# Заведена не для красоты: рабочей машины с Windows у автора нет, и
+# без неё нельзя проверить даже того, что нативная часть вообще
+# компилируется — четыре движка Flutter, перехват клавиш, панель
+# у значка, `dart compile exe`. Здесь это проверяется на каждый пуш.
+#
+# Собранное лежит в артефактах: скачал, распаковал, запустил. Того,
+# что проверяется только руками — встаёт ли панель у значка, работает
+# ли двойной стук, — CI не заменит.
+
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Кнопкой: сборка долгая, и гонять её на каждую правку документа незачем.
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Не windows-latest: с июня 2026 эта метка ведёт на Visual Studio 2026,
+    # и версия компилятора менялась бы у нас под ногами. Переезжать —
+    # осознанно и разом.
+    runs-on: windows-2025
+
+    env:
+      # Версия та же, на которой собирает свой Vulkan сам llama.cpp:
+      # спорить с ними о совместимости шейдеров нам не с руки.
+      VULKAN_VERSION: 1.4.357.0
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # Движок whisper.cpp не меняется от правки к правке приложения,
+      # а собирается минут двадцать (две конфигурации, долгие шейдеры).
+      # Ключ — по скрипту сборки и патчу: в них лежит и версия движка,
+      # и всё, что на неё влияет.
+      - name: Кэш движка
+        id: engine-cache
+        uses: actions/cache@v4
+        with:
+          path: windows/Engine
+          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch') }}
+
+      # Ставится только когда движок собирается заново: две минуты
+      # на установку ради восстановления из кэша — работа впустую.
+      - name: Vulkan SDK
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        run: |
+          curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L `
+            "https://sdk.lunarg.com/sdk/download/${env:VULKAN_VERSION}/windows/vulkansdk-windows-X64-${env:VULKAN_VERSION}.exe"
+          & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\${env:VULKAN_VERSION}"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\${env:VULKAN_VERSION}\bin"
+
+      - name: Движок whisper.cpp
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        run: .\tool\engine-win.ps1
+
+      - run: flutter pub get
+
+      # Разбор и тесты идут до сборки: падать лучше за минуту, чем
+      # за двадцать. И идут они именно здесь, на Windows, — половина
+      # наших тестов про пути и разделители, а на macOS такое не видно.
+      - run: flutter analyze
+
+      - name: Приложение
+        id: app
+        run: flutter build windows --release
+
+      # Расшифровка из командной строки: ею пользуется скилл для
+      # нейросетевых агентов, и Flutter в неё не входит.
+      - name: tsukiko-transcribe
+        run: dart compile exe bin/tsukiko_transcribe.dart -o build/windows/x64/runner/Release/tsukiko-transcribe.exe
+
+      - name: Движок в релизную папку
+        run: |
+          $release = "build/windows/x64/runner/Release"
+          New-Item -ItemType Directory -Force -Path "$release/Engine" | Out-Null
+          Copy-Item "windows/Engine/*" "$release/Engine" -Recurse -Force
+
+      # Тесты после сборки, а не до неё: половина из них про пути
+      # и разделители, и на Windows они падают иначе, чем на macOS, —
+      # но узнать, что нативная часть вообще компилируется, важнее.
+      # Упавший тест уронит работу, а собранное всё равно приложится.
+      - run: flutter test
+
+      # Установщик собирается только когда есть аудиодекодер: без него
+      # приложение не переложит m4a и opus в WAV, и раздавать такую
+      # сборку нельзя. Проверить, что всё компилируется, это не мешает —
+      # для того и папка ниже.
+      #
+      # ISCC зовём напрямую, а не через tool\package-win.ps1: тот собрал
+      # бы приложение во второй раз, а оно уже собрано.
+      - name: Установщик
+        id: installer
+        if: hashFiles('windows/Engine/ffmpeg.exe') != ''
+        run: |
+          choco install innosetup --no-progress -y
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
+          New-Item -ItemType Directory -Force -Path build/installer | Out-Null
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" tool\installer.iss
+
+      - name: Сказать про пропущенный установщик
+        if: steps.installer.outcome == 'skipped'
+        run: |
+          Write-Host "::warning::Установщик не собран: нет windows/Engine/ffmpeg.exe."
+          Write-Host "::warning::Без него не расшифровать m4a, opus и дорожки из видео."
+          Write-Host "::warning::Как его получить — docs/сборка-и-выпуск.md"
+
+      # Папку отдаём и когда тесты упали: собранное — главное, ради чего
+      # всё затевалось, а упавший тест виден и так, в самой работе.
+      # always() здесь обязателен: без него условие со ссылкой на шаг
+      # всё равно молчаливо подразумевает «если ничего не падало», и
+      # ровно в тот раз, когда собранное нужнее всего, его бы и не было.
+      - name: Собранное
+        if: always() && steps.app.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsukiko-windows
+          path: build/windows/x64/runner/Release/
+          if-no-files-found: error
+
+      - name: Установщик в артефакты
+        if: steps.installer.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsukiko-setup
+          path: build/installer/tsukiko-setup.exe
+          if-no-files-found: error
