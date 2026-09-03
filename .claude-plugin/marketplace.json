@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "tsukiko",
+  "description": "Расшифровка звука в текст на своей машине: whisper.cpp локально, без интернета.",
+  "owner": {
+    "name": "Yukovsky",
+    "url": "https://github.com/Yukovsky"
+  },
+  "plugins": [
+    {
+      "name": "tsukiko",
+      "description": "Расшифровывает голосовые, лекции и записи встреч через приложение tsukiko — на этой же машине, без отправки файла куда бы то ни было.",
+      "source": "./skills/tsukiko",
+      "category": "productivity"
+    }
+  ]
+}

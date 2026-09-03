@@ -442,12 +442,49 @@
   "sectionApi": "Local API",
   "checkApiEnabled": "Let programs transcribe through tsukiko",
   "hintApiEnabled": "The app starts listening on 127.0.0.1:{port} — this machine only, not the network. A script or an AI agent puts a recording into the same queue you use by hand and picks up the finished text.",
-  "@hintApiEnabled": {"placeholders": {"port": {"type": "String"}}},
+  "@hintApiEnabled": {
+    "placeholders": {
+      "port": {
+        "type": "String"
+      }
+    }
+  },
   "hintApiDisabled": "Off. The port is closed, nothing outside can talk to tsukiko.",
   "fieldApiKey": "Access key",
   "hintApiKey": "Without it a request is rejected. Switch the checkbox off and on again and the key is replaced; the old one stops working.",
   "buttonCopyKey": "Copy",
   "apiKeyCopied": "Key copied to the clipboard",
   "apiFailed": "The API did not start: {problem}. Most likely port {port} is taken by another program.",
-  "@apiFailed": {"placeholders": {"problem": {"type": "String"}, "port": {"type": "String"}}}
+  "@apiFailed": {
+    "placeholders": {
+      "problem": {
+        "type": "String"
+      },
+      "port": {
+        "type": "String"
+      }
+    }
+  },
+  "sectionSkill": "Skill for AI agents",
+  "hintSkill": "An agent with this skill will transcribe a voice message it was sent on its own — through tsukiko, on this machine. Installed only for agents found on this computer.",
+  "buttonInstallSkill": "{count, plural, one{Install the skill} other{Install for all found}}",
+  "@buttonInstallSkill": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "skillInstalled": "Installed",
+  "skillForeign": "Taken by another skill — left alone",
+  "skillFailed": "Could not write",
+  "skillNoAgents": "No suitable agent found on this computer. The skill lives in the repository's skills folder and can be copied by hand.",
+  "skillNotFound": "Not found: {names}",
+  "@skillNotFound": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  }
 }
