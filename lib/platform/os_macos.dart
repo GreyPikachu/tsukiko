@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import '../core/app_locale.dart';
 import 'os.dart';
 
 /// macOS: как здесь устроено всё, что описано в `os.dart`.
@@ -8,6 +7,9 @@ import 'os.dart';
 /// Ничего, кроме этого файла, про `ps`, `pgrep`, `lsof`, `afconvert`,
 /// `open` и `~/Library` знать не должно.
 class MacOs implements Os {
+  @override
+  String get platformId => 'macos';
+
   @override
   String get home => Platform.environment['HOME'] ?? '/';
 
@@ -84,9 +86,6 @@ class MacOs implements Os {
   @override
   List<String> engineNames(String base) => [base];
 
-  @override
-  String get whisperInstallHint => currentL10n().whisperInstallHint;
-
   // ── как система называет свои вещи ────────────────────────────────────────
 
   @override
@@ -115,13 +114,7 @@ class MacOs implements Os {
   String get appIconAreaName => 'Dock';
 
   @override
-  String get menuBarName => currentL10n().menuBarNameLabel;
-
-  @override
   String get settingsShortcut => '⌘,';
-
-  @override
-  String get accessibilityName => systemL10n().accessibilityPermissionName;
 
   @override
   String shortcutLabel(List<String> mods, [List<String> keys = const []]) {

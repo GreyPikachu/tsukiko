@@ -21,6 +21,7 @@ import '../../platform/os.dart';
 import 'job.dart';
 import 'queue_event.dart';
 import 'queue_state.dart';
+import '../../core/labels.dart';
 
 /// Очередь распознавания: что в списке, что из него выбрано, что сейчас
 /// считается и куда ложится результат.
@@ -952,7 +953,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
           : plan.stem;
       for (final f in formats) {
         await File(os.join(plan.dir, f.fileName(stem)))
-            .writeAsString(renderAs(f, t, name: job.name));
+            .writeAsString(renderFor(f, t, name: job.name));
       }
       return currentL10n().statusSavedInLibrary(
           plan.dir.replaceFirst(state.libraryPath, appName));
@@ -969,7 +970,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   String _render(Job job, ExportFormat f) {
     final t = job.transcript;
     if (t == null) return job.raw ?? renderPlain(job.live, f.id == 'txt-ts');
-    return renderAs(f, t, name: job.name);
+    return renderFor(f, t, name: job.name);
   }
 
   Future<void> _onCopy(CopyRequested e, Emitter<QueueState> emit) async {

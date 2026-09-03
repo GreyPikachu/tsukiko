@@ -18,6 +18,7 @@ import '../../platform/os.dart';
 import 'settings_cubit.dart';
 import 'widgets/model_row.dart';
 import 'settings_state.dart';
+import '../../core/labels.dart';
 
 /// Окно настроек: своё окно с вкладками, как у всех приложений системы.
 ///

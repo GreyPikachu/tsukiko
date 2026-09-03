@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/platform/os_windows.dart';
+import 'package:tsukiko/core/labels.dart';
 
 void main() {
   final win = WindowsOs();

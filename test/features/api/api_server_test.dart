@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/settings.dart';
 import 'package:tsukiko/features/api/api_server.dart';
 import 'package:tsukiko/features/queue/queue_bloc.dart';
+import 'package:tsukiko/features/queue/queue_event.dart';
 import 'package:tsukiko/platform/bridge.dart';
 import 'package:tsukiko/platform/os.dart';
 
@@ -135,6 +136,22 @@ void main() {
       final err = (await post(os.join(os.home, 'нет.m4a')))['error'] as String;
       expect(err, contains('нет'));
     });
+  });
+
+  test('длинный русский текст доходит целым', () async {
+    // Проверка не про формат, а про кодировку и про длину: русская
+    // расшифровка часовой лекции — это десятки килобайт кириллицы,
+    // и уехать она может и на заголовке ответа, и на разбиении на куски.
+    // Настоящий движок для этого не нужен: ту же длину даёт готовая
+    // расшифровка, открытая как запись очереди.
+    final text = List.filled(2000, 'Интуитивные методы системного анализа.')
+        .join('\n');
+    final file = File(os.join(os.home, 'лекция.txt'))..writeAsStringSync(text);
+    bloc.add(TranscriptOpened(file.path));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+
+    final got = await ask('GET', '/transcribe?id=${Uri.encodeQueryComponent(file.path)}');
+    expect((await json(got))['text'], text);
   });
 
   test('чужой метод — 404 со списком того, что есть', () async {

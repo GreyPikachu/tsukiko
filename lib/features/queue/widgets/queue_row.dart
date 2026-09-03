@@ -5,6 +5,7 @@ import '../../../core/whisper.dart';
 import '../../../design/design.dart';
 import '../../../l10n/gen/app_localizations.dart';
 import '../job.dart';
+import '../../../core/labels.dart';
 
 /// Строка очереди и значок её состояния.
 class QueueRow extends StatefulWidget {

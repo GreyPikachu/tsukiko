@@ -39,6 +39,13 @@ if (-not (Test-Path $TARGET_ENGINE)) {
 }
 Copy-Item "$ENGINE_DIR/*" $TARGET_ENGINE -Recurse -Force
 
+# Расшифровщик из командной строки: скрипту и нейросетевому агенту нужен
+# текст, а не окно. Flutter в него не входит, поэтому dart compile exe
+# собирает его отдельно и за секунды. Кладём рядом с tsukiko.exe — так
+# его проще найти тому, кто зовёт его снаружи.
+Write-Host "Собираем tsukiko-transcribe.exe..."
+dart compile exe bin/tsukiko_transcribe.dart -o "$RELEASE_DIR/tsukiko-transcribe.exe"
+
 # Подготовка папки инсталлятора
 $OUT_INSTALLER = "build/installer"
 if (-not (Test-Path $OUT_INSTALLER)) {

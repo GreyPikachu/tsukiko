@@ -16,6 +16,7 @@ import '../../core/models.dart';
 import '../../core/text.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../legacy_migration.dart';
+import '../../core/labels.dart';
 
 /// Панель у строки меню и вся диктовка. Живёт на отдельном движке Flutter,
 /// который работает и со спрятанной панелью, — поэтому диктовка не зависит
