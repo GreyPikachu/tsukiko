@@ -294,11 +294,16 @@ void DictationBridge::RegisterHandler(
       is_capturing_ = true;
       captured_mods_.clear();
       captured_keys_.clear();
-      current_taps_ = 0;
-      last_tap_time_ = 0;
+      // Начало отсчёта и ожидание второго стука — с чистого листа:
+      // прошлый захват мог кончиться на полпути.
+      capture_started_at_ = 0;
+      has_pending_capture_ = false;
+      KillTimer(main_window_, ID_CAPTURE_TIMER);
       result->Success();
     } else if (method == "cancelCapture") {
       is_capturing_ = false;
+      has_pending_capture_ = false;
+      KillTimer(main_window_, ID_CAPTURE_TIMER);
       captured_mods_.clear();
       captured_keys_.clear();
       result->Success();
