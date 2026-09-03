@@ -329,8 +329,10 @@ void main() {
     // круг через JSON ничего не теряет
     final back = Hotkey.fromJson(Hotkey.toggleDefault.toJson(), Hotkey.holdDefault);
     expect(back.label, Hotkey.toggleDefault.label);
-    // мусор в файле настроек не должен ронять диктовку
-    expect(Hotkey.fromJson('чепуха', Hotkey.holdDefault).label, 'fn + ⌃');
+    // мусор в файле настроек не должен ронять диктовку: возвращается
+    // умолчание, а какое оно — дело системы (на Windows fn нет вовсе)
+    expect(Hotkey.fromJson('чепуха', Hotkey.holdDefault).label,
+        Hotkey.holdDefault.label);
     // настройки прежних сборок: там клавиша была одна
     expect(
       Hotkey.fromJson({'mods': ['fn'], 'key': 'space'}, Hotkey.holdDefault).keys,
