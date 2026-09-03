@@ -1201,6 +1201,11 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   @override
   Future<void> close() {
     _saveTimer?.cancel();
+    // Опрос диктовки идёт по таймеру и кончается событием в этот же блок.
+    // Не погасить его — значит после закрытия получить «событие в
+    // закрытый блок»: в приложении это видно только на выходе, а в
+    // тестах роняет соседей, которые уже прошли.
+    _pollTimer?.cancel();
     _settingsSub?.cancel();
     unawaited(api.stop());
     _proc?.kill();
