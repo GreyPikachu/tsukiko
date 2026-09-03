@@ -158,20 +158,21 @@ void main() {
 
     // имя занято — добавляем номер, старое не трогаем
     Directory(one.dir).createSync(recursive: true);
-    File('${one.dir}/Запись.txt').writeAsStringSync('старое');
+    File(os.join(one.dir, 'Запись.txt')).writeAsStringSync('старое');
     expect(freeStem(one.dir, 'Запись', '.txt'), 'Запись 2');
-    expect(File('${one.dir}/Запись.txt').readAsStringSync(), 'старое');
+    expect(File(os.join(one.dir, 'Запись.txt')).readAsStringSync(), 'старое');
 
     // форматов несколько — у записи своя папка
     final many = planPlacement(root: root, stem: 'Запись', formatCount: 3, now: when);
-    expect(many.dir, '$root/2026-08/Запись');
-    expect(many.pathFor('.srt'), '$root/2026-08/Запись/Запись.srt');
+    expect(many.dir, os.join(root, '2026-08', 'Запись'));
+    expect(many.pathFor('.srt'),
+        os.join(os.join(root, '2026-08', 'Запись'), 'Запись.srt'));
 
     // и папка нумеруется, если такая уже есть
     Directory(many.dir).createSync(recursive: true);
     expect(
       planPlacement(root: root, stem: 'Запись', formatCount: 3, now: when).dir,
-      '$root/2026-08/Запись 2',
+      os.join(root, '2026-08', 'Запись 2'),
     );
 
     Directory(root).deleteSync(recursive: true);
@@ -316,7 +317,10 @@ void main() {
     // в одиночку назначить было нельзя вовсе.
     expect(const Hotkey([], keys: ['y']).label, 'Y');
     expect(const Hotkey([], keys: ['x', 'y']).label, 'X + Y');
-    expect(const Hotkey(['fn'], keys: ['o']).label, 'fn + O');
+    // Модификаторы каждая система пишет по-своему: на macOS значками
+    // и строчным «fn», на Windows словами — «Fn». Спрашиваем у неё же.
+    expect(const Hotkey(['fn'], keys: ['o']).label,
+        '${os.modifierLabel('fn')} + O');
     // Порядок клавиш не зависит от того, в каком их нажали.
     expect(const Hotkey([], keys: ['y', 'x']).label,
         const Hotkey([], keys: ['x', 'y']).label);
@@ -519,7 +523,11 @@ void main() {
     expect(ours.first.rssKb, 1657392);
   });
 
-  test('забытый сервер находится без pid-файла и гасится наверняка', () async {
+  // Подставной сервер поднимается через /bin/sh: на Windows оболочки
+  // с таким именем нет вовсе. Само правило — «свой узнаётся по метке
+  // в аргументах» — проверяет соседний тест, и он идёт всюду.
+  test('забытый сервер находится без pid-файла и гасится наверняка',
+      skip: !Platform.isMacOS, () async {
     // Настоящий whisper-server ради этого не поднимаем: проверять надо две
     // вещи — что процесс с нашей меткой виден в ps и что упрямый процесс
     // всё-таки гибнет. «trap "" TERM» — это и есть поведение

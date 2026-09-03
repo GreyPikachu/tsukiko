@@ -264,7 +264,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           MacosPopupButton<int>(
             value: s.threads,
             items: [
-              for (var t = 2; t <= Platform.numberOfProcessors; t += 2)
+              for (final t in threadChoices(s.threads))
                 MacosPopupMenuItem(value: t, child: Text(l10n.threadsCount(t))),
             ],
             onChanged: (v) =>

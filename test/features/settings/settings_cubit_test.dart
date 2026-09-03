@@ -42,6 +42,21 @@ void main() {
   Future<void> settle() =>
       Future<void>.delayed(const Duration(milliseconds: 20));
 
+  test('в списке потоков всегда есть нынешнее значение', () {
+    // Иначе выпадающий список macos_ui падает с «нет пункта с таким
+    // значением», и окно настроек не открывается вовсе. Значение
+    // выпадает из ряда запросто: настройки переехали с машины, где ядер
+    // было больше, или их правили руками в файле.
+    for (final current in [1, 2, 3, 4, 999]) {
+      expect(threadChoices(current), contains(current),
+          reason: 'потоков $current');
+    }
+    // Ряд остаётся возрастающим и без повторов — это всё-таки список
+    // на выбор, а не свалка.
+    final list = threadChoices(6);
+    expect(list, orderedEquals(list.toSet().toList()..sort()));
+  });
+
   group('настройки диктовки', () {
     test('правка уходит на диск и соседям — перечитать', () async {
       cubit.setThreads(8);
