@@ -638,6 +638,12 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
         return 1;
       }
 
+      // Набор кончается отпусканием, и только им: у низкоуровневого хука
+      // других событий не бывает, но полагаться на «раз не нажатие,
+      // значит отпускание» — значит однажды посчитать набранным то,
+      // чего не набирали.
+      if (!isUp) return CallNextHookEx(nullptr, nCode, wParam, lParam);
+
       // Всё отпущено — сочетание набрано. Пока держат, набор копится.
       const bool anythingHeld =
           !currentMods.empty() ||
