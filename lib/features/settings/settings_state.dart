@@ -41,6 +41,10 @@ class SettingsState extends Equatable {
     this.libraryPath = '',
     this.libraryFormats = const ['txt'],
     this.locale = '',
+    this.apiEnabled = false,
+    this.apiKey = '',
+    this.apiPort = 0,
+    this.apiError = '',
   })  : hold = hold ?? Hotkey.holdDefault,
         toggle = toggle ?? Hotkey.toggleDefault;
 
@@ -119,6 +123,24 @@ class SettingsState extends Equatable {
   /// это не задаёт: его выбирают отдельно, в инспекторе записи.
   final String locale;
 
+  // ── местное API ───────────────────────────────────────────────────────────
+
+  /// Слушает ли приложение 127.0.0.1 и с каким ключом. Сервер поднимает
+  /// не это окно, а изолят главного окна — здесь галка и ключ только
+  /// хранятся и показываются.
+  final bool apiEnabled;
+  final String apiKey;
+
+  /// На каком порту приложение слушает. В окне его не меняют, но назвать
+  /// обязаны: без номера порта подсказка «обратитесь к 127.0.0.1» ничего
+  /// не значит.
+  final int apiPort;
+
+  /// Почему API не поднялось. Пусто — поднялось. Пишет сюда главное окно:
+  /// занятый порт видно только оттуда, а сказать о нём надо тому, кто
+  /// щёлкнул галку.
+  final String apiError;
+
   bool get downloading => downloadProgress != null;
 
   SettingsState copyWith({
@@ -149,6 +171,10 @@ class SettingsState extends Equatable {
     String? libraryPath,
     List<String>? libraryFormats,
     String? locale,
+    bool? apiEnabled,
+    String? apiKey,
+    int? apiPort,
+    String? apiError,
     // Обнулять поля иначе нечем: `null` в именованном параметре
     // не отличить от «не передали».
     bool clearDownload = false,
@@ -182,6 +208,10 @@ class SettingsState extends Equatable {
         libraryPath: libraryPath ?? this.libraryPath,
         libraryFormats: libraryFormats ?? this.libraryFormats,
         locale: locale ?? this.locale,
+        apiEnabled: apiEnabled ?? this.apiEnabled,
+        apiKey: apiKey ?? this.apiKey,
+        apiPort: apiPort ?? this.apiPort,
+        apiError: apiError ?? this.apiError,
       );
 
   @override
@@ -212,5 +242,9 @@ class SettingsState extends Equatable {
         libraryPath,
         libraryFormats,
         locale,
+        apiEnabled,
+        apiKey,
+        apiPort,
+        apiError,
       ];
 }

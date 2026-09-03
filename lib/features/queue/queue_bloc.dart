@@ -14,6 +14,7 @@ import '../../core/settings.dart';
 import '../../core/text.dart';
 import '../../core/transcript.dart';
 import '../../core/whisper.dart';
+import '../api/api_server.dart';
 import '../dictation/dictation_repository.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
@@ -89,10 +90,16 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
     _settingsSub = bridge.settingsReloaded.listen((_) => add(const SettingsReloaded()));
     _syncPolling();
+    // Местное API поднимается здесь и нигде больше: оно кладёт файлы
+    // в эту же очередь, а очередь живёт в изоляте главного окна.
+    unawaited(api.sync());
   }
 
   /// Единственный, кто может держать модель занятой, — своя же диктовка.
   final DictationRepository dictation;
+
+  /// Местное API. Само по себе выключено — включается галкой в настройках.
+  late final api = ApiServer(this);
 
   /// Что прочитано с диска к самому первому кадру.
   ///
@@ -1161,6 +1168,9 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       // Модель могли скачать в окне настроек — список файлов уже другой.
       models: _withOwn(findModels(), state.defaults.model),
     ));
+    // Галку API правит окно настроек, а сервер живёт здесь — узнать
+    // о перемене можно только отсюда.
+    unawaited(api.sync());
   }
 
   /// Раньше настройки писались только при выходе, и ⌘Q мимо dispose стирал
@@ -1191,6 +1201,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   Future<void> close() {
     _saveTimer?.cancel();
     _settingsSub?.cancel();
+    unawaited(api.stop());
     _proc?.kill();
     _releaseTemp();
     _persistNow();

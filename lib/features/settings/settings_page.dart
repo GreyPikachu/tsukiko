@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
@@ -87,6 +88,11 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// Единственное, что остаётся окну: поле ввода подсказки.
   final _promptCtrl = TextEditingController();
   String _promptShown = '';
+
+  /// Ключ API только что скопировали. Живёт до следующей перерисовки
+  /// настроек и в кубите ему делать нечего: это не настройка, а ответ
+  /// на нажатие кнопки.
+  bool _keyCopied = false;
 
   SettingsCubit get _cubit => context.read<SettingsCubit>();
   AppLocalizations get l10n => AppLocalizations.of(context);
@@ -514,6 +520,54 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         Hint(l10n.hintShowTimestamps, under: true),
       ];
 
+  /// Местное API: та самая галка, которой открывают дверь наружу.
+  ///
+  /// Стоит на вкладке «Приложение», а не у расшифровщика: это не про то,
+  /// как распознавать, а про то, кому позволено просить. Ключ показан
+  /// целиком — прятать его за звёздочками бессмысленно, он нужен именно
+  /// для того, чтобы его скопировать и отдать своей программе.
+  List<Widget> _apiSection(SettingsState s) => [
+        SectionTitle(l10n.sectionApi),
+        Check(l10n.checkApiEnabled, s.apiEnabled, (v) {
+          setState(() => _keyCopied = false);
+          _cubit.setApiEnabled(v);
+        }),
+        Hint(
+            s.apiEnabled
+                ? l10n.hintApiEnabled('${s.apiPort}')
+                : l10n.hintApiDisabled,
+            under: true),
+        if (s.apiEnabled) ...[
+          if (s.apiError.isNotEmpty) _problem(l10n.apiFailed(s.apiError, '${s.apiPort}')),
+          const SizedBox(height: Gap.item),
+          _Field(
+            l10n.fieldApiKey,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    s.apiKey,
+                    maxLines: 1,
+                    style: Type.control.copyWith(fontFamily: 'Menlo'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                PushButton(
+                  controlSize: ControlSize.regular,
+                  secondary: true,
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: s.apiKey));
+                    setState(() => _keyCopied = true);
+                  },
+                  child: Text(l10n.buttonCopyKey),
+                ),
+              ],
+            ),
+          ),
+          Hint(_keyCopied ? l10n.apiKeyCopied : l10n.hintApiKey),
+        ],
+      ];
+
   // ── приложение ────────────────────────────────────────────────────────────
 
   /// Здесь остаётся только то, что не принадлежит ни расшифровщику,
@@ -544,6 +598,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             _cubit.setDockIcon),
         Hint(l10n.hintDockIcon(appName, os.appIconAreaName, os.menuBarName),
             under: true),
+        ..._apiSection(s),
         SectionTitle(l10n.sectionPermissions),
         Row(
           children: [

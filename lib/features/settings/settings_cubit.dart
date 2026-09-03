@@ -11,6 +11,7 @@ import '../../core/models.dart';
 import '../../core/settings.dart';
 import '../../core/transcript.dart';
 import '../../core/whisper_server.dart';
+import '../api/api_server.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import 'settings_state.dart';
@@ -81,6 +82,10 @@ class SettingsCubit extends Cubit<SettingsState> {
       dockIcon: (s['dockIcon'] as bool?) ?? true,
       libraryPath: (s['libraryPath'] as String?) ?? defaultLibraryPath,
       locale: (s[localeSetting] as String?) ?? '',
+      apiEnabled: (s[apiEnabledSetting] as bool?) ?? false,
+      apiKey: (s[apiKeySetting] as String?) ?? '',
+      apiPort: (s[apiPortSetting] as int?) ?? apiPort,
+      apiError: (s[apiErrorSetting] as String?) ?? '',
       libraryFormats:
           formats != null && formats.isNotEmpty ? formats : state.libraryFormats,
     ));
@@ -278,6 +283,22 @@ class SettingsCubit extends Cubit<SettingsState> {
     _emit(state.copyWith(locale: v));
     appLocale.value = v.isEmpty ? null : Locale(v);
     unawaited(_saveApp({localeSetting: v}));
+  }
+
+  /// Включить или выключить местное API.
+  ///
+  /// Ключ рождается здесь же, при включении, и умирает при выключении.
+  /// Отдельной кнопки «сменить ключ» поэтому нет: выключил-включил — ключ
+  /// новый, старый не работает. Сам сервер поднимает главное окно: оно
+  /// узнает о правке из общего файла настроек.
+  void setApiEnabled(bool v) {
+    final key = v ? newApiKey() : '';
+    _emit(state.copyWith(apiEnabled: v, apiKey: key, apiError: ''));
+    unawaited(_saveApp({
+      apiEnabledSetting: v,
+      apiKeySetting: key,
+      apiErrorSetting: '',
+    }));
   }
 
   void setDockIcon(bool v) {
