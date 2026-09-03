@@ -438,5 +438,16 @@
   },
   "updateFoundBody": "Download it from the release page and install over the current one: settings and models stay where they are.",
   "buttonOpenReleasePage": "Open the page",
-  "buttonLater": "Later"
+  "buttonLater": "Later",
+  "sectionApi": "Local API",
+  "checkApiEnabled": "Let programs transcribe through tsukiko",
+  "hintApiEnabled": "The app starts listening on 127.0.0.1:{port} — this machine only, not the network. A script or an AI agent puts a recording into the same queue you use by hand and picks up the finished text.",
+  "@hintApiEnabled": {"placeholders": {"port": {"type": "String"}}},
+  "hintApiDisabled": "Off. The port is closed, nothing outside can talk to tsukiko.",
+  "fieldApiKey": "Access key",
+  "hintApiKey": "Without it a request is rejected. Switch the checkbox off and on again and the key is replaced; the old one stops working.",
+  "buttonCopyKey": "Copy",
+  "apiKeyCopied": "Key copied to the clipboard",
+  "apiFailed": "The API did not start: {problem}. Most likely port {port} is taken by another program.",
+  "@apiFailed": {"placeholders": {"problem": {"type": "String"}, "port": {"type": "String"}}}
 }
