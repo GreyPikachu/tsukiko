@@ -10,6 +10,7 @@ import 'package:tsukiko/core/text.dart';
 import 'package:tsukiko/core/transcript.dart';
 import 'package:tsukiko/core/whisper.dart';
 import 'package:tsukiko/platform/os.dart';
+import 'package:tsukiko/core/labels.dart';
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -36,7 +37,7 @@ void main() {
     expect(renderPlain(segs, false), 'раз\nдва');
     expect(renderPlain(segs, true).startsWith('[00:00:00.000 → 00:00:01.500]  раз'), isTrue);
     expect(renderSrt(segs).split('\n')[1], '00:00:00,000 --> 00:00:01,500');
-    expect(renderMarkdown('x.ogg', const Transcript('ru', segs)).contains('раз'), isTrue);
+    expect(renderFor(formatMarkdown, const Transcript('ru', segs), name: 'x.ogg').contains('раз'), isTrue);
   });
 
   test('аргументы whisper-cli', () {
@@ -139,7 +140,7 @@ void main() {
 
     expect(renderAs(formatVtt, t).startsWith('WEBVTT'), isTrue);
     expect(renderAs(formatJson, t), contains('"language": "ru"'));
-    expect(renderAs(formatMarkdown, t, name: 'Запись.ogg'), contains('# Запись.ogg'));
+    expect(renderFor(formatMarkdown, t, name: 'Запись.ogg'), contains('# Запись.ogg'));
     expect(formatById('txt-ts').label, 'Текст с таймкодами');
   });
 

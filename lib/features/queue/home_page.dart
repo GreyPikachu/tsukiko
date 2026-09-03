@@ -32,6 +32,7 @@ import 'widgets/chrome.dart';
 import 'widgets/queue_row.dart';
 import 'widgets/scope_banner.dart';
 import 'widgets/segment_row.dart';
+import '../../core/labels.dart';
 
 part 'home_menus.dart';
 

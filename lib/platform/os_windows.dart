@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import '../core/app_locale.dart';
 import 'os.dart';
 
 /// Windows: как здесь устроено всё, что описано в `os.dart`.
@@ -9,6 +8,9 @@ import 'os.dart';
 /// Ничего, кроме этого файла, про пути реестра, `tasklist`, `taskkill`,
 /// `explorer` и `ffmpeg` на Windows знать не должно.
 class WindowsOs implements Os {
+  @override
+  String get platformId => 'windows';
+
   @override
   String get home =>
       Platform.environment['USERPROFILE'] ??
@@ -143,9 +145,6 @@ class WindowsOs implements Os {
         base,
       ];
 
-  @override
-  String get whisperInstallHint => currentL10n().whisperInstallHintWindows;
-
   // ── как система называет свои вещи ────────────────────────────────────────
 
   @override
@@ -177,13 +176,7 @@ class WindowsOs implements Os {
   String get appIconAreaName => 'панель задач';
 
   @override
-  String get menuBarName => 'область уведомлений';
-
-  @override
   String get settingsShortcut => 'Ctrl+,';
-
-  @override
-  String get accessibilityName => 'специальные возможности';
 
   @override
   String shortcutLabel(List<String> mods, [List<String> keys = const []]) {

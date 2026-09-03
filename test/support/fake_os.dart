@@ -39,6 +39,9 @@ class _TempOs implements Os {
   final String _root;
 
   @override
+  String get platformId => _real.platformId;
+
+  @override
   String get home => _root;
 
   @override
@@ -87,22 +90,13 @@ class _TempOs implements Os {
       _real.defaultToggle;
 
   @override
-  String get whisperInstallHint => _real.whisperInstallHint;
-
-  @override
   String get fileManagerName => _real.fileManagerName;
 
   @override
   String get appIconAreaName => _real.appIconAreaName;
 
   @override
-  String get menuBarName => _real.menuBarName;
-
-  @override
   String get settingsShortcut => _real.settingsShortcut;
-
-  @override
-  String get accessibilityName => _real.accessibilityName;
 
   @override
   String modifierLabel(String mod) => _real.modifierLabel(mod);

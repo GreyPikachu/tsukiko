@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import 'app_locale.dart';
-
 /// Что whisper сочиняет на тишине.
 ///
 /// Модель обучена в том числе на субтитрах, и в тишине она договаривает
@@ -191,11 +189,13 @@ String renderJson(Transcript t) => const JsonEncoder.withIndent('  ').convert({
       ],
     });
 
-String renderMarkdown(String name, Transcript t) {
-  final l10n = currentL10n();
-  final b = StringBuffer(l10n.markdownHeader(
-      name, t.lang, l10n.segmentsLabel(t.segments.length)));
-  for (final s in t.segments) {
+/// Markdown с готовой шапкой. Шапку сюда передают: в ней имя записи,
+/// язык и число фрагментов — то есть переведённый текст, а переводы
+/// приходят из Flutter, которого в этом файле быть не должно
+/// (см. `labels.dart`).
+String renderMarkdown(String header, List<Segment> segs) {
+  final b = StringBuffer(header);
+  for (final s in segs) {
     b.writeln('**[${fmtTs(s.from)}]** ${s.text}\n');
   }
   return b.toString();
@@ -205,33 +205,15 @@ String renderMarkdown(String name, Transcript t) {
 /// Раньше содержимое .txt зависело от галки «показывать метки времени»,
 /// то есть настройка вида молча меняла файл. Теперь это разные форматы.
 class ExportFormat {
-  const ExportFormat(this.id, this._suffix);
+  const ExportFormat(this.id, this.bareSuffix);
   final String id;
-  final String _suffix;
 
-  /// Окончание имени файла. У текста с таймкодами оно со словом, и слово
-  /// это интерфейсное: по-английски файл должен называться
-  /// «(timestamps).txt», а не «(таймкоды).txt».
-  String get suffix =>
-      id == 'txt-ts' ? '${currentL10n().timedTextSuffix}.txt' : _suffix;
-
-  /// Считается из [id], а не хранится: имя формата — интерфейсный текст,
-  /// и меняться должно вместе с языком интерфейса, а не быть впаянным
-  /// в константу на старте.
-  String get label {
-    final l10n = currentL10n();
-    return switch (id) {
-      'txt' => l10n.formatPlainTextLabel,
-      'txt-ts' => l10n.formatTimedTextLabel,
-      'srt' => l10n.formatSrtLabel,
-      'vtt' => l10n.formatVttLabel,
-      'json' => l10n.formatJsonLabel,
-      _ => 'Markdown',
-    };
-  }
-
-  String fileName(String stem) => '$stem$suffix';
-  String get ext => suffix.substring(suffix.lastIndexOf('.'));
+  /// Окончание имени файла без перевода. У текста с таймкодами в нём
+  /// стоит слово, а слово это интерфейсное — по-английски файл должен
+  /// называться «(timestamps).txt». Переведённое окончание, имя формата
+  /// и всё прочее, что произносится вслух, живёт в `labels.dart`:
+  /// здесь Flutter появиться не может.
+  final String bareSuffix;
 }
 
 const formatPlainText = ExportFormat('txt', '.txt');
@@ -253,12 +235,20 @@ const exportFormats = [
 ExportFormat formatById(String id) =>
     exportFormats.firstWhere((f) => f.id == id, orElse: () => formatPlainText);
 
-String renderAs(ExportFormat f, Transcript t, {String name = ''}) => switch (f.id) {
+/// Расшифровка в выбранном формате.
+///
+/// [markdownHeader] — готовая шапка markdown-файла; без неё берётся
+/// простая, из одного имени. Приложение подставляет переведённую
+/// (`renderFor` в `labels.dart`), отдельная программа расшифровки
+/// обходится простой: переводов у неё нет.
+String renderAs(ExportFormat f, Transcript t,
+        {String name = '', String? markdownHeader}) =>
+    switch (f.id) {
       'txt' => renderPlain(t.segments, false),
       'txt-ts' => renderPlain(t.segments, true),
       'srt' => renderSrt(t.segments),
       'vtt' => renderVtt(t.segments),
-      'md' => renderMarkdown(name, t),
+      'md' => renderMarkdown(markdownHeader ?? '# $name\n\n', t.segments),
       'json' => renderJson(t),
       _ => renderPlain(t.segments, false),
     };

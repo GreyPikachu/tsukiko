@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/settings.dart';
 import 'package:tsukiko/core/whisper_server.dart';
+import 'package:tsukiko/features/api/api_server.dart' show apiKeySetting;
 import 'package:tsukiko/features/settings/settings_cubit.dart';
 import 'package:tsukiko/features/settings/settings_state.dart';
 import 'package:tsukiko/platform/bridge.dart';
@@ -174,6 +175,28 @@ void main() {
       native.loginItemAllowed = true;
       await cubit.setLoginItem(true);
       expect(cubit.state.loginItem, isTrue);
+    });
+  });
+
+  group('местное API', () {
+    test('включение рождает ключ, выключение его стирает', () async {
+      cubit.setApiEnabled(true);
+      await settle();
+      final key = cubit.state.apiKey;
+      expect(cubit.state.apiEnabled, isTrue);
+      expect(key.length, greaterThan(20));
+      expect(Settings.load()[apiKeySetting], key);
+
+      // Отдельной кнопки «сменить ключ» нет: старый обязан переставать
+      // работать сам, иначе утёкший ключ живёт вечно.
+      cubit.setApiEnabled(false);
+      await settle();
+      expect(cubit.state.apiKey, isEmpty);
+      expect(Settings.load()[apiKeySetting], '');
+
+      cubit.setApiEnabled(true);
+      await settle();
+      expect(cubit.state.apiKey, isNot(key));
     });
   });
 

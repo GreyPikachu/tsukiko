@@ -11,6 +11,7 @@ import '../../platform/os.dart';
 import '../queue/job.dart';
 import '../queue/queue_bloc.dart';
 import '../queue/queue_event.dart';
+import '../../core/labels.dart';
 
 /// Местное API: с tsukiko можно поговорить снаружи — из скрипта, из другой
 /// программы, из нейросетевого агента.
@@ -241,7 +242,11 @@ class ApiServer {
     final res = req.response;
     res.statusCode = code;
     res.headers.contentType = ContentType('application', 'json', charset: 'utf-8');
-    res.write(const JsonEncoder.withIndent('  ').convert(body));
+    // Явно в UTF-8, а не через `write`: тот берёт кодировку из заголовка,
+    // и по умолчанию она latin-1. Стоит когда-нибудь тронуть Content-Type,
+    // и весь русский текст молча уехал бы в вопросительные знаки — а
+    // заметно это только на настоящей записи, не на «Ping.aiff».
+    res.add(utf8.encode(const JsonEncoder.withIndent('  ').convert(body)));
     await res.close();
   }
 
@@ -399,7 +404,7 @@ extension on Job {
         'language': t.lang,
         'segments': t.segments.length,
         'format': format.id,
-        'text': renderAs(format, t, name: name),
+        'text': renderFor(format, t, name: name),
       } else if (raw != null)
         'text': raw,
     };

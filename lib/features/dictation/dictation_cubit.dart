@@ -14,6 +14,7 @@ import '../../core/whisper.dart';
 import '../../platform/os.dart';
 import '../../core/settings.dart';
 import '../../core/app_locale.dart';
+import '../../core/labels.dart';
 
 /// Диктовка целиком: перехват клавиш, запись, сервер с моделью, вставка
 /// текста и то, что из этого видно в панели.

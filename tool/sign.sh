@@ -36,6 +36,14 @@ mkdir -p "$APP/Contents/Helpers"
 cp "$ENGINE/tsukiko-recognizer" "$ENGINE/tsukiko-dictation" "$APP/Contents/Helpers/"
 cp "$ENGINE/whisper.cpp-LICENSE.txt" "$APP/Contents/Resources/"
 
+# Расшифровщик из командной строки. Едет рядом с движком, потому что
+# он такая же вложенная программа: скрипту и нейросетевому агенту нужен
+# текст, а не окно, и запускать ради одного голосового сообщения весь
+# интерфейс с котом — нелепо. Flutter в него не входит вовсе, поэтому
+# `dart compile exe` собирает его за секунды и без движка Flutter.
+dart compile exe bin/tsukiko_transcribe.dart \
+  -o "$APP/Contents/Helpers/tsukiko-transcribe"
+
 # Вложенное подписывается первым: подпись бандла запечатывает то, что внутри.
 find "$APP/Contents/Frameworks" "$APP/Contents/Helpers" -depth 1 -print0 |
   xargs -0 -I{} codesign --force --sign "$ID" --timestamp=none {}
