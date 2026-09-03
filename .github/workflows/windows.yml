@@ -18,6 +18,13 @@ on:
   # Кнопкой: сборка долгая, и гонять её на каждую правку документа незачем.
   workflow_dispatch:
 
+# Новый пуш отменяет прежнюю сборку той же ветки: минуты Windows идут
+# по двойному тарифу, а результат устаревшей работы всё равно никому
+# не нужен.
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     # Не windows-latest: с июня 2026 эта метка ведёт на Visual Studio 2026,
@@ -42,9 +49,15 @@ jobs:
       # а собирается минут двадцать (две конфигурации, долгие шейдеры).
       # Ключ — по скрипту сборки и патчу: в них лежит и версия движка,
       # и всё, что на неё влияет.
+      #
+      # Восстановление и сохранение порознь, а не одним `actions/cache`:
+      # тот сохраняет только при удавшейся работе. А работа падает как
+      # раз на приложении — то есть после того, как движок уже собран,
+      # — и он собирался бы заново каждый раз, пока приложение не
+      # починится. Двадцать минут за правку в одну строку.
       - name: Кэш движка
         id: engine-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: windows/Engine
           key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch') }}
@@ -63,6 +76,14 @@ jobs:
       - name: Движок whisper.cpp
         if: steps.engine-cache.outputs.cache-hit != 'true'
         run: .\tool\engine-win.ps1
+
+      # Сразу, как собрался, и независимо от того, что будет дальше.
+      - name: Движок в кэш
+        if: always() && steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: windows/Engine
+          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch') }}
 
       - run: flutter pub get
 
