@@ -1,11 +1,21 @@
 # Скилл tsukiko: как поставить
 
+**Проще всего — не руками.** Откройте tsukiko → настройки (⌘, или Ctrl+,)
+→ «Приложение» → «Скилл для нейросетей» → кнопка. Приложение само найдёт,
+какие агенты стоят на компьютере, и положит скилл только им — папок
+«на всякий случай» не появится. Заодно так скилл всегда останется той же
+версии, что и программа, которую он зовёт.
+
+Ниже — на случай, если хочется руками или поставить на машину, где
+приложения нет.
+
 Один и тот же `SKILL.md` годится всем перечисленным ниже инструментам.
 Это не совпадение: формат сложился как общий — папка с файлом `SKILL.md`,
 в шапке которого YAML с `name` и `description`, а ниже обычный markdown
 с указаниями. Так его читают и Claude Code, и Codex, и Antigravity,
 и OpenClaw, и Hermes; расходятся они только в том, **где** эту папку
-искать.
+искать. Пути ниже сверены с реестром `vercel-labs/skills` — тем самым,
+по которому раскладывает `npx skills add`.
 
 Поэтому здесь нет ни `openai.yaml`, ни `agents/`, ни прочих необязательных
 файлов, которые понимает только один инструмент: без них скилл работает
@@ -19,17 +29,18 @@
 | Инструмент | Для себя | Для одного проекта |
 |---|---|---|
 | **Claude Code** | `~/.claude/skills/tsukiko/` | `.claude/skills/tsukiko/` |
-| **OpenAI Codex** | `~/.agents/skills/tsukiko/` | `.agents/skills/tsukiko/` |
-| **Google Antigravity** | `~/.gemini/config/skills/tsukiko/` | `.agents/skills/tsukiko/` |
+| **OpenAI Codex** | `~/.codex/skills/tsukiko/` | `.agents/skills/tsukiko/` |
+| **Google Antigravity** | `~/.gemini/antigravity/skills/tsukiko/` | `.agents/skills/tsukiko/` |
 | **OpenClaw** | `~/.openclaw/skills/tsukiko/` | `skills/tsukiko/` в рабочей папке |
+| **OpenCode** | `~/.config/opencode/skills/tsukiko/` | `.agents/skills/tsukiko/` |
 | **Hermes** | `~/.hermes/skills/tsukiko/` | `skills/tsukiko/` в рабочей папке |
 
 Например, для Claude Code и Codex сразу:
 
 ```sh
-mkdir -p ~/.claude/skills ~/.agents/skills
+mkdir -p ~/.claude/skills ~/.codex/skills
 cp -R skills/tsukiko ~/.claude/skills/
-cp -R skills/tsukiko ~/.agents/skills/
+cp -R skills/tsukiko ~/.codex/skills/
 ```
 
 Перезапускать инструмент обычно не нужно — список скиллов он перечитывает

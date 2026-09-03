@@ -10,6 +10,7 @@ import 'package:macos_ui/macos_ui.dart';
 import '../../core/app_locale.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
+import '../../core/skill_install.dart';
 import '../../core/transcript.dart';
 import '../../design/design.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -569,6 +570,59 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         ],
       ];
 
+  /// Скилл для нейросетевых агентов.
+  ///
+  /// Показываем только найденных: разложить папку во все известные места
+  /// было бы проще, но у человека с одним Codex появились бы
+  /// `~/.openclaw/skills/` и `~/.hermes/skills/` на пустом месте — и он
+  /// справедливо решил бы, что программа сорит в его домашней папке.
+  ///
+  /// Ненайденных всё же называем, серым: иначе не понять, искали ли их
+  /// вообще, и человек будет гадать, почему его агента в списке нет.
+  List<Widget> _skillSection(SettingsState s) {
+    final found = [for (final a in skillAgents) if (a.configDir() != null) a];
+    final missing = [for (final a in skillAgents) if (a.configDir() == null) a];
+    return [
+      SectionTitle(l10n.sectionSkill),
+      Hint(l10n.hintSkill, under: true),
+      const SizedBox(height: Gap.item),
+      if (found.isEmpty)
+        Hint(l10n.skillNoAgents)
+      else ...[
+        for (final agent in found)
+          _Field(
+            agent.name,
+            Text(
+              switch (s.skillResult[agent.id]) {
+                SkillOutcome.installed => l10n.skillInstalled,
+                // Место занято чужим скиллом с тем же именем. Затирать
+                // чужую работу хуже, чем не поставить свою.
+                SkillOutcome.foreign => l10n.skillForeign,
+                SkillOutcome.failed => l10n.skillFailed,
+                null => agent.skillDir() ?? '',
+              },
+              style: Type.caption.copyWith(
+                color: s.skillResult[agent.id] == SkillOutcome.installed
+                    ? MacosColors.systemGreenColor
+                    : Surface.secondaryText(context),
+              ),
+            ),
+          ),
+        const SizedBox(height: Gap.item),
+        PushButton(
+          controlSize: ControlSize.regular,
+          secondary: true,
+          onPressed: () => _cubit.installSkillToAgents(found),
+          child: Text(l10n.buttonInstallSkill(found.length)),
+        ),
+      ],
+      if (missing.isNotEmpty) ...[
+        const SizedBox(height: Gap.inner),
+        Hint(l10n.skillNotFound(missing.map((a) => a.name).join(', '))),
+      ],
+    ];
+  }
+
   // ── приложение ────────────────────────────────────────────────────────────
 
   /// Здесь остаётся только то, что не принадлежит ни расшифровщику,
@@ -600,6 +654,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         Hint(l10n.hintDockIcon(appName, os.appIconAreaName, os.menuBarName),
             under: true),
         ..._apiSection(s),
+        ..._skillSection(s),
         SectionTitle(l10n.sectionPermissions),
         Row(
           children: [

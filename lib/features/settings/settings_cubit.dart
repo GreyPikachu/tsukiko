@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart' show rootBundle;
+
 import 'package:bloc/bloc.dart';
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -12,6 +14,7 @@ import '../../core/settings.dart';
 import '../../core/transcript.dart';
 import '../../core/whisper_server.dart';
 import '../api/api_server.dart';
+import '../../core/skill_install.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import 'settings_state.dart';
@@ -299,6 +302,25 @@ class SettingsCubit extends Cubit<SettingsState> {
       apiKeySetting: key,
       apiErrorSetting: '',
     }));
+  }
+
+  /// Поставить скилл найденным агентам.
+  ///
+  /// Пишем в чужие настройки — в `~/.claude/skills` и соседние, — поэтому
+  /// только по нажатию и только тем, кто действительно стоит. Текст берём
+  /// из самого приложения: скилл зовёт `tsukiko-transcribe`, который лежит
+  /// рядом, и разъехаться их версии не должны.
+  Future<void> installSkillToAgents(List<AgentTarget> targets) async {
+    if (targets.isEmpty) return;
+    try {
+      final text = await rootBundle.loadString('skills/tsukiko/SKILL.md');
+      _emit(state.copyWith(skillResult: installSkill(targets, text)));
+    } catch (e) {
+      stderr.writeln('tsukiko: скилл не поставился — $e');
+      _emit(state.copyWith(skillResult: {
+        for (final t in targets) t.id: SkillOutcome.failed,
+      }));
+    }
   }
 
   void setDockIcon(bool v) {

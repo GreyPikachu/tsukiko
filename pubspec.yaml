@@ -71,6 +71,10 @@ flutter:
 
   assets:
     - assets/mascot/
+    # Скилл едет внутри приложения, а не качается из репозитория: так
+    # поставленный скилл всегда той же версии, что и программа, которую
+    # он зовёт. Источник один — тот же файл, что лежит в skills/.
+    - skills/tsukiko/SKILL.md
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -33,6 +33,25 @@ void main() {
       expect(tester.takeException(), isNull, reason: 'вкладка «$label»');
     }
 
+    // Скилл живёт на вкладке «Приложение», ниже сгиба: список длинный,
+    // и до раздела надо доехать. Проверяем, что он там вообще есть, —
+    // иначе кнопка молча не появится ни у кого.
+    await tester.tap(find.text('Приложение'));
+    await tester.pump();
+    // Заголовки разделов рисуются прописными (SectionTitle), поэтому
+    // ищем так, как оно и стоит на экране.
+    // Едем до самой кнопки: раздел без неё — просто текст. Заголовки
+    // разделов рисуются прописными (SectionTitle), поэтому и заголовок
+    // ищем так, как оно стоит на экране.
+    await tester.dragUntilVisible(
+      find.textContaining('Поставить скилл'),
+      find.byType(ListView).first,
+      const Offset(0, -120),
+    );
+    expect(find.textContaining('Поставить скилл'), findsOneWidget);
+    expect(find.text('СКИЛЛ ДЛЯ НЕЙРОСЕТЕЙ'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
     // Таймер опроса разрешений должен уйти вместе с окном.
     await tester.pumpWidget(const SizedBox());
   });

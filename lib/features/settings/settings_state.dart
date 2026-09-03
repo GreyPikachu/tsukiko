@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 import '../../core/app_locale.dart';
 import '../../core/models.dart';
+import '../../core/skill_install.dart';
 import '../../core/whisper_server.dart' show Hotkey;
 
 /// Всё, что видно в окне настроек, — одним неизменяемым снимком.
@@ -22,6 +23,7 @@ class SettingsState extends Equatable {
     this.problem,
     this.allowed = true,
     // диктовка
+    this.skillResult = const {},
     Hotkey? hold,
     Hotkey? toggle,
     this.dictationModel = '',
@@ -131,6 +133,11 @@ class SettingsState extends Equatable {
   final bool apiEnabled;
   final String apiKey;
 
+  /// Чем кончилась последняя установка скилла: агент → что с ним стало.
+  /// Пусто — ещё не ставили. Держим в состоянии, а не в окне: окно
+  /// перерисовывается, а сказанное человеку пропадать не должно.
+  final Map<String, SkillOutcome> skillResult;
+
   /// На каком порту приложение слушает. В окне его не меняют, но назвать
   /// обязаны: без номера порта подсказка «обратитесь к 127.0.0.1» ничего
   /// не значит.
@@ -144,6 +151,7 @@ class SettingsState extends Equatable {
   bool get downloading => downloadProgress != null;
 
   SettingsState copyWith({
+    Map<String, SkillOutcome>? skillResult,
     String? tab,
     List<InstalledModel>? models,
     InstalledModel? vad,
@@ -210,6 +218,7 @@ class SettingsState extends Equatable {
         locale: locale ?? this.locale,
         apiEnabled: apiEnabled ?? this.apiEnabled,
         apiKey: apiKey ?? this.apiKey,
+        skillResult: skillResult ?? this.skillResult,
         apiPort: apiPort ?? this.apiPort,
         apiError: apiError ?? this.apiError,
       );
@@ -244,6 +253,7 @@ class SettingsState extends Equatable {
         locale,
         apiEnabled,
         apiKey,
+        skillResult,
         apiPort,
         apiError,
       ];
