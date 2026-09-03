@@ -40,13 +40,21 @@ void main() {
     });
 
     test('движок выбирается по тому, запустится ли Vulkan-сборка', () {
-      // Проверка идёт по загрузчику Vulkan в системе. Тест бежит на macOS,
-      // где его нет, — значит Vulkan-сборка не предлагается вовсе, а не
-      // предлагается первой: запустить её всё равно не вышло бы, Windows
-      // убивает такой процесс до первой строки кода.
+      // Ответ зависит от машины: есть загрузчик Vulkan — годится
+      // Vulkan-сборка, нет — только процессорная. Проверяем правило,
+      // а не ответ: на сборочной машине SDK стоит, на моей нет, и
+      // закреплять один из двух исходов значило бы ломать тест
+      // переездом на другую машину.
       final names = win.engineNames('tsukiko-recognizer');
-      expect(names.contains('tsukiko-recognizer-vulkan.exe'), isFalse);
-      expect(names.first, 'tsukiko-recognizer-cpu.exe');
+      final vulkan = names.contains('tsukiko-recognizer-vulkan.exe');
+
+      // Vulkan-сборка, если предлагается, идёт первой: она быстрее,
+      // а без видеокарты сама же считает на процессоре.
+      expect(names.first,
+          vulkan ? 'tsukiko-recognizer-vulkan.exe' : 'tsukiko-recognizer-cpu.exe');
+      // Процессорная есть всегда: её запускают там, где vulkan-1.dll нет
+      // вовсе и Vulkan-сборку Windows убила бы на запуске.
+      expect(names, contains('tsukiko-recognizer-cpu.exe'));
       // Имя без суффикса остаётся запасным: подхватится и собранное руками.
       expect(names, contains('tsukiko-recognizer.exe'));
     });

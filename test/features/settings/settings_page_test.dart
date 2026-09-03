@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/platform/bridge.dart';
+import 'package:tsukiko/core/skill_install.dart';
 import 'package:tsukiko/platform/os.dart';
 import 'package:tsukiko/features/settings/settings_page.dart';
 
@@ -40,16 +41,30 @@ void main() {
     await tester.pump();
     // Заголовки разделов рисуются прописными (SectionTitle), поэтому
     // ищем так, как оно и стоит на экране.
-    // Едем до самой кнопки: раздел без неё — просто текст. Заголовки
-    // разделов рисуются прописными (SectionTitle), поэтому и заголовок
+    // Заголовки разделов рисуются прописными (SectionTitle), поэтому
     // ищем так, как оно стоит на экране.
+    //
+    // Едем до конца списка, а не до кнопки: кнопка есть только там, где
+    // нашёлся хоть один нейросетевой агент. На сборочной машине их нет
+    // вовсе, и там на месте кнопки стоит объяснение — раздел обязан
+    // рисоваться в обоих случаях.
     await tester.dragUntilVisible(
-      find.textContaining('Поставить скилл'),
+      find.text('СКИЛЛ ДЛЯ НЕЙРОСЕТЕЙ'),
       find.byType(ListView).first,
       const Offset(0, -120),
     );
-    expect(find.textContaining('Поставить скилл'), findsOneWidget);
     expect(find.text('СКИЛЛ ДЛЯ НЕЙРОСЕТЕЙ'), findsOneWidget);
+
+    // Кнопка стоит ниже списка найденных агентов, то есть ещё дальше
+    // за сгибом: до неё надо доехать отдельно.
+    if (skillAgents.any((a) => a.configDir() != null)) {
+      await tester.dragUntilVisible(
+        find.textContaining('Поставить скилл'),
+        find.byType(ListView).first,
+        const Offset(0, -120),
+      );
+      expect(find.textContaining('Поставить скилл'), findsOneWidget);
+    }
     expect(tester.takeException(), isNull);
 
     // Таймер опроса разрешений должен уйти вместе с окном.

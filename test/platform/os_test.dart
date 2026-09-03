@@ -14,9 +14,12 @@ import 'package:tsukiko/core/labels.dart';
 void main() {
   group('граница ОС', () {
     test('сборка пути и разбор имени согласованы между собой', () {
-      final path = os.join('/a', 'b', 'c.txt');
+      // От настоящей домашней папки, а не от выдуманной «/a»: на Windows
+      // разделитель другой, и проверка ловила бы его, а не согласованность.
+      final dir = os.join(os.home, 'b');
+      final path = os.join(dir, 'c.txt');
       expect(os.basename(path), 'c.txt');
-      expect(os.dirname(path), os.join('/a', 'b'));
+      expect(os.dirname(path), dir);
     });
 
     test('имя без папки остаётся собой', () {
@@ -154,14 +157,18 @@ class _FakeOs implements Os {
   final Os _real;
   final String _root;
 
-  String get legacyDir =>
-      join(_root, 'Library/Application Support/app.dictara/models');
+  // Собираем по частям, а не одной строкой со слэшами: на Windows
+  // разделитель другой, и склеенная строка разошлась бы с тем, что
+  // строит сам переезд.
+  String get legacyDir => join(
+      join(_root, 'Library', 'Application Support'), 'app.dictara', 'models');
 
   @override
   String get home => _root;
 
   @override
-  String get supportDir => join(_root, 'Library/Application Support', bundleId);
+  String get supportDir =>
+      join(join(_root, 'Library', 'Application Support'), bundleId);
 
   @override
   String get modelsDir => join(supportDir, 'models');
