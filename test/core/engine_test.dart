@@ -151,8 +151,10 @@ void main() {
 
     // один формат — файл прямо в папке месяца
     final one = planPlacement(root: root, stem: 'Запись', formatCount: 1, now: when);
-    expect(one.dir, '$root/2026-08');
-    expect(one.pathFor('.txt'), '$root/2026-08/Запись.txt');
+    // Через os.join, а не «/»: на Windows разделитель другой, и
+    // проверка ловила бы не раскладку библиотеки, а сам разделитель.
+    expect(one.dir, os.join(root, '2026-08'));
+    expect(one.pathFor('.txt'), os.join(root, '2026-08', 'Запись.txt'));
 
     // имя занято — добавляем номер, старое не трогаем
     Directory(one.dir).createSync(recursive: true);
@@ -177,7 +179,7 @@ void main() {
 
   test('папка по умолчанию — в Документах, строчными', () {
     expect(appName, 'tsukiko');
-    expect(defaultLibraryPath.endsWith('/Documents/tsukiko'), isTrue);
+    expect(defaultLibraryPath.endsWith(os.join('Documents', appName)), isTrue);
   });
 
 
@@ -257,7 +259,9 @@ void main() {
     expect(parseSubtitles('просто текст\nбез таймкодов'), isNull);
   });
 
-  test('afconvert делает wav из системного звука', () async {
+  // Системный звук и afconvert есть только на macOS. На Windows ту же
+  // работу делает ffmpeg, и проверять её надо там, где он лежит.
+  test('afconvert делает wav из системного звука', skip: !Platform.isMacOS, () async {
     final out = '${Directory.systemTemp.path}/tsukiko_test.wav';
     final res = await os.toWav('/System/Library/Sounds/Ping.aiff', out);
     expect(res, out);
@@ -299,9 +303,12 @@ void main() {
     // Сочетание по умолчанию — не одно на все системы: на Windows
     // клавиши fn у программ нет вовсе, и сочетание с ней там никогда
     // бы не сработало.
-    expect(Hotkey.holdDefault.label, 'fn + ⌃');
-    expect(Hotkey.toggleDefault.label, 'fn + Пробел');
+    if (Platform.isMacOS) {
+      expect(Hotkey.holdDefault.label, 'fn + ⌃');
+      expect(Hotkey.toggleDefault.label, 'fn + Пробел');
+    }
     expect(Hotkey.holdDefault.mods, os.defaultHold.mods);
+    expect(Hotkey.toggleDefault.keys, os.defaultToggle.keys);
     expect(const Hotkey([], keys: ['f13']).label, 'F13');
     expect(const Hotkey([]).label, 'Не назначено');
 
@@ -350,7 +357,7 @@ void main() {
     expect(vadModelUrl, contains('ggml-org/whisper-vad'));
     expect(vadModelUrl.endsWith(vadModelFile), isTrue);
     // Ложится туда же, куда смотрит findModels(), — иначе её нечем подхватить.
-    expect(vadModelPath, '$supportDir/models/$vadModelFile');
+    expect(vadModelPath, os.join(supportDir, 'models', vadModelFile));
     // Но в списке моделей распознавания ей не место: выбрав её, человек
     // получил бы пустую расшифровку.
     expect(looksLikeSpeechModel(vadModelFile), isFalse);
@@ -365,7 +372,7 @@ void main() {
       expect(looksLikeSpeechModel(m.file), isTrue, reason: m.file);
       // Ложится в папку, которую findModels() уже просматривает, — иначе
       // скачанное не появится в списке.
-      expect(m.path, '$supportDir/models/${m.file}');
+      expect(m.path, os.join(supportDir, 'models', m.file));
       expect(m.url, 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${m.file}');
       expect(m.mb, greaterThan(0));
       expect(m.about, isNotEmpty);
