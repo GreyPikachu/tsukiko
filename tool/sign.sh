@@ -44,9 +44,24 @@ cp "$ENGINE/whisper.cpp-LICENSE.txt" "$APP/Contents/Resources/"
 dart compile exe bin/tsukiko_transcribe.dart \
   -o "$APP/Contents/Helpers/tsukiko-transcribe"
 
+# Метка времени от службы Apple, а не `--timestamp=none`.
+#
+# Без неё подпись действительна ровно столько, сколько действителен
+# сертификат, — а сертификат разработчика живёт год. То есть через год
+# приложение перестало бы запускаться у всех, кому его отдали, и
+# у самого автора тоже. С меткой подпись переживает истечение
+# сертификата: она удостоверяет, что подписано было, пока он ещё
+# действовал.
+#
+# Стоит это одного обращения к сети при сборке. Без сети подписать
+# по-прежнему можно — TSUKIKO_NO_TIMESTAMP=1, — но раздавать такое
+# нельзя.
+STAMP=--timestamp
+[ -n "$TSUKIKO_NO_TIMESTAMP" ] && STAMP=--timestamp=none
+
 # Вложенное подписывается первым: подпись бандла запечатывает то, что внутри.
 find "$APP/Contents/Frameworks" "$APP/Contents/Helpers" -depth 1 -print0 |
-  xargs -0 -I{} codesign --force --sign "$ID" --timestamp=none {}
-codesign --force --sign "$ID" --timestamp=none \
+  xargs -0 -I{} codesign --force --sign "$ID" "$STAMP" {}
+codesign --force --sign "$ID" "$STAMP" \
   --entitlements macos/Runner/Release.entitlements "$APP"
 codesign -dv "$APP" 2>&1 | grep -E 'Authority|TeamIdentifier' || true
