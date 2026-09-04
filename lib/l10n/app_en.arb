@@ -268,6 +268,7 @@
   "hintEngineError": "These are the last lines the engine wrote before giving up. If it won't start at all, pass them on in full — that is where the reason shows.",
   "statusErrorCopied": "Error text copied",
   "statusRecognitionFailed": "Couldn't recognize \"{name}\"",
+  "enginePathNotAscii": "The engine cannot open these paths — they contain non-Latin letters and Windows short names (8.3) are disabled on this volume:\n{paths}\nEnable them with \"fsutil 8dot3name set 2\", or move the file somewhere with an all-Latin path.",
   "jobDetailParseFailed": "Couldn't parse the model's response",
   "jobDetailLangSegments": "{lang} · {segments}",
   "statusStopping": "Stopping…",

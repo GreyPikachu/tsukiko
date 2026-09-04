@@ -2,6 +2,8 @@
 /// на командной строке whisper-cli.
 library;
 
+import '../platform/os.dart';
+
 /// С таймкодами модель на разговорной речи скатывается в сплошной нижний
 /// регистр без знаков препинания. Затравка задаёт стиль — знаки возвращаются,
 /// а таймкоды остаются (проверено на этих же записях).
@@ -128,8 +130,14 @@ List<String> noLoopArgs(RunOptions o) => [
 /// [from] — с какой миллисекунды считать. Так продолжается запись,
 /// остановленная посреди: whisper умеет начать с середины и метки времени
 /// отдаёт всё равно от начала файла, так что склеивать ничего не нужно.
+/// Доводы для whisper-cli.
+///
+/// Каждый путь идёт через `os.processPath`: на Windows чужой программе
+/// нельзя отдать путь с кириллицей — её рантайм переводит `argv`
+/// в однобайтовую кодировку системы, и буквы теряются до первой строчки
+/// кода движка (разбор в `os.dart`). На macOS это ничего не меняет.
 List<String> buildArgs(RunOptions o, String wav, String outBase, {int from = 0}) => [
-      '-m', o.model,
+      '-m', os.processPath(o.model),
       '-l', o.lang,
       '-t', '${o.threads}',
       '-pp',
@@ -140,12 +148,13 @@ List<String> buildArgs(RunOptions o, String wav, String outBase, {int from = 0})
       // что-нибудь случайно не собьёт. Без переноса срыв остаётся внутри
       // одного окна, а оттуда его вытаскивает обычный откат по температуре.
       ...noLoopArgs(o),
-      '-of', outBase,
+      '-of', os.processPath(outBase),
       '-oj', // остальные форматы приложение собирает само — из одного источника
 
       if (from > 0) ...['-ot', '$from'],
       if (o.maxLen > 0) ...['-ml', '${o.maxLen}', '-sow'],
-      if (o.vad && o.vadModel.isNotEmpty) ...['--vad', '-vm', o.vadModel],
+      if (o.vad && o.vadModel.isNotEmpty)
+        ...['--vad', '-vm', os.processPath(o.vadModel)],
       if (o.effectivePrompt.isNotEmpty) ...['--prompt', o.effectivePrompt],
-      wav,
+      os.processPath(wav),
     ];

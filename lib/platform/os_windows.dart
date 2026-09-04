@@ -1,5 +1,8 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
+
+import 'package:ffi/ffi.dart';
 
 import 'os.dart';
 
@@ -161,6 +164,77 @@ class WindowsOs implements Os {
         base,
       ];
 
+  // ── путь для чужой программы ──────────────────────────────────────────────
+
+  /// Короткое имя Windows для пути: `C:\Users\Роман\…` →
+  /// `C:\Users\ROMAN~1\…`. Зачем это нужно — разобрано в `os.dart`.
+  ///
+  /// Считаем один раз на путь: модель и папка с временными файлами
+  /// не меняются весь сеанс, а каждый вызов — это обращение к файловой
+  /// системе.
+  @override
+  String processPath(String path) =>
+      _shortPaths[path] ??= _toShortPath(path);
+
+  final _shortPaths = <String, String>{};
+
+  static bool _isAscii(String s) => s.codeUnits.every((c) => c < 128);
+
+  String _toShortPath(String path) {
+    // Латиница и так доедет: не трогаем и в файловую систему не ходим.
+    if (_isAscii(path)) return path;
+    final whole = _shortNameOf(path);
+    if (whole != null) return whole;
+    // Короткое имя есть только у того, что существует: `-of` — это
+    // основа имени будущего файла, а не файл. Сокращаем папку, имя
+    // дописываем своё — наши имена и так из латиницы.
+    final dir = _shortNameOf(dirname(path));
+    return dir == null ? path : join(dir, basename(path));
+  }
+
+  /// Короткое имя или null, если его нет.
+  ///
+  /// Null возвращается в двух случаях, и оба законные: файла нет вовсе,
+  /// либо создание имён 8.3 на этом томе выключено (`fsutil 8dot3name
+  /// query`) — тогда Windows отдаёт длинный путь как есть. Отличать их
+  /// незачем: и там, и там сделать мы ничего не можем, а звать сюда
+  /// с пустыми руками не надо.
+  String? _shortNameOf(String path) {
+    try {
+      final wide = path.toNativeUtf16();
+      try {
+        // Сначала спрашиваем длину: она возвращается вместе с нулём
+        // на конце, и меньшего буфера не хватит.
+        final need = _getShortPathName(wide, nullptr, 0);
+        if (need == 0) return null;
+        final out = calloc<Uint16>(need);
+        try {
+          final got = _getShortPathName(wide, out.cast<Utf16>(), need);
+          if (got == 0 || got >= need) return null;
+          final short = out.cast<Utf16>().toDartString();
+          // Имён 8.3 на томе нет — Windows молча вернула то же самое.
+          // Отдавать это как «сокращённое» нельзя: пусть зовущий видит,
+          // что короткого имени не нашлось.
+          return _isAscii(short) ? short : null;
+        } finally {
+          calloc.free(out);
+        }
+      } finally {
+        calloc.free(wide);
+      }
+    } catch (_) {
+      // Kernel32 не открылся, памяти не хватило — что угодно. Длинный
+      // путь хуже короткого, но лучше исключения посреди расшифровки.
+      return null;
+    }
+  }
+
+  static final _getShortPathName = DynamicLibrary.open('kernel32.dll')
+      .lookupFunction<
+          Uint32 Function(Pointer<Utf16>, Pointer<Utf16>, Uint32),
+          int Function(Pointer<Utf16>, Pointer<Utf16>, int)>(
+      'GetShortPathNameW');
+
   // ── чем система рисует и что она спрашивает ───────────────────────────────
 
   @override
@@ -264,7 +338,10 @@ class WindowsOs implements Os {
       final r = await Process.run(ffmpeg, [
         '-y',
         '-i',
-        src,
+        // Та же беда, что и у движка: ffmpeg — программа на C, и путь
+        // с кириллицей до неё не доезжает. Отсюда и «не расшифровываются
+        // m4a и голосовые» — до whisper дело просто не доходило.
+        processPath(src),
         '-vn',
         '-ar',
         '16000',
@@ -272,7 +349,7 @@ class WindowsOs implements Os {
         '1',
         '-c:a',
         'pcm_s16le',
-        dst,
+        processPath(dst),
       ]);
       return (r.exitCode == 0 && File(dst).existsSync()) ? dst : src;
     } catch (_) {

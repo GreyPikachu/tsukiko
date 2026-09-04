@@ -236,14 +236,24 @@ Future<int> freePort() async {
 
 /// Аргументы запуска whisper-server. Отдельно от `_start` затем, что
 /// проверять их иначе нечем: сервер поднимается один раз и надолго.
+/// Доводы для whisper-server. Пути — через `os.processPath` по той же
+/// причине, что и в `buildArgs`: с кириллицей в пути движок не откроет
+/// ни модель, ни звук (разбор в `os.dart`).
 List<String> serverArgs(RunOptions o, int port) => [
-  '-m', o.model,
+  '-m', os.processPath(o.model),
   '-l', o.lang,
   '-t', '${o.threads}',
   '--host', '127.0.0.1',
   '--port', '$port',
   // Метка своего процесса в аргументах: по ней сирота узнаётся, когда
   // pid-файла уже нет. Сервер читает её только вместе с --convert.
+  //
+  // Через processPath не идёт нарочно, хотя путь тут и есть. Это не путь,
+  // а метка: сервер по ней ничего не открывает, а вот ищем мы её потом
+  // в командной строке процесса (`ourServersIn`) — и командную строку
+  // Windows отдаёт нам широкой, какой мы её и передали. Сократи мы её
+  // здесь — метка перестала бы совпадать сама с собой, и забытый сервер
+  // с полутора гигабайтами больше никогда бы не нашёлся.
   '--tmp-dir', serverMark,
   // Речь в диктовке короткая, таймкоды в ней не нужны и только мешают
   // склеивать текст.
@@ -264,7 +274,8 @@ List<String> serverArgs(RunOptions o, int port) => [
   ...noLoopArgs(o),
   // Тот же VAD, что и у очереди: он вырезает тишину до модели, а
   // значит и повод для галлюцинаций.
-  if (o.vad && o.vadModel.isNotEmpty) ...['--vad', '-vm', o.vadModel],
+  if (o.vad && o.vadModel.isNotEmpty)
+    ...['--vad', '-vm', os.processPath(o.vadModel)],
   if (o.effectivePrompt.isNotEmpty) ...['--prompt', o.effectivePrompt],
 ];
 

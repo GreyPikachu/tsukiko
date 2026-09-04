@@ -86,6 +86,11 @@ class MacOs implements Os {
   @override
   List<String> engineNames(String base) => [base];
 
+  /// Ничего не делаем: `execve` берёт байты довода как есть, и UTF-8
+  /// доезжает до чужой программы целым. Преобразовывать здесь нечего.
+  @override
+  String processPath(String path) => path;
+
   // ── чем система рисует и что она спрашивает ───────────────────────────────
 
   @override

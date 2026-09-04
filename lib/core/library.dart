@@ -150,6 +150,16 @@ bool engineFailedToStart(String path, String name) {
 /// Забыть вычеркнутое. Нужно только тестам: в приложении сеанс один.
 void forgetDeadEngines() => _deadEngines.clear();
 
+/// Путь, который чужая программа на этой системе всё равно не откроет.
+///
+/// Короткие имена Windows чинят кириллицу в пути (см. `Os.processPath`),
+/// но их создание можно на томе отключить — `fsutil 8dot3name query`, —
+/// и тогда Windows молча отдаёт длинный путь. Чужую модель мы перекладывать
+/// не вправе, а человеку гадать не по чему: движок скажет только
+/// «failed to open». Значит надо сказать прямо.
+bool pathBeyondEngine(String path) =>
+    path.isNotEmpty && os.processPath(path).codeUnits.any((c) => c > 127);
+
 String? findWhisper() =>
     bundledEngine(recognizerExeName) ?? os.findExecutable('whisper-cli');
 

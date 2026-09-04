@@ -655,8 +655,27 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
     final base = os.join(_tmp!.path, '${_runSeq++}');
     final jsonFile = File('$base.json');
+    // Чистим на запись, а не на попытку: попыток у одной записи бывает
+    // несколько (упавшую сборку вычёркиваем и берём следующую, начатое
+    // досчитываем с места остановки), и сказанное первой из них — самое
+    // важное, что есть.
+    _engineLog.clear();
     try {
       final wav = await os.toWav(it.path, '$base.wav');
+
+      // Путь, который до движка не доедет, виден заранее — и сказать
+      // об этом надо заранее же. Сам движок скажет только «failed to
+      // open», а по этой строке не догадаться ни что дело в пути, ни что
+      // с ним делать.
+      final stuck = [
+        opts.model,
+        wav,
+        base,
+        if (opts.vad) opts.vadModel,
+      ].where(pathBeyondEngine).toSet();
+      if (stuck.isNotEmpty) {
+        _rememberEngineLine(currentL10n().enginePathNotAscii(stuck.join('\n')));
+      }
 
       // Подготовка звука занимает секунды — за это время сосед мог начать
       // распознавать заново. Проверяем ещё раз вплотную к запуску.
@@ -860,10 +879,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// её на весь сеанс и тут же перезапускаемся на процессорной: человек
   /// видит секундную задержку, а не «не справился» на каждой записи.
   Future<int> _runWhisper(Job job, List<String> args) async {
-    // Чистим на запись, а не на попытку: попыток у одной записи бывает
-    // несколько (упавшую сборку вычёркиваем и берём следующую), и
-    // сказанное первой из них — самое важное, что есть.
-    _engineLog.clear();
     while (true) {
       final exe = findWhisper();
       if (exe == null) return _noEngine;
@@ -943,11 +958,14 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         asking = false;
       }
     });
-    // allowMalformed обязателен: на Windows движок пишет в трубу не только
-    // свой UTF-8, но и ругань системного рантайма в кодировке консоли.
-    // Строгий разбор ронял бы на ней всю подписку — вместе с процентами
-    // и фрагментами, которые пришли бы после.
-    const decoder = Utf8Decoder(allowMalformed: true);
+    // systemEncoding, а не UTF-8: движок — программа на C, и в трубу она
+    // пишет байтами однобайтовой кодировки системы, а не UTF-8. Разбор
+    // как UTF-8 (пусть и с allowMalformed) превращал каждую такую букву
+    // в знак-заглушку — ровно поэтому путь к модели в присланной хозяином
+    // ошибке выглядел как «C:\Users\?????\…» и понять, что дело в пути,
+    // было нельзя. На macOS systemEncoding — это тот же UTF-8, так что
+    // разницы систем здесь не появилось.
+    final decoder = systemEncoding.decoder;
     final out = proc.stdout
         .transform(decoder)
         .transform(const LineSplitter())

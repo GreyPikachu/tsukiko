@@ -45,6 +45,14 @@ dependencies:
   equatable: ^2.1.0
   bloc_concurrency: ^0.3.0
 
+  # Ради одного вызова Windows — GetShortPathNameW (см. os_windows.dart).
+  # Сам dart:ffi встроен в SDK, но выделять память под строки ему нечем:
+  # calloc живёт здесь. Издатель dart.dev — та же команда, что делает Dart,
+  # — лицензия BSD-3, и это одна из самых используемых библиотек в языке
+  # (её тянет за собой почти любой плагин). Своими руками пришлось бы
+  # звать LocalAlloc через ту же ffi, только длиннее.
+  ffi: ^2.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
