@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -52,7 +53,22 @@ class DictationBridge {
   void SendTab(const std::string& tab);
 
   void* GetEncoder() const { return ma_encoder_; }
-  void UpdateAudioLevel(float lvl) { current_level_ = lvl; }
+
+  /// Пересчитать индикатор уровня по очередной порции звука.
+  ///
+  /// Зовётся из потока звукового устройства — там, где порция и её
+  /// длительность известны точно. Считать по времени вызовов из Dart
+  /// нельзя: панель и поповер опрашивают уровень с разной частотой.
+  void PushAudioFrames(const int16_t* samples, uint32_t frames,
+                       uint32_t sample_rate);
+
+  /// Забыть комнату. Комната у каждой записи своя: с оценкой фона от
+  /// прошлого раза индикатор первые секунды врал бы.
+  void ResetLevelMeter() {
+    current_level_ = 0.0f;
+    meter_level_ = 0.0f;
+    has_noise_floor_ = false;
+  }
 
  private:
   DictationBridge();
@@ -185,6 +201,13 @@ class DictationBridge {
   void* ma_device_ = nullptr;
   void* ma_encoder_ = nullptr;
   std::string current_record_path_;
+
+  /// Готовый уровень индикатора, 0…1, и внутренности его расчёта:
+  /// оценка фона комнаты в децибелах и сглаженный уровень. Смысл каждого
+  /// числа разобран у PushAudioFrames в .cpp — там же, где формулы.
   float current_level_ = 0.0f;
+  float meter_level_ = 0.0f;
+  float noise_floor_db_ = 0.0f;
+  bool has_noise_floor_ = false;
   bool is_recording_ = false;
 };
