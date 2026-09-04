@@ -53,6 +53,29 @@ class AgentTarget {
     final config = configDir();
     return config == null ? null : os.join(config, 'skills', appName);
   }
+
+  /// Куда положить скилл, даже если агента на машине пока нет.
+  ///
+  /// Нужно затем, что человек может поставить агента после нас: галку
+  /// у ненайденного он вправе поставить сам, и тогда скилл ляжет туда,
+  /// где агент его будет искать, — в первую из известных папок.
+  String plannedSkillDir() =>
+      os.join(skillDirBase(), 'skills', appName);
+
+  String skillDirBase() =>
+      configDir() ??
+      candidates.first.fold(os.home, (String at, String part) => os.join(at, part));
+
+  /// Уже лежит ли там наш скилл. Именно наш: место могло быть занято
+  /// чужим с тем же именем.
+  bool alreadyInstalled() {
+    try {
+      final file = File(os.join(plannedSkillDir(), 'SKILL.md'));
+      return file.existsSync() && isOurSkill(file.readAsStringSync());
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 /// Агенты, которые понимают скиллы в общем формате `SKILL.md`.
@@ -98,8 +121,9 @@ Map<String, SkillOutcome> installSkill(
 ) {
   final out = <String, SkillOutcome>{};
   for (final agent in targets) {
-    final dir = agent.skillDir();
-    if (dir == null) continue;
+    // Именно [plannedSkillDir]: человек мог выбрать и ненайденного агента,
+    // потому что собирается поставить его следом. Папку тогда заводим сами.
+    final dir = agent.plannedSkillDir();
     try {
       final file = File(os.join(dir, 'SKILL.md'));
       if (file.existsSync() && !isOurSkill(file.readAsStringSync())) {

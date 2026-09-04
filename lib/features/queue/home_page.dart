@@ -358,6 +358,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   // ── как называется занятость ──────────────────────────────────────────────
 
+  /// Модели нет вовсе. «Модель свободна» в этом случае — неправда: свободна
+  /// не она, а место, где её нет. Человек читает это как «всё готово»
+  /// и удивляется первой же неудаче.
+  bool _noModel(QueueState s) => s.models.isEmpty && s.shown.model.isEmpty;
+
   /// Кто держит модель. Занять её могут только двое, и оба свои:
   /// расшифровщик и диктовка.
   String _modelUseLabel(QueueState s) => s.transcribing
@@ -365,7 +370,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       : switch (s.dictation) {
           DictationStatus.busy => l10n.modelUseLabelDictation,
           DictationStatus.resting => l10n.modelUseLabelResting,
-          DictationStatus.away => l10n.modelUseLabelFree,
+          DictationStatus.away =>
+            _noModel(s) ? l10n.modelUseLabelNone : l10n.modelUseLabelFree,
         };
 
   String _modelUseDetail(QueueState s) => s.transcribing
@@ -373,7 +379,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       : switch (s.dictation) {
           DictationStatus.busy => l10n.modelUseDetailDictation,
           DictationStatus.resting => l10n.modelUseDetailResting,
-          DictationStatus.away => l10n.modelUseDetailFree,
+          DictationStatus.away =>
+            _noModel(s) ? l10n.modelUseDetailNone : l10n.modelUseDetailFree,
         };
 
   static const _cmd = SingleActivator(LogicalKeyboardKey.keyO, meta: true);
@@ -419,7 +426,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   Widget _window(QueueState s) {
     final menus = _menus(s);
     final window = PlatformMenuBar(menus: menus, child: _windowBody(s));
-    if (Platform.isMacOS) return window;
+    if (os.hasSystemMenuBar) return window;
     return CallbackShortcuts(
       bindings: shortcutsFromMenus(menus, swapMetaForControl: true),
       child: window,
@@ -432,10 +439,13 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           // стол — и делает это родным плагином, которого на Windows
           // нет вовсе. Оставить включённой значит получить там
           // MissingPluginException на каждой перерисовке.
-          disableWallpaperTinting: !Platform.isMacOS,
+          disableWallpaperTinting: !os.hasWindowMaterial,
           sidebar: Sidebar(
             minWidth: 248,
             startWidth: 276,
+            // Там, где материала окна нет, боковая колонка остаётся
+            // прозрачной — то есть чёрной. Красим сами.
+            decoration: Surface.sidebarDecoration(context),
             builder: (context, controller) => _queue(s, controller),
             bottom: _queueButtons(s),
           ),
@@ -444,6 +454,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             startWidth: 312,
             maxWidth: 380,
             shownByDefault: true,
+            decoration: Surface.sidebarDecoration(context),
             builder: (context, controller) => _inspector(s, controller),
           ),
           child: MacosScaffold(
@@ -1053,8 +1064,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     final own = s.lead?.overrides;
     return ListView(
       controller: controller,
+      // Сверху отступа нет: колонка и так начинается под панелью
+      // инструментов, отодвинутая на её высоту. Свои восемь точек
+      // поверх этого читались лишней пустотой над первой же строкой.
       padding: const EdgeInsets.fromLTRB(
-          Gap.edgeNarrow, Gap.inner, Gap.edgeNarrow, Gap.section),
+          Gap.edgeNarrow, 0, Gap.edgeNarrow, Gap.section),
       children: [
         ScopeBanner(
           selection: s.selected.length,

@@ -1051,6 +1051,8 @@
   },
   "modelUseLabelResting": "Модель в памяти",
   "modelUseLabelFree": "Модель свободна",
+  "modelUseLabelNone": "Модели нет",
+  "modelUseDetailNone": "Модель ещё не скачана: распознавать нечем. Настройки → «Склад моделей».",
   "modelUseDetailResting": "Диктовка держит модель наготове, но сейчас молчит. Запустите распознавание — она уступит.",
   "modelUseDetailFree": "Модель никем не занята.",
   "tooltipWaitingForDictation": "Ждём, пока диктовка договорит · остановить ⌘.",
@@ -1060,6 +1062,12 @@
   },
   "@modelUseLabelFree": {
     "description": "Подпись значка: модель никем не занята."
+  },
+  "@modelUseLabelNone": {
+    "description": "Подпись значка: модели нет вовсе, распознавать нечем."
+  },
+  "@modelUseDetailNone": {
+    "description": "Подсказка к значку, когда модели нет вовсе."
   },
   "@modelUseDetailResting": {
     "description": "Подсказка к значку в этом состоянии."
@@ -1173,7 +1181,12 @@
     }
   },
   "sectionSkill": "Скилл для нейросетей",
-  "hintSkill": "Агент с этим скиллом сам расшифрует голосовое, которое ему прислали, — через tsukiko, на этой же машине. Ставится только тем агентам, что найдены на компьютере.",
+  "hintSkill": "Агент с этим скиллом сам расшифрует голосовое, которое ему прислали, — через tsukiko, на этой же машине.",
+  "skillInstalledFor": "Установлено для:",
+  "skillNobodyYet": "пока никому",
+  "skillCanInstallFor": "Можно установить для",
+  "skillAgentMissing": "не найден",
+  "buttonInstallSkillChosen": "Поставить скилл",
   "buttonInstallSkill": "{count, plural, one{Поставить скилл} other{Поставить скилл во все найденные}}",
   "@buttonInstallSkill": {
     "placeholders": {

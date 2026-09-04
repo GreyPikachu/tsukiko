@@ -116,7 +116,13 @@ class _PanelState extends State<_Panel> {
       unawaited(context.read<DictationCubit>().reportHeight(h));
     });
 
-    return SingleChildScrollView(
+    // Фон панели. На macOS под слоем Flutter стоит материал окна, и
+    // красить нечего; на Windows под ним нет ничего — панель выходила
+    // чёрным прямоугольником у значка.
+    final ground = Surface.sidebar(context);
+    return ColoredBox(
+      color: ground ?? const Color(0x00000000),
+      child: SingleChildScrollView(
       child: Column(
         key: _content,
         mainAxisSize: MainAxisSize.min,
@@ -137,6 +143,7 @@ class _PanelState extends State<_Panel> {
           const _Divider(),
           _Footer(s),
         ],
+      ),
       ),
     );
   }

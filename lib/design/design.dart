@@ -167,6 +167,21 @@ class Surface {
   static Color secondaryText(BuildContext context) =>
       isDark(context) ? const Color(0x99FFFFFF) : const Color(0x8C000000);
 
+  /// Фон боковой колонки и поповера там, где системного материала окна
+  /// нет вовсе (Windows). На macOS возвращает null — материал должен быть
+  /// виден, и закрашивать его нельзя.
+  ///
+  /// Не «серый вместо чёрного» ради галочки: без этого «Очередь пуста»
+  /// читалась на чёрном провале посреди светлого окна.
+  static Color? sidebar(BuildContext context) => os.hasWindowMaterial
+      ? null
+      : (isDark(context) ? const Color(0xFF232326) : const Color(0xFFF1F1F4));
+
+  static BoxDecoration? sidebarDecoration(BuildContext context) {
+    final color = sidebar(context);
+    return color == null ? null : BoxDecoration(color: color);
+  }
+
   /// Цвет подсказки в пустом поле ввода. Умолчание macos_ui —
   /// CupertinoColors.placeholderText, а он разрешается через CupertinoTheme,
   /// которого под MacosApp нет: на тёмной теме получалось тёмное на тёмном.
@@ -239,6 +254,50 @@ class Hint extends StatelessWidget {
             height: 1.4,
           ),
         ),
+      );
+}
+
+/// Раскрывающийся раздел: заголовок с треугольником, содержимое под ним.
+///
+/// Нужен там, где раздел важен немногим. Разворачивать его по умолчанию
+/// значит отнимать место и внимание у всех ради тех, кому он нужен;
+/// прятать совсем — значит не дать его найти вовсе.
+class Disclosure extends StatefulWidget {
+  const Disclosure({super.key, required this.label, required this.child});
+  final String label;
+  final Widget child;
+
+  @override
+  State<Disclosure> createState() => _DisclosureState();
+}
+
+class _DisclosureState extends State<Disclosure> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _open = !_open),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                MacosIcon(
+                  _open
+                      ? CupertinoIcons.chevron_down
+                      : CupertinoIcons.chevron_right,
+                  size: 11,
+                  color: Surface.secondaryText(context),
+                ),
+                const SizedBox(width: 6),
+                Text(widget.label, style: Type.control),
+              ],
+            ),
+          ),
+          if (_open) widget.child,
+        ],
       );
 }
 
@@ -534,7 +593,13 @@ class ModelDownload extends StatelessWidget {
         children: [
           Text(AppLocalizations.of(context).downloadingTitle(title), style: Type.control),
           const SizedBox(height: 7),
-          ProgressBar(value: percent.toDouble()),
+          // Во всю ширину: у ProgressBar из macos_ui задана только
+          // минимальная ширина в 85 точек, и в столбце он ровно её
+          // и занимал — треть панели, будто загрузка чужая.
+          SizedBox(
+            width: double.infinity,
+            child: ProgressBar(value: percent.toDouble()),
+          ),
           const SizedBox(height: 7),
           Row(
             children: [
