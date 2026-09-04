@@ -39,6 +39,12 @@ add_definitions(-DUNICODE -D_UNICODE)
 # of modifying this function.
 function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_17)
+  # Исходники у нас в UTF-8, а MSVC без этого ключа читает их в кодовой
+  # странице системы. Русские подписи — заголовок окна настроек, подсказка
+  # у значка, пункты его меню — доезжали до экрана крокозябрами, причём
+  # разными на сборочной машине и на машине человека. Ключ говорит
+  # компилятору правду и про исходник, и про то, в чём хранить строки.
+  target_compile_options(${TARGET} PRIVATE /utf-8)
   target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100")
   target_compile_options(${TARGET} PRIVATE /EHsc)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")

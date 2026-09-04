@@ -138,6 +138,21 @@ jobs:
       # Разбор и тесты идут до сборки: падать лучше за минуту, чем
       # за двадцать. И идут они именно здесь, на Windows, — половина
       # наших тестов про пути и разделители, а на macOS такое не видно.
+      # ВРЕМЕННО. Выясняем, как Dart собирает командную строку на Windows:
+      # добавляет ли он кавычки вокруг каждого довода. От ответа зависит,
+      # как звать `explorer /select,`, — «Показать запись» на настоящей
+      # Windows открывает «Документы» вместо папки с записью.
+      - name: Как Dart кавычит доводы
+        run: |
+          @'
+          import 'dart:io';
+          Future<void> main() async {
+            final r = await Process.run('cmd', ['/c', 'echo', r'/select,C:\a b\c.txt']);
+            stdout.write('ВИДНО: ${r.stdout}');
+          }
+          '@ | Set-Content -Encoding UTF8 probe_quoting.dart
+          dart run probe_quoting.dart 2>&1 | Tee-Object -FilePath logs/quoting.txt
+
       - name: Разбор
         run: flutter analyze 2>&1 | Tee-Object -FilePath logs/analyze.txt
 
