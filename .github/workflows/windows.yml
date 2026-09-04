@@ -38,7 +38,7 @@ jobs:
       VULKAN_VERSION: 1.4.357.0
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: subosito/flutter-action@v2
         with:
@@ -57,7 +57,7 @@ jobs:
       # починится. Двадцать минут за правку в одну строку.
       - name: Кэш движка
         id: engine-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: windows/Engine
           key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch') }}
@@ -80,21 +80,70 @@ jobs:
       # Сразу, как собрался, и независимо от того, что будет дальше.
       - name: Движок в кэш
         if: always() && steps.engine-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: windows/Engine
           key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch') }}
+
+      # Аудиодекодер: whisper читает сам только wav, mp3, flac и ogg
+      # с Vorbis, а в разговор приходят голосовые (Opus), записи
+      # с диктофона (AAC) и дорожки из видео. Кэш свой, отдельно
+      # от движка: версии у них разные и меняются порознь.
+      - name: Кэш ffmpeg
+        id: ffmpeg-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            windows/Engine/ffmpeg.exe
+            windows/Engine/ffmpeg-LICENSE.txt
+            windows/Engine/.ffmpeg-version
+          key: ffmpeg-${{ runner.os }}-${{ hashFiles('tool/build-ffmpeg.sh') }}
+
+      # Собирается в MSYS2: своей сборочной среды в духе Unix у ffmpeg
+      # нет, configure — обычный шелл-скрипт.
+      - uses: msys2/setup-msys2@v2
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            base-devel
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-nasm
+            tar
+            xz
+
+      - name: ffmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: ./tool/build-ffmpeg.sh
+
+      - name: ffmpeg в кэш
+        if: always() && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            windows/Engine/ffmpeg.exe
+            windows/Engine/ffmpeg-LICENSE.txt
+            windows/Engine/.ffmpeg-version
+          key: ffmpeg-${{ runner.os }}-${{ hashFiles('tool/build-ffmpeg.sh') }}
+
+      # Журналы пишем в файлы по ходу дела: разбирать упавшую сборку
+      # удобнее скачанным файлом, чем листая её в браузере.
+      - name: Папка журналов
+        run: New-Item -ItemType Directory -Force -Path logs | Out-Null
 
       - run: flutter pub get
 
       # Разбор и тесты идут до сборки: падать лучше за минуту, чем
       # за двадцать. И идут они именно здесь, на Windows, — половина
       # наших тестов про пути и разделители, а на macOS такое не видно.
-      - run: flutter analyze
+      - name: Разбор
+        run: flutter analyze 2>&1 | Tee-Object -FilePath logs/analyze.txt
 
       - name: Приложение
         id: app
-        run: flutter build windows --release
+        run: flutter build windows --release 2>&1 | Tee-Object -FilePath logs/build.txt
 
       # Расшифровка из командной строки: ею пользуется скилл для
       # нейросетевых агентов, и Flutter в неё не входит.
@@ -111,7 +160,8 @@ jobs:
       # и разделители, и на Windows они падают иначе, чем на macOS, —
       # но узнать, что нативная часть вообще компилируется, важнее.
       # Упавший тест уронит работу, а собранное всё равно приложится.
-      - run: flutter test
+      - name: Тесты
+        run: flutter test --reporter expanded 2>&1 | Tee-Object -FilePath logs/test.txt
 
       # Установщик собирается только когда есть аудиодекодер: без него
       # приложение не переложит m4a и opus в WAV, и раздавать такую
@@ -143,15 +193,24 @@ jobs:
       # ровно в тот раз, когда собранное нужнее всего, его бы и не было.
       - name: Собранное
         if: always() && steps.app.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tsukiko-windows
           path: build/windows/x64/runner/Release/
           if-no-files-found: error
 
+      # И при удаче, и при провале: провал важнее.
+      - name: Журналы
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tsukiko-windows-logs
+          path: logs/
+          if-no-files-found: ignore
+
       - name: Установщик в артефакты
         if: steps.installer.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tsukiko-setup
           path: build/installer/tsukiko-setup.exe

@@ -1,83 +1,41 @@
-# Подготовка минимального аудио-декодера ffmpeg.exe (LGPL) для Windows.
+# Аудиодекодер для Windows: проверка и указание, чем его собрать.
 #
-# Зачем нужен:
-# На macOS перекладывание звука в 16 кГц моно WAV делает системный afconvert.
-# На Windows системного конвертера нет, а whisper.cpp не читает Opus (голосовые
-# Telegram/WhatsApp), AAC/M4A (диктофон iPhone) и видеофайлы (MP4/MKV).
+# Сама сборка — в tool/build-ffmpeg.sh: у ffmpeg своей сборочной среды
+# в духе Unix нет, configure это обычный шелл-скрипт, и запускать его
+# надо в MSYS2. Держать два описания одной сборки — верный способ
+# развести их при первой же правке, поэтому здесь только проверка.
 #
-# Этот скрипт подготавливает сверхлегковесный ffmpeg.exe (~5-10 МБ):
-# - строго под лицензией LGPL (без флагов --enable-gpl / --enable-nonfree);
-# - отключены все видеокодеки, сетевые протоколы и энкодеры (--disable-everything);
-# - включены только аудиодекодеры: AAC, Opus, Vorbis, FLAC, MP3, ALAC, WMA, PCM;
-# - результат копируется в windows/Engine/ffmpeg.exe вместе с текстом лицензии LGPL.
+# Зачем декодер нужен: whisper читает сам только wav, mp3, flac и ogg
+# с Vorbis. А в разговор приходит другое — голосовые из мессенджеров
+# (Opus в ogg), записи с диктофона (AAC в m4a), дорожки из видео.
+# На macOS их перекладывает системный afconvert, на Windows системного
+# конвертера нет, а Media Foundation не читает Opus в ogg без отдельного
+# расширения из магазина.
 
 [CmdletBinding()]
-param (
-    [switch]$BuildFromSource
-)
+param()
 
 $ErrorActionPreference = "Stop"
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RootDir = Split-Path -Parent $ScriptDir
+$RootDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $RootDir
 
 $OUT = "windows/Engine"
-if (-not (Test-Path $OUT)) {
-    New-Item -ItemType Directory -Force -Path $OUT | Out-Null
+
+if (Test-Path "$OUT/ffmpeg.exe") {
+    $size = [math]::Round((Get-Item "$OUT/ffmpeg.exe").Length / 1MB, 1)
+    Write-Host "Аудиодекодер на месте: $OUT/ffmpeg.exe ($size МБ)"
+    exit 0
 }
 
-$LICENSE_DST = "$OUT/ffmpeg-LICENSE.txt"
+Write-Error @"
+Нет $OUT/ffmpeg.exe — без него Windows не расшифрует голосовые (Opus),
+записи с диктофона (m4a) и дорожки из видео.
 
-# Текст лицензии LGPL v2.1/v3 обязателен рядом с бинарником:
-if (-not (Test-Path $LICENSE_DST)) {
-    $LgplUrl = "https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/COPYING.LGPLv2.1"
-    try {
-        Invoke-WebRequest -Uri $LgplUrl -OutFile $LICENSE_DST
-    } catch {
-        Set-Content -Path $LICENSE_DST -Value "FFmpeg is licensed under the GNU Lesser General Public License (LGPL) version 2.1 or later. See https://ffmpeg.org/legal.html"
-    }
-}
+Соберите его в MSYS2 (mingw64):
 
-if ($BuildFromSource) {
-    Write-Host "Сборка минимального FFmpeg из исходников (требуется MSYS2 / MinGW-w64)..."
-    $WORK = "build/ffmpeg"
-    if (-not (Test-Path $WORK)) { New-Item -ItemType Directory -Force -Path $WORK | Out-Null }
-    
-    # Конфигурация для минимального audio-only LGPL декодера:
-    $CONFIG_ARGS = @(
-        "--prefix=$RootDir/$OUT",
-        "--disable-everything",
-        "--disable-network",
-        "--disable-autodetect",
-        "--disable-doc",
-        "--enable-small",
-        "--enable-protocol=file",
-        "--enable-demuxer=wav,ogg,matroska,mov,mp4,aac,mp3,flac,avi,asf,aiff",
-        "--enable-decoder=aac,opus,vorbis,flac,mp3,alac,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,wmalossless,wmapro,wmav1,wmav2,wmavoice",
-        "--enable-muxer=wav",
-        "--enable-encoder=pcm_s16le",
-        "--enable-filter=aresample,aformat"
-    )
-    Write-Host "Флаги сборки: $($CONFIG_ARGS -join ' ')"
-    Write-Host "Запустите ./configure $($CONFIG_ARGS -join ' ') && make -j в окружении MSYS2."
-}
+    ./tool/build-ffmpeg.sh
 
-# Этот скрипт пока НЕ собирает ffmpeg сам: он готовит лицензию и печатает
-# флаги. Молчать об этом нельзя. Без ffmpeg.exe приложение на Windows
-# не переложит m4a и opus в WAV, whisper получит формат, который
-# не читает, и расшифровка сорвётся на ровном месте — а сборка при этом
-# завершится «успешно».
-if (-not (Test-Path "$OUT/ffmpeg.exe")) {
-    Write-Error @"
-Нет $OUT/ffmpeg.exe — без него Windows не сможет расшифровывать m4a, opus
-и дорожки из видео (wav, mp3, flac и ogg whisper читает сам).
-
-Положите туда минимальную LGPL-сборку ffmpeg (только аудиодекодеры,
-без --enable-gpl и --enable-nonfree) — флаги configure напечатаны выше
-по ключу -BuildFromSource.
+Это же делает сборка на GitHub — .github/workflows/windows.yml, — и
+результат там кладётся в кэш, так что собирается он один раз.
 "@
-    exit 1
-}
-
-Write-Host "Аудиодекодер на месте: $OUT/ffmpeg.exe"
-
+exit 1
