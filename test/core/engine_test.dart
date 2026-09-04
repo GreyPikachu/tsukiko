@@ -12,6 +12,8 @@ import 'package:tsukiko/core/whisper.dart';
 import 'package:tsukiko/platform/os.dart';
 import 'package:tsukiko/core/labels.dart';
 
+import '../support/fake_os.dart';
+
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
   // TestWidgetsFlutterBinding подменяет HttpOverrides и заворачивает
@@ -655,6 +657,36 @@ void _hotkeyTaps() {
     // Своему движку ссылка не нужна: он уже назван как надо.
     expect(runnableWhisper('/x/$recognizerExeName', recognizerExeName),
         '/x/$recognizerExeName');
+  });
+
+  group('несработавшая сборка движка вычёркивается на весь сеанс', () {
+    useTempSupportDir('tsukiko-engine');
+    setUp(forgetDeadEngines);
+    tearDown(forgetDeadEngines);
+
+    test('после вычёркивания берётся следующая по списку', () {
+      // Vulkan-сборку роняет старый драйвер видеокарты — не на запуске
+      // приложения, а на каждой записи. Без вычёркивания она выбиралась
+      // бы снова и снова, и распознавание не работало бы никогда.
+      Directory(os.engineDir).createSync(recursive: true);
+      final names = os.engineNames(recognizerExeName);
+      if (names.length < 2) return; // на macOS сборка одна, выбирать не из чего
+      for (final name in names) {
+        File(os.join(os.engineDir, name)).writeAsStringSync('');
+      }
+      final first = bundledEngine(recognizerExeName);
+      expect(first, os.join(os.engineDir, names.first));
+
+      expect(engineFailedToStart(first!, recognizerExeName), isTrue);
+      expect(bundledEngine(recognizerExeName), os.join(os.engineDir, names[1]));
+
+      // Вычеркнули все — предлагать больше нечего, и об этом честно
+      // сообщается: зовущему незачем пробовать ещё раз.
+      for (final name in names.skip(1)) {
+        engineFailedToStart(os.join(os.engineDir, name), recognizerExeName);
+      }
+      expect(bundledEngine(recognizerExeName), isNull);
+    });
   });
 
   test('продолжение считает с места остановки, а не с начала записи', () {

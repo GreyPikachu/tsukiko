@@ -11,6 +11,7 @@
 #include <cmath>
 #include <chrono>
 #include <iostream>
+#include <utility>
 
 #define MINIAUDIO_IMPLEMENTATION
 #define MA_NO_FLAC
@@ -620,11 +621,47 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
              k == VK_LWIN || k == VK_RWIN;
     };
 
+    // Зажата ли клавиша — с поправкой на само это событие.
+    //
+    // Отсюда росли все три беды разом: «сработало не с первого раза»,
+    // «пара секунд до начала записи» и «запись не заканчивается».
+    // Низкоуровневый хук система зовёт ДО того, как обновит таблицу
+    // состояний клавиш, — про клавишу самого события GetAsyncKeyState
+    // отвечает по-старому. Поэтому Ctrl+Alt опознавалось не на нажатии
+    // Alt, а на следующем событии клавиатуры, какое бы оно ни было:
+    // не нажмёшь ничего ещё — запись не начнётся вовсе, а отпустишь —
+    // не кончится. На macOS такого нет: CGEventTap отдаёт готовый
+    // flags-снимок вместе с событием.
+    //
+    // Про клавишу события отвечаем сами, про остальные — как раньше.
+    // Своей таблицы не заводим: пропущенное отпускание (чужой хук съел,
+    // окно UAC перехватило) залипало бы в ней навсегда.
+    auto pressed = [](int k) { return (GetAsyncKeyState(k) & 0x8000) != 0; };
+    auto twin = [](int k) -> std::pair<int, int> {
+      switch (k) {
+        case VK_CONTROL: return {VK_LCONTROL, VK_RCONTROL};
+        case VK_MENU: return {VK_LMENU, VK_RMENU};
+        case VK_SHIFT: return {VK_LSHIFT, VK_RSHIFT};
+        default: return {k, k};
+      }
+    };
+    auto held = [&](int k) -> bool {
+      const auto pair = twin(k);
+      const bool self = (k == vk || pair.first == vk || pair.second == vk);
+      if (!self) return pressed(k);
+      if (isDown) return true;
+      if (!isUp) return pressed(k);
+      // Отпустили одну из пары — вторая могла остаться зажатой, и про
+      // неё система уже не врёт.
+      const int other = (vk == pair.first) ? pair.second : pair.first;
+      return other != vk && pressed(other);
+    };
+
     std::set<std::string> currentMods;
-    if (GetAsyncKeyState(VK_CONTROL) & 0x8000) currentMods.insert("ctrl");
-    if (GetAsyncKeyState(VK_MENU) & 0x8000) currentMods.insert("alt");
-    if (GetAsyncKeyState(VK_SHIFT) & 0x8000) currentMods.insert("shift");
-    if ((GetAsyncKeyState(VK_LWIN) & 0x8000) || (GetAsyncKeyState(VK_RWIN) & 0x8000)) currentMods.insert("cmd");
+    if (held(VK_CONTROL)) currentMods.insert("ctrl");
+    if (held(VK_MENU)) currentMods.insert("alt");
+    if (held(VK_SHIFT)) currentMods.insert("shift");
+    if (held(VK_LWIN) || held(VK_RWIN)) currentMods.insert("cmd");
 
     if (bridge.is_capturing_) {
       const ULONGLONG now = GetTickCount64();
@@ -648,7 +685,7 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
       const bool anythingHeld =
           !currentMods.empty() ||
           std::any_of(bridge.captured_keys_.begin(), bridge.captured_keys_.end(),
-                      [](int k) { return (GetAsyncKeyState(k) & 0x8000) != 0; });
+                      [&](int k) { return held(k); });
       if (anythingHeld ||
           (bridge.captured_keys_.empty() && bridge.captured_mods_.empty())) {
         return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -693,7 +730,7 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
     // Сопоставление с hold_spec_ и toggle_spec_
     auto keysDown = [&](const HotkeySpec& spec) -> bool {
       for (int k : spec.keys) {
-        if (!(GetAsyncKeyState(k) & 0x8000)) return false;
+        if (!held(k)) return false;
       }
       return true;
     };

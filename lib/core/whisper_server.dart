@@ -347,6 +347,8 @@ class WhisperServer {
     _model = o.model;
     final proc = await Process.start(
         runnableWhisper(exe, dictationExeName)!, serverArgs(o, _port));
+    _startedExe = exe;
+    _startedWith = o;
     _proc = proc;
     // Вывод сервера никому не нужен, но не читать его нельзя: труба
     // заполнится, и процесс встанет.
@@ -367,13 +369,34 @@ class WhisperServer {
     onChanged?.call();
   }
 
+  /// Чем и с чем поднят нынешний сервер. Нужно на случай, если сборка
+  /// движка вовсе не запускается: тогда её вычёркивают на весь сеанс,
+  /// а сервер поднимают заново — с теми же настройками, а не с чем попало.
+  String? _startedExe;
+  RunOptions? _startedWith;
+
   /// Порт открывается только после того, как модель прочитана целиком —
   /// проверено: 0,75 с на прогретом кеше, до 2 с на холодном. Поэтому
   /// «порт отвечает» и есть «модель готова».
   Future<bool> waitReady({Duration timeout = const Duration(seconds: 30)}) async {
     final until = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(until)) {
-      if (_proc == null) return false;
+      // Процесс умер, не открыв порта. На Windows это чаще всего значит,
+      // что Vulkan-сборку убил драйвер видеокарты: вычёркиваем её и
+      // поднимаемся заново на процессорной. Без этого диктовка молчала
+      // бы на каждой фразе до конца жизни установки.
+      if (_proc == null) {
+        final dead = _startedExe;
+        final options = _startedWith;
+        _startedExe = null;
+        if (dead == null ||
+            options == null ||
+            !engineFailedToStart(dead, dictationExeName)) {
+          return false;
+        }
+        await ensureUp(options);
+        return _proc != null && await waitReady(timeout: timeout);
+      }
       try {
         final s = await Socket.connect(InternetAddress.loopbackIPv4, _port,
             timeout: const Duration(milliseconds: 300));

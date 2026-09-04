@@ -5,6 +5,19 @@
 
 #include <optional>
 
+#include "flutter/generated_plugin_registrant.h"
+#include "resource.h"
+
+namespace {
+
+/// Значок приложения для окон, которые заводятся не через Win32Window.
+/// Без него Windows рисует в заголовке и в Alt+Tab пустой лист бумаги.
+HICON AppIcon() {
+  return LoadIconW(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON));
+}
+
+}  // namespace
+
 namespace {
 
 constexpr wchar_t kClassName[] = L"TsukikoPanelWindow";
@@ -56,6 +69,12 @@ flutter::BinaryMessenger* PanelWindow::Create(
     controller_ = nullptr;
     return nullptr;
   }
+  // Плагины ставятся на каждый движок отдельно: регистратор принадлежит
+  // движку, а не процессу. Без этого file_selector и desktop_drop живут
+  // только в главном окне, а в остальных любой их вызов кончается
+  // MissingPluginException — так и не работала кнопка «выбрать другую
+  // папку» в настройках.
+  RegisterPlugins(controller_->engine());
   // Как это делает Win32Window для главного окна: вид движка становится
   // содержимым окна и растягивается на всю его клиентскую часть.
   HWND view = controller_->view()->GetNativeWindow();
@@ -170,6 +189,7 @@ void SettingsWindow::Show(
   wc.hInstance = GetModuleHandle(nullptr);
   wc.lpszClassName = kSettingsClassName;
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+  wc.hIcon = AppIcon();
   RegisterClassW(&wc);
 
   // Ни развернуть, ни растянуть: раскладка настроек рассчитана на один
@@ -193,6 +213,7 @@ void SettingsWindow::Show(
     window_ = nullptr;
     return;
   }
+  RegisterPlugins(controller_->engine());
   HWND view = controller_->view()->GetNativeWindow();
   SetParent(view, window_);
   MoveWindow(view, 0, 0, kSettingsWidth, kSettingsHeight, TRUE);
@@ -219,6 +240,11 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
     if (message == WM_CLOSE) {
       ShowWindow(hwnd, SW_HIDE);
       return 0;
+    }
+    // Клавиатура достаётся виду Flutter, а не пустой рамке вокруг него:
+    // иначе в полях настроек нельзя набрать ни буквы.
+    if (message == WM_ACTIVATE && self->controller_ && self->controller_->view()) {
+      SetFocus(self->controller_->view()->GetNativeWindow());
     }
     if (self->controller_) {
       std::optional<LRESULT> result =
@@ -271,6 +297,7 @@ void HudWindow::Show(
       window_ = nullptr;
       return;
     }
+    RegisterPlugins(controller_->engine());
     HWND view = controller_->view()->GetNativeWindow();
     SetParent(view, window_);
     MoveWindow(view, 0, 0, kHudWidth, kHudHeight, TRUE);

@@ -69,11 +69,19 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     on<ModelChosen>(_onModelChosen);
     on<ModelDownloadRequested>(_onDownload, transformer: droppable());
     on<DownloadCancelled>((e, emit) => _download?.cancel());
-    on<DownloadAdvanced>((e, emit) => emit(state.copyWith(
-          downloadProgress: e.progress,
-          downloadPercent: e.percent,
-          status: currentL10n().statusLoadingProgress(e.progress),
-        )));
+    // Только пока загрузка идёт. Проценты приходят событиями, и
+    // последние из них стоят в очереди блока ещё тогда, когда файл уже
+    // скачан и `clearDownload` выполнен: обработанные после, они
+    // возвращали ползунок на экран — и он оставался там навсегда,
+    // потому что двигать его было уже некому.
+    on<DownloadAdvanced>((e, emit) {
+      if (_download == null) return;
+      emit(state.copyWith(
+        downloadProgress: e.progress,
+        downloadPercent: e.percent,
+        status: currentL10n().statusLoadingProgress(e.progress),
+      ));
+    });
     on<VadRequested>(_onVad, transformer: droppable());
     on<VadModelChosen>(_onVadModelChosen);
 
@@ -685,10 +693,15 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         return false;
       }
       if (code != 0 || !jsonFile.existsSync()) {
+        // Со словами движка, а не без них: «не справился с этим файлом»
+        // не говорит человеку ничего, а строка от whisper — «failed to
+        // load model», «unsupported sample rate» — говорит всё.
         emit(_replace(state, it,
             it.copyWith(
               state: JobState.failed,
-              detail: currentL10n().jobDetailWhisperFailed,
+              detail: _lastEngineError.isEmpty
+                  ? currentL10n().jobDetailWhisperFailed
+                  : '${currentL10n().jobDetailWhisperFailed} · $_lastEngineError',
             )).copyWith(status: currentL10n().statusRecognitionFailed(it.name)));
         return true;
       }
@@ -809,23 +822,67 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     return null;
   }
 
+  /// Что движок сказал последним. Нужно, когда он не справился: «не
+  /// справился с этим файлом» само по себе не говорит человеку ничего,
+  /// а строка от whisper обычно говорит всё.
+  String _lastEngineError = '';
+
   /// Запуск whisper-cli с разбором вывода на лету.
+  ///
+  /// Сборка движка может не запуститься вовсе — на Windows их две, и
+  /// Vulkan-сборку роняет старый драйвер видеокарты. Тогда вычёркиваем
+  /// её на весь сеанс и тут же перезапускаемся на процессорной: человек
+  /// видит секундную задержку, а не «не справился» на каждой записи.
   Future<int> _runWhisper(Job job, List<String> args) async {
+    while (true) {
+      final exe = findWhisper();
+      if (exe == null) return _noEngine;
+      final code = await _runEngine(job, exe, args);
+      // Не запустился — это когда процесс умер, не сказав ни слова о ходе
+      // работы. Отличать по коду возврата нельзя: whisper и на негодном
+      // звуке возвращает не ноль, а вычёркивать из-за одного битого файла
+      // рабочую сборку — беда хуже исходной.
+      if (code == 0 || _sawEngineOutput || _stopRequested || _pausing) {
+        return code;
+      }
+      if (!engineFailedToStart(exe, recognizerExeName)) return code;
+      stderr.writeln('tsukiko: сборка движка $exe не запустилась — берём следующую');
+    }
+  }
+
+  /// Ни одной сборки движка не осталось.
+  static const _noEngine = -1;
+
+  /// Сказал ли движок хоть что-нибудь про ход работы. По этому признаку
+  /// отличается «не справился с файлом» от «не поднялся вовсе».
+  bool _sawEngineOutput = false;
+
+  Future<int> _runEngine(Job job, String exe, List<String> args) async {
+    _sawEngineOutput = false;
+    _lastEngineError = '';
     void onLine(String line) {
+      if (line.trim().isNotEmpty) _lastEngineError = line.trim();
       final seg = parseSegmentLine(line);
-      if (seg != null) return add(JobAdvanced(job, segment: seg));
+      if (seg != null) {
+        _sawEngineOutput = true;
+        return add(JobAdvanced(job, segment: seg));
+      }
       final p = RegExp(r'progress\s*=\s*(\d+)%').firstMatch(line);
       if (p != null) {
+        _sawEngineOutput = true;
         return add(JobAdvanced(job, progress: double.parse(p.group(1)!) / 100));
       }
       final l = RegExp(r'auto-detected language:\s*(\w+)').firstMatch(line);
-      if (l != null) add(JobAdvanced(job, language: l.group(1)));
+      if (l != null) {
+        _sawEngineOutput = true;
+        add(JobAdvanced(job, language: l.group(1)));
+      }
     }
 
     // Под своим именем: иначе в «Мониторинге системы» память числится
     // за безымянным whisper-cli, и чей он — не понять.
-    final proc = await Process.start(
-        runnableWhisper(findWhisper(), 'tsukiko-recognizer')!, args);
+    final proc =
+        await Process.start(runnableWhisper(exe, recognizerExeName)!, args);
     _proc = proc;
     // Диктовка главнее очереди, и спрашивать её раз в начале мало:
     // часовая запись считается минутами, а диктовать хотят посреди.
@@ -845,12 +902,17 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         asking = false;
       }
     });
+    // allowMalformed обязателен: на Windows движок пишет в трубу не только
+    // свой UTF-8, но и ругань системного рантайма в кодировке консоли.
+    // Строгий разбор ронял бы на ней всю подписку — вместе с процентами
+    // и фрагментами, которые пришли бы после.
+    const decoder = Utf8Decoder(allowMalformed: true);
     final out = proc.stdout
-        .transform(utf8.decoder)
+        .transform(decoder)
         .transform(const LineSplitter())
         .listen(onLine);
     final err = proc.stderr
-        .transform(utf8.decoder)
+        .transform(decoder)
         .transform(const LineSplitter())
         .listen(onLine);
     try {
