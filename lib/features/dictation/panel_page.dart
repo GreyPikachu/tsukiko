@@ -120,9 +120,7 @@ class _PanelState extends State<_Panel> {
     // красить нечего; на Windows под ним нет ничего — панель выходила
     // чёрным прямоугольником у значка.
     final ground = Surface.sidebar(context);
-    return ColoredBox(
-      color: ground ?? const Color(0x00000000),
-      child: SingleChildScrollView(
+    final body = SingleChildScrollView(
       child: Column(
         key: _content,
         mainAxisSize: MainAxisSize.min,
@@ -144,8 +142,8 @@ class _PanelState extends State<_Panel> {
           _Footer(s),
         ],
       ),
-      ),
     );
+    return ground == null ? body : ColoredBox(color: ground, child: body);
   }
 }
 

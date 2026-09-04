@@ -326,18 +326,50 @@ class WindowsOs implements Os {
       final type = FileSystemEntity.typeSync(path);
       if (type == FileSystemEntityType.notFound) return false;
       if (type == FileSystemEntityType.directory) {
+        // Папку проводник открывает одним доводом, и здесь всё честно:
+        // путь в кавычках — это по-прежнему путь.
         await Process.run('explorer.exe', [path]);
       } else {
-        // Именно одним доводом: `/select,` и путь — это части одного
-        // ключа. Разными доводами проводник открывает «Документы»
-        // и никого не выделяет.
-        await Process.run('explorer.exe', ['/select,$path']);
+        await Process.run('powershell', revealCommand,
+            environment: {revealPathVar: path});
       }
       return true;
     } catch (_) {
       return false;
     }
   }
+
+  /// Чем показать файл в проводнике — так, чтобы он его ещё и выделил.
+  ///
+  /// Казалось бы, дела на одну строку: `explorer /select,<путь>`. Но
+  /// Dart на Windows **всегда** берёт каждый довод в кавычки, без
+  /// исключений (проверено на сборке: `["/c","echo","/select,C:\a b\c.txt"]`
+  /// доезжает как `"/select,C:\a b\c.txt"`). Проводник получает
+  /// закавыченное целиком, ключа `/select,` в нём не узнаёт и открывает
+  /// «Документы» — ровно то, на что жаловались: «Показать запись»
+  /// открывала не ту папку и ничего не выделяла.
+  ///
+  /// Обойти это в самом Dart нечем: командную строку он собирает сам.
+  /// Поэтому командную строку для проводника собирает PowerShell —
+  /// он тут уже есть, им же перечисляются процессы.
+  ///
+  /// Кавычек внутри команды нет ни одной, и это главное: своих кавычек
+  /// Dart не экранирует, и первая же попытка написать `"` сломала бы всю
+  /// строку. Кавычки вокруг пути собираются из `[char]34`, а сам путь
+  /// приходит переменной окружения — то есть не попадает в разбор
+  /// PowerShell вовсе и может содержать что угодно.
+  ///
+  /// Отдельными константами, а не строкой на месте, чтобы их можно было
+  /// проверить тестом, не открывая проводник.
+  static const revealPathVar = 'TSUKIKO_REVEAL_PATH';
+
+  static const revealCommand = [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    'Start-Process explorer.exe -ArgumentList '
+        "('/select,' + [char]34 + \$env:$revealPathVar + [char]34)",
+  ];
 
   @override
   void onTerminate(void Function() onSignal) {

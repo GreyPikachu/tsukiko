@@ -7,10 +7,16 @@
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
-  // Проверка на уже запущенную копию tsukiko: поднимаем существующее окно и выходим
+  // Проверка на уже запущенную копию tsukiko: поднимаем существующее окно
+  // и выходим. Мьютекс тот же, что проверяет установщик (tool/installer.iss),
+  // — по нему он и понимает, что программу надо сначала закрыть.
   HANDLE hMutex = ::CreateMutexW(nullptr, TRUE, L"TsukikoAppSingleInstanceMutex");
   if (::GetLastError() == ERROR_ALREADY_EXISTS) {
-    HWND existingWindow = ::FindWindowW(nullptr, L"tsukiko");
+    // По классу окна, а не по заголовку: «tsukiko» называется и панель
+    // у значка, и плавающая панель записи, и поиск по имени поднимал бы
+    // ту из них, что нашлась первой.
+    HWND existingWindow =
+        ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"tsukiko");
     if (existingWindow) {
       ::ShowWindow(existingWindow, SW_RESTORE);
       ::SetForegroundWindow(existingWindow);
