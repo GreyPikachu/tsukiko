@@ -37,6 +37,7 @@ BMP полосит — переход в 256 уровней на 1200 точек
 """
 
 import io
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -122,12 +123,45 @@ def banner(width: int, height: int) -> Image.Image:
 
 
 def logo(width: int, height: int) -> Image.Image:
-    # Значок приложения на белом: шапка мастера белая, и прозрачность
-    # BMP не хранит вовсе — подложку надо положить самим.
+    # Значок приложения на прозрачном. Раньше под него клали белое:
+    # шапка мастера белая, а 24-битный BMP прозрачности не хранит.
+    # Теперь мастер умеет и тёмный вид (WizardStyle=modern dynamic),
+    # и белый квадрат в тёмной шапке выглядел бы дырой. Прозрачность
+    # хранит 32-битный BMP — его и пишем, см. save_bmp32.
     icon = render(ICON.read_text(encoding="utf-8"), height, height)
-    canvas = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+    canvas = Image.new("RGBA", (width, height), (255, 255, 255, 0))
     canvas.alpha_composite(icon, ((canvas.width - icon.width) // 2, 0))
-    return canvas.convert("RGB")
+    return canvas
+
+
+def save_bmp32(image: Image.Image, path: Path) -> None:
+    """Записать 32-битный BMP с альфой — своими руками.
+
+    Pillow такого не умеет: `save(format="BMP")` молча выбрасывает
+    альфа-канал и кладёт 24 бита. А Inno Setup прозрачность берёт
+    ровно из 32-битного BMP (WizardImageAlphaFormat=defined) — иначе
+    значок в шапке остаётся с белой подложкой.
+
+    Формат простой: заголовок файла, заголовок картинки без сжатия
+    и строки BGRA снизу вверх. Ряды по четыре байта на точку, так что
+    выравнивать нечего.
+    """
+    rgba = image.convert("RGBA")
+    rows = []
+    pixels = rgba.load()
+    for y in range(rgba.height - 1, -1, -1):
+        row = bytearray()
+        for x in range(rgba.width):
+            r, g, b, a = pixels[x, y]
+            row += bytes((b, g, r, a))
+        rows.append(bytes(row))
+    body = b"".join(rows)
+    info = struct.pack(
+        "<IiiHHIIiiII", 40, rgba.width, rgba.height, 1, 32, 0, len(body),
+        2835, 2835, 0, 0)
+    head = struct.pack("<2sIHHI", b"BM", 14 + len(info) + len(body), 0, 0,
+                       14 + len(info))
+    path.write_bytes(head + info + body)
 
 
 def main() -> int:
@@ -138,8 +172,14 @@ def main() -> int:
     ):
         for width, height in sizes:
             out = DESIGN / f"{name}-{width}x{height}.bmp"
-            # 24 бита без сжатия: другого Inno Setup не читает.
-            dither(draw(width, height)).save(out, format="BMP")
+            image = draw(width, height)
+            if image.mode == "RGBA":
+                # Значок в шапке — с прозрачностью, а шум ему ни к чему:
+                # градиента в нём нет, полосить нечему.
+                save_bmp32(image, out)
+            else:
+                # Полоса — 24 бита без сжатия, зато с шумом против полос.
+                dither(image).save(out, format="BMP")
             made.append(out)
 
     splash = DESIGN / "tsukiko-splash.png"

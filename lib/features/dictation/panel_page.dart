@@ -505,7 +505,8 @@ class _Last extends StatelessWidget {
             // занимает место в и без того тесном поповере.
             // «Вставить снова» здесь была и не работала: панель не помнила,
             // куда вставляла, а ждала наугад двести миллисекунд и попадала
-            // в чужое окно. Осталось «Скопировать» и родное ⌘V.
+            // в чужое окно. Осталось «Скопировать» и родное сочетание
+            // вставки той системы, где человек работает.
             if (s.last.isNotEmpty) ...[
               const SizedBox(height: Gap.item),
               PushButton(
@@ -636,7 +637,14 @@ class _Footer extends StatelessWidget {
             _MenuRow(l10n.menuOpenApp(appName),
                 context.read<DictationCubit>().openMainWindow),
             _MenuRow(l10n.menuQuitApp(appName), context.read<DictationCubit>().quit,
-                shortcut: '⌘Q'),
+                // Подпись только там, где сочетание и правда есть.
+                // ⌘Q приложению даёт сама macOS вместе со строкой меню;
+                // на Windows выход по Ctrl+Q не назначен ничем, и написать
+                // его значило бы соврать. Значок при этом рисует граница
+                // системы, а не строка в коде: строкой тут стояло «⌘Q».
+                shortcut: os.hasSystemMenuBar
+                    ? os.menuShortcut(const ['cmd'], 'q')
+                    : null),
           ],
         ),
       );

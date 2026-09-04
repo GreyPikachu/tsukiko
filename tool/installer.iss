@@ -69,9 +69,24 @@ SetupIconFile=..\windows\runner\resources\app_icon.ico
 WizardImageFile=..\design\installer-banner-164x314.bmp,..\design\installer-banner-192x386.bmp,..\design\installer-banner-292x534.bmp,..\design\installer-banner-386x690.bmp,..\design\installer-banner-423x797.bmp,..\design\installer-banner-637x1200.bmp
 WizardSmallImageFile=..\design\installer-logo-55x58.bmp,..\design\installer-logo-64x68.bmp,..\design\installer-logo-92x97.bmp,..\design\installer-logo-119x123.bmp,..\design\installer-logo-128x132.bmp,..\design\installer-logo-138x140.bmp,..\design\installer-logo-192x192.bmp
 WizardImageStretch=yes
+; Значок в шапке лежит 32-битным BMP с прозрачностью, и «defined» значит,
+; что цвет в нём не помножен на альфу заранее. Без этой строки Inno
+; прозрачность просто не смотрит, и раньше под значок приходилось класть
+; белую подложку — а в тёмном виде мастера (ниже) она была бы дырой.
+WizardImageAlphaFormat=defined
 Compression=lzma2/ultra64
 SolidCompression=yes
-WizardStyle=modern
+; Вид мастера. «modern» — белое поле страницы вместо серого; «dynamic» —
+; светлый или тёмный вид вслед за настройкой самой Windows.
+;
+; Это и есть предел того, что Inno Setup позволяет менять во внешнем виде
+; директивами: набор готовых видов (classic/modern, светлый/тёмный/по
+; системе, плюс несколько встроенных раскрасок вроде polar и slate),
+; картинки, значок и размер окна. Своих цветов и шрифтов у мастера нет —
+; их можно навязать только из [Code], разбирая внутренности WizardForm,
+; и такое ломается на каждом обновлении Inno и на каждом нестандартном
+; масштабе экрана. Мы туда не лезем.
+WizardStyle=modern dynamic
 ; Первая страница мастера. Inno Setup 6 по умолчанию её выключает — и
 ; вместе с ней пропадали и наша большая картинка (она оставалась только
 ; на последней странице), и написанный тут же WelcomeLabel2, который
