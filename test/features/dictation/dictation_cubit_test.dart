@@ -166,13 +166,17 @@ void main() {
       expect(withFailure.copyWith(clearFailure: true).failurePath, isNull);
     });
 
-    test('переключать модель нечего, пока она одна', () {
-      const one = DictationState(fastModel: '/m.bin', accurateModel: '/m.bin');
-      expect(one.hasModels, isTrue);
-      expect(one.canSwitchModel, isFalse);
-
-      const two = DictationState(fastModel: '/a.bin', accurateModel: '/b.bin');
-      expect(two.canSwitchModel, isTrue);
+    test('выбирать модель есть из чего при любом их числе', () {
+      // Раньше здесь была пара «быстрая · точная», и выбор показывался,
+      // только когда моделей ровно две. Одна или три — и переключателя
+      // не было вовсе, хотя выбирать было из чего.
+      expect(const DictationState().hasModels, isFalse);
+      expect(const DictationState(models: ['/m.bin']).hasModels, isTrue);
+      const three = DictationState(models: ['/a.bin', '/b.bin', '/c.bin']);
+      expect(three.models.length, 3);
+      // Список входит в сравнение состояний: без этого смена набора
+      // моделей не доходила бы до перерисовки панели.
+      expect(three == const DictationState(models: ['/a.bin', '/b.bin']), isFalse);
     });
   });
 }

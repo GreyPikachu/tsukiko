@@ -153,15 +153,13 @@ class DictationCubit extends Cubit<DictationState> {
   DictationState _withSnapshots(DictationState from) {
     _hasVad = File(vadModelPath).existsSync();
     final queueModel = (Settings.load()['model'] as String?) ?? '';
-    final pair = modelPair(_models);
     return from.copyWith(
       enabled: _settings.enabled,
       holdLabel: _settings.hold.label,
       toggleLabel: _settings.toggle.label,
       ownModel: _settings.model.isNotEmpty,
       chosenModel: _settings.model.isNotEmpty ? _settings.model : queueModel,
-      fastModel: pair.fast,
-      accurateModel: pair.accurate,
+      models: _models,
     );
   }
 

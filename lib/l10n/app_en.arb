@@ -233,8 +233,6 @@
   "tooltipFreeMemoryNextPhrase": "Free memory until the next phrase",
   "tooltipModelBusy": "Model is currently in use",
   "buttonUnload": "Unload",
-  "modelFast": "Fast",
-  "modelAccurate": "Accurate",
   "menuDictationSettingsEllipsis": "Dictation Settings…",
   "menuOpenApp": "Open {appName}…",
   "menuQuitApp": "Quit {appName}",

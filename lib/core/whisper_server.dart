@@ -727,16 +727,6 @@ class DictationSettings {
   }
 }
 
-/// Пара «быстрая · точная» из того, что нашлось на диске: маленькая модель
-/// и большая. Одна модель на всю систему — обе половинки указывают на неё,
-/// и переключатель нечего переключать.
-({String fast, String accurate}) modelPair(List<String> models) {
-  final files = models.where((p) => File(p).existsSync()).toList()
-    ..sort((a, b) => File(a).lengthSync().compareTo(File(b).lengthSync()));
-  if (files.isEmpty) return (fast: '', accurate: '');
-  return (fast: files.first, accurate: files.last);
-}
-
 String modelSizeLabel(String path) {
   try {
     final gb = File(path).lengthSync() / (1024 * 1024 * 1024);

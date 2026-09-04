@@ -342,23 +342,6 @@ void main() {
     );
   });
 
-  test('быстрая и точная модели выбираются по весу файла', () {
-    final dir = Directory.systemTemp.createTempSync('tsukiko_models');
-    File('${dir.path}/ggml-small.bin').writeAsBytesSync(List.filled(2048, 0));
-    File('${dir.path}/ggml-large.bin').writeAsBytesSync(List.filled(9000, 0));
-    final pair = modelPair([
-      '${dir.path}/ggml-large.bin',
-      '${dir.path}/ggml-small.bin',
-      '/нет/такой.bin',
-    ]);
-    expect(pair.fast.endsWith('small.bin'), isTrue);
-    expect(pair.accurate.endsWith('large.bin'), isTrue);
-    // одна модель на всю систему — обе половинки указывают на неё
-    final one = modelPair(['${dir.path}/ggml-large.bin']);
-    expect(one.fast, one.accurate);
-    expect(modelPair(const []).fast, '');
-    dir.deleteSync(recursive: true);
-  });
 
   test('VAD-модель качается из своего репозитория и не путается с речевой', () {
     // В ggerganov/whisper.cpp файла silero нет вовсе — оттуда приходит 404.

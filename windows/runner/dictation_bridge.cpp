@@ -209,6 +209,13 @@ void DictationBridge::KillDictationServer() {
 
 void DictationBridge::SetTaskbarButtonVisible(bool visible) {
   if (!main_window_) return;
+  // Ничего не менялось — и трогать нечего. Смена стиля ниже прячет
+  // и показывает окно, а зовут сюда с каждой правкой любой настройки:
+  // панель диктовки после `settingsChanged` перечитывает всё подряд
+  // и заново применяет в том числе эту галку. Человек видел, как окно
+  // на миг пропадает и появляется всякий раз, когда он менял модель.
+  if (taskbar_button_visible_ && *taskbar_button_visible_ == visible) return;
+  taskbar_button_visible_ = visible;
   LONG_PTR style = GetWindowLongPtr(main_window_, GWL_EXSTYLE);
   // Стиль меняется только на скрытом окне: иначе система кнопку
   // не перерисует.

@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include <set>
@@ -133,6 +134,12 @@ class DictationBridge {
 
   void KillDictationServer();
   void SetTaskbarButtonVisible(bool visible);
+
+  /// Что мы уже сделали с кнопкой на панели задач. Пусто — ещё ничего:
+  /// первый вызов всегда применяется, а повторный с тем же значением
+  /// пропускается. Иначе окно пряталось и показывалось на каждой правке
+  /// настроек — см. SetTaskbarButtonVisible.
+  std::optional<bool> taskbar_button_visible_;
 
   void ForwardToPanel(
       const std::string& method,
