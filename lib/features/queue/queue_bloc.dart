@@ -860,6 +860,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// её на весь сеанс и тут же перезапускаемся на процессорной: человек
   /// видит секундную задержку, а не «не справился» на каждой записи.
   Future<int> _runWhisper(Job job, List<String> args) async {
+    // Чистим на запись, а не на попытку: попыток у одной записи бывает
+    // несколько (упавшую сборку вычёркиваем и берём следующую), и
+    // сказанное первой из них — самое важное, что есть.
+    _engineLog.clear();
     while (true) {
       final exe = findWhisper();
       if (exe == null) return _noEngine;
@@ -871,6 +875,17 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       if (code == 0 || _sawEngineOutput || _stopRequested || _pausing) {
         return code;
       }
+      // Сборка, которая падает на запуске, не говорит вообще ничего:
+      // Windows убивает её до первой строки кода, и в вывод не попадает
+      // ни буквы. Тогда единственная улика — имя сборки и код возврата,
+      // и записать его надо шестнадцатеричным: коды падений Windows
+      // (0xC0000135 «нет библиотеки», 0xC0000005 «обращение не туда»)
+      // только так и читаются. Без этой строки человеку нечего было бы
+      // ни прочитать, ни переслать — а отчёты самой Windows лежат
+      // в папке, куда его не пускает система.
+      _rememberEngineLine('$exe: код возврата $code '
+          '(0x${(code & 0xFFFFFFFF).toRadixString(16).toUpperCase()}), '
+          'ни строчки вывода');
       if (!engineFailedToStart(exe, recognizerExeName)) return code;
       stderr.writeln('tsukiko: сборка движка $exe не запустилась — берём следующую');
     }
@@ -885,7 +900,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
   Future<int> _runEngine(Job job, String exe, List<String> args) async {
     _sawEngineOutput = false;
-    _engineLog.clear();
     void onLine(String line) {
       final seg = parseSegmentLine(line);
       if (seg != null) {
