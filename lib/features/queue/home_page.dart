@@ -231,6 +231,73 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     );
   }
 
+  /// Список сочетаний — там, где строки меню нет.
+  ///
+  /// На macOS все сочетания видны в строке меню, и отдельный список был бы
+  /// вторым местом правды. На Windows строки меню нет вовсе: сочетания
+  /// работают (их развешивает `shortcutsFromMenus`), но узнать о них
+  /// человеку неоткуда. Берём их из того же дерева меню, что и сами
+  /// сочетания, — разойтись им негде.
+  void _showShortcuts(QueueState s) {
+    final commands = menuCommands(_menus(s));
+    showMacosSheet<void>(
+      context: context,
+      builder: (sheetContext) => MacosSheet(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 22, 24, 12),
+              child: Text(l10n.sheetShortcutsTitle, style: Type.emptyTitle),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                children: [
+                  for (final section in _bySection(commands)) ...[
+                    SectionTitle(section.key),
+                    for (final c in section.value)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(c.label, style: Type.control)),
+                            const SizedBox(width: 16),
+                            Text(
+                              c.shortcut,
+                              style: Type.timestamp.copyWith(
+                                  color: Surface.secondaryText(context)),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: PushButton(
+                controlSize: ControlSize.large,
+                onPressed: () => Navigator.pop(sheetContext),
+                child: Text(l10n.buttonClose),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Команды по разделам, в том же порядке, в каком они стоят в меню.
+  List<MapEntry<String, List<MenuCommand>>> _bySection(
+      List<MenuCommand> commands) {
+    final out = <String, List<MenuCommand>>{};
+    for (final c in commands) {
+      (out[c.menu] ??= []).add(c);
+    }
+    return out.entries.toList();
+  }
+
   void _about() => showMacosAlertDialog<void>(
         context: context,
         builder: (dialogContext) => MacosAlertDialog(
@@ -441,7 +508,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     final window = PlatformMenuBar(menus: menus, child: _windowBody(s));
     if (os.hasSystemMenuBar) return window;
     return CallbackShortcuts(
-      bindings: shortcutsFromMenus(menus, swapMetaForControl: true),
+      bindings: {
+        ...shortcutsFromMenus(menus, swapMetaForControl: true),
+        // F1 — привычная клавиша справки на Windows, и справка здесь
+        // ровно одна: какие вообще есть сочетания.
+        const SingleActivator(LogicalKeyboardKey.f1): () => _showShortcuts(s),
+      },
       child: window,
     );
   }
@@ -548,6 +620,16 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           tooltipMessage: l10n.tooltipAddAudioShortcut,
           onPressed: _pickFiles,
         ),
+        // Только там, где строки меню нет: на macOS все сочетания и так
+        // видны в ней, и вторая их копия была бы лишним местом правды.
+        if (!os.hasSystemMenuBar)
+          ToolBarIconButton(
+            label: l10n.sheetShortcutsTitle,
+            icon: const MacosIcon(CupertinoIcons.keyboard),
+            showLabel: false,
+            tooltipMessage: '${l10n.sheetShortcutsTitle} · F1',
+            onPressed: () => _showShortcuts(s),
+          ),
         ToolBarIconButton(
           label: s.running ? l10n.menuStop : l10n.buttonRecognize,
           icon: MacosIcon(s.running
@@ -851,10 +933,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       MenuAction(
         l10n.menuCopyFormat(formatById(s.copyFormat).label.toLowerCase()),
         onSelected: ready ? () => _copy() : null,
-        shortcut: '⇧⌘C',
+        shortcut: os.menuShortcut(const ['shift', 'cmd'], 'c'),
       ),
       MenuAction(l10n.menuSaveAs,
-          onSelected: ready ? () => _saveAs(s) : null, shortcut: '⌘S'),
+          onSelected: ready ? () => _saveAs(s) : null,
+          shortcut: os.menuShortcut(const ['cmd'], 's')),
       // Только у той записи, что не задалась: у остальных пункт был бы
       // всегда серым и только мешал.
       if (job.error != null) ...[
@@ -865,12 +948,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       MenuAction(
         many ? l10n.menuRetrySelected : l10n.menuRetryRecognition,
         onSelected: s.running || !s.targets.any((j) => !j.imported) ? null : _sendRetry,
-        shortcut: '⌥⌘R',
+        shortcut: os.menuShortcut(const ['opt', 'cmd'], 'r'),
       ),
       MenuAction(
         l10n.buttonShowInFileManager(os.fileManagerName),
         onSelected: () => _revealSource(job.path),
-        shortcut: '⌘R',
+        shortcut: os.menuShortcut(const ['cmd'], 'r'),
       ),
       const MenuAction.separator(),
       if (job.overrides != null)
@@ -878,7 +961,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       MenuAction(
         many ? l10n.menuRemoveSelected : l10n.menuRemoveFromQueue,
         onSelected: s.targets.any((j) => j.active) ? null : _sendRemove,
-        shortcut: '⌫',
+        shortcut: os.menuShortcut(const [], 'backspace'),
       ),
     ];
   }

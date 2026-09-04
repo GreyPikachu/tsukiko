@@ -115,6 +115,10 @@ class _TempOs implements Os {
       _real.shortcutLabel(mods, keys);
 
   @override
+  String menuShortcut(List<String> mods, [String key = '']) =>
+      _real.menuShortcut(mods, key);
+
+  @override
   Future<String> toWav(String src, String dst) => _real.toWav(src, dst);
 
   @override

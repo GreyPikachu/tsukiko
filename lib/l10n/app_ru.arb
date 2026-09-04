@@ -582,6 +582,7 @@
   "menuRunQueue": "Распознать очередь",
   "menuRetryRecognition": "Распознать заново",
   "menuCopyErrorText": "Скопировать текст ошибки",
+  "sheetShortcutsTitle": "Сочетания клавиш",
   "menuStop": "Остановить",
   "menuView": "Вид",
   "menuHideTimestamps": "Скрыть метки времени",

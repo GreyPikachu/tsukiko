@@ -201,6 +201,38 @@ class WindowsOs implements Os {
     return [...ordered.map(modifierLabel), ...keys].join(' + ');
   }
 
+  @override
+  String menuShortcut(List<String> mods, [String key = '']) {
+    // ⌘ в пункте меню — это Ctrl, а не клавиша Windows: системные
+    // сочетания с ней приложению не достаются. Тот же обмен делает
+    // `menu_shortcuts.dart`, когда развешивает эти сочетания взаправду,
+    // и расходиться подписи с делом не должны.
+    final swapped = [for (final m in mods) m == 'cmd' ? 'ctrl' : m];
+    final ordered = [
+      ..._modOrder.where(swapped.contains),
+      ...swapped.where((m) => !_modOrder.contains(m)),
+    ];
+    return [
+      ...ordered.map(modifierLabel),
+      if (key.isNotEmpty) _keyLabel(key),
+    ].join('+');
+  }
+
+  /// Windows пишет имена клавиш словами: значков вроде ⌫ здесь не знают.
+  static const _keyNames = {
+    'backspace': 'Backspace',
+    'delete': 'Delete',
+    'enter': 'Enter',
+    'return': 'Enter',
+    'escape': 'Esc',
+    'tab': 'Tab',
+    'space': 'Space',
+  };
+
+  String _keyLabel(String key) =>
+      _keyNames[key.toLowerCase()] ??
+      (key.length == 1 ? key.toUpperCase() : key);
+
   // ── звук ──────────────────────────────────────────────────────────────────
 
   /// Перекладывание любого звука в 16 кГц моно WAV через ffmpeg.

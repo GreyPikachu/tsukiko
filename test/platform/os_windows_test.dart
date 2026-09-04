@@ -39,6 +39,20 @@ void main() {
           'Ctrl + Alt + Win + O');
     });
 
+    test('сочетания в меню пишутся словами, а ⌘ становится Ctrl', () {
+      // В меню правого щелчка стояли макосные значки — «⇧⌘C» и «⌫», —
+      // и на Windows они не говорят человеку ничего.
+      expect(win.menuShortcut(const ['shift', 'cmd'], 'c'), 'Ctrl+Shift+C');
+      expect(win.menuShortcut(const ['opt', 'cmd'], 'r'), 'Ctrl+Alt+R');
+      expect(win.menuShortcut(const [], 'backspace'), 'Backspace');
+      // ⌘ в пункте меню — это Ctrl, а не клавиша Windows: с ней
+      // сочетание приложению попросту не досталось бы. Тот же обмен
+      // делает menu_shortcuts.dart, когда развешивает их взаправду.
+      expect(win.menuShortcut(const ['cmd'], 's'), 'Ctrl+S');
+      expect(win.modifierLabel('cmd'), 'Win',
+          reason: 'в назначенном сочетании cmd — это всё ещё клавиша Windows');
+    });
+
     test('движок выбирается по тому, запустится ли Vulkan-сборка', () {
       // Ответ зависит от машины: есть загрузчик Vulkan — годится
       // Vulkan-сборка, нет — только процессорная. Проверяем правило,
