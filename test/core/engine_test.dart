@@ -619,6 +619,41 @@ void _hotkeyTaps() {
     });
   });
 
+  group('сочетание на дороге к другому', () {
+    test('входящее целиком срабатывает раньше', () {
+      // Ровно та пара, что стояла умолчанием на Windows: чтобы нажать
+      // Ctrl+Alt+Пробел, надо пройти через Ctrl+Alt, — и «держать
+      // и говорить» начинало запись, не дожидаясь пробела.
+      const hold = Hotkey(['ctrl', 'alt']);
+      const toggle = Hotkey(['ctrl', 'alt'], keys: ['space']);
+      expect(hold.isPrefixOf(toggle), isTrue);
+      expect(toggle.isPrefixOf(hold), isFalse);
+      // Порядок в наборе значения не имеет.
+      expect(const Hotkey(['alt', 'ctrl']).isPrefixOf(toggle), isTrue);
+      // Само себе дорогой не считается: это «уже назначено», другая беда.
+      expect(hold.isPrefixOf(const Hotkey(['alt', 'ctrl'])), isFalse);
+      // Разные наборы модификаторов друг другу не мешают.
+      expect(hold.isPrefixOf(const Hotkey(['ctrl', 'shift'], keys: ['space'])),
+          isFalse);
+      // Двойной стук по дороге не срабатывает: первое нажатие только
+      // взводит, а второго на пути к чужому сочетанию не случится.
+      expect(const Hotkey(['ctrl', 'alt'], taps: 2).isPrefixOf(toggle), isFalse);
+      // Пустое сочетание не мешает никому.
+      expect(const Hotkey([]).isPrefixOf(toggle), isFalse);
+    });
+
+    test('умолчания этой системы такой пары не образуют', () {
+      // Проверка на обе системы разом: на той, где идёт тест, берутся
+      // её собственные умолчания. Форму макосной пары однажды уже
+      // перенесли на Windows без её смысла — и получили приставку.
+      final hold = Hotkey.holdDefault;
+      final toggle = Hotkey.toggleDefault;
+      expect(hold.isPrefixOf(toggle), isFalse);
+      expect(toggle.isPrefixOf(hold), isFalse);
+      expect(hold.sameAs(toggle), isFalse);
+    });
+  });
+
 
   test('окно не наследует текст предыдущего — иначе повтор кормит сам себя', () {
     final args = buildArgs(
