@@ -60,15 +60,27 @@ OutputBaseFilename=tsukiko-setup
 ; Значок установщика — только .ico: Inno Setup другого формата не берёт
 ; и на .webp просто не соберётся.
 SetupIconFile=..\windows\runner\resources\app_icon.ico
-; Картинки мастера рисует tool/installer-images.py. Через запятую —
-; обычная и удвоенная: на экране с двойной плотностью Inno возьмёт
-; вторую сам, а растянутая первая выглядела бы мылом.
-WizardImageFile=..\design\installer-banner.bmp,..\design\installer-banner@2x.bmp
-WizardSmallImageFile=..\design\installer-logo.bmp,..\design\installer-logo@2x.bmp
+; Картинки мастера рисует tool/installer-images.py. Списком, а не парой:
+; Inno Setup берёт из него ближайшую к нынешнему масштабу экрана и
+; растягивает своим простым растяжением. Пока размеров было два, на
+; всяком другом масштабе растягивать приходилось сильно — отсюда и мыло.
+; Набор ниже тот же, в каком Inno поставляет свои собственные картинки,
+; так что на любом обычном масштабе растягивать почти нечего.
+WizardImageFile=..\design\installer-banner-164x314.bmp,..\design\installer-banner-192x386.bmp,..\design\installer-banner-292x534.bmp,..\design\installer-banner-386x690.bmp,..\design\installer-banner-423x797.bmp,..\design\installer-banner-637x1200.bmp
+WizardSmallImageFile=..\design\installer-logo-55x58.bmp,..\design\installer-logo-64x68.bmp,..\design\installer-logo-92x97.bmp,..\design\installer-logo-119x123.bmp,..\design\installer-logo-128x132.bmp,..\design\installer-logo-138x140.bmp,..\design\installer-logo-192x192.bmp
 WizardImageStretch=yes
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
+; Первая страница мастера. Inno Setup 6 по умолчанию её выключает — и
+; вместе с ней пропадали и наша большая картинка (она оставалась только
+; на последней странице), и написанный тут же WelcomeLabel2, который
+; больше негде показать. Ставим явно.
+DisableWelcomePage=no
+; Окно мастера крупнее стандартного. Оно рассчитано на 1996 год, и на
+; нынешнем экране картинка в нём выходит с почтовую марку; 120% — это
+; всё ещё окно установщика, а не витрина.
+WizardSizePercent=120
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
