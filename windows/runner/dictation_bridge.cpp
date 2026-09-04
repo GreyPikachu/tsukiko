@@ -117,13 +117,8 @@ void AudioCaptureCallback(ma_device* pDevice, void* pOutput, const void* pInput,
     ma_encoder_write_pcm_frames(encoder, pInput, frameCount, nullptr);
   }
 
-  const int16_t* samples = static_cast<const int16_t*>(pInput);
-  float maxSample = 0.0f;
-  for (ma_uint32 i = 0; i < frameCount; ++i) {
-    float val = std::abs(static_cast<float>(samples[i])) / 32768.0f;
-    if (val > maxSample) maxSample = val;
-  }
-  bridge->UpdateAudioLevel(maxSample);
+  bridge->PushAudioFrames(static_cast<const int16_t*>(pInput), frameCount,
+                          pDevice->sampleRate);
 }
 
 } // namespace
@@ -961,7 +956,7 @@ std::string DictationBridge::StartAudioRecording() {
   }
 
   is_recording_ = true;
-  current_level_ = 0.0f;
+  ResetLevelMeter();
   return current_record_path_;
 }
 
@@ -983,8 +978,77 @@ std::string DictationBridge::StopAudioRecording() {
     ma_encoder_ = nullptr;
   }
 
-  current_level_ = 0.0f;
+  ResetLevelMeter();
   return current_record_path_;
+}
+
+/// Уровень для индикатора — та же шкала, что и на macOS (Dictation.swift,
+/// currentLevel). Это не перевод формулы наугад, а перенос её смысла:
+/// децибелы вместо сырой амплитуды, точка отсчёта по фону комнаты и
+/// баллистика VU-метра.
+///
+/// Прежде здесь стоял `max(|отсчёт|) / 32768` — сырая линейная амплитуда.
+/// Обычная речь по амплитуде это сотые-десятые доли единицы, то есть
+/// полоска поднималась на проценты от высоты, и хозяину приходилось
+/// кричать, чтобы её увидеть. На macOS та же речь занимает почти всю
+/// шкалу, потому что там считается вот это.
+///
+/// Считаем здесь, в потоке звукового устройства, а не по запросу из Dart:
+/// длительность порции известна точно (кадры делить на частоту), а
+/// опрашивают уровень панель и поповер с разной частотой — сглаживание
+/// по числу вызовов разъезжалось бы вместе с ней.
+void DictationBridge::PushAudioFrames(const int16_t* samples, uint32_t frames,
+                                      uint32_t sample_rate) {
+  if (!samples || frames == 0 || sample_rate == 0) return;
+
+  // Среднеквадратичное, а не пиковое: на macOS берётся averagePower —
+  // средняя мощность за промежуток. По пику речь и щелчок мышью выглядят
+  // одинаково, по средней — нет.
+  double sum = 0.0;
+  for (uint32_t i = 0; i < frames; ++i) {
+    const double v = static_cast<double>(samples[i]) / 32768.0;
+    sum += v * v;
+  }
+  const double rms = std::sqrt(sum / frames);
+
+  // Ниже −60 дБ считать нечего: это уже не комната, а цифровая тишина,
+  // и фон, уехавший туда, растянул бы шкалу до бессмыслицы. Заодно это
+  // спасает от log10(0) на выключенном микрофоне.
+  double db = rms > 1e-6 ? 20.0 * std::log10(rms) : -60.0;
+  if (db < -60.0) db = -60.0;
+
+  const double dt = static_cast<double>(frames) / sample_rate;
+
+  // Фон комнаты: вниз оценка идёт быстро, вверх — медленно, а громче
+  // порога — почти никак. Иначе речь сама поднимает фон, от которого её
+  // же и отсчитывают, и индикатор оседает за несколько секунд разговора.
+  if (!has_noise_floor_) {
+    noise_floor_db_ = static_cast<float>(db);
+    has_noise_floor_ = true;
+  }
+  const double was = noise_floor_db_;
+  const double floor_tau = db < was ? 0.5 : (db < was + 6.0 ? 3.0 : 60.0);
+  const double floor = was + (db - was) * (1.0 - std::exp(-dt / floor_tau));
+  noise_floor_db_ = static_cast<float>(floor);
+
+  // Окно под речь, а не под весь тракт. Порог — 4 дБ над фоном (дыхание
+  // и вентилятор остаются внизу), потолок — 22 дБ над ним, но не ниже
+  // −14 дБ: в очень тихой комнате фон уезжает так низко, что от него
+  // любая речь упиралась бы в верх шкалы.
+  const double bottom = floor + 4.0;
+  const double top = std::max(floor + 22.0, -14.0);
+  double target = (db - bottom) / (top - bottom);
+  if (target < 0.0) target = 0.0;
+  if (target > 1.0) target = 1.0;
+
+  // Баллистика: атака 20 мс, спад 300 мс. Быстрее атака — метр дрожит,
+  // короче спад — глаз не успевает за всплесками; 300 мс — время
+  // интеграции обычного VU-метра, к нему привыкло восприятие.
+  const double tau = target > meter_level_ ? 0.02 : 0.3;
+  const double level =
+      meter_level_ + (target - meter_level_) * (1.0 - std::exp(-dt / tau));
+  meter_level_ = static_cast<float>(level);
+  current_level_ = meter_level_;
 }
 
 double DictationBridge::GetAudioLevel() {
