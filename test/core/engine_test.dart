@@ -687,6 +687,47 @@ void _hotkeyTaps() {
       }
       expect(bundledEngine(recognizerExeName), isNull);
     });
+
+    test('павший сервер диктовки вычёркивает свою сборку, а не молчит', () async {
+      // Ровно то, что случилось на машине хозяина: Vulkan-сборка сервера
+      // диктовки падает сразу после запуска, порт не открывается никогда.
+      // Раньше `transcribe` видел мёртвый процесс и возвращал «не
+      // распознал», не дойдя до вычёркивания, — и следующая фраза
+      // поднимала ту же сборку заново. Проверяем, что теперь сборка
+      // вычёркивается: после попытки предлагать больше нечего.
+      Directory(os.engineDir).createSync(recursive: true);
+      // Программа, которая мгновенно завершается: точная модель павшего
+      // движка. Своей писать нельзя — тесты идут и на Windows, где нет
+      // ни shell-скриптов, ни chmod.
+      final quick = Platform.isWindows
+          ? os.join(Platform.environment['SystemRoot'] ?? r'C:\Windows',
+              'System32', 'hostname.exe')
+          : '/bin/echo';
+      if (!File(quick).existsSync()) return;
+      for (final name in os.engineNames(dictationExeName)) {
+        final path = os.join(os.engineDir, name);
+        File(quick).copySync(path);
+        if (!Platform.isWindows) await Process.run('chmod', ['+x', path]);
+      }
+      expect(bundledEngine(dictationExeName), isNotNull);
+
+      final server = WhisperServer();
+      final model = os.join(os.modelsDir, 'ggml-fake.bin');
+      File(model).writeAsStringSync('');
+      await server.ensureUp(RunOptions(model: model, lang: 'ru', threads: 1));
+      // Ждём, пока процесс действительно умрёт: в жизни между подъёмом
+      // сервера и расшифровкой лежит вся запись, и к её концу павшей
+      // сборки давно нет. Без этого ожидания тест ловил бы гонку, а не
+      // ту самую дыру.
+      for (var i = 0; i < 200 && server.up; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(server.up, isFalse, reason: 'подсадная сборка должна была умереть');
+      expect(await server.transcribe(model), isNull);
+      expect(bundledEngine(dictationExeName), isNull,
+          reason: 'все сборки, которые не поднялись, должны быть вычеркнуты');
+      await server.shutdown();
+    });
   });
 
   test('продолжение считает с места остановки, а не с начала записи', () {
