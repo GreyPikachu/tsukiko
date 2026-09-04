@@ -84,11 +84,18 @@ void main() {
               'см. fsutil 8dot3name query');
       expect(File(short).existsSync(), isTrue,
           reason: 'сокращённый путь обязан вести к тому же файлу');
-      // Файла ещё нет — короткого имени у него тоже нет, но папку
-      // сократить можно: так уходит движку основа имени для `-of`.
-      final future = os.join(dir.path, 'вывод');
-      expect(WindowsOs().processPath(future), isNot(contains('вывод'.substring(0, 1))),
+      // Файла ещё нет — короткого имени у него тоже нет, и взяться ему
+      // неоткуда. Сокращается папка, а имя дописывается как было: этим
+      // путём уходит движку основа имени для `-of`, и своё имя мы туда
+      // пишем сами, латиницей (в очереди это порядковый номер, см.
+      // queue_bloc). Значит проверять надо папку — что от неё
+      // не осталось ни одной кириллической буквы, — а не пропажу имени.
+      final future = os.join(dir.path, '7');
+      final shortFuture = WindowsOs().processPath(future);
+      expect(shortFuture.codeUnits.every((c) => c < 128), isTrue,
           reason: 'папку у несуществующего файла всё равно надо сокращать');
+      expect(shortFuture.endsWith(r'\7'), isTrue,
+          reason: 'имя остаётся нашим: сокращается только папка');
     } finally {
       dir.deleteSync(recursive: true);
     }
