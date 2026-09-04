@@ -145,6 +145,17 @@ class WindowsOs implements Os {
         base,
       ];
 
+  // ── чем система рисует и что она спрашивает ───────────────────────────────
+
+  @override
+  bool get hasWindowMaterial => false;
+
+  @override
+  bool get hasSystemMenuBar => false;
+
+  @override
+  bool get needsAccessibilityPermission => false;
+
   // ── как система называет свои вещи ────────────────────────────────────────
 
   @override

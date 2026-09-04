@@ -41,7 +41,17 @@ bool FlutterWindow::OnCreate() {
   }
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() {
+  // Показать окно на первом кадре — и только на первом.
+  //
+  // Show() — это ShowWindow(SW_SHOWNORMAL), а он не «показывает», а ещё и
+  // выводит окно вперёд, отнимая фокус у того, что сейчас на экране.
+  // Второй раз это уже не показ, а выпрыгивание: окно очереди лезло
+  // поверх настроек на каждую правку — правка рассылается всем движкам
+  // как «перечитать», главное окно перерисовывается, и обратный вызов
+  // срабатывал снова.
+  flutter_controller_->engine()->SetNextFrameCallback([this]() {
+    if (shown_once_) return;
+    shown_once_ = true;
     this->Show();
   });
 

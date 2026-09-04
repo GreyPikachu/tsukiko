@@ -80,6 +80,15 @@ class _TempOs implements Os {
   List<String> engineNames(String base) => _real.engineNames(base);
 
   @override
+  bool get hasWindowMaterial => _real.hasWindowMaterial;
+
+  @override
+  bool get hasSystemMenuBar => _real.hasSystemMenuBar;
+
+  @override
+  bool get needsAccessibilityPermission => _real.needsAccessibilityPermission;
+
+  @override
   Future<void> openUrl(String url) => _real.openUrl(url);
 
   @override

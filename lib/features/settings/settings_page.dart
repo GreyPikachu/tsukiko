@@ -572,56 +572,96 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
 
   /// Скилл для нейросетевых агентов.
   ///
-  /// Показываем только найденных: разложить папку во все известные места
-  /// было бы проще, но у человека с одним Codex появились бы
-  /// `~/.openclaw/skills/` и `~/.hermes/skills/` на пустом месте — и он
-  /// справедливо решил бы, что программа сорит в его домашней папке.
+  /// Раздел свёрнут по умолчанию, и это не кокетство: тому, кто
+  /// нейросетевыми агентами не пользуется, он не должен мозолить глаза
+  /// на каждом открытии настроек. Развернувшему видно две вещи — кому
+  /// скилл уже поставлен и кому его можно поставить.
   ///
-  /// Ненайденных всё же называем, серым: иначе не понять, искали ли их
-  /// вообще, и человек будет гадать, почему его агента в списке нет.
+  /// Галку у ненайденного агента человек может поставить сам: он вправе
+  /// собираться поставить агента следом за нами, и запрещать ему это
+  /// значило бы решать за него. Папку тогда заводим мы — но только
+  /// по его нажатию и только ту, что этому агенту и принадлежит.
   List<Widget> _skillSection(SettingsState s) {
-    final found = [for (final a in skillAgents) if (a.configDir() != null) a];
-    final missing = [for (final a in skillAgents) if (a.configDir() == null) a];
+    final installed = [for (final a in skillAgents) if (a.alreadyInstalled()) a];
     return [
       SectionTitle(l10n.sectionSkill),
       Hint(l10n.hintSkill, under: true),
-      const SizedBox(height: Gap.item),
-      if (found.isEmpty)
-        Hint(l10n.skillNoAgents)
-      else ...[
-        for (final agent in found)
-          _Field(
-            agent.name,
+      const SizedBox(height: Gap.inner),
+      Disclosure(
+        label: l10n.sectionSkill,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: Gap.item),
+            Text(l10n.skillInstalledFor, style: Type.control),
+            const SizedBox(height: Gap.hint),
             Text(
-              switch (s.skillResult[agent.id]) {
-                SkillOutcome.installed => l10n.skillInstalled,
-                // Место занято чужим скиллом с тем же именем. Затирать
-                // чужую работу хуже, чем не поставить свою.
-                SkillOutcome.foreign => l10n.skillForeign,
-                SkillOutcome.failed => l10n.skillFailed,
-                null => agent.skillDir() ?? '',
-              },
+              installed.isEmpty
+                  ? l10n.skillNobodyYet
+                  : installed.map((a) => a.name).join(', '),
               style: Type.caption.copyWith(
-                color: s.skillResult[agent.id] == SkillOutcome.installed
-                    ? MacosColors.systemGreenColor
-                    : Surface.secondaryText(context),
+                color: installed.isEmpty
+                    ? Surface.secondaryText(context)
+                    : MacosColors.systemGreenColor,
               ),
             ),
-          ),
-        const SizedBox(height: Gap.item),
-        PushButton(
-          controlSize: ControlSize.regular,
-          secondary: true,
-          onPressed: () => _cubit.installSkillToAgents(found),
-          child: Text(l10n.buttonInstallSkill(found.length)),
+            const SizedBox(height: Gap.section),
+            Text(l10n.skillCanInstallFor, style: Type.control),
+            const SizedBox(height: Gap.inner),
+            for (final agent in skillAgents)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Check(
+                  agent.configDir() == null
+                      ? '${agent.name} — ${l10n.skillAgentMissing}'
+                      : agent.name,
+                  _skillPicked(agent),
+                  (on) => setState(() => _skillPick[agent.id] = on),
+                ),
+              ),
+            const SizedBox(height: Gap.item),
+            Row(
+              children: [
+                PushButton(
+                  controlSize: ControlSize.regular,
+                  secondary: true,
+                  onPressed: () => _cubit.installSkillToAgents(
+                      [for (final a in skillAgents) if (_skillPicked(a)) a]),
+                  child: Text(l10n.buttonInstallSkillChosen),
+                ),
+              ],
+            ),
+            for (final agent in skillAgents)
+              if (s.skillResult[agent.id] != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: Gap.hint),
+                  child: Text(
+                    '${agent.name} — ${switch (s.skillResult[agent.id]!) {
+                      SkillOutcome.installed => l10n.skillInstalled,
+                      // Место занято чужим скиллом с тем же именем.
+                      // Затирать чужую работу хуже, чем не поставить свою.
+                      SkillOutcome.foreign => l10n.skillForeign,
+                      SkillOutcome.failed => l10n.skillFailed,
+                    }}',
+                    style: Type.caption.copyWith(
+                      color: s.skillResult[agent.id] == SkillOutcome.installed
+                          ? MacosColors.systemGreenColor
+                          : Surface.secondaryText(context),
+                    ),
+                  ),
+                ),
+          ],
         ),
-      ],
-      if (missing.isNotEmpty) ...[
-        const SizedBox(height: Gap.inner),
-        Hint(l10n.skillNotFound(missing.map((a) => a.name).join(', '))),
-      ],
+      ),
     ];
   }
+
+  /// Что человек решил про каждого агента. Пусто — решения не было, и
+  /// тогда действует умолчание: найденный отмечен, ненайденный нет.
+  final _skillPick = <String, bool>{};
+
+  bool _skillPicked(AgentTarget a) =>
+      _skillPick[a.id] ?? (a.configDir() != null);
 
   // ── приложение ────────────────────────────────────────────────────────────
 
@@ -655,45 +695,52 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             under: true),
         ..._apiSection(s),
         ..._skillSection(s),
-        SectionTitle(l10n.sectionPermissions),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                s.allowed
-                    ? l10n.permissionGranted(os.accessibilityName)
-                    : l10n.permissionMissing(os.accessibilityName, appName),
-                style: Type.control.copyWith(height: 1.4),
-              ),
-            ),
-          ],
-        ),
-        Hint(l10n.hintPermissionWhy),
-        const SizedBox(height: Gap.item),
-        if (!s.allowed)
+        // Разрешение системы — вещь macOS: там без «Универсального доступа»
+        // не перехватить клавишу и не вставить текст. На Windows такого
+        // разрешения нет вовсе, и раздел о нём обещал бы работу, которой
+        // не существует. Микрофон — другое дело, но его спрашивает сама
+        // система при первой записи.
+        if (os.needsAccessibilityPermission) ...[
+          SectionTitle(l10n.sectionPermissions),
           Row(
             children: [
-              PushButton(
-                controlSize: ControlSize.regular,
-                onPressed: _cubit.requestPermission,
-                child: Text(l10n.buttonRequestPermission),
-              ),
-              const SizedBox(width: 8),
-              PushButton(
-                controlSize: ControlSize.regular,
-                secondary: true,
-                onPressed: _cubit.openPermissionSettings,
-                child: Text(l10n.buttonOpenSystemSettings),
+              Expanded(
+                child: Text(
+                  s.allowed
+                      ? l10n.permissionGranted(os.accessibilityName)
+                      : l10n.permissionMissing(os.accessibilityName, appName),
+                  style: Type.control.copyWith(height: 1.4),
+                ),
               ),
             ],
-          )
-        else
-          PushButton(
-            controlSize: ControlSize.regular,
-            secondary: true,
-            onPressed: _cubit.openPermissionSettings,
-            child: Text(l10n.buttonOpenSystemSettings),
           ),
+          Hint(l10n.hintPermissionWhy),
+          const SizedBox(height: Gap.item),
+          if (!s.allowed)
+            Row(
+              children: [
+                PushButton(
+                  controlSize: ControlSize.regular,
+                  onPressed: _cubit.requestPermission,
+                  child: Text(l10n.buttonRequestPermission),
+                ),
+                const SizedBox(width: 8),
+                PushButton(
+                  controlSize: ControlSize.regular,
+                  secondary: true,
+                  onPressed: _cubit.openPermissionSettings,
+                  child: Text(l10n.buttonOpenSystemSettings),
+                ),
+              ],
+            )
+          else
+            PushButton(
+              controlSize: ControlSize.regular,
+              secondary: true,
+              onPressed: _cubit.openPermissionSettings,
+              child: Text(l10n.buttonOpenSystemSettings),
+            ),
+        ],
       ];
 }
 

@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/platform/bridge.dart';
-import 'package:tsukiko/core/skill_install.dart';
 import 'package:tsukiko/platform/os.dart';
 import 'package:tsukiko/features/settings/settings_page.dart';
 
@@ -44,27 +43,31 @@ void main() {
     // Заголовки разделов рисуются прописными (SectionTitle), поэтому
     // ищем так, как оно стоит на экране.
     //
-    // Едем до конца списка, а не до кнопки: кнопка есть только там, где
-    // нашёлся хоть один нейросетевой агент. На сборочной машине их нет
-    // вовсе, и там на месте кнопки стоит объяснение — раздел обязан
-    // рисоваться в обоих случаях.
+    // Раздел свёрнут: сам он на месте всегда, а содержимое появляется
+    // только по щелчку — тому, кто нейросетями не пользуется, оно
+    // мозолило бы глаза на каждом открытии настроек.
+    // Заголовок раскрывашки написан обычными буквами — от заголовка
+    // раздела (он прописными) отличается именно этим.
     await tester.dragUntilVisible(
-      find.text('СКИЛЛ ДЛЯ НЕЙРОСЕТЕЙ'),
+      find.text('Скилл для нейросетей'),
       find.byType(ListView).first,
       const Offset(0, -120),
     );
     expect(find.text('СКИЛЛ ДЛЯ НЕЙРОСЕТЕЙ'), findsOneWidget);
+    expect(find.text('Установлено для:'), findsNothing);
 
-    // Кнопка стоит ниже списка найденных агентов, то есть ещё дальше
-    // за сгибом: до неё надо доехать отдельно.
-    if (skillAgents.any((a) => a.configDir() != null)) {
-      await tester.dragUntilVisible(
-        find.textContaining('Поставить скилл'),
-        find.byType(ListView).first,
-        const Offset(0, -120),
-      );
-      expect(find.textContaining('Поставить скилл'), findsOneWidget);
-    }
+    await tester.tap(find.text('Скилл для нейросетей'));
+    await tester.pumpAndSettle();
+    await tester.dragUntilVisible(
+      find.text('Поставить скилл'),
+      find.byType(ListView).first,
+      const Offset(0, -120),
+    );
+    expect(find.text('Установлено для:'), findsOneWidget);
+    // Ненайденный агент в списке есть — и его галку можно поставить
+    // самому: человек вправе поставить агента следом за нами.
+    expect(find.textContaining('не найден'), findsWidgets);
+
     expect(tester.takeException(), isNull);
 
     // Таймер опроса разрешений должен уйти вместе с окном.

@@ -86,6 +86,17 @@ class MacOs implements Os {
   @override
   List<String> engineNames(String base) => [base];
 
+  // ── чем система рисует и что она спрашивает ───────────────────────────────
+
+  @override
+  bool get hasWindowMaterial => true;
+
+  @override
+  bool get hasSystemMenuBar => true;
+
+  @override
+  bool get needsAccessibilityPermission => true;
+
   // ── как система называет свои вещи ────────────────────────────────────────
 
   @override
