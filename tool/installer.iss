@@ -1,12 +1,23 @@
-; Скрипт Inno Setup для создания установщика tsukiko на Windows.
+; Установщик tsukiko для Windows (Inno Setup 6).
 ;
-; Особенности:
-; 1. PrivilegesRequired=lowest — установка строго в профиль текущего пользователя
-;    ({localappdata}\Programs\tsukiko) БЕЗ требования прав администратора и БЕЗ UAC.
-; 2. Алгоритм сжатия LZMA2 Ultra упаковывает Flutter runtime, движок whisper.cpp
-;    и аудиоконвертер в единый компактный установочный файл tsukiko-setup.exe.
-; 3. Бесшовное обновление поверх установленной копии с сохранением пользовательских
-;    настроек и загруженных моделей в %APPDATA%\app.yuko.tsukiko.
+; Двойник macOS-образа (`tool/dmg.sh`): там открытое окно сразу говорит,
+; что за программа и что с ней делать. Здесь то же самое средствами
+; мастера — свой значок, своя картинка, русский язык по умолчанию.
+;
+; Три решения, которые иначе выглядели бы прихотью:
+;
+; 1. PrivilegesRequired=lowest — установка в профиль пользователя
+;    ({localappdata}\Programs\tsukiko), без UAC и без прав администратора.
+;    Приложению они не нужны ни для чего: ни драйверов, ни служб.
+;
+; 2. AppMutex — тот же мьютекс, которым приложение ловит вторую свою
+;    копию (см. windows/runner/main.cpp). Без него установщик и деинсталлятор
+;    честно копировали и удаляли файлы поверх работающей программы: часть
+;    файлов оставалась занятой, папка не убиралась, значок висел в трее,
+;    а в «Пуске» оставался ярлык на пустое место.
+;
+; 3. Папку для моделей при установке не спрашиваем. Разбор — в
+;    docs/задача-установка-и-удаление.md.
 
 #define MyAppName "tsukiko"
 ; Версию передаёт tool\package-win.ps1 ключом /DMyAppVersion — он читает
@@ -19,23 +30,42 @@
 #define MyAppPublisher "Yuko"
 #define MyAppExeName "tsukiko.exe"
 #define BuildDir "..\build\windows\x64\runner\Release"
+; Обратный домен приложения. Обязан совпадать с bundleId из
+; lib/platform/os.dart: по нему называется папка с настройками и моделями,
+; и деинсталлятор ищет её именно там.
+#define BundleId "app.yuko.tsukiko"
 
 [Setup]
 AppId={{E5D48316-2F10-4A59-B817-5735160E21D0}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+VersionInfoVersion={#MyAppVersion}
 DefaultDirName={autopf}\{#MyAppName}
+DefaultGroupName={#MyAppName}
+UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 DisableProgramGroupPage=yes
 ; Установка без прав администратора:
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+; Мьютекс тот же, что и в приложении: пока оно работает, ни ставить
+; поверх, ни удалять нельзя — иначе останутся занятые файлы.
+AppMutex=TsukikoAppSingleInstanceMutex
+CloseApplications=yes
+RestartApplications=no
 OutputDir=..\build\installer
 OutputBaseFilename=tsukiko-setup
 ; Значок установщика — только .ico: Inno Setup другого формата не берёт
 ; и на .webp просто не соберётся.
 SetupIconFile=..\windows\runner\resources\app_icon.ico
+; Картинки мастера рисует tool/installer-images.py. Через запятую —
+; обычная и удвоенная: на экране с двойной плотностью Inno возьмёт
+; вторую сам, а растянутая первая выглядела бы мылом.
+WizardImageFile=..\design\installer-banner.bmp,..\design\installer-banner@2x.bmp
+WizardSmallImageFile=..\design\installer-logo.bmp,..\design\installer-logo@2x.bmp
+WizardImageStretch=yes
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -44,8 +74,13 @@ WizardStyle=modern
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Messages]
+russian.WelcomeLabel2=Программа установит {#MyAppName} {#MyAppVersion} на этот компьютер.%n%nРасшифровка аудио и диктовка. Всё считается на этой машине: ни записи, ни текст никуда не уходят.
+english.WelcomeLabel2=Setup will install {#MyAppName} {#MyAppVersion} on your computer.%n%nAudio transcription and dictation. Everything is computed locally: neither recordings nor text ever leave this machine.
+
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "startup"; Description: "{cm:AutoStartProgram,{#MyAppName}}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
 ; Всё содержимое релизной папки Flutter (исполняемый файл, flutter_windows.dll, папка data, Engine)
@@ -55,5 +90,148 @@ Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
+[Registry]
+; Автозапуск. Ту же запись правит сама программа (SetLoginItemEnabled
+; в dictation_bridge.cpp), поэтому здесь она заводится только по галке,
+; а вот убирается — всегда: без uninsdeletevalue после удаления в реестре
+; оставалась строка, которая каждый вход в систему пыталась запустить
+; несуществующий файл.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
+    ValueType: string; ValueName: "{#MyAppName}"; \
+    ValueData: """{app}\{#MyAppExeName}"" --login-item"; \
+    Flags: uninsdeletevalue; Tasks: startup
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
+    ValueType: none; ValueName: "{#MyAppName}"; \
+    Flags: uninsdeletevalue deletevalue; Tasks: not startup
+; След, который оставляет не программа, а сама Windows: «помощник
+; по совместимости» запоминает всякий запущенный exe. Своё имя из этого
+; списка убираем — иначе после удаления в реестре остаётся мусор с путём
+; к файлу, которого больше нет.
+Root: HKCU; Subkey: "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Store"; \
+    ValueType: none; ValueName: "{app}\{#MyAppExeName}"; \
+    Flags: uninsdeletevalue deletevalue dontcreatekey
+
+[UninstallRun]
+; Пояс сверх подтяжек. AppMutex не даст удалять при работающей программе,
+; но движок мог пережить её падение: полтора гигабайта модели держит
+; отдельный процесс, и он бы не дал стереть свою папку.
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM tsukiko-dictation-vulkan.exe"; Flags: runhidden skipifdoesntexist; RunOnceId: "KillDictationVk"
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM tsukiko-dictation-cpu.exe"; Flags: runhidden skipifdoesntexist; RunOnceId: "KillDictationCpu"
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM tsukiko-recognizer-vulkan.exe"; Flags: runhidden skipifdoesntexist; RunOnceId: "KillRecognizerVk"
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM tsukiko-recognizer-cpu.exe"; Flags: runhidden skipifdoesntexist; RunOnceId: "KillRecognizerCpu"
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#MyAppExeName}"; Flags: runhidden skipifdoesntexist; RunOnceId: "KillApp"
+
+[UninstallDelete]
+; Папка приложения после удаления файлов остаётся с пустыми подпапками
+; от Flutter — убираем её целиком.
+Type: filesandordirs; Name: "{app}"
+
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+{ ── что спросить при удалении ───────────────────────────────────────────
+  Своё — файлы программы, ярлыки, запись в автозапуске — убираем всегда
+  и молча: это наш мусор. Чужое — скачанные модели и папка с расшифровками
+  — не наше. Спрашиваем, и по умолчанию отвечаем «нет»: полтора гигабайта
+  качаются полчаса, а расшифровки человек делал сам.
+
+  Отдельными вопросами, а не одним: модели можно выбросить и оставить
+  расшифровки, и наоборот. }
+
+function ModelsDir(): string;
+begin
+  Result := ExpandConstant('{userappdata}\{#BundleId}\models');
+end;
+
+function SupportDir(): string;
+begin
+  Result := ExpandConstant('{userappdata}\{#BundleId}');
+end;
+
+function LibraryDir(): string;
+begin
+  Result := ExpandConstant('{userdocs}\{#MyAppName}');
+end;
+
+{ Сколько весит папка со всем, что в ней лежит. Нужно затем, чтобы
+  вопрос был не «удалить модели?», а «удалить 3,1 ГБ моделей?» —
+  на второй вопрос человек отвечает осознанно. }
+function DirSize(const Dir: string): Int64;
+var
+  Found: TFindRec;
+begin
+  Result := 0;
+  if not FindFirst(Dir + '\*', Found) then
+    Exit;
+  try
+    repeat
+      if (Found.Name = '.') or (Found.Name = '..') then
+        Continue;
+      if (Found.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+        Result := Result + DirSize(Dir + '\' + Found.Name)
+      else
+        Result := Result + (Int64(Found.SizeHigh) shl 32) + Int64(Found.SizeLow);
+    until not FindNext(Found);
+  finally
+    FindClose(Found);
+  end;
+end;
+
+function HumanSize(Bytes: Int64): string;
+begin
+  if Bytes >= 1073741824 then
+    Result := Format('%.1f ГБ', [Bytes / 1073741824.0])
+  else
+    Result := Format('%d МБ', [Bytes div 1048576]);
+end;
+
+{ Настройки без программы бесполезны, но и весят они килобайты: убираем
+  их всегда, а модели — только если разрешили. Поэтому не «снести папку
+  целиком», а по именам. }
+procedure RemoveOurSettings();
+begin
+  DeleteFile(SupportDir() + '\settings.json');
+  DeleteFile(SupportDir() + '\dictation.json');
+  DeleteFile(SupportDir() + '\whisper-server.pid');
+  DelTree(SupportDir() + '\bin', True, True, True);
+  { Пустую папку убираем, непустую (остались модели) — оставляем как есть. }
+  RemoveDir(SupportDir());
+end;
+
+procedure CurUninstallStepChanged(CurStep: TUninstallStep);
+var
+  Size: Int64;
+begin
+  if CurStep <> usPostUninstall then
+    Exit;
+
+  if DirExists(ModelsDir()) then
+  begin
+    Size := DirSize(ModelsDir());
+    if Size > 0 then
+      if SuppressibleMsgBox(
+           'Удалить скачанные модели распознавания?' + #13#10#13#10 +
+           ModelsDir() + #13#10 +
+           'Занимают ' + HumanSize(Size) + '.' + #13#10#13#10 +
+           'Если tsukiko ставится заново или обновляется, модели лучше '
+           + 'оставить: качать их заново — это полчаса.',
+           mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
+        DelTree(ModelsDir(), True, True, True);
+  end;
+
+  RemoveOurSettings();
+
+  if DirExists(LibraryDir()) then
+  begin
+    Size := DirSize(LibraryDir());
+    if SuppressibleMsgBox(
+         'Удалить папку с расшифровками и записями?' + #13#10#13#10 +
+         LibraryDir() + #13#10 +
+         'Занимает ' + HumanSize(Size) + '.' + #13#10#13#10 +
+         'Это сделанная вами работа, а не файлы программы. '
+         + 'Мы её не трогаем, пока вы не скажете.',
+         mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
+      DelTree(LibraryDir(), True, True, True);
+  end;
+end;
