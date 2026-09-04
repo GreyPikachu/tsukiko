@@ -679,8 +679,6 @@
   "tooltipFreeMemoryNextPhrase": "Освободить память до следующей фразы",
   "tooltipModelBusy": "Модель сейчас в работе",
   "buttonUnload": "Выгрузить",
-  "modelFast": "Быстрая",
-  "modelAccurate": "Точная",
   "menuDictationSettingsEllipsis": "Настройки диктовки…",
   "menuOpenApp": "Открыть {appName}…",
   "@menuOpenApp": {

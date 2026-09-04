@@ -553,16 +553,31 @@ class _Model extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            !s.hasModels
-                ? l10n.modelNotFound
-                : s.chosenModel.isEmpty
-                    ? l10n.modelNotChosen
-                    : modelDisplayName(s.chosenModel),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Type.fileName,
-          ),
+          // Имя модели и есть выбор модели: раньше здесь стояла надпись,
+          // а под кнопками — переключатель на два положения, «Быстро ·
+          // Точно». Он показывался, только когда моделей ровно две:
+          // одна или три — и выбора не было вовсе. Список честнее и
+          // работает при любом их числе.
+          if (!s.hasModels)
+            Text(l10n.modelNotFound,
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: Type.fileName)
+          else
+            MacosPopupButton<String>(
+              value: s.models.contains(s.chosenModel) ? s.chosenModel : null,
+              hint: Text(l10n.modelNotChosen, style: Type.fileName),
+              items: [
+                for (final path in s.models)
+                  MacosPopupMenuItem(
+                    value: path,
+                    child: Text(modelDisplayName(path),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              // Выбранное вступает в силу сразу; сервер при этом
+              // перезапускается только если модель правда сменилась —
+              // об этом заботится сам cubit.setModel.
+              onChanged: (v) => v == null ? null : cubit.setModel(v),
+            ),
           const SizedBox(height: Gap.hint),
           Text(!s.hasModels ? l10n.nothingToRecognizeWith : serverState, style: grey),
           // Кнопки под текстом, как в блоке последней расшифровки: два
@@ -596,20 +611,6 @@ class _Model extends StatelessWidget {
               ],
             ],
           ),
-          // Переключать нечего, пока модель одна: мёртвый переключатель
-          // врёт, будто выбор есть.
-          if (s.canSwitchModel) ...[
-            const SizedBox(height: Gap.item),
-            _Segmented(
-              options: [
-                (s.fastModel, l10n.modelFast),
-                (s.accurateModel, l10n.modelAccurate),
-              ],
-              value:
-                  s.chosenModel == s.accurateModel ? s.accurateModel : s.fastModel,
-              onChanged: cubit.setModel,
-            ),
-          ],
         ],
       ),
     );
@@ -702,71 +703,6 @@ class _MenuRowState extends State<_MenuRow> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Переключатель из двух-трёх равных вариантов. В macos_ui такой есть,
-/// но он завязан на MacosTabController, а здесь состояние приходит извне.
-class _Segmented extends StatelessWidget {
-  const _Segmented({
-    required this.options,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final List<(String, String)> options;
-  final String value;
-  final ValueChanged<String>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Surface.isDark(context);
-    return Container(
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: Surface.hover(context),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: Row(
-        children: [
-          for (final (id, label) in options)
-            Expanded(
-              child: GestureDetector(
-                onTap: onChanged == null ? null : () => onChanged!(id),
-                child: AnimatedContainer(
-                  duration: Motion.dur(context, Motion.quick),
-                  curve: Motion.curve(context, Motion.quickCurve),
-                  padding: const EdgeInsets.symmetric(vertical: 5),
-                  decoration: BoxDecoration(
-                    color: id == value
-                        ? (dark ? const Color(0xFF55585E) : MacosColors.white)
-                        : MacosColors.transparent,
-                    borderRadius: BorderRadius.circular(5),
-                    boxShadow: id == value
-                        ? const [
-                            BoxShadow(
-                              color: Color(0x1A000000),
-                              blurRadius: 2,
-                              offset: Offset(0, 1),
-                            )
-                          ]
-                        : null,
-                  ),
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Type.control.copyWith(
-                      color: onChanged == null ? Surface.secondaryText(context) : null,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

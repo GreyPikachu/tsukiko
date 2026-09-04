@@ -34,8 +34,7 @@ class DictationState extends Equatable {
     this.memoryMb = 0,
     this.chosenModel = '',
     this.ownModel = false,
-    this.fastModel = '',
-    this.accurateModel = '',
+    this.models = const [],
   });
 
   final Phase phase;
@@ -76,12 +75,15 @@ class DictationState extends Equatable {
   final String chosenModel;
   final bool ownModel;
 
-  /// Пара «быстрая · точная» из того, что нашлось на диске. Совпадают —
-  /// значит модель одна, и переключать нечего.
-  final String fastModel, accurateModel;
+  /// Все модели, что нашлись на диске, — из них и выбирают.
+  ///
+  /// Прежде здесь лежала пара «быстрая · точная», и панель показывала
+  /// переключатель на два положения. Разницы систем в нём не было, была
+  /// разница в числе моделей: ровно две — переключатель есть, одна или
+  /// три — нет вовсе. Списком выбор честнее и работает при любом их числе.
+  final List<String> models;
 
-  bool get hasModels => fastModel.isNotEmpty;
-  bool get canSwitchModel => fastModel.isNotEmpty && fastModel != accurateModel;
+  bool get hasModels => models.isNotEmpty;
   bool get recording => phase == Phase.recording;
 
   DictationState copyWith({
@@ -103,8 +105,7 @@ class DictationState extends Equatable {
     int? memoryMb,
     String? chosenModel,
     bool? ownModel,
-    String? fastModel,
-    String? accurateModel,
+    List<String>? models,
     // Обнулять поля через copyWith иначе нечем: `null` в именованном
     // параметре не отличить от «не передали».
     bool clearFailure = false,
@@ -133,8 +134,7 @@ class DictationState extends Equatable {
         memoryMb: memoryMb ?? this.memoryMb,
         chosenModel: chosenModel ?? this.chosenModel,
         ownModel: ownModel ?? this.ownModel,
-        fastModel: fastModel ?? this.fastModel,
-        accurateModel: accurateModel ?? this.accurateModel,
+        models: models ?? this.models,
       );
 
   @override
@@ -157,7 +157,6 @@ class DictationState extends Equatable {
         memoryMb,
         chosenModel,
         ownModel,
-        fastModel,
-        accurateModel,
+        models,
       ];
 }
