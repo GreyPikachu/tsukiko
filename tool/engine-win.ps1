@@ -83,8 +83,24 @@ if (-not (Test-Path $SRC)) {
 # ── 1. Сборка Vulkan (основное GPU-ускорение) ──────────────────────────────────
 Write-Host "Конфигурируем и собираем Vulkan-версию движка..."
 $BUILD_VK = "$SRC/build-vulkan"
+# Собирается под любой процессор, а не под тот, на котором собирали.
+#
+# GGML_NATIVE по умолчанию включён и значит «оптимизировать под эту
+# машину». Собираем мы на раннере GitHub, а там серверные Xeon с AVX-512,
+# которых на обычном компьютере нет. Такой бинарник печатает версию
+# и умирает на первой же настоящей арифметике — сразу после «loading
+# model from», с кодом 0xC0000409. Ни модель, ни видеокарта тут ни при
+# чём: падают обе сборки на любой модели.
+#
+# базовый набор инструкций, то есть без AVX2 на машинах, где
+# он есть. Быстрее было бы GGML_BACKEND_DL=ON + GGML_CPU_ALL_VARIANTS=ON —
+# тогда ggml кладёт рядом несколько библиотек и выбирает лучшую на месте.
+# Это стоит отдельных файлов рядом с бинарником; браться за это имеет
+# смысл, если процессорный путь окажется узким местом. Основную работу
+# всё равно делает Vulkan.
 cmake -S $SRC -B $BUILD_VK `
     -DCMAKE_BUILD_TYPE=Release `
+    -DGGML_NATIVE=OFF `
     -DBUILD_SHARED_LIBS=OFF `
     -DWHISPER_BUILD_TESTS=OFF `
     -DWHISPER_BUILD_SERVER=ON `
@@ -98,6 +114,7 @@ Write-Host "Конфигурируем и собираем процессорн�
 $BUILD_CPU = "$SRC/build-cpu"
 cmake -S $SRC -B $BUILD_CPU `
     -DCMAKE_BUILD_TYPE=Release `
+    -DGGML_NATIVE=OFF `
     -DBUILD_SHARED_LIBS=OFF `
     -DWHISPER_BUILD_TESTS=OFF `
     -DWHISPER_BUILD_SERVER=ON `

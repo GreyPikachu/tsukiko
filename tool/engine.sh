@@ -64,8 +64,14 @@ if [ ! -d "$SRC" ]; then
 fi
 
 # Универсальный, как и само приложение: Flutter собирает обе архитектуры.
+# GGML_NATIVE=OFF по той же причине, что и на Windows: по умолчанию ggml
+# оптимизирует под ту машину, где собирают. Пока приложение собирали для
+# себя, это было верно; с тех пор как его раздают, — уже нет. Собранное
+# на M5 могло бы не пойти на Mac постарше, а понять это можно было бы
+# только по жалобе того, у кого не пошло.
 cmake -S "$SRC" -B "$SRC/build" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DGGML_NATIVE=OFF \
   -DBUILD_SHARED_LIBS=OFF \
   -DWHISPER_BUILD_TESTS=OFF \
   -DWHISPER_BUILD_SERVER=ON \
