@@ -17,6 +17,7 @@ class Job extends Equatable {
     this.imported = false,
     this.state = JobState.queued,
     this.detail,
+    this.error,
     this.progress = 0,
     this.live = const [],
     this.transcript,
@@ -38,6 +39,15 @@ class Job extends Equatable {
   /// Уточнение к состоянию: «Русский · 42 фрагмента». Пусто — показываем
   /// само состояние.
   final String? detail;
+
+  /// Что движок сказал перед тем, как не справиться, — целиком.
+  ///
+  /// Отдельно от [detail]: в подпись под именем записи влезает начало
+  /// одной строки, а понять по ней, почему движок не поднимается, нельзя
+  /// ни человеку, ни тому, кому он эту строку перешлёт. Здесь лежит весь
+  /// вывод: его показывают подсказкой, кладут в инспектор и отдают
+  /// в буфер обмена одним пунктом меню.
+  final String? error;
 
   final double progress;
 
@@ -93,6 +103,7 @@ class Job extends Equatable {
   Job copyWith({
     JobState? state,
     String? detail,
+    String? error,
     double? progress,
     List<Segment>? live,
     Transcript? transcript,
@@ -112,6 +123,7 @@ class Job extends Equatable {
         imported: imported,
         state: state ?? this.state,
         detail: clearDetail ? null : (detail ?? this.detail),
+        error: clearDetail ? null : (error ?? this.error),
         progress: progress ?? this.progress,
         live: live ?? this.live,
         transcript: transcript ?? this.transcript,
@@ -137,6 +149,7 @@ class Job extends Equatable {
         imported,
         state,
         detail,
+        error,
         progress,
         live.length,
         transcript,

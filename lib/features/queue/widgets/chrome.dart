@@ -147,6 +147,36 @@ class DotState extends State<Dot> with SingleTickerProviderStateMixin {
   }
 }
 
+/// Что сказал движок, когда не справился, — целиком и с переносами.
+///
+/// Отдельной коробкой, а не строкой подписи: жалоба движка бывает
+/// в несколько строк, и половина смысла в них. В подпись под именем
+/// записи влезает только начало, и выделить её оттуда нельзя вовсе —
+/// а пока движок не поднимается, эта строка единственное, по чему
+/// видно причину.
+class EngineErrorBox extends StatelessWidget {
+  const EngineErrorBox({super.key, required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+        decoration: BoxDecoration(
+          // Красным намекаем, а не кричим: коробка и так стоит первой.
+          color: MacosColors.systemRedColor.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+              color: MacosColors.systemRedColor.withValues(alpha: 0.25)),
+        ),
+        child: Text(
+          text,
+          // Без maxLines и обрезания: тут её и читают целиком.
+          style: Type.caption.copyWith(height: 1.45),
+        ),
+      );
+}
+
 class EmptyNotice extends StatelessWidget {
   const EmptyNotice({
     super.key,required this.icon, required this.title, required this.subtitle});

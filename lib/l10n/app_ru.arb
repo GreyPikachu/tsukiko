@@ -581,6 +581,7 @@
   "menuRecognition": "Распознавание",
   "menuRunQueue": "Распознать очередь",
   "menuRetryRecognition": "Распознать заново",
+  "menuCopyErrorText": "Скопировать текст ошибки",
   "menuStop": "Остановить",
   "menuView": "Вид",
   "menuHideTimestamps": "Скрыть метки времени",
@@ -771,6 +772,9 @@
     }
   },
   "jobDetailParseFailed": "Не удалось разобрать ответ модели",
+  "sectionEngineError": "Что сказал движок",
+  "hintEngineError": "Это последние строки, которые движок написал перед тем, как сдаться. Если он не поднимается вовсе, отдайте их целиком — по ним и видно причину.",
+  "statusErrorCopied": "Текст ошибки скопирован",
   "jobDetailLangSegments": "{lang} · {segments}",
   "@jobDetailLangSegments": {
     "placeholders": {
