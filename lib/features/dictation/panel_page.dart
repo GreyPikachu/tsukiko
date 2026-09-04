@@ -570,7 +570,10 @@ class _Model extends StatelessWidget {
                 for (final path in s.models)
                   MacosPopupMenuItem(
                     value: path,
-                    child: Text(modelDisplayName(path),
+                    // modelLabel, а не modelDisplayName: одна и та же
+                    // модель в двух папках дала бы две одинаковые строки,
+                    // и какая из них выбрана — не понять.
+                    child: Text(modelLabel(path, s.models),
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                   ),
               ],
