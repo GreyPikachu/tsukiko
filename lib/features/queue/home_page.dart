@@ -433,7 +433,44 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     );
   }
 
-  Widget _windowBody(QueueState s) => Builder(
+  /// Окно с подложкой под ним — там, где системного материала окна нет.
+  ///
+  /// Прошлая правка (`Sidebar.decoration`) не помогла, и вот почему.
+  /// macos_ui заворачивает содержимое левой колонки в
+  /// `DecoratedBox(color: чёрный, backgroundBlendMode: BlendMode.clear)` —
+  /// он нарочно вырезает дыру в кадре, чтобы сквозь неё был виден
+  /// NSVisualEffectView. Дыра прорезается поверх всего, что нарисовано
+  /// ниже в том же слое, — в том числе поверх нашего цвета из decoration.
+  /// На macOS в дыре материал, на Windows за ней нет ничего: чернота.
+  /// Правая колонка цела как раз потому, что там этой дыры нет.
+  ///
+  /// Закрасить дыру изнутри нельзя целиком: часть её — поля, которые
+  /// рисует сам macos_ui, и до них из `builder` не дотянуться. Поэтому
+  /// вместо спора с ним даём вырезанию отдельный слой и кладём подложку
+  /// под него: чистит оно тогда только свой слой, а сквозь очищенное
+  /// видно наш цвет.
+  ///
+  /// Слой заводится `ClipRect(clipBehavior: antiAliasWithSaveLayer)`.
+  /// RepaintBoundary здесь не годится, хотя и просится: его слой —
+  /// смещение, а не отдельная поверхность, и вырезание пробивает его
+  /// насквозь. Проверено: test/features/queue/sidebar_ground_test.dart.
+  ///
+  /// Цена — буфер размером с окно на каждую перерисовку. Дёшево это
+  /// не назвать, но дешевле, чем перекладывать всю боковую колонку
+  /// мимо macos_ui, а на macOS этого не происходит вовсе.
+  Widget _windowBody(QueueState s) {
+    final window = _macosWindow(s);
+    final ground = Surface.sidebar(context);
+    if (ground == null) return window;
+    return Stack(
+      children: [
+        Positioned.fill(child: ColoredBox(color: ground)),
+        ClipRect(clipBehavior: Clip.antiAliasWithSaveLayer, child: window),
+      ],
+    );
+  }
+
+  Widget _macosWindow(QueueState s) => Builder(
         builder: (context) => MacosWindow(
           // «Подкраска обоями» на macOS показывает сквозь окно рабочий
           // стол — и делает это родным плагином, которого на Windows
