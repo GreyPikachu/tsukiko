@@ -58,5 +58,25 @@ void main() {
       // Имя без суффикса остаётся запасным: подхватится и собранное руками.
       expect(names, contains('tsukiko-recognizer.exe'));
     });
+
+    test('проводник зовётся так, чтобы кавычки Dart ничего не сломали', () {
+      // Dart на Windows берёт в кавычки каждый довод, без исключений.
+      // Проводник получает `"/select,C:\путь"` целиком закавыченным,
+      // ключа не узнаёт и открывает «Документы» — отсюда и жалоба
+      // «Показать запись не работает». Поэтому командную строку для него
+      // собирает PowerShell, и своих кавычек в ней нет ни одной:
+      // экранировать их Dart тоже не умеет.
+      final cmd = WindowsOs.revealCommand;
+      expect(cmd.last, contains('/select,'));
+      expect(cmd.last, contains('[char]34'));
+      expect(cmd.last, contains(r'$env:' + WindowsOs.revealPathVar));
+      for (final arg in cmd) {
+        expect(arg, isNot(contains('"')),
+            reason: 'кавычка в доводе доедет до PowerShell сломанной');
+      }
+      // Путь идёт переменной окружения и в разбор PowerShell не попадает
+      // вовсе — значит в нём могут быть и пробелы, и кавычки, и что угодно.
+      expect(cmd.join(' '), isNot(contains(r'C:\')));
+    });
   });
 }
