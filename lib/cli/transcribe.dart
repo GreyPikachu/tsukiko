@@ -310,8 +310,18 @@ Future<Transcript> transcribeHere(
       }
 
       final subs = [
-        proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(onLine),
-        proc.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen(onLine),
+        // systemEncoding, а не UTF-8: движок пишет в трубу байтами
+        // однобайтовой кодировки системы (на macOS это тот же UTF-8).
+        // Строгий utf8.decoder на них не просто портил текст — он ронял
+        // подписку целиком, вместе с процентами и фрагментами.
+        proc.stdout
+            .transform(systemEncoding.decoder)
+            .transform(const LineSplitter())
+            .listen(onLine),
+        proc.stderr
+            .transform(systemEncoding.decoder)
+            .transform(const LineSplitter())
+            .listen(onLine),
       ];
       // Диктовка главнее: часовая запись считается минутами, а говорить
       // хотят посреди. Заметили чужой движок — гасим свой немедленно,

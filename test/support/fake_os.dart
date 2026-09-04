@@ -71,6 +71,9 @@ class _TempOs implements Os {
   @override
   String? findExecutable(String name) => _real.findExecutable(name);
 
+  @override
+  String processPath(String path) => _real.processPath(path);
+
   /// Тест бежит не из .app: своего движка у него нет, и работать он
   /// будет на системном — как и приложение, у которого своего не нашлось.
   @override
