@@ -3,13 +3,13 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
 import 'core/app_locale.dart';
-import 'core/text.dart';
 import 'l10n/gen/app_localizations.dart';
 import 'legacy_migration.dart';
 import 'features/dictation/hud_page.dart' show runHud;
 import 'features/dictation/panel_page.dart' show runPanel;
 import 'features/settings/settings_page.dart' show runSettings;
 import 'features/queue/home_page.dart';
+import 'platform/os.dart';
 
 /// Точка входа второго движка Flutter — того, что рисует панель у строки
 /// меню и ведёт диктовку. Она обязана лежать именно здесь: FlutterEngine
@@ -35,8 +35,11 @@ void hudMain() => runHud();
 Future<void> main(List<String> args) async {
   refreshLocale();
   WidgetsFlutterBinding.ensureInitialized();
-  // Настоящий материал окна: содержимое во всю высоту, титульная полоса прозрачная (macOS).
-  if (Platform.isMacOS) {
+  // Настоящий материал окна: содержимое во всю высоту, титульная полоса
+  // прозрачная. Спрашиваем не «мы на macOS?», а «даёт ли система материал
+  // окна»: настраивать здесь нечего ровно там, где материала нет, — а
+  // плагин, который это делает, на такой системе и не поднимется.
+  if (os.hasWindowMaterial) {
     await const MacosWindowUtilsConfig(toolbarStyle: NSWindowToolbarStyle.unified).apply();
   }
   // До первого findModels(): список моделей должен собираться уже
