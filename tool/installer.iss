@@ -100,9 +100,15 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
     ValueType: string; ValueName: "{#MyAppName}"; \
     ValueData: """{app}\{#MyAppExeName}"" --login-item"; \
     Flags: uninsdeletevalue; Tasks: startup
+; Вторая запись ничего не делает при установке — она нужна ради
+; `uninsdeletevalue`. Без неё удаление вычищало бы автозапуск только
+; у тех, кто поставил галку в мастере; а включить его можно и потом,
+; из настроек самой программы, — и тогда строка оставалась бы в реестре
+; навсегда. Обновлению поверх она при этом не мешает: галку человека
+; здесь никто не трогает.
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
     ValueType: none; ValueName: "{#MyAppName}"; \
-    Flags: uninsdeletevalue deletevalue; Tasks: not startup
+    Flags: uninsdeletevalue dontcreatekey
 ; След, который оставляет не программа, а сама Windows: «помощник
 ; по совместимости» запоминает всякий запущенный exe. Своё имя из этого
 ; списка убираем — иначе после удаления в реестре остаётся мусор с путём
@@ -171,7 +177,8 @@ begin
       if (Found.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
         Result := Result + DirSize(Dir + '\' + Found.Name)
       else
-        Result := Result + (Int64(Found.SizeHigh) shl 32) + Int64(Found.SizeLow);
+        { Умножением, а не сдвигом: Pascal Script сдвигает 32-битное. }
+        Result := Result + Int64(Found.SizeHigh) * 4294967296 + Int64(Found.SizeLow);
     until not FindNext(Found);
   finally
     FindClose(Found);
