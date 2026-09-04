@@ -702,6 +702,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
               detail: _lastEngineError.isEmpty
                   ? currentL10n().jobDetailWhisperFailed
                   : '${currentL10n().jobDetailWhisperFailed} · $_lastEngineError',
+              // В подпись влезает начало одной строки, и выделить её
+              // оттуда нельзя. Целиком вывод живёт здесь — его показывают
+              // подсказкой и отдают в буфер обмена одним пунктом меню.
+              error: _engineErrorText.isEmpty ? null : _engineErrorText,
             )).copyWith(status: currentL10n().statusRecognitionFailed(it.name)));
         return true;
       }
@@ -743,6 +747,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
           it.copyWith(
             state: JobState.failed,
             detail: currentL10n().jobDetailParseFailed,
+            error: [if (_engineErrorText.isNotEmpty) _engineErrorText, '$err']
+                .join('\n'),
           )).copyWith(status: currentL10n().statusRecognitionFailed(it.name)));
       return true;
     } finally {
@@ -822,10 +828,30 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     return null;
   }
 
-  /// Что движок сказал последним. Нужно, когда он не справился: «не
-  /// справился с этим файлом» само по себе не говорит человеку ничего,
-  /// а строка от whisper обычно говорит всё.
-  String _lastEngineError = '';
+  /// Что движок наговорил помимо хода работы. Нужно, когда он не
+  /// справился: «не справился с этим файлом» само по себе не говорит
+  /// человеку ничего, а строки от whisper обычно говорят всё.
+  ///
+  /// Список, а не последняя строка: беда редко умещается в одну — за
+  /// «failed to load model» идут путь, размер и причина, и без них
+  /// в чужие руки передавать нечего. Строки хода работы (фрагменты,
+  /// проценты) сюда не попадают: они вытеснили бы саму беду.
+  final _engineLog = <String>[];
+
+  /// Больше сорока строк не помним: длиннее этого движок не жалуется,
+  /// а держать весь его вывод — это мегабайты на часовой записи.
+  static const _engineLogLimit = 40;
+
+  void _rememberEngineLine(String line) {
+    _engineLog.add(line);
+    if (_engineLog.length > _engineLogLimit) _engineLog.removeAt(0);
+  }
+
+  /// Последняя жалоба движка — для подписи под именем записи.
+  String get _lastEngineError => _engineLog.isEmpty ? '' : _engineLog.last;
+
+  /// Вся жалоба целиком — для подсказки, инспектора и буфера обмена.
+  String get _engineErrorText => _engineLog.join('\n');
 
   /// Запуск whisper-cli с разбором вывода на лету.
   ///
@@ -859,9 +885,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
   Future<int> _runEngine(Job job, String exe, List<String> args) async {
     _sawEngineOutput = false;
-    _lastEngineError = '';
+    _engineLog.clear();
     void onLine(String line) {
-      if (line.trim().isNotEmpty) _lastEngineError = line.trim();
       final seg = parseSegmentLine(line);
       if (seg != null) {
         _sawEngineOutput = true;
@@ -877,6 +902,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         _sawEngineOutput = true;
         add(JobAdvanced(job, language: l.group(1)));
       }
+      final text = line.trim();
+      if (text.isNotEmpty) _rememberEngineLine(text);
     }
 
     // Под своим именем: иначе в «Мониторинге системы» память числится

@@ -343,6 +343,19 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     _send(CopyRequested(format ?? formatById(s.copyFormat)));
   }
 
+  /// Отдать текст ошибки движка в буфер обмена.
+  ///
+  /// Отдельно от [_copy]: тот копирует расшифровку в выбранном формате,
+  /// а здесь нужно ровно то, что сказал движок, — чтобы человек мог
+  /// переслать это как есть. Пока движок не поднимается, это
+  /// единственное, по чему видно причину.
+  void _copyError(Job job) {
+    final text = job.error;
+    if (text == null || text.isEmpty) return;
+    unawaited(Clipboard.setData(ClipboardData(text: text)));
+    _send(StatusReported(l10n.statusErrorCopied));
+  }
+
   /// Из главного окна настройки открываются на вкладке расшифровщика:
   /// это его окно, и «Настройки…» отсюда — про него. На диктовку ведёт
   /// её собственная панель у строки меню.
@@ -842,6 +855,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       ),
       MenuAction(l10n.menuSaveAs,
           onSelected: ready ? () => _saveAs(s) : null, shortcut: '⌘S'),
+      // Только у той записи, что не задалась: у остальных пункт был бы
+      // всегда серым и только мешал.
+      if (job.error != null) ...[
+        const MenuAction.separator(),
+        MenuAction(l10n.menuCopyErrorText, onSelected: () => _copyError(job)),
+      ],
       const MenuAction.separator(),
       MenuAction(
         many ? l10n.menuRetrySelected : l10n.menuRetryRecognition,
@@ -1114,6 +1133,21 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           onReset: own == null ? null : _sendResetOverrides,
           onMakeDefault: own == null ? null : _sendMakeDefault,
         ),
+        // Беда важнее настроек: она стоит первой, до модели и языка.
+        // Здесь же единственное место, где длинную ошибку видно целиком —
+        // в подпись под именем записи влезает только начало.
+        if (s.lead?.error case final err?) ...[
+          SectionTitle(l10n.sectionEngineError),
+          EngineErrorBox(text: err),
+          const SizedBox(height: Gap.inner),
+          PushButton(
+            controlSize: ControlSize.regular,
+            secondary: true,
+            onPressed: () => _copyError(s.lead!),
+            child: Text(l10n.menuCopyErrorText),
+          ),
+          Hint(l10n.hintEngineError),
+        ],
         SectionTitle(l10n.sectionTranscriptionModel),
         ModelField(
           installed: s.models,

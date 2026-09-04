@@ -419,6 +419,24 @@ void main() {
       expect(again.overrides, mine, reason: 'настройки записи переживают сброс');
     });
 
+    test('текст ошибки живёт отдельно от подписи и не переживает сброс', () {
+      // Ошибка движка бывает в несколько строк, а в подпись под именем
+      // записи влезает начало одной. Поэтому она хранится целиком
+      // отдельным полем — его показывают подсказкой, кладут в инспектор
+      // и отдают в буфер обмена. Но переживать «распознать заново» она
+      // не должна: иначе удавшийся заход остался бы с чужой жалобой.
+      final failed = job('а.m4a').copyWith(
+        state: JobState.failed,
+        detail: 'whisper-cli не справился · error',
+        error: 'error: failed to load model\nfrom /m.bin',
+      );
+      expect(failed.error, contains('\n'), reason: 'храним весь вывод');
+      expect(failed.reset.error, isNull);
+      expect(failed.copyWith(clearDetail: true).error, isNull);
+      expect(failed == failed.copyWith(error: 'другое'), isFalse,
+          reason: 'перемена ошибки обязана дойти до перерисовки');
+    });
+
     test('равные записи не заставляют очередь перерисовываться', () {
       final a = job('а.m4a');
       expect(a, a.copyWith());

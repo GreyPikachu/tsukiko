@@ -90,12 +90,19 @@ class QueueRowState extends State<QueueRow> {
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 24, top: 1),
-                child: Text(
-                  job.detail ?? job.state.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Type.caption.copyWith(
-                    color: fg?.withValues(alpha: 0.75) ?? Surface.secondaryText(context),
+                // В строку влезает начало одной строки, и на этом всё.
+                // Полный текст ошибки — под курсором; прочитать его
+                // целиком и скопировать можно в инспекторе и в меню
+                // правого щелчка.
+                child: _maybeTooltip(
+                  job.error,
+                  Text(
+                    job.detail ?? job.state.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Type.caption.copyWith(
+                      color: fg?.withValues(alpha: 0.75) ?? Surface.secondaryText(context),
+                    ),
                   ),
                 ),
               ),
@@ -132,6 +139,12 @@ class QueueRowState extends State<QueueRow> {
     );
   }
 }
+
+/// Подсказка при наведении — только когда есть что подсказать.
+Widget _maybeTooltip(String? message, Widget child) =>
+    message == null || message.isEmpty
+        ? child
+        : MacosTooltip(message: message, child: child);
 
 class StateGlyph extends StatelessWidget {
   const StateGlyph({
