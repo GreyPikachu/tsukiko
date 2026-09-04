@@ -231,6 +231,13 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           keys: s.toggle.label,
           onTap: () => _cubit.reassign('toggle'),
         ),
+        // Пара, где одно сочетание входит в другое, ведёт себя непонятно,
+        // а не ломается: запись начинается по дороге ко второму. Молчать
+        // об этом нельзя — человеку неоткуда догадаться.
+        if (s.shadowingHotkey case final early?)
+          _problem(l10n.hotkeyShadowProblem(
+              early.label,
+              (early.sameAs(s.hold) ? s.toggle : s.hold).label)),
         Hint(l10n.hintHotkeyCapture),
         Hint(l10n.hintHotkeyDoubleTap, under: false),
         Hint(l10n.hintHotkeyExclusive, under: false),

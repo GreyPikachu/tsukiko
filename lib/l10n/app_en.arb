@@ -91,6 +91,7 @@
   "usedByBoth": "transcription and dictation",
   "usedByTranscription": "transcription",
   "usedByDictation": "dictation",
+  "hotkeyShadowProblem": "\"{early}\" is contained in \"{late}\": on the way to the second one the first one fires, and recording starts too early. Pick key sets where neither is part of the other.",
   "hotkeyTakenProblem": "\"{combo}\" is already assigned to another action. One shortcut can't do two different jobs.",
   "modelTrashFailed": "Couldn't move the model to the Trash: {path}",
   "modelFileGone": "The file \"{name}\" is no longer on disk.",

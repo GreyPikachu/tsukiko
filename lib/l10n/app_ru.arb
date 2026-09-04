@@ -218,6 +218,17 @@
   "usedByBoth": "расшифровщик и диктовка",
   "usedByTranscription": "расшифровщик",
   "usedByDictation": "диктовка",
+  "hotkeyShadowProblem": "«{early}» целиком входит в «{late}»: по дороге ко второму срабатывает первое, и запись начинается раньше времени. Возьмите наборы клавиш, где ни один не входит в другой.",
+  "@hotkeyShadowProblem": {
+    "placeholders": {
+      "early": {
+        "type": "String"
+      },
+      "late": {
+        "type": "String"
+      }
+    }
+  },
   "hotkeyTakenProblem": "«{combo}» уже назначено на другое действие. Одно сочетание не может делать два разных дела.",
   "@hotkeyTakenProblem": {
     "placeholders": {
