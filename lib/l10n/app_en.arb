@@ -191,6 +191,7 @@
   "menuRunQueue": "Recognize Queue",
   "menuRetryRecognition": "Recognize Again",
   "menuCopyErrorText": "Copy Error Text",
+  "sheetShortcutsTitle": "Keyboard Shortcuts",
   "menuStop": "Stop",
   "menuView": "View",
   "menuHideTimestamps": "Hide Timestamps",

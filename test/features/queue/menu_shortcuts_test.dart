@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/features/queue/menu_shortcuts.dart';
+import 'package:tsukiko/platform/os.dart';
 
 /// Сочетания клавиш там, где нет строки меню.
 void main() {
@@ -62,5 +63,20 @@ void main() {
 
     final c = keys.firstWhere((k) => k.trigger == LogicalKeyboardKey.keyC);
     expect(c.shift, isTrue, reason: '⇧ никуда не девается');
+  });
+
+  test('список сочетаний собирается из того же дерева и по разделам', () {
+    // На Windows строки меню нет вовсе: сочетания работают, а посмотреть
+    // их негде. Список для этого берётся из того же дерева, что и сами
+    // сочетания, — иначе подсказка разошлась бы с делом.
+    final commands = menuCommands(menus());
+    expect(commands.map((c) => c.label).toList(),
+        ['Добавить', 'Копировать', 'Найти'],
+        reason: 'пункты без сочетания или без действия в список не идут');
+    expect(commands.map((c) => c.menu).toSet(), {'Файл', 'Правка'});
+    // Подпись — словами той системы, на которой идёт тест: значки ⌘
+    // на Windows человеку не говорят ничего.
+    expect(commands.first.shortcut, os.menuShortcut(const ['cmd'], 'o'));
+    expect(commands[1].shortcut, os.menuShortcut(const ['shift', 'cmd'], 'c'));
   });
 }

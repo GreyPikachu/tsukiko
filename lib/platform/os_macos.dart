@@ -138,6 +138,33 @@ class MacOs implements Os {
     return [...ordered.map(modifierLabel), ...keys].join(' + ');
   }
 
+  /// Клавиши, у которых в меню macOS свой значок вместо имени.
+  static const _keySymbols = {
+    'backspace': '⌫',
+    'delete': '⌫',
+    'enter': '↩',
+    'return': '↩',
+    'escape': '⎋',
+    'tab': '⇥',
+    'space': '␣',
+  };
+
+  @override
+  String menuShortcut(List<String> mods, [String key = '']) {
+    final ordered = [
+      ..._modOrder.where(mods.contains),
+      ...mods.where((m) => !_modOrder.contains(m)),
+    ];
+    return [
+      ...ordered.map(modifierLabel),
+      if (key.isNotEmpty) _keyLabel(key),
+    ].join();
+  }
+
+  String _keyLabel(String key) =>
+      _keySymbols[key.toLowerCase()] ??
+      (key.length == 1 ? key.toUpperCase() : key);
+
   // ── звук ──────────────────────────────────────────────────────────────────
 
   /// Штатный afconvert, ffmpeg не нужен. whisper-cli сам читает только
