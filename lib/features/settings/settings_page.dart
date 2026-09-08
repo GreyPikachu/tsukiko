@@ -243,7 +243,9 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           label: l10n.hotkeyCancel,
           keys: s.cancel.label,
           onTap: () => _cubit.reassign('cancel'),
-          onClear: _cubit.clearCancelHotkey,
+          // Снимать нечего — и крестика нет: пустая строка не должна
+          // выбиваться из столбика ради кнопки, которой не на что нажать.
+          onClear: s.cancel.empty ? null : _cubit.clearCancelHotkey,
         ),
         // Пара, где одно сочетание входит в другое, ведёт себя непонятно,
         // а не ломается: запись начинается по дороге ко второму. Молчать

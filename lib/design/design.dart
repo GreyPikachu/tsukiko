@@ -391,6 +391,7 @@ class HotkeyRow extends StatefulWidget {
 
   /// Снять сочетание совсем. Есть не у всех: без «держать и говорить»
   /// диктовки нет вовсе, а «бросить начатое» можно и не назначать.
+  /// null — и когда снимать нечем, и когда снимать нечего.
   final VoidCallback? onClear;
 
   @override
@@ -418,30 +419,71 @@ class _HotkeyRowState extends State<HotkeyRow> {
             child: Row(
               children: [
                 Expanded(child: Text(widget.label, style: Type.control)),
+                // Крестик слева от клавиши, а не справа. Справа он сдвигал
+                // сочетание, и строка с ним переставала стоять в столбик
+                // с соседними: правый край у трёх сочетаний обязан быть
+                // общим, иначе список читается как сломанный.
+                if (widget.onClear case final clear? when !_waiting)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _ClearButton(onPressed: clear),
+                  ),
                 KeyCap(
                   _waiting
                       ? AppLocalizations.of(context).hotkeyCapturePrompt
                       : widget.keys,
                   lit: _hover || _waiting,
                 ),
-                // Крестик только там, где сочетание и правда можно снять,
-                // и только когда снимать есть что.
-                if (widget.onClear case final clear? when !_waiting)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: SizedBox(
-                      width: 16,
-                      child: widget.keys ==
-                              AppLocalizations.of(context).hotkeyUnassigned
-                          ? null
-                          : MacosIconButton(
-                              padding: EdgeInsets.zero,
-                              icon: const MacosIcon(CupertinoIcons.xmark, size: 10),
-                              onPressed: clear,
-                            ),
-                    ),
-                  ),
               ],
+            ),
+          ),
+        ),
+      );
+}
+
+/// Крестик «снять сочетание».
+///
+/// Не синяя кнопка macos_ui: синим в этом окне обозначено выбранное, и
+/// синий крестик рядом с серой надписью читался как ещё одно состояние,
+/// а не как действие. Здесь тот же знак, каким система чистит поля
+/// поиска, — залитый кружок с косым крестом. В покое он приглушён,
+/// под курсором проявляется целиком: есть, когда его ищут, и не спорит
+/// с сочетанием, пока не нужен.
+class _ClearButton extends StatefulWidget {
+  const _ClearButton({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  State<_ClearButton> createState() => _ClearButtonState();
+}
+
+class _ClearButtonState extends State<_ClearButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        cursor: SystemMouseCursors.click,
+        child: MacosTooltip(
+          message: AppLocalizations.of(context).tooltipClearHotkey,
+          child: GestureDetector(
+            onTap: widget.onPressed,
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: Center(
+                child: AnimatedOpacity(
+                  duration: Motion.dur(context, Motion.press),
+                  opacity: _hover ? 1 : 0.55,
+                  child: MacosIcon(
+                    CupertinoIcons.xmark_circle_fill,
+                    size: 15,
+                    color: Surface.secondaryText(context),
+                  ),
+                ),
+              ),
             ),
           ),
         ),
