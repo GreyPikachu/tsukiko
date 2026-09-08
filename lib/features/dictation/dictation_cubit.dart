@@ -418,11 +418,19 @@ class DictationCubit extends Cubit<DictationState> {
 
     final path = await bridge.stopRecording() ?? _wav;
     _wav = null;
-    var ok = false;
+    var ok = false, silent = false;
     String? failure;
     String? failurePath;
     try {
-      if (path != null) {
+      // Записать не успели: клавишу отпустили раньше, чем микрофон отдал
+      // первый отсчёт. Такой файл спасать нечего и незачем — в нём
+      // заголовок и ноль данных, — а движок на нём говорит невнятное
+      // (см. wavHasAudio). Стираем и говорим прямо.
+      if (path != null && !wavHasAudio(path)) {
+        _discard(path);
+        silent = true;
+        failure = currentL10n().errorSilentRecording;
+      } else if (path != null) {
         // Сервер поднимался параллельно записи — дожидаемся, иначе фраза
         // короче подъёма уйдёт в «не удалось» при живой модели.
         await _bringingUp;
@@ -472,13 +480,15 @@ class DictationCubit extends Cubit<DictationState> {
     // прервали счёт, — и говорить о них одним и тем же нельзя.
     await bridge.hud(ok
         ? HudState.done
-        : _aborted
-            ? HudState.cancelled
-            : failurePath != null
-                ? HudState.failed
-                : failure != null
-                    ? HudState.copied
-                    : HudState.hidden);
+        : silent
+            ? HudState.silent
+            : _aborted
+                ? HudState.cancelled
+                : failurePath != null
+                    ? HudState.failed
+                    : failure != null
+                        ? HudState.copied
+                        : HudState.hidden);
     if (isClosed) return;
     _emit(state.copyWith(
       phase: Phase.idle,

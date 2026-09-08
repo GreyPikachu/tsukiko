@@ -172,6 +172,11 @@ class _HudViewState extends State<HudView> {
             MacosColors.systemOrangeColor,
             l10n.hudCopied,
           ),
+        HudState.silent => _message(
+            CupertinoIcons.mic_slash,
+            Surface.secondaryText(context),
+            l10n.hudSilent,
+          ),
         _ => [
             _Meter(levels: _levels),
             const SizedBox(width: 12),

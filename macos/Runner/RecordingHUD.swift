@@ -13,7 +13,7 @@ import SwiftUI
 /// перелёта не имеет: жеста, который нёс бы импульс, здесь не было.
 
 enum HUDState: String {
-  case hidden, recording, transcribing, done, failed, copied, cancelled
+  case hidden, recording, transcribing, done, failed, copied, cancelled, silent
 }
 
 final class HUDModel: ObservableObject {
@@ -90,6 +90,18 @@ struct HUDView: View {
           .font(.system(size: 15))
           .foregroundColor(.orange)
         Text("Не распознано · запись сохранена")
+          .font(.system(size: 13, weight: .medium))
+          .lineLimit(1)
+          .fixedSize()
+        Spacer(minLength: 0)
+      case .silent:
+        // Записывать было нечего: клавишу отпустили раньше, чем микрофон
+        // отдал первый отсчёт. Молча уйти здесь нельзя — это читалось бы
+        // как «всё получилось», — а «не вставилось» было бы неправдой.
+        Image(systemName: "mic.slash")
+          .font(.system(size: 15))
+          .foregroundColor(.secondary)
+        Text("Ничего не записалось")
           .font(.system(size: 13, weight: .medium))
           .lineLimit(1)
           .fixedSize()
@@ -438,6 +450,12 @@ final class RecordingHUD {
   /// что запись при этом сохранена, — иначе отмена читается как потеря.
   func cancelled() {
     linger(.cancelled, seconds: 2.2)
+  }
+
+  /// Записывать было нечего. Висит недолго: сказанного тут одно слово,
+  /// и оно про то, что ничего не случилось.
+  func silent() {
+    linger(.silent, seconds: 1.8)
   }
 
   private func linger(_ state: HUDState, seconds: TimeInterval) {

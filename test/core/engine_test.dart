@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
@@ -211,6 +212,47 @@ void main() {
     // Пропавшей папки не бывает бедой: список просто пуст.
     Directory(root).deleteSync(recursive: true);
     expect(scanLibrary(root), isEmpty);
+  });
+
+  test('пустая запись отличается от записи со звуком', () {
+    // Ровно тот файл, на котором движок говорит «failed to read the
+    // frames of the audio data»: заголовок AVAudioRecorder на четыре
+    // килобайта и нулевой кусок data. Спасать в нём нечего, распознавать
+    // тоже — и сказать об этом надо словами, а не полутора экранами
+    // про тензоры.
+    final dir = Directory.systemTemp.createTempSync('tsukiko_wav');
+    Uint8List riff(int dataBytes) {
+      final b = BytesBuilder();
+      void tag(String t) => b.add(t.codeUnits);
+      void u32(int v) => b.add([v & 255, v >> 8 & 255, v >> 16 & 255, v >> 24 & 255]);
+      tag('RIFF');
+      u32(36 + dataBytes);
+      tag('WAVE');
+      tag('fmt ');
+      u32(16);
+      b.add([1, 0, 1, 0]);
+      u32(16000);
+      u32(32000);
+      b.add([2, 0, 16, 0]);
+      tag('data');
+      u32(dataBytes);
+      b.add(List.filled(dataBytes, 0));
+      return b.toBytes();
+    }
+
+    final empty = File(os.join(dir.path, 'пусто.wav'))..writeAsBytesSync(riff(0));
+    final full = File(os.join(dir.path, 'звук.wav'))..writeAsBytesSync(riff(64));
+    expect(wavHasAudio(empty.path), isFalse);
+    expect(wavHasAudio(full.path), isTrue);
+
+    // Не RIFF — не наше дело: m4a и mp3 разбирает движок сам, и «не знаю»
+    // здесь честнее выдуманного ответа.
+    final other = File(os.join(dir.path, 'чужое.m4a'))
+      ..writeAsBytesSync(Uint8List.fromList(List.filled(64, 7)));
+    expect(wavHasAudio(other.path), isTrue);
+    expect(wavHasAudio(os.join(dir.path, 'нет-такого.wav')), isTrue);
+
+    dir.deleteSync(recursive: true);
   });
 
   test('папка по умолчанию — в Документах, строчными', () {
