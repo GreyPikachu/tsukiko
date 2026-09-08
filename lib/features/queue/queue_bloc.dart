@@ -95,6 +95,13 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
     on<CopyRequested>(_onCopy);
     on<SaveRequested>(_onSave);
+    on<SaveFormatChosen>((e, emit) {
+      emit(state.copyWith(
+        saveFormat: e.format.id,
+        status: currentL10n().statusSaveFormatChosen(e.format.label.toLowerCase()),
+      ));
+      _persist();
+    });
     on<ExportRequested>(_onExport);
     on<AskDismissed>((e, emit) => emit(state.copyWith(clearAsk: true)));
     on<StatusReported>((e, emit) => emit(state.copyWith(status: e.text)));
@@ -1115,7 +1122,18 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
   Future<void> _onCopy(CopyRequested e, Emitter<QueueState> emit) async {
     final jobs = state.readyTargets;
-    if (jobs.isEmpty) return;
+    // Копировать нечего — но выбор формата это настройка, а не действие,
+    // и запомнить её надо. Иначе список форматов оставался бы серым ровно
+    // до первой готовой расшифровки, то есть до того мгновения, когда он
+    // уже не нужен.
+    if (jobs.isEmpty) {
+      emit(state.copyWith(
+        copyFormat: e.format.id,
+        status: currentL10n().statusCopyFormatChosen(e.format.label.toLowerCase()),
+      ));
+      _persist();
+      return;
+    }
     // Несколько записей склеиваются с заголовками — иначе в буфере стена
     // текста, в которой не видно, где кончилась одна запись.
     final text = jobs.length == 1

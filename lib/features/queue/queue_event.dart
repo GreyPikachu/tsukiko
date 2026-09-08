@@ -259,6 +259,22 @@ class CopyRequested extends QueueEvent {
   List<Object?> get props => [format.id];
 }
 
+/// Выбрали формат сохранения, а сохранять пока нечего.
+///
+/// Формат — это настройка, а не действие: его выбирают заранее, ещё до
+/// того как в очереди появится хоть одна запись. Раньше оба списка
+/// форматов были серыми, пока ничего не выбрано, — то есть настройку
+/// нельзя было тронуть ровно тогда, когда до неё доходят руки.
+/// У копирования для этого хватает [CopyRequested]: копировать нечего —
+/// он просто запоминает формат.
+class SaveFormatChosen extends QueueEvent {
+  const SaveFormatChosen(this.format);
+  final ExportFormat format;
+
+  @override
+  List<Object?> get props => [format.id];
+}
+
 /// Записать готовую расшифровку в указанный файл.
 class SaveRequested extends QueueEvent {
   const SaveRequested(this.job, this.path, this.format);

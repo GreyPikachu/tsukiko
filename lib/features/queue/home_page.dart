@@ -393,7 +393,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   Future<void> _saveAs(QueueState s, [ExportFormat? format]) async {
     final f = format ?? formatById(s.saveFormat);
     final jobs = s.readyTargets;
-    if (jobs.isEmpty) return;
+    // Сохранять нечего. Если при этом формат выбрали руками — запоминаем
+    // его: это настройка, а не действие.
+    if (jobs.isEmpty) {
+      if (format != null) _send(SaveFormatChosen(format));
+      return;
+    }
     // Одна запись — обычный «Сохранить как…»; несколько — выбор папки,
     // потому что спрашивать имя шесть раз подряд невыносимо.
     if (jobs.length > 1) return _exportInto(jobs, [f]);
@@ -722,7 +727,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                   : null,
         ),
         ToolBarIconButton(
-          label: l10n.menuRetryRecognition,
+          label: _recognizeLabel(s.targets, many: s.targets.length > 1),
           icon: const MacosIcon(CupertinoIcons.arrow_counterclockwise),
           showLabel: false,
           tooltipMessage: l10n.tooltipRetryShortcut,
@@ -736,22 +741,25 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           tooltipMessage: l10n.tooltipCopyFormat(copyFormat.label.toLowerCase()),
           onPressed: ready ? () => _copy() : null,
         ),
+        // Список открыт всегда, даже когда копировать нечего: формат —
+        // это настройка, её выбирают заранее. Серым он был ровно до
+        // первой готовой расшифровки, то есть до того мгновения, когда
+        // выбирать уже поздно.
+        //
+        // Тот же список, что у сохранения. Раньше здесь стояло четыре
+        // формата из шести, и разница вылезала боком: в панели
+        // переполнения «Формат сохранения» показывал все, а рядом
+        // лежащее «Копировать» — не все, и понять, отчего их то шесть,
+        // то четыре, было нельзя. Markdown и JSON копируются ровно так
+        // же, как сохраняются, — прятать их было не за что.
         ToolBarPullDownButton(
           label: l10n.labelCopyFormat,
           icon: CupertinoIcons.doc_on_clipboard,
           tooltipMessage: l10n.tooltipChooseCopyFormat,
-          // Тот же список, что у сохранения. Раньше здесь стояло четыре
-          // формата из шести, и разница вылезала боком: в панели
-          // переполнения «Формат сохранения» показывал все, а рядом
-          // лежащее «Копировать» — не все, и понять, отчего их то шесть,
-          // то четыре, было нельзя. Markdown и JSON копируются ровно так
-          // же, как сохраняются, — прятать их было не за что.
-          items: ready
-              ? [
-                  for (final f in exportFormats)
-                    _formatItem(f, s.copyFormat, () => _copy(f)),
-                ]
-              : null,
+          items: [
+            for (final f in exportFormats)
+              _formatItem(f, s.copyFormat, () => _copy(f)),
+          ],
         ),
         ToolBarIconButton(
           label: l10n.buttonSaveToolbar,
@@ -764,17 +772,20 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           label: l10n.labelSaveFormat,
           icon: CupertinoIcons.arrow_down_doc,
           tooltipMessage: l10n.tooltipChooseSaveFormat,
-          items: ready
-              ? [
-                  for (final f in exportFormats) _formatItem(f, s.saveFormat, () => _saveAs(s, f)),
-                  const MacosPulldownMenuDivider(),
-                  MacosPulldownMenuItem(
-                    title: Text(l10n.menuExportToFolder),
-                    label: l10n.labelExportToFolder,
-                    onTap: () => _exportAll(s),
-                  ),
-                ]
-              : null,
+          items: [
+            for (final f in exportFormats)
+              _formatItem(f, s.saveFormat, () => _saveAs(s, f)),
+            // А вот выгрузка в папку — действие, и без готовых
+            // расшифровок ей делать нечего.
+            if (ready) ...[
+              const MacosPulldownMenuDivider(),
+              MacosPulldownMenuItem(
+                title: Text(l10n.menuExportToFolder),
+                label: l10n.labelExportToFolder,
+                onTap: () => _exportAll(s),
+              ),
+            ],
+          ],
         ),
         ToolBarIconButton(
           label: l10n.buttonFind,
@@ -1031,8 +1042,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         MenuAction(l10n.menuCopyErrorText, onSelected: () => _copyError(job)),
       ],
       const MenuAction.separator(),
+      // «Заново» — только про то, что уже считали. Нераспознанную запись
+      // распознают в первый раз, и слово «заново» в этом случае просто
+      // неправда: человек читает его как «сбросить и посчитать снова»
+      // и не понимает, что сбрасывать.
       MenuAction(
-        many ? l10n.menuRetrySelected : l10n.menuRetryRecognition,
+        _recognizeLabel(targets, many: many),
         onSelected: s.running || !canRetry ? null : _sendRetry,
         shortcut: os.menuShortcut(const ['opt', 'cmd'], 'r'),
       ),
@@ -1050,6 +1065,13 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         shortcut: os.menuShortcut(const [], 'backspace'),
       ),
     ];
+  }
+
+  /// Как назвать повторное распознавание для этих записей.
+  String _recognizeLabel(List<Job> targets, {required bool many}) {
+    final again = targets.isNotEmpty && targets.every((j) => j.done);
+    if (many) return again ? l10n.menuRetrySelected : l10n.menuRecognizeSelected;
+    return again ? l10n.menuRetryRecognition : l10n.menuRecognize;
   }
 
   Widget _queueButtons(QueueState s) => Padding(

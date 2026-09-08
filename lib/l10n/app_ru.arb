@@ -628,6 +628,10 @@
   "menuRecognition": "Распознавание",
   "menuRunQueue": "Распознать очередь",
   "menuRetryRecognition": "Распознать заново",
+  "menuRecognize": "Распознать",
+  "menuRecognizeSelected": "Распознать выбранные",
+  "statusCopyFormatChosen": "Копировать будем так: {format}",
+  "statusSaveFormatChosen": "Сохранять будем так: {format}",
   "menuCopyErrorText": "Скопировать текст ошибки",
   "sheetShortcutsTitle": "Сочетания клавиш",
   "menuStop": "Остановить",
@@ -857,6 +861,20 @@
   },
   "errorLibrarySaveFailed": "Не удалось записать в библиотеку",
   "statusCopiedFormat": "Скопировано: {format}",
+  "@statusCopyFormatChosen": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "@statusSaveFormatChosen": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
   "@statusCopiedFormat": {
     "placeholders": {
       "format": {
