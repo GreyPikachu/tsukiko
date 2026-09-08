@@ -9,6 +9,8 @@
 #include <shlwapi.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <iostream>
 #include <utility>
@@ -168,8 +170,46 @@ void DictationBridge::Shutdown() {
   if (is_recording_) {
     StopAudioRecording();
   }
-  // Полтора гигабайта в памяти нельзя оставлять сиротой.
+  // Полтора гигабайта в памяти нельзя оставлять сиротой. Оба движка:
+  // диктовка держит модель между фразами, очередь — пока считает.
   KillDictationServer();
+  KillRecognizer();
+}
+
+/// Погасить движок расшифровки, если очередь как раз считала.
+///
+/// Раньше на выходе гас только сервер диктовки, а движок очереди
+/// оставался: закрытие окна мимо `dispose`, и полтора гигабайта продолжали
+/// жить сами по себе, досчитывая запись, которую уже некому показать.
+///
+/// По номеру, а не по имени процесса, — в отличие от сервера диктовки.
+/// Имя `tsukiko-recognizer` носит и движок отдельной программы расшифровки
+/// (`tsukiko-transcribe`), которая могла работать рядом и своего выхода
+/// не просила: гасить её значило бы отнимать чужой час счёта. Номер пишет
+/// очередь (`rememberRecognizerPid` в lib/core/whisper_server.dart) ровно
+/// на то время, пока движок её собственный.
+void DictationBridge::KillRecognizer() {
+  wchar_t* appdata = nullptr;
+  size_t len = 0;
+  if (_wdupenv_s(&appdata, &len, L"APPDATA") != 0 || !appdata) return;
+  std::wstring path =
+      std::wstring(appdata) + L"\\app.yuko.tsukiko\\recognizer.pid";
+  free(appdata);
+
+  DWORD pid = 0;
+  FILE* f = nullptr;
+  if (_wfopen_s(&f, path.c_str(), L"r") == 0 && f) {
+    unsigned long value = 0;
+    if (fwscanf_s(f, L"%lu", &value) == 1) pid = static_cast<DWORD>(value);
+    fclose(f);
+  }
+  _wremove(path.c_str());
+  if (pid == 0) return;
+
+  HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+  if (!proc) return;
+  TerminateProcess(proc, 0);
+  CloseHandle(proc);
 }
 
 /// Погасить забытый сервер диктовки.
@@ -291,6 +331,17 @@ void DictationBridge::RegisterHandler(
             toggle_spec_ = parseSpec(*tMap);
           }
         }
+        auto cancelIt = args->find(flutter::EncodableValue("cancel"));
+        if (cancelIt != args->end()) {
+          if (const auto* cMap = std::get_if<flutter::EncodableMap>(&cancelIt->second)) {
+            cancel_spec_ = parseSpec(*cMap);
+          }
+        }
+        // Защёлки относятся к прежним сочетаниям: с новыми они соврут
+        // о том, что клавиша уже нажата.
+        hold_state_ = TapState();
+        toggle_state_ = TapState();
+        cancel_state_ = TapState();
       }
       result->Success();
     } else if (method == "capture") {
@@ -784,6 +835,15 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
         bridge.SendHotkeyEvent("toggle", true);
       } else if (exceedsSpec(bridge.toggle_spec_)) {
         bridge.SendHotkeyEvent("toggle", false, true);
+      }
+    }
+
+    // «Бросить начатое» — одно нажатие, отпускание ничего не значит.
+    // Не назначено — spec пуст, и matchSpec на нём всегда false.
+    if (bridge.cancel_state_.Update(matchSpec(bridge.cancel_spec_),
+                                    bridge.cancel_spec_.is_double(), now)) {
+      if (bridge.cancel_state_.active) {
+        bridge.SendHotkeyEvent("cancel", true);
       }
     }
   }

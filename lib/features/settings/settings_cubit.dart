@@ -100,6 +100,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   void _readDictation() => _emit(state.copyWith(
         hold: _dictation.hold,
         toggle: _dictation.toggle,
+        cancel: _dictation.cancel,
         dictationModel: _dictation.model,
         threads: _dictation.threads,
         punctuate: _dictation.punctuate,
@@ -175,15 +176,29 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> reassign(String id) async {
     final hk = await bridge.capture();
     if (hk == null) return;
-    final other = id == 'hold' ? _dictation.toggle : _dictation.hold;
-    if (hk.sameAs(other)) {
+    final taken = {
+      'hold': _dictation.hold,
+      'toggle': _dictation.toggle,
+      'cancel': _dictation.cancel,
+    }..remove(id);
+    if (taken.values.any((other) => !other.empty && hk.sameAs(other))) {
       return _emit(state.copyWith(
         problem: currentL10n().hotkeyTakenProblem(hk.label),
       ));
     }
     _emit(state.copyWith(clearProblem: true));
-    _saveDictation((d) => id == 'hold' ? d.hold = hk : d.toggle = hk);
+    _saveDictation((d) => switch (id) {
+          'hold' => d.hold = hk,
+          'cancel' => d.cancel = hk,
+          _ => d.toggle = hk,
+        });
   }
+
+  /// Снять сочетание совсем. Есть только у «бросить»: без «держать
+  /// и говорить» и «включить» диктовки нет вовсе, а бросать начатое можно
+  /// и мышью — по крестику на плавающей панели.
+  void clearCancelHotkey() =>
+      _saveDictation((d) => d.cancel = Hotkey.none);
 
   void setDictationModel(String path) =>
       _saveDictation((d) => d.model = path);

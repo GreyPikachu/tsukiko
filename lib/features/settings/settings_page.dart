@@ -231,13 +231,23 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           keys: s.toggle.label,
           onTap: () => _cubit.reassign('toggle'),
         ),
+        // Третье действие — и единственное, которое можно не назначать
+        // вовсе. «Остановить» и «передумал» это разные намерения, а у
+        // клавиш второго не было: бросить начатое можно было только мышью,
+        // по крестику на плавающей панели, которую человек мог и выключить.
+        HotkeyRow(
+          label: l10n.hotkeyCancel,
+          keys: s.cancel.label,
+          onTap: () => _cubit.reassign('cancel'),
+          onClear: _cubit.clearCancelHotkey,
+        ),
         // Пара, где одно сочетание входит в другое, ведёт себя непонятно,
         // а не ломается: запись начинается по дороге ко второму. Молчать
         // об этом нельзя — человеку неоткуда догадаться.
         if (s.shadowingHotkey case final early?)
           _problem(l10n.hotkeyShadowProblem(
-              early.label,
-              (early.sameAs(s.hold) ? s.toggle : s.hold).label)),
+              early.label, (s.shadowedHotkey ?? early).label)),
+        Hint(l10n.hintHotkeyCancel),
         Hint(l10n.hintHotkeyCapture),
         Hint(l10n.hintHotkeyDoubleTap, under: false),
         Hint(l10n.hintHotkeyExclusive, under: false),
@@ -288,7 +298,8 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
           AppTextField(
             controller: _promptCtrl,
             placeholder: l10n.placeholderPromptExample,
-            maxLines: 2,
+            minLines: 3,
+            maxLines: null,
             onChanged: (v) => _cubit.setPrompt(v),
           ),
         ),

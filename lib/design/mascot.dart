@@ -120,26 +120,42 @@ class _MascotState extends State<Mascot> with WidgetsBindingObserver {
     final mood = _mood;
     final accent = MacosTheme.of(context).primaryColor;
 
-    Widget cat = Image.asset(
-      'assets/mascot/${mood.file}.webp',
-      height: widget.height,
-      fit: BoxFit.contain,
-      filterQuality: FilterQuality.medium,
-      errorBuilder: (_, _, _) => SizedBox(height: widget.height),
+    // Кадры кота — анимированный webp: каждый новый кадр декодируется и
+    // перерисовывает окно, это около 11 % процессора без перерыва. Пока окно
+    // не в фокусе, смотреть на кота некому; Image слушает TickerMode и
+    // замирает на последнем кадре.
+    //
+    // Приглушение стоит вплотную к картинке, а не поверх всего кота, и это
+    // не мелочь раскладки. Раньше TickerMode накрывал и переходы: смена
+    // настроения, начатая при потерянном фокусе, запускала кроссфейд, чей
+    // ticker в ту же секунду оказывался приглушён, — и въезжающий кадр
+    // застывал прозрачным до самого возвращения фокуса. Со стороны это
+    // выглядит так, будто кот пропал совсем: свечение под ним есть, а его
+    // самого нет.
+    //
+    // gaplessPlayback — тот же случай с другой стороны. Смена признака
+    // TickerMode это смена унаследованного виджета, а на неё Image заново
+    // разрешает свой поток кадров. Без gaplessPlayback он на это время
+    // выбрасывает уже показанный кадр и рисует пустоту; с ним — держит
+    // последний, пока не придёт следующий.
+    Widget cat = TickerMode(
+      enabled: WidgetsBinding.instance.lifecycleState ==
+          AppLifecycleState.resumed,
+      child: Image.asset(
+        'assets/mascot/${mood.file}.webp',
+        height: widget.height,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.medium,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => SizedBox(height: widget.height),
+      ),
     );
 
     // Ключ должен быть на самом верхнем узле, иначе AnimatedSwitcher не
     // заметит смену настроения и кроссфейда не будет.
     cat = KeyedSubtree(key: ValueKey(mood.file), child: cat);
 
-    // Кадры кота — анимированный webp: каждый новый кадр декодируется и
-    // перерисовывает окно, это около 11 % процессора без перерыва. Пока окно
-    // не в фокусе, смотреть на кота некому; Image слушает TickerMode и
-    // замирает на последнем кадре.
-    return TickerMode(
-      enabled: WidgetsBinding.instance.lifecycleState ==
-          AppLifecycleState.resumed,
-      child: Semantics(
+    return Semantics(
         label: AppLocalizations.of(context).semanticsMascotLabel,
         button: widget.interactive,
         child: MouseRegion(
@@ -206,9 +222,7 @@ class _MascotState extends State<Mascot> with WidgetsBindingObserver {
               ),
             ),
           ),
-        ),
-      ),
-    );
+        ));
   }
 }
 

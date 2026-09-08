@@ -187,7 +187,11 @@ class DictationCubit extends Cubit<DictationState> {
     // спрятал бы его навсегда, а настройка должна переключаться на лету.
     // Значит спрятать его может только Dart, и как можно раньше.
     await bridge.setDockIcon((Settings.load()['dockIcon'] as bool?) ?? true);
-    await bridge.bind(hold: _settings.hold, toggle: _settings.toggle);
+    await bridge.bind(
+      hold: _settings.hold,
+      toggle: _settings.toggle,
+      cancel: _settings.cancel,
+    );
     _emit(_withSnapshots(state));
     await _checkPermission();
   }
@@ -329,6 +333,17 @@ class DictationCubit extends Cubit<DictationState> {
     // Начатое выбрасываем, и панель уходит сразу.
     if (e.cancel) {
       cancel();
+      return;
+    }
+    // Бросить начатое. Отдельным сочетанием затем, что «Остановить»
+    // и «Передумал» — разные намерения, а у клавиш второго не было вовсе:
+    // отменить начатое можно было только мышью, по крестику на плавающей
+    // панели, которую человек мог и выключить. Записи в этом случае
+    // не остаётся ни в тексте, ни в буфере — на то и «без вставки».
+    if (e.id == 'cancel') {
+      if (e.edge == HotkeyEdge.down) {
+        state.phase == Phase.transcribing ? abortTranscription() : cancel();
+      }
       return;
     }
     if (e.id == 'hold') {

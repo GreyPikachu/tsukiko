@@ -225,9 +225,15 @@ final class DictationBridge: NSObject {
   private var hold = HotkeySpec()
   private var toggle = HotkeySpec()
 
+  /// «Бросить начатое». Может быть пустым — тогда оно не назначено, и
+  /// перехватывать здесь нечего: пустой HotkeySpec не срабатывает никогда
+  /// (см. `pressed`).
+  private var cancelKey = HotkeySpec()
+
   /// Состояние каждого сочетания: нажато ли оно и ждёт ли второго стука.
   private var holdState = TapState()
   private var toggleState = TapState()
+  private var cancelState = TapState()
 
   private var tap: CFMachPort?
   private var tapSource: CFRunLoopSource?
@@ -310,6 +316,7 @@ final class DictationBridge: NSObject {
       forName: NSApplication.willTerminateNotification, object: nil, queue: .main
     ) { _ in
       DictationBridge.killWhisperServer()
+      DictationBridge.killRecognizer()
     }
   }
 
@@ -332,10 +339,12 @@ final class DictationBridge: NSObject {
     case "bind":
       hold = HotkeySpec(args?["hold"] as? [String: Any])
       toggle = HotkeySpec(args?["toggle"] as? [String: Any])
+      cancelKey = HotkeySpec(args?["cancel"] as? [String: Any])
       // Защёлки относятся к прежним сочетаниям: с новыми они соврут
       // о том, что клавиша уже нажата.
       holdState = TapState()
       toggleState = TapState()
+      cancelState = TapState()
       swallowed = []
       reply(nil)
     case "capture":
@@ -608,12 +617,19 @@ final class DictationBridge: NSObject {
       }
     }
 
+    // «Бросить начатое» — одно нажатие, отпускание ничего не значит.
+    if cancelState.update(raw: cancelKey.pressed(mods, heldKeys), double: cancelKey.isDouble) {
+      if cancelState.active { send("cancel", down: true) }
+    }
+
     // Свою клавишу поглощаем, чтобы буква не попала в чужое поле ввода.
     // Отпускание поглощаем по памяти: к этому моменту модификаторы могли
     // уже отпустить, и признак «наша» перестал бы совпадать.
     switch type {
     case .keyDown:
-      if hold.claims(code, mods) || toggle.claims(code, mods) {
+      if hold.claims(code, mods) || toggle.claims(code, mods)
+        || cancelKey.claims(code, mods)
+      {
         swallowed.insert(code)
         return nil
       }
@@ -921,6 +937,33 @@ final class DictationBridge: NSObject {
   static var serverMarks: [String] = [
     NSHomeDirectory() + "/Library/Application Support/app.yuko.tsukiko"
   ]
+
+  /// Погасить движок расшифровки, если очередь как раз считала.
+  ///
+  /// Раньше на выходе гас только сервер диктовки, а движок очереди
+  /// оставался: ⌘Q мимо `dispose`, и полтора гигабайта продолжали жить
+  /// сами по себе, досчитывая запись, которую уже некому показать.
+  ///
+  /// По номеру, а не по имени процесса. Имя `tsukiko-recognizer` носит и
+  /// движок отдельной программы расшифровки, которая могла работать рядом
+  /// и своего выхода не просила: гасить её значило бы отнимать чужой час
+  /// счёта. Номер пишет очередь (`rememberRecognizerPid`) ровно на то
+  /// время, пока движок её собственный.
+  static func killRecognizer() {
+    let path = NSHomeDirectory()
+      + "/Library/Application Support/app.yuko.tsukiko/recognizer.pid"
+    guard let text = try? String(contentsOfFile: path, encoding: .utf8),
+      let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+      pid > 0, kill(pid, 0) == 0
+    else {
+      try? FileManager.default.removeItem(atPath: path)
+      return
+    }
+    kill(pid, SIGTERM)
+    usleep(150_000)
+    if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+    try? FileManager.default.removeItem(atPath: path)
+  }
 
   static func killWhisperServer() {
     let marks = serverMarks

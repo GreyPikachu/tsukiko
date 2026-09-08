@@ -43,6 +43,7 @@ class QueueState extends Equatable {
     this.copyFormat = 'txt',
     this.saveFormat = 'txt',
     this.recent = const [],
+    this.savedQueue = false,
     this.ask,
   });
 
@@ -84,6 +85,10 @@ class QueueState extends Equatable {
   /// Приложение помнит, чем пользуются: кнопка повторяет прошлый выбор.
   final String copyFormat, saveFormat;
   final List<String> recent;
+
+  /// Есть что вернуть: очередь прошлого запуска лежит на диске. Сама она
+  /// не возвращается — за это отвечает пункт меню.
+  final bool savedQueue;
 
   /// Вопрос к человеку, если очередь на него наткнулась.
   final Ask? ask;
@@ -142,6 +147,7 @@ class QueueState extends Equatable {
     String? copyFormat,
     String? saveFormat,
     List<String>? recent,
+    bool? savedQueue,
     Ask? ask,
     bool clearLead = false,
     bool clearDownload = false,
@@ -169,6 +175,7 @@ class QueueState extends Equatable {
         copyFormat: copyFormat ?? this.copyFormat,
         saveFormat: saveFormat ?? this.saveFormat,
         recent: recent ?? this.recent,
+        savedQueue: savedQueue ?? this.savedQueue,
         ask: clearAsk ? null : (ask ?? this.ask),
       );
 
@@ -194,6 +201,7 @@ class QueueState extends Equatable {
         copyFormat,
         saveFormat,
         recent,
+        savedQueue,
         ask,
       ];
 }

@@ -277,6 +277,15 @@ final class RecordingHUD {
   private var startedAt: Date?
   private var hideAfterDone: Timer?
 
+  /// Номер нынешнего показа. Уход панели — анимация в четверть секунды, и
+  /// панель прячется не сразу, а в её обработчике завершения. Если за эту
+  /// четверть секунды человек начал говорить снова, обработчик прежнего
+  /// ухода всё равно доигрывал своё и убирал панель с экрана — уже поверх
+  /// начатой записи. Со стороны это и есть «панель просто не появилась»:
+  /// она появлялась и в ту же долю секунды исчезала, а исчезнув, обратно
+  /// сама не приходила. Номер отличает свой уход от чужого.
+  private var showNumber = 0
+
   private let size = NSSize(width: 372, height: 52)
 
   /// Откуда брать уровень сигнала — рекордер живёт в мосте.
@@ -299,7 +308,14 @@ final class RecordingHUD {
       styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
       backing: .buffered, defer: false)
     panel.isFloatingPanel = true
-    panel.level = .floating
+    // Не .floating. Чужое полноэкранное окно живёт в своём пространстве,
+    // и `canJoinAllSpaces` пускает нас туда, но по уровню плавающая панель
+    // оказывается вровень с ним — кто выше, решает случай. Отсюда и брался
+    // самый частый вид пропажи: под полноэкранным окном панели нет,
+    // а свайп на рабочий стол её показывает. Уровень заставки выше любого
+    // обычного окна, и панель видно всегда. Фокус она при этом всё равно
+    // не забирает — canBecomeKey у неё false.
+    panel.level = .screenSaver
     panel.hidesOnDeactivate = false
     panel.isOpaque = false
     panel.backgroundColor = .clear
@@ -332,8 +348,17 @@ final class RecordingHUD {
     return panel
   }
 
+  /// Экран, на котором сейчас работают, — тот, где указатель.
+  ///
+  /// `NSScreen.main` для этого не годится: он отвечает про экран с ключевым
+  /// окном, а ключевого окна у нас нет вовсе — панель нарочно не берёт
+  /// фокус. На одном мониторе разницы нет, на двух панель уезжала
+  /// на соседний, то есть «не появлялась» и там, где на неё смотрят.
   private var restingOrigin: NSPoint {
-    let screen = NSScreen.main?.visibleFrame ?? .zero
+    let mouse = NSEvent.mouseLocation
+    let screen =
+      (NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main)?.visibleFrame
+      ?? .zero
     return NSPoint(x: screen.midX - size.width / 2, y: screen.minY + 92)
   }
 
@@ -344,26 +369,33 @@ final class RecordingHUD {
   func show() {
     let panel = build()
     hideAfterDone?.invalidate()
+    hideAfterDone = nil
+    showNumber += 1
     model.state = .recording
     model.levels = Array(repeating: 0, count: model.levels.count)
     startedAt = Date()
     model.elapsed = 0
 
-    if !panel.isVisible {
-      let rest = restingOrigin
+    // Появление проигрываем, только если панели на экране не было. А вот
+    // на экран выводим и проявляем всегда: «panel.isVisible» бывает true
+    // и у панели, которая прямо сейчас доугасает до нуля, — и без этих
+    // двух строк она так и оставалась прозрачной всю запись.
+    let appearing = !panel.isVisible
+    let rest = restingOrigin
+    if appearing {
       // Приходит снизу и уходит вниз же: если что-то появилось одним
       // путём, мы ждём, что тем же путём оно и исчезнет.
       panel.setFrameOrigin(
         NSPoint(x: rest.x, y: reduceMotion ? rest.y : rest.y - 18))
       panel.alphaValue = 0
-      panel.orderFrontRegardless()
-      NSAnimationContext.runAnimationGroup { context in
-        context.duration = reduceMotion ? 0.15 : 0.34
-        context.timingFunction = CAMediaTimingFunction(
-          controlPoints: 0.22, 1, 0.36, 1)
-        panel.animator().alphaValue = 1
-        panel.animator().setFrameOrigin(rest)
-      }
+    }
+    panel.orderFrontRegardless()
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = reduceMotion ? 0.15 : (appearing ? 0.34 : 0.12)
+      context.timingFunction = CAMediaTimingFunction(
+        controlPoints: 0.22, 1, 0.36, 1)
+      panel.animator().alphaValue = 1
+      panel.animator().setFrameOrigin(rest)
     }
 
     ticker?.invalidate()
@@ -430,6 +462,7 @@ final class RecordingHUD {
     hideAfterDone = nil
     guard let panel, panel.isVisible else { return }
     let rest = restingOrigin
+    let mine = showNumber
     NSAnimationContext.runAnimationGroup(
       { context in
         context.duration = reduceMotion ? 0.12 : 0.22
@@ -440,8 +473,11 @@ final class RecordingHUD {
         }
       },
       completionHandler: { [weak self] in
+        // Пока панель угасала, могла начаться новая запись. Тогда убирать
+        // с экрана нечего: на нём уже не наша панель, а следующая.
+        guard let self, self.showNumber == mine else { return }
         panel.orderOut(nil)
-        self?.model.state = .hidden
+        self.model.state = .hidden
       })
   }
 }

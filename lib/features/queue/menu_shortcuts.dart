@@ -64,7 +64,12 @@ typedef MenuCommand = ({String menu, String label, String shortcut});
 /// с делом, хуже отсутствующей.
 ///
 /// Без сочетания пункт не берём: до всего остального можно дотянуться
-/// кнопкой, а этот список — именно про клавиши.
+/// кнопкой, а этот список — именно про клавиши. А вот доступен пункт
+/// прямо сейчас или нет — не важно вовсе: это справочник, а не панель
+/// инструментов. Раньше здесь стояла проверка `onSelected != null`, и на
+/// пустой очереди список показывал четыре строки из пятнадцати — всё,
+/// что делается с записями, из него пропадало ровно тогда, когда человек
+/// и открывает справку: до первой записи.
 List<MenuCommand> menuCommands(List<PlatformMenuItem> menus) {
   final out = <MenuCommand>[];
 
@@ -79,7 +84,7 @@ List<MenuCommand> menuCommands(List<PlatformMenuItem> menus) {
         continue;
       }
       final label = _shortcutLabel(item.shortcut);
-      if (label == null || item.onSelected == null) continue;
+      if (label == null) continue;
       out.add((menu: section, label: item.label, shortcut: label));
     }
   }

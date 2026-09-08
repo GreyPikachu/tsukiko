@@ -50,6 +50,44 @@ const legacyServerMark = '/tmp/tsukiko-whisper';
 /// из этих признаков, и трогать его нельзя.
 List<String> get ourServerMarks => [serverMark, legacyServerMark, supportDir];
 
+/// Pid работающего движка расшифровки.
+///
+/// Тот же приём, что и с сервером диктовки, и по той же причине: движок
+/// держит в памяти полтора гигабайта, а живёт он отдельным процессом и
+/// смерть приложения переживает. Обычное «Завершить» до Dart не доходит
+/// (⌘Q на macOS, снятие задачи на Windows), и погасить ребёнка изнутри
+/// уже некому — гасит его родная сторона, а найти его она может только
+/// по записанному номеру.
+///
+/// По имени процесса искать нельзя: под тем же именем работает движок
+/// отдельной программы расшифровки (`tsukiko-transcribe`), и гасить чужую
+/// начатую работу вместе со своим выходом — потеря чужого часа счёта.
+File get _recognizerPidFile => File(os.join(supportDir, 'recognizer.pid'));
+
+void rememberRecognizerPid(int pid) {
+  try {
+    Directory(supportDir).createSync(recursive: true);
+    _recognizerPidFile.writeAsStringSync('$pid');
+  } catch (_) {}
+}
+
+void forgetRecognizerPid() {
+  try {
+    if (_recognizerPidFile.existsSync()) _recognizerPidFile.deleteSync();
+  } catch (_) {}
+}
+
+/// Погасить движок расшифровки, переживший прошлый запуск.
+Future<void> sweepRecognizer() async {
+  int? recorded;
+  try {
+    recorded = int.tryParse(_recognizerPidFile.readAsStringSync().trim());
+  } catch (_) {}
+  if (recorded == null) return;
+  if (recorded != pid && processAlive(recorded)) await killForSure(recorded);
+  forgetRecognizerPid();
+}
+
 bool processAlive(int pid) => os.isAlive(pid);
 
 /// Погасить наверняка. whisper-server на SIGTERM не умирает — проверено:
@@ -124,6 +162,9 @@ int? ourServerPid() {
 /// размера должна становиться видимой человеку.
 Future<int> sweepOurServers({Set<int> keep = const {}}) async {
   var freedKb = 0;
+  // Заодно и движок расшифровки: он тоже держит модель и тоже переживает
+  // падение приложения.
+  await sweepRecognizer();
   for (final s in ourServersIn(await os.listProcesses())) {
     if (s.pid == pid || keep.contains(s.pid)) continue;
     if (await killForSure(s.pid)) freedKb += s.rssKb;
@@ -565,6 +606,12 @@ class Hotkey {
   static Hotkey get toggleDefault =>
       Hotkey(os.defaultToggle.mods, keys: os.defaultToggle.keys);
 
+  /// Умолчания у «бросить» нет намеренно: пустое сочетание значит
+  /// «не назначено», и клавиш система не перехватывает вовсе. Отмена —
+  /// действие редкое, а каждое занятое сочетание отнимается у чужих
+  /// программ навсегда.
+  static const none = Hotkey([]);
+
   bool get empty => mods.isEmpty && keys.isEmpty;
 
   Map<String, dynamic> toJson() => {'mods': mods, 'keys': keys, 'taps': taps};
@@ -662,13 +709,15 @@ class DictationSettings {
     this.prompt = '',
     Hotkey? hold,
     Hotkey? toggle,
+    Hotkey? cancel,
     this.idleSeconds = 180,
     this.insert = true,
     this.hud = true,
     this.punctuate = true,
     this.threads = 4,
   })  : hold = hold ?? Hotkey.holdDefault,
-        toggle = toggle ?? Hotkey.toggleDefault;
+        toggle = toggle ?? Hotkey.toggleDefault,
+        cancel = cancel ?? Hotkey.none;
 
   bool enabled;
 
@@ -678,6 +727,10 @@ class DictationSettings {
   /// Подсказка модели своя: диктуют не то же, что расшифровывают.
   String prompt;
   Hotkey hold, toggle;
+
+  /// Бросить начатое, не вставив ни буквы: запись выбрасывается, идущий
+  /// счёт прерывается. По умолчанию не назначено — см. [Hotkey.none].
+  Hotkey cancel;
   int idleSeconds;
 
   /// Вставлять готовый текст в активное окно. Выключено — текст только
@@ -701,9 +754,13 @@ class DictationSettings {
       return DictationSettings(
         enabled: (j['enabled'] as bool?) ?? true,
         model: (j['model'] as String?) ?? '',
-        prompt: (j['prompt'] as String?) ?? '',
+        // Пусто — берём запасную копию из библиотеки: настройки могли
+        // не пережить переустановку, а собранный вручную список слов
+        // терять нельзя (см. Prompts).
+        prompt: _nonEmpty(j['prompt'] as String?) ?? Prompts.read(Prompts.dictation),
         hold: Hotkey.fromJson(j['hold'], Hotkey.holdDefault),
         toggle: Hotkey.fromJson(j['toggle'], Hotkey.toggleDefault),
+        cancel: Hotkey.fromJson(j['cancel'], Hotkey.none),
         idleSeconds: (j['idleSeconds'] as int?) ?? 180,
         insert: (j['insert'] as bool?) ?? true,
         hud: (j['hud'] as bool?) ?? true,
@@ -720,12 +777,14 @@ class DictationSettings {
       Directory(supportDir).createSync(recursive: true);
       // Через временный файл и переименование — как и общие настройки:
       // падение посреди записи не должно стирать сочетания клавиш.
+      Prompts.write(Prompts.dictation, prompt);
       writeJsonAtomically(_file, {
         'enabled': enabled,
         'model': model,
         'prompt': prompt,
         'hold': hold.toJson(),
         'toggle': toggle.toJson(),
+        'cancel': cancel.toJson(),
         'idleSeconds': idleSeconds,
         'insert': insert,
         'hud': hud,
@@ -737,6 +796,8 @@ class DictationSettings {
     }
   }
 }
+
+String? _nonEmpty(String? text) => (text == null || text.isEmpty) ? null : text;
 
 String modelSizeLabel(String path) {
   try {

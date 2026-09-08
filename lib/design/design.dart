@@ -200,13 +200,21 @@ class AppTextField extends StatelessWidget {
     super.key,
     required this.controller,
     this.placeholder,
+    this.minLines,
     this.maxLines = 1,
     this.onChanged,
   });
 
   final TextEditingController controller;
   final String? placeholder;
-  final int maxLines;
+
+  /// Сколько строк поле занимает пустым. Вместе с `maxLines: null` это и
+  /// значит «растёт под текст»: поле начинается с трёх строк и дальше
+  /// следует за содержимым, а не режет его окошком в три строки с
+  /// прокруткой внутри. Подсказку модели пишут длинную — список слов,
+  /// имён и терминов, — и прочитать её целиком в таком окошке нельзя.
+  final int? minLines;
+  final int? maxLines;
   final ValueChanged<String>? onChanged;
 
   @override
@@ -214,6 +222,7 @@ class AppTextField extends StatelessWidget {
         controller: controller,
         placeholder: placeholder,
         placeholderStyle: Surface.placeholder(context),
+        minLines: minLines,
         maxLines: maxLines,
         onChanged: onChanged,
       );
@@ -375,9 +384,14 @@ class HotkeyRow extends StatefulWidget {
     required this.label,
     required this.keys,
     required this.onTap,
+    this.onClear,
   });
   final String label, keys;
   final Future<void> Function() onTap;
+
+  /// Снять сочетание совсем. Есть не у всех: без «держать и говорить»
+  /// диктовки нет вовсе, а «бросить начатое» можно и не назначать.
+  final VoidCallback? onClear;
 
   @override
   State<HotkeyRow> createState() => _HotkeyRowState();
@@ -410,6 +424,23 @@ class _HotkeyRowState extends State<HotkeyRow> {
                       : widget.keys,
                   lit: _hover || _waiting,
                 ),
+                // Крестик только там, где сочетание и правда можно снять,
+                // и только когда снимать есть что.
+                if (widget.onClear case final clear? when !_waiting)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: SizedBox(
+                      width: 16,
+                      child: widget.keys ==
+                              AppLocalizations.of(context).hotkeyUnassigned
+                          ? null
+                          : MacosIconButton(
+                              padding: EdgeInsets.zero,
+                              icon: const MacosIcon(CupertinoIcons.xmark, size: 10),
+                              onPressed: clear,
+                            ),
+                    ),
+                  ),
               ],
             ),
           ),
