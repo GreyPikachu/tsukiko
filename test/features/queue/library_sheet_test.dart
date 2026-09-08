@@ -16,8 +16,14 @@ void main() {
 
   late Directory root;
 
+  /// Что «убрали в Корзину». Настоящая Корзина — дело родной стороны,
+  /// и в тестах её нет: проверяем, что список отдаёт именно выбранное
+  /// и вычёркивает убранное.
+  late List<String> trashed;
+
   setUp(() {
     binding.platformDispatcher.localesTestValue = const [Locale('ru')];
+    trashed = [];
     root = Directory.systemTemp.createTempSync('tsukiko-lib-sheet');
     final month = Directory(os.join(root.path, '2026-09'))..createSync();
     File(os.join(month.path, 'Совещание.txt'))
@@ -36,6 +42,13 @@ void main() {
         root: at,
         onOpenInQueue: (_) {},
         onReveal: (_) {},
+        onTrash: (paths) async {
+          trashed.addAll(paths);
+          for (final p in paths) {
+            File(p).deleteSync();
+          }
+          return const [];
+        },
         onStatus: (_) {},
       ),
     ));
@@ -65,6 +78,27 @@ void main() {
     expect(find.textContaining('-->'), findsOneWidget);
     expect(find.textContaining('Субтитры SRT'), findsWidgets,
         reason: 'формат назван словом: «.srt» говорит меньше');
+  });
+
+  testWidgets('выбор включается кнопкой, а убранное уходит из списка',
+      (tester) async {
+    await open(tester, root.path);
+    // Пока «Выбрать» не нажали, список остаётся списком: галок нет.
+    expect(find.byType(MacosCheckbox), findsNothing);
+
+    await tester.tap(find.text('Выбрать'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MacosCheckbox), findsNWidgets(2));
+
+    await tester.tap(find.text('Совещание.txt'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Убрать в Корзину (1)'));
+    await tester.pumpAndSettle();
+
+    expect(trashed.single.endsWith('Совещание.txt'), isTrue);
+    expect(find.text('Совещание.txt'), findsNothing);
+    expect(find.text('Разговор.srt'), findsOneWidget,
+        reason: 'чужие строки не трогаем');
   });
 
   testWidgets('пустая библиотека объясняет себя, а не показывает пустоту',

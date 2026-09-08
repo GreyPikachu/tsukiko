@@ -566,6 +566,35 @@
   "menuOpenTranscript": "Открыть расшифровку…",
   "toolbarMore": "Остальное",
   "tooltipToolbarMore": "Пункты, которым не хватило места",
+  "buttonSelect": "Выбрать",
+  "buttonSelectDone": "Готово",
+  "buttonSelectAll": "Выбрать все",
+  "buttonSelectNone": "Снять выделение",
+  "buttonDeleteChosen": "Убрать в Корзину ({count})",
+  "@buttonDeleteChosen": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusLibraryTrashed": "Убрано в Корзину: {files}",
+  "@statusLibraryTrashed": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "statusLibraryTrashFailed": "Убрать в Корзину не вышло: {files}",
+  "@statusLibraryTrashFailed": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
+  "sheetLibrarySelectHint": "Выбранное уходит в Корзину, а не стирается: вернуть его можно средствами системы.",
   "sheetLibraryTitle": "Прошлые расшифровки",
   "sheetLibrarySubtitle": "В библиотеке {files}. Новые сверху.",
   "@sheetLibrarySubtitle": {

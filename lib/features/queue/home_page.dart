@@ -317,9 +317,23 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         root: s.libraryPath,
         onOpenInQueue: (path) => _send(TranscriptOpened(path)),
         onReveal: _revealSource,
+        onTrash: _trashFiles,
         onStatus: (text) => _send(StatusReported(text)),
       ),
     );
+  }
+
+  /// Убрать файлы в Корзину. Возвращает то, что убрать не вышло.
+  ///
+  /// В Корзину, а не `unlink`: расшифровка — сделанная человеком работа,
+  /// и промах по кнопке не должен стоить её насовсем. Тем же способом
+  /// панель диктовки убирает спасённые записи.
+  Future<List<String>> _trashFiles(List<String> paths) async {
+    final left = <String>[];
+    for (final path in paths) {
+      if (!await _bloc.bridge.trash(path)) left.add(path);
+    }
+    return left;
   }
 
   /// Команды по разделам, в том же порядке, в каком они стоят в меню.
