@@ -17,6 +17,7 @@ extension _Menus on _HomeViewState {
       s.readyTargets.isNotEmpty,
       s.targets.isNotEmpty,
       s.targets.any((j) => !j.imported),
+      s.targets.every((j) => j.done),
       s.running,
       s.hasPending,
       s.jobs.any((j) => j.done),
@@ -179,7 +180,7 @@ extension _Menus on _HomeViewState {
               onSelected: s.running || !s.hasPending ? null : _sendStart,
             ),
             PlatformMenuItem(
-              label: l10n.menuRetryRecognition,
+              label: _recognizeLabel(s.targets, many: s.targets.length > 1),
               shortcut: const SingleActivator(LogicalKeyboardKey.keyR, meta: true, alt: true),
               onSelected: s.running || !s.canRetry ? null : _sendRetry,
             ),
