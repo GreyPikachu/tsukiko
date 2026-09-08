@@ -92,7 +92,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     on<SettingsReloaded>(_onSettingsReloaded);
     on<TimestampsToggled>(_onTimestampsToggled);
     on<RecentCleared>(_onRecentCleared);
-    on<QueueRestored>(_onQueueRestored);
 
     on<CopyRequested>(_onCopy);
     on<SaveRequested>(_onSave);
@@ -161,101 +160,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       recent: ((s['recent'] as List?)?.cast<String>() ?? const [])
           .where((p) => File(p).existsSync())
           .toList(),
-      savedQueue: _queueFile.existsSync(),
     );
-  }
-
-  // ── очередь между запусками ───────────────────────────────────────────────
-  //
-  // Список записей переживает выход из приложения, но сам собой не
-  // возвращается. Это две разные вещи, и путать их нельзя: очередь заводят
-  // под задачу, и вчерашние два десятка строк сегодня стоят поперёк новой
-  // работы. Поэтому запуск всегда чистый, а вернуться к прошлому можно
-  // пунктом «Вернуть прошлую очередь» — ровно тогда, когда это нужно.
-  //
-  // Отдельно от `unfinished.json`: там ровно одна недосчитанная запись, и
-  // она возвращается сама — брошенная посреди счёта работа это не «список»,
-  // а начатое дело.
-
-  static File get _queueFile => File(os.join(os.supportDir, 'queue.json'));
-
-  /// Записать очередь на диск. Готовые расшифровки кладём целиком: исходной
-  /// записи к утру может уже не быть (её убрали, она лежала на флешке), а
-  /// текст — это и есть то, ради чего всё считалось.
-  void _persistQueue() {
-    try {
-      final jobs = state.jobs;
-      if (jobs.isEmpty) {
-        if (_queueFile.existsSync()) _queueFile.deleteSync();
-        return;
-      }
-      _queueFile.writeAsStringSync(jsonEncode({
-        'jobs': [
-          for (final j in jobs)
-            {
-              'path': j.path,
-              'imported': j.imported,
-              if (j.transcript case final t?) ...{
-                'lang': t.lang,
-                'segments': [
-                  for (final seg in t.segments) [seg.from, seg.to, seg.text],
-                ],
-              },
-              'raw': ?j.raw,
-            },
-        ],
-      }));
-    } catch (e) {
-      stderr.writeln('tsukiko: очередь не сохранилась — $e');
-    }
-  }
-
-  /// Вернуть сохранённую очередь. Записи, которых больше нет на диске,
-  /// пропускаем молча вместе с их расшифровками: строка, за которой нет
-  /// файла, ничего сделать не даст.
-  void _onQueueRestored(QueueRestored e, Emitter<QueueState> emit) {
-    final restored = <Job>[];
-    try {
-      final j = jsonDecode(_queueFile.readAsStringSync()) as Map<String, dynamic>;
-      for (final raw in (j['jobs'] as List? ?? const [])) {
-        final m = (raw as Map).cast<String, dynamic>();
-        final path = m['path'] as String;
-        if (!File(path).existsSync()) continue;
-        if (state.jobs.any((x) => x.path == path)) continue;
-        final segments = m['segments'] as List?;
-        final t = segments == null
-            ? null
-            : Transcript((m['lang'] as String?) ?? 'auto', [
-                for (final seg in segments)
-                  Segment((seg[0] as num).toInt(), (seg[1] as num).toInt(),
-                      seg[2] as String),
-              ]);
-        restored.add(Job(
-          File(path),
-          imported: (m['imported'] as bool?) ?? false,
-          state: t != null || m['raw'] != null ? JobState.done : JobState.queued,
-          transcript: t,
-          raw: m['raw'] as String?,
-          detail: t == null
-              ? null
-              : currentL10n().jobDetailLangSegments(
-                  languageName(t.lang), segmentsLabel(t.segments.length)),
-        ));
-      }
-    } catch (err) {
-      stderr.writeln('tsukiko: прошлая очередь не прочиталась — $err');
-    }
-    if (restored.isEmpty) {
-      emit(state.copyWith(
-          savedQueue: false, status: currentL10n().statusQueueGone));
-      return;
-    }
-    emit(state.copyWith(
-      jobs: [...state.jobs, ...restored],
-      savedQueue: false,
-      status: currentL10n()
-          .statusQueueRestored(recordsLabel(restored.length)),
-    ));
   }
 
   /// Файл с недосчитанным. Очередь между запусками не переживает — и не
@@ -450,25 +355,15 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       );
     }
 
-    Transcript? parsed;
-    String? raw;
-    if (path.endsWith('.json')) {
-      try {
-        parsed = parseWhisperJson(text);
-      } catch (_) {
-        raw = text;
-      }
-    } else {
-      parsed = parseSubtitles(text);
-      if (parsed == null) raw = text;
-    }
+    final read = readTranscript(path, text);
+    final parsed = read.parsed;
 
     final job = Job(
       File(path),
       imported: true,
       state: JobState.done,
       transcript: parsed,
-      raw: raw,
+      raw: read.raw,
       detail: parsed != null
           ? currentL10n().statusOpenedSegments(segmentsLabel(parsed.segments.length))
           : currentL10n().statusOpenedText,
@@ -1422,7 +1317,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       'recent': state.recent,
     }));
     Prompts.write(Prompts.transcriber, state.defaults.prompt);
-    _persistQueue();
   }
 
   @visibleForTesting

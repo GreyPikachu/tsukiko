@@ -498,50 +498,6 @@ void main() {
     });
   });
 
-  group('очередь между запусками', () {
-    test('сохранённая очередь возвращается только по просьбе', () async {
-      final path = file('вчера.m4a');
-
-      final first = make();
-      first.add(FilesAdded([path]));
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await first.flushSettings();
-      await first.close();
-
-      // Новый запуск — очередь чистая: вчерашние записи стояли бы поперёк
-      // сегодняшней работы.
-      NativeBridge.debugReset();
-      final second = make();
-      expect(second.state.jobs, isEmpty);
-      expect(second.state.savedQueue, isTrue, reason: 'но вернуть их есть чем');
-
-      second.add(const QueueRestored());
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(second.state.jobs.single.name, 'вчера.m4a');
-      expect(second.state.savedQueue, isFalse);
-      await second.close();
-    });
-
-    test('записи, которых больше нет, не возвращаются', () async {
-      final path = file('пропала.m4a');
-
-      final first = make();
-      first.add(FilesAdded([path]));
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await first.flushSettings();
-      await first.close();
-
-      File(path).deleteSync();
-
-      NativeBridge.debugReset();
-      final second = make();
-      second.add(const QueueRestored());
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(second.state.jobs, isEmpty,
-          reason: 'строка, за которой нет файла, ничего сделать не даст');
-      await second.close();
-    });
-  });
 }
 
 /// Подставная родная сторона: очередь спрашивает у неё разрешение забрать

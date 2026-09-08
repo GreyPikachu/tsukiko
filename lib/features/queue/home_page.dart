@@ -28,6 +28,7 @@ import '../../l10n/gen/app_localizations.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import 'job.dart';
+import 'library_sheet.dart';
 import 'queue_bloc.dart';
 import 'queue_event.dart';
 import '../../core/update.dart';
@@ -289,6 +290,23 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Прошлые расшифровки — всё, что накопила библиотека.
+  ///
+  /// Лист, а не своё окно: разбор — в `library_sheet.dart`. Список читается
+  /// с диска в тот момент, когда его открывают, поэтому блоку про него
+  /// знать нечего — как и про список сочетаний.
+  void _showLibrary(QueueState s) {
+    showMacosSheet<void>(
+      context: context,
+      builder: (_) => LibrarySheet(
+        root: s.libraryPath,
+        onOpenInQueue: (path) => _send(TranscriptOpened(path)),
+        onReveal: _revealSource,
+        onStatus: (text) => _send(StatusReported(text)),
       ),
     );
   }
@@ -650,6 +668,16 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           showLabel: false,
           tooltipMessage: l10n.tooltipAddAudioShortcut,
           onPressed: _pickFiles,
+        ),
+        // Рядом с «Добавить», и это одно и то же действие с двух сторон:
+        // взять в работу новую запись или вернуться к разобранной.
+        ToolBarIconButton(
+          label: l10n.sheetLibraryTitle,
+          icon: const MacosIcon(CupertinoIcons.clock),
+          showLabel: false,
+          tooltipMessage:
+              l10n.tooltipPastTranscripts(os.menuShortcut(const ['cmd'], 'l')),
+          onPressed: () => _showLibrary(s),
         ),
         ToolBarIconButton(
           label: s.running ? l10n.menuStop : l10n.buttonRecognize,

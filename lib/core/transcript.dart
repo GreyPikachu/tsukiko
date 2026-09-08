@@ -129,6 +129,26 @@ List<Segment> collapseRepeats(List<Segment> segs) {
   return out;
 }
 
+/// Разобрать содержимое файла расшифровки.
+///
+/// Одна дорога на всех, кто открывает готовый текст: очередь по
+/// «Открыть расшифровку…» и обзор прошлых расшифровок. Разбираются JSON,
+/// субтитры и наш «текст с таймкодами» — такую расшифровку можно
+/// пересохранить в любой другой формат. Не разобралось — значит это
+/// просто текст, и он отдаётся как есть: показать его всё равно можно,
+/// а сочинять из него фрагменты нельзя.
+({Transcript? parsed, String? raw}) readTranscript(String path, String text) {
+  if (path.toLowerCase().endsWith('.json')) {
+    try {
+      return (parsed: parseWhisperJson(text), raw: null);
+    } catch (_) {
+      return (parsed: null, raw: text);
+    }
+  }
+  final parsed = parseSubtitles(text);
+  return parsed == null ? (parsed: null, raw: text) : (parsed: parsed, raw: null);
+}
+
 Transcript parseWhisperJson(String jsonText) {
   final data = jsonDecode(jsonText) as Map<String, dynamic>;
   final lang = (data['result']?['language'] ?? '?').toString();
