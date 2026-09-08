@@ -563,6 +563,8 @@
   "menuFile": "Файл",
   "menuAddAudio": "Добавить аудио…",
   "menuOpenTranscript": "Открыть расшифровку…",
+  "toolbarMore": "Остальное",
+  "tooltipToolbarMore": "Пункты, которым не хватило места",
   "sheetLibraryTitle": "Прошлые расшифровки",
   "sheetLibrarySubtitle": "В библиотеке {files}. Новые сверху.",
   "@sheetLibrarySubtitle": {

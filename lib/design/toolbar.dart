@@ -1,0 +1,166 @@
+// Внутренности macos_ui нужны здесь по делу: `OverflowHandler` — то самое,
+// что решает, каким пунктам панели места не хватило, а `WallpaperTintingOverride`
+// снимает подкраску обоями под размытой полосой. Ни то, ни другое пакет
+// наружу не отдаёт, а без них панель пришлось бы писать целиком.
+// ignore_for_file: implementation_imports
+
+import 'dart:ui' show ImageFilter;
+
+import 'package:flutter/cupertino.dart';
+import 'package:macos_ui/macos_ui.dart';
+import 'package:macos_ui/src/layout/toolbar/overflow_handler.dart';
+import 'package:macos_ui/src/layout/wallpaper_tinting_settings/wallpaper_tinting_override.dart';
+
+import '../l10n/gen/app_localizations.dart';
+
+/// Панель инструментов macos_ui с другим значком у списка спрятанного.
+///
+/// Форк ради одного значка выглядит несоразмерно, поэтому — почему он всё
+/// же нужен и почему он такой маленький.
+///
+/// Когда пунктам панели перестаёт хватать места, macos_ui прячет лишние
+/// и ставит на их место кнопку со значком `chevron_right_2` — «»». Значок
+/// выбран неудачно: в окне с двумя боковыми колонками он стоит у правого
+/// края и читается как «свернуть правую колонку», а не «показать
+/// спрятанное». Хозяин на это и наткнулся: нажал, ожидая свернуть панель,
+/// и получил меню экспорта.
+///
+/// Поменять значок настройкой нельзя: `ToolbarOverflowButton` пакет
+/// создаёт сам, внутри своего `build`, и наружу этого не отдаёт.
+/// А подсунуть `MacosScaffold` чужой виджет тоже нельзя — его поле
+/// `toolBar` типизировано именно как [ToolBar].
+///
+/// Отсюда и вид форка: не копия файла, а наследник. Все поля [ToolBar]
+/// открыты, `createState` тоже — значит достаточно своего состояния,
+/// которое собирает то же дерево, что и пакет, с одной заменой. Копией
+/// файла пришлось бы тянуть ещё и то, чем мы не пользуемся: заголовок
+/// по центру, кнопку «назад», подкладку без размытия.
+class AppToolBar extends ToolBar {
+  const AppToolBar({
+    super.key,
+    super.title,
+    super.titleWidth,
+    super.actions,
+    super.dividerColor,
+    super.enableBlur,
+  });
+
+  @override
+  State<ToolBar> createState() => _AppToolBarState();
+}
+
+class _AppToolBarState extends State<ToolBar> {
+  /// Сколько пунктов с конца сейчас спрятано. Считает [OverflowHandler]:
+  /// он один знает, что во что поместилось.
+  int _hidden = 0;
+
+  @override
+  void didUpdateWidget(ToolBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Список пунктов сменился — прежний счёт спрятанного к нему не
+    // относится. Пересчитает тот же OverflowHandler на ближайшей раскладке.
+    if (widget.actions?.length != oldWidget.actions?.length) _hidden = 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = MacosTheme.of(context);
+    final scope = MacosWindowScope.maybeOf(context);
+    final actions = widget.actions ?? const <ToolbarItem>[];
+    final overflowed =
+        _hidden == 0 ? const <ToolbarItem>[] : actions.sublist(actions.length - _hidden);
+
+    Widget? title = widget.title;
+    if (title != null) {
+      title = SizedBox(
+        width: widget.titleWidth,
+        child: DefaultTextStyle(
+          style: theme.typography.title3
+              .copyWith(fontSize: 15, fontWeight: MacosFontWeight.w590),
+          child: title,
+        ),
+      );
+    }
+
+    return MediaQuery(
+      // Слева под панелью лежат кнопки окна — там ставить свои пункты нельзя.
+      data: MediaQuery.of(context).copyWith(padding: const EdgeInsets.only(left: 70)),
+      child: WallpaperTintingOverride(
+        child: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+            child: Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                      color: widget.dividerColor ?? theme.dividerColor),
+                ),
+              ),
+              child: NavigationToolbar(
+                middle: title,
+                middleSpacing: 8,
+                trailing: OverflowHandler(
+                  // Заголовок места пунктам не уступает: его ширину
+                  // считаем занятой заранее.
+                  overflowBreakpoint: title == null ? 0 : widget.titleWidth,
+                  overflowWidget: _MoreButton(
+                    items: [
+                      for (final a in overflowed)
+                        a.build(context, ToolbarItemDisplayMode.overflowed),
+                    ],
+                  ),
+                  overflowChangedCallback: (hidden) =>
+                      setState(() => _hidden = hidden.length),
+                  children: [
+                    for (final a in actions)
+                      a.build(context, ToolbarItemDisplayMode.inToolbar),
+                  ],
+                ),
+                leading: SafeArea(
+                  top: false,
+                  right: false,
+                  bottom: false,
+                  left: !(scope?.isSidebarShown ?? false),
+                  child: const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Кнопка «остальное»: та же, что в macos_ui, с многоточием вместо «»»
+/// и с подписью, которая говорит, что за ней.
+class _MoreButton extends StatefulWidget {
+  const _MoreButton({required this.items});
+  final List<Widget> items;
+
+  @override
+  State<_MoreButton> createState() => _MoreButtonState();
+}
+
+class _MoreButtonState extends State<_MoreButton> {
+  final _popup = GlobalKey<ToolbarPopupState>();
+
+  @override
+  Widget build(BuildContext context) => ToolbarPopup(
+        key: _popup,
+        content: (context) => ToolbarOverflowMenu(children: widget.items),
+        verticalOffset: 8,
+        horizontalOffset: 10,
+        position: ToolbarPopupPosition.below,
+        placement: ToolbarPopupPlacement.end,
+        child: ToolBarIconButton(
+          label: AppLocalizations.of(context).toolbarMore,
+          tooltipMessage: AppLocalizations.of(context).tooltipToolbarMore,
+          icon: const MacosIcon(CupertinoIcons.ellipsis),
+          showLabel: false,
+          onPressed: () => _popup.currentState?.openPopup(),
+        ).build(context, ToolbarItemDisplayMode.inToolbar),
+      );
+}
