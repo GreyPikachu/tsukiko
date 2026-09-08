@@ -16,6 +16,11 @@ String get defaultLibraryPath => os.defaultLibraryPath;
 /// и перетаскиванием, и из обзора библиотеки.
 const transcriptExt = {'.txt', '.srt', '.vtt', '.json', '.md'};
 
+/// Запасная копия подсказок. Лежит в библиотеке нарочно — установщик
+/// её не трогает, — но расшифровкой от этого не становится, и в обзоре
+/// прошлых расшифровок ей делать нечего.
+const promptsFileName = 'prompts.json';
+
 String monthFolder(DateTime t) => '${t.year}-${t.month.toString().padLeft(2, '0')}';
 
 /// Куда и под каким именем лечь файлам одной записи.
@@ -131,8 +136,13 @@ List<LibraryEntry> scanLibrary(String root, {int limit = 300}) {
         continue;
       }
       if (f is! File) continue;
-      final at = f.path.lastIndexOf('.');
-      if (at < 0 || !transcriptExt.contains(f.path.substring(at).toLowerCase())) {
+      final name = os.basename(f.path);
+      // Своё хозяйство в списке расшифровок не место: подсказки лежат
+      // в библиотеке нарочно (см. Prompts), но расшифровкой от этого
+      // не становятся.
+      if (name == promptsFileName) continue;
+      final at = name.lastIndexOf('.');
+      if (at < 0 || !transcriptExt.contains(name.substring(at).toLowerCase())) {
         continue;
       }
       try {

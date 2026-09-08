@@ -83,6 +83,26 @@ extension ExportFormatLabels on ExportFormat {
   String get ext => suffix.substring(suffix.lastIndexOf('.'));
 }
 
+/// Каким форматом назван этот файл.
+///
+/// Сначала по полному окончанию, потом по расширению: «текст
+/// с таймкодами» и обычный текст оба кончаются на «.txt», и различает их
+/// только слово в имени. Ничего не узнали — null: выдуманный ответ здесь
+/// хуже отсутствующего.
+///
+/// Окончание интерфейсное (см. [ExportFormatLabels.suffix]), поэтому
+/// и живёт это здесь, а не рядом с самими форматами.
+ExportFormat? formatOfFile(String path) {
+  final name = path.toLowerCase();
+  for (final f in exportFormats) {
+    if (name.endsWith(f.suffix.toLowerCase())) return f;
+  }
+  for (final f in exportFormats) {
+    if (name.endsWith(f.ext)) return f;
+  }
+  return null;
+}
+
 /// Расшифровка в выбранном формате — с переведённой шапкой markdown.
 ///
 /// Приложение зовёт это, отдельная программа расшифровки — голый

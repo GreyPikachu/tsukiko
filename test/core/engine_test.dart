@@ -209,6 +209,11 @@ void main() {
     final deep = scanLibrary(root).firstWhere((e) => e.name == 'Совещание.srt');
     expect(deep.folderIn(root), os.join('2026-08', 'Совещание'));
 
+    // Своё хозяйство в списке расшифровок не место: подсказки лежат
+    // в библиотеке нарочно, но расшифровкой от этого не становятся.
+    File(os.join(root, promptsFileName)).writeAsStringSync('{}');
+    expect(scanLibrary(root).any((e) => e.name == promptsFileName), isFalse);
+
     // Пропавшей папки не бывает бедой: список просто пуст.
     Directory(root).deleteSync(recursive: true);
     expect(scanLibrary(root), isEmpty);

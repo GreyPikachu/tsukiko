@@ -5,7 +5,7 @@ import 'dart:isolate';
 import 'dart:ui' show IsolateNameServer;
 
 import '../platform/os.dart' show os;
-import 'library.dart' show defaultLibraryPath, supportDir;
+import 'library.dart' show defaultLibraryPath, promptsFileName, supportDir;
 
 /// Хранение настроек на диске.
 ///
@@ -146,7 +146,7 @@ class Prompts {
   static String get _dir =>
       (Settings.load()['libraryPath'] as String?) ?? defaultLibraryPath;
 
-  static File get _file => File(os.join(_dir, 'prompts.json'));
+  static File get _file => File(os.join(_dir, promptsFileName));
 
   static String read(String which) {
     try {
