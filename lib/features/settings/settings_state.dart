@@ -46,6 +46,7 @@ class SettingsState extends Equatable {
     this.skillResult = const {},
     Hotkey? hold,
     Hotkey? toggle,
+    Hotkey? cancel,
     this.dictationModel = '',
     this.queueModel = '',
     this.threads = 4,
@@ -68,7 +69,8 @@ class SettingsState extends Equatable {
     this.apiPort = 0,
     this.apiError = '',
   })  : hold = hold ?? Hotkey.holdDefault,
-        toggle = toggle ?? Hotkey.toggleDefault;
+        toggle = toggle ?? Hotkey.toggleDefault,
+        cancel = cancel ?? Hotkey.none;
 
   /// Какая вкладка открыта. Приходит и снаружи: окно могут попросить
   /// открыться сразу на «Моделях».
@@ -121,6 +123,10 @@ class SettingsState extends Equatable {
 
   final Hotkey hold, toggle;
 
+  /// «Бросить начатое». По умолчанию не назначено: действие редкое,
+  /// а занятое сочетание отнимается у чужих программ навсегда.
+  final Hotkey cancel;
+
   /// То из двух сочетаний, которое лежит на дороге ко второму, — или null,
   /// если такой беды нет.
   ///
@@ -130,11 +136,25 @@ class SettingsState extends Equatable {
   /// пары больше не дают, но назначить её руками никто не мешает — значит
   /// об этом надо сказать. Считается из самого состояния, а не в миг
   /// назначения: беда живёт, пока стоит эта пара, а не одно мгновение.
-  Hotkey? get shadowingHotkey => hold.isPrefixOf(toggle)
-      ? hold
-      : toggle.isPrefixOf(hold)
-          ? toggle
-          : null;
+  Hotkey? get shadowingHotkey {
+    for (final a in [hold, toggle, cancel]) {
+      for (final b in [hold, toggle, cancel]) {
+        if (identical(a, b)) continue;
+        if (a.isPrefixOf(b)) return a;
+      }
+    }
+    return null;
+  }
+
+  /// Второе из пары, на дороге к которому лежит [shadowingHotkey].
+  Hotkey? get shadowedHotkey {
+    final early = shadowingHotkey;
+    if (early == null) return null;
+    for (final b in [hold, toggle, cancel]) {
+      if (!identical(early, b) && early.isPrefixOf(b)) return b;
+    }
+    return null;
+  }
 
   /// Модель диктовки. Пусто — «та же, что у расшифровщика».
   final String dictationModel;
@@ -198,6 +218,7 @@ class SettingsState extends Equatable {
     bool? allowed,
     Hotkey? hold,
     Hotkey? toggle,
+    Hotkey? cancel,
     String? dictationModel,
     String? queueModel,
     int? threads,
@@ -235,6 +256,7 @@ class SettingsState extends Equatable {
         allowed: allowed ?? this.allowed,
         hold: hold ?? this.hold,
         toggle: toggle ?? this.toggle,
+        cancel: cancel ?? this.cancel,
         dictationModel: dictationModel ?? this.dictationModel,
         queueModel: queueModel ?? this.queueModel,
         threads: threads ?? this.threads,
@@ -270,6 +292,7 @@ class SettingsState extends Equatable {
         allowed,
         hold.label,
         toggle.label,
+        cancel.label,
         dictationModel,
         queueModel,
         threads,

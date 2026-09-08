@@ -27,7 +27,7 @@ enum HotkeyEdge { down, up }
 class HotkeyEvent {
   const HotkeyEvent(this.id, this.edge, {this.cancel = false});
 
-  /// 'hold' или 'toggle' — какое из двух сочетаний сработало.
+  /// 'hold', 'toggle' или 'cancel' — какое из сочетаний сработало.
   final String id;
   final HotkeyEdge edge;
 
@@ -176,10 +176,17 @@ class NativeBridge {
   Future<void> hud(HudState state) =>
       _channel.invokeMethod('hud', {'state': state.name});
 
-  Future<void> bind({required Hotkey hold, required Hotkey toggle}) =>
+  /// Пустое сочетание значит «не назначено»: родная сторона такое
+  /// не перехватывает вовсе.
+  Future<void> bind({
+    required Hotkey hold,
+    required Hotkey toggle,
+    required Hotkey cancel,
+  }) =>
       _channel.invokeMethod('bind', {
         'hold': hold.toJson(),
         'toggle': toggle.toJson(),
+        'cancel': cancel.toJson(),
       });
 
   Future<Hotkey?> capture() {

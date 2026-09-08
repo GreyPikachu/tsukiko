@@ -135,6 +135,9 @@ class DictationBridge {
   void KillDictationServer();
   void SetTaskbarButtonVisible(bool visible);
 
+  /// Погасить движок расшифровки, записанный очередью. См. .cpp.
+  void KillRecognizer();
+
   /// Что мы уже сделали с кнопкой на панели задач. Пусто — ещё ничего:
   /// первый вызов всегда применяется, а повторный с тем же значением
   /// пропускается. Иначе окно пряталось и показывалось на каждой правке
@@ -187,6 +190,10 @@ class DictationBridge {
 
   HotkeySpec hold_spec_;
   HotkeySpec toggle_spec_;
+
+  /// «Бросить начатое». Может остаться пустым: это единственное сочетание,
+  /// которое разрешено не назначать вовсе.
+  HotkeySpec cancel_spec_;
   bool is_capturing_ = false;
   std::set<std::string> captured_mods_;
   std::set<int> captured_keys_;
@@ -203,6 +210,7 @@ class DictationBridge {
   void OnCaptureTimeout();
   TapState hold_state_;
   TapState toggle_state_;
+  TapState cancel_state_;
 
   // Аудио запись
   void* ma_device_ = nullptr;

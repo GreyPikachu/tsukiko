@@ -4,7 +4,8 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui' show IsolateNameServer;
 
-import 'library.dart' show supportDir;
+import '../platform/os.dart' show os;
+import 'library.dart' show defaultLibraryPath, supportDir;
 
 /// Хранение настроек на диске.
 ///
@@ -113,6 +114,65 @@ class Settings {
       // Настройки не сохранились. Молчать нельзя: следующий запуск придёт
       // со старыми значениями, и человек решит, что приложение их не помнит.
       stderr.writeln('tsukiko: не удалось сохранить настройки — $e');
+    }
+  }
+}
+
+/// Подсказки модели — отдельно от всех прочих настроек.
+///
+/// Подсказка это не «настройка», а работа: список имён, терминов и слов,
+/// которые модель иначе пишет как попало. Собирают его месяцами и по
+/// одному слову. Всё остальное в settings.json переживает переустановку
+/// плохо и не жалко: галки расставляются заново за минуту. Здесь не так —
+/// а установщик Windows настройки при удалении стирает намеренно
+/// (tool/installer.iss, RemoveOurSettings), и вместе с ними уносил и этот
+/// список.
+///
+/// Поэтому подсказки лежат там же, где расшифровки, — в библиотеке.
+/// Она и по смыслу сделанная человеком работа, и по обращению: установщик
+/// про неё спрашивает отдельно и по умолчанию не трогает.
+///
+/// Настройки остаются главными: в них подсказка и читается, и пишется
+/// по-прежнему. Здесь — запасная копия, из которой берут, когда в
+/// настройках пусто.
+class Prompts {
+  Prompts._();
+
+  /// Подсказка расшифровщика и подсказка диктовки — разные: диктуют
+  /// не то же, что расшифровывают.
+  static const transcriber = 'transcriber';
+  static const dictation = 'dictation';
+
+  static String get _dir =>
+      (Settings.load()['libraryPath'] as String?) ?? defaultLibraryPath;
+
+  static File get _file => File(os.join(_dir, 'prompts.json'));
+
+  static String read(String which) {
+    try {
+      final j = jsonDecode(_file.readAsStringSync()) as Map<String, dynamic>;
+      return (j[which] as String?) ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Пустую подсказку в пустую библиотеку не пишем: заводить папку ради
+  /// файла с двумя пустыми строками незачем. Стереть уже написанное при
+  /// этом можно — файл в таком случае уже есть.
+  static void write(String which, String text) {
+    try {
+      final dir = Directory(_dir);
+      if (text.isEmpty && !_file.existsSync()) return;
+      if (read(which) == text) return;
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final was = <String, dynamic>{};
+      try {
+        was.addAll(jsonDecode(_file.readAsStringSync()) as Map<String, dynamic>);
+      } catch (_) {}
+      writeJsonAtomically(_file, {...was, which: text});
+    } catch (e) {
+      stderr.writeln('tsukiko: подсказка не сохранилась рядом с расшифровками — $e');
     }
   }
 }

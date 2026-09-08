@@ -6,6 +6,11 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/gestures.dart'
+    show
+        ImmediateMultiDragGestureRecognizer,
+        MultiDragGestureRecognizer,
+        kPrimaryButton;
 import 'package:flutter/material.dart'
     show ReorderableListView, ReorderableDragStartListener, SelectableText;
 import 'package:flutter/services.dart';
@@ -369,16 +374,42 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     if (jobs.length > 1) return _exportInto(jobs, [f]);
 
     final job = jobs.single;
+    // Все форматы, а не один: и NSSavePanel, и диалог Windows рисуют список
+    // типов файла сами, и выбор формата уместнее там, чем ещё одним нашим
+    // окном поверх системного. Первым идёт тот, которым сохраняли в прошлый
+    // раз, — он же и предложится.
+    final offered = [f, ...exportFormats.where((g) => g.id != f.id)];
     final loc = await getSaveLocation(
       suggestedName: f.fileName(_stem(job.name)),
       acceptedTypeGroups: [
-        XTypeGroup(label: f.label, extensions: [f.ext.substring(1)]),
+        for (final g in offered)
+          XTypeGroup(label: g.label, extensions: [g.ext.substring(1)]),
       ],
     );
     if (loc == null) return;
+    final chosen = _formatOfPath(loc.path, f);
     // Диалог мог отдать путь без расширения — дописываем сами.
-    final path = loc.path.toLowerCase().endsWith(f.ext) ? loc.path : '${loc.path}${f.ext}';
-    _send(SaveRequested(job, path, f));
+    final path = loc.path.toLowerCase().endsWith(chosen.ext)
+        ? loc.path
+        : '${loc.path}${chosen.ext}';
+    _send(SaveRequested(job, path, chosen));
+  }
+
+  /// Каким форматом человек назвал файл в системном диалоге.
+  ///
+  /// Сначала по полному окончанию, потом по расширению: «текст с
+  /// таймкодами» и обычный текст оба кончаются на «.txt», и различает их
+  /// только слово в имени. Ничего не узнали — остаётся тот формат,
+  /// с которым диалог открывали.
+  ExportFormat _formatOfPath(String path, ExportFormat fallback) {
+    final name = path.toLowerCase();
+    for (final f in exportFormats) {
+      if (name.endsWith(f.suffix.toLowerCase())) return f;
+    }
+    for (final f in exportFormats) {
+      if (name.endsWith(f.ext)) return f;
+    }
+    return fallback;
   }
 
   Future<void> _exportAll(QueueState s) async {
@@ -620,16 +651,6 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           tooltipMessage: l10n.tooltipAddAudioShortcut,
           onPressed: _pickFiles,
         ),
-        // Только там, где строки меню нет: на macOS все сочетания и так
-        // видны в ней, и вторая их копия была бы лишним местом правды.
-        if (!os.hasSystemMenuBar)
-          ToolBarIconButton(
-            label: l10n.sheetShortcutsTitle,
-            icon: const MacosIcon(CupertinoIcons.keyboard),
-            showLabel: false,
-            tooltipMessage: '${l10n.sheetShortcutsTitle} · F1',
-            onPressed: () => _showShortcuts(s),
-          ),
         ToolBarIconButton(
           label: s.running ? l10n.menuStop : l10n.buttonRecognize,
           icon: MacosIcon(s.running
@@ -672,8 +693,6 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           tooltipMessage: l10n.tooltipRetryShortcut,
           onPressed: s.running || !s.targets.any((j) => !j.imported) ? null : _sendRetry,
         ),
-        const ToolBarSpacer(spacerUnits: 1),
-
         // Кнопка повторяет прошлый выбор, стрелка рядом даёт его сменить.
         ToolBarIconButton(
           label: l10n.buttonCopyToolbar,
@@ -686,9 +705,15 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           label: l10n.labelCopyFormat,
           icon: CupertinoIcons.doc_on_clipboard,
           tooltipMessage: l10n.tooltipChooseCopyFormat,
+          // Тот же список, что у сохранения. Раньше здесь стояло четыре
+          // формата из шести, и разница вылезала боком: в панели
+          // переполнения «Формат сохранения» показывал все, а рядом
+          // лежащее «Копировать» — не все, и понять, отчего их то шесть,
+          // то четыре, было нельзя. Markdown и JSON копируются ровно так
+          // же, как сохраняются, — прятать их было не за что.
           items: ready
               ? [
-                  for (final f in const [formatPlainText, formatTimedText, formatSrt, formatVtt])
+                  for (final f in exportFormats)
                     _formatItem(f, s.copyFormat, () => _copy(f)),
                 ]
               : null,
@@ -723,6 +748,23 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           tooltipMessage: l10n.tooltipFindShortcut,
           onPressed: s.lead == null ? null : _openFind,
         ),
+        // Последним — и это не случайность. Панель инструментов прячет
+        // лишнее с конца: чем шире боковая колонка, тем меньше её остаётся,
+        // и первыми уходят те, кто стоит правее. Раньше кнопка сочетаний
+        // стояла второй, а копирование — в середине, и стоило растянуть
+        // очередь, как из панели пропадало именно копирование расшифровки —
+        // то, ради чего в неё и смотрят. Порядок здесь и есть порядок
+        // важности: добавить, распознать, приостановить, повторить,
+        // скопировать, сохранить, найти — и только потом справка о
+        // клавишах, до которой есть F1.
+        if (!os.hasSystemMenuBar)
+          ToolBarIconButton(
+            label: l10n.sheetShortcutsTitle,
+            icon: const MacosIcon(CupertinoIcons.keyboard),
+            showLabel: false,
+            tooltipMessage: '${l10n.sheetShortcutsTitle} · F1',
+            onPressed: () => _showShortcuts(s),
+          ),
       ],
     );
   }
@@ -888,7 +930,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         itemCount: s.jobs.length,
         itemBuilder: (context, i) {
           final job = s.jobs[i];
-          return ReorderableDragStartListener(
+          return _QueueDragListener(
             key: ValueKey(job.path),
             index: i,
             child: ContextMenuRegion(
@@ -926,9 +968,18 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   /// Пункты меню правого щелчка. Считает по нынешнему выделению и ничего
   /// не меняет: выделить запись под курсором — дело жеста (onOpen).
+  ///
+  /// Выделение, которое ставит жест, доедет только следующим состоянием:
+  /// оно уходит событием в блок, а пункты собираются здесь и сейчас. Значит
+  /// считать по одному лишь `s.selected` нельзя — по первому щелчку в
+  /// нетронутой очереди там пусто, и «Распознать заново» с «Копировать»
+  /// вышли бы серыми. Поэтому целью считаем то же, что посчитает блок:
+  /// выделенное, а если запись под курсором в него не входит — саму её.
   List<MenuAction> _rowActions(QueueState s, Job job) {
-    final many = s.selected.length > 1;
-    final ready = s.readyTargets.isNotEmpty;
+    final targets = s.selected.contains(job) ? s.targets : [job];
+    final many = targets.length > 1;
+    final ready = targets.any((j) => j.done);
+    final canRetry = targets.any((j) => !j.imported);
     return [
       MenuAction(
         l10n.menuCopyFormat(formatById(s.copyFormat).label.toLowerCase()),
@@ -947,7 +998,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       const MenuAction.separator(),
       MenuAction(
         many ? l10n.menuRetrySelected : l10n.menuRetryRecognition,
-        onSelected: s.running || !s.targets.any((j) => !j.imported) ? null : _sendRetry,
+        onSelected: s.running || !canRetry ? null : _sendRetry,
         shortcut: os.menuShortcut(const ['opt', 'cmd'], 'r'),
       ),
       MenuAction(
@@ -960,7 +1011,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         MenuAction(l10n.menuRestoreDefaultSettings, onSelected: _sendResetOverrides),
       MenuAction(
         many ? l10n.menuRemoveSelected : l10n.menuRemoveFromQueue,
-        onSelected: s.targets.any((j) => j.active) ? null : _sendRemove,
+        onSelected: targets.any((j) => j.active) ? null : _sendRemove,
         shortcut: os.menuShortcut(const [], 'backspace'),
       ),
     ];
@@ -1310,7 +1361,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         AppTextField(
           controller: _promptCtrl,
           placeholder: l10n.placeholderPromptExample,
-          maxLines: 3,
+          minLines: 3,
+          maxLines: null,
           onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(prompt: v))),
         ),
         Hint(l10n.hintPromptHelps),
@@ -1342,6 +1394,31 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       ],
     );
   }
+}
+
+/// Перетаскивание строки очереди — только левой кнопкой.
+///
+/// `ReorderableDragStartListener` из Flutter начинает перетаскивание с
+/// любой кнопки мыши: он вешает `Listener.onPointerDown` и отдаёт событие
+/// распознавателю без разбора. Правый щелчок по строке от этого попадал
+/// сразу в двоих — в наше меню и в перетаскивание, — и стоило курсору
+/// сдвинуться на пиксель, как перетаскивание объявляло себя победителем,
+/// а меню не появлялось вовсе. Пиксель этот на трекпаде неизбежен: щелчок
+/// двумя пальцами почти всегда чуть ведёт указатель, поэтому на трекпаде
+/// контекстное меню очереди не открывалось почти никогда, а на мыши
+/// открывалось всегда — и выглядело это как «пункты меню не работают».
+///
+/// Лечится в одном месте: распознаватель перетаскивания берёт только
+/// первичную кнопку. Правому щелчку тогда никто не мешает.
+class _QueueDragListener extends ReorderableDragStartListener {
+  const _QueueDragListener({super.key, required super.child, required super.index});
+
+  @override
+  MultiDragGestureRecognizer createRecognizer() =>
+      ImmediateMultiDragGestureRecognizer(
+        debugOwner: this,
+        allowedButtonsFilter: (buttons) => buttons == kPrimaryButton,
+      );
 }
 
 // ── элементы ────────────────────────────────────────────────────────────────

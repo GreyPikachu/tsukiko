@@ -250,6 +250,16 @@ class RecentCleared extends QueueEvent {
   const RecentCleared();
 }
 
+/// Вернуть очередь такой, какой её застал прошлый выход из приложения.
+///
+/// Именно по просьбе, а не при запуске. Очередь заводят под задачу:
+/// вчерашние два десятка записей сегодня — мусор на экране, сквозь
+/// который надо продираться к новой работе. Но и терять их насовсем
+/// незачем: разбирали их полдня, и вернуться к ним иногда надо.
+class QueueRestored extends QueueEvent {
+  const QueueRestored();
+}
+
 /// Записать готовые расшифровки в буфер обмена.
 class CopyRequested extends QueueEvent {
   const CopyRequested(this.format);

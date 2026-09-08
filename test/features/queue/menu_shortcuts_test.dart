@@ -25,7 +25,10 @@ void main() {
           ]),
           // Пункт без сочетания и пункт без действия в карту не попадают.
           PlatformMenuItem(label: 'О программе', onSelected: () {}),
-          const PlatformMenuItem(label: 'Недоступно'),
+          const PlatformMenuItem(
+            label: 'Недоступно',
+            shortcut: SingleActivator(LogicalKeyboardKey.keyP, meta: true),
+          ),
         ]),
         PlatformMenu(label: 'Правка', menus: [
           PlatformMenuItem(
@@ -71,12 +74,23 @@ void main() {
     // сочетания, — иначе подсказка разошлась бы с делом.
     final commands = menuCommands(menus());
     expect(commands.map((c) => c.label).toList(),
-        ['Добавить', 'Копировать', 'Найти'],
-        reason: 'пункты без сочетания или без действия в список не идут');
+        ['Добавить', 'Копировать', 'Недоступно', 'Найти'],
+        reason: 'пункт без сочетания в список не идёт, а недоступный — идёт: '
+            'это справочник о клавишах, а не панель инструментов');
     expect(commands.map((c) => c.menu).toSet(), {'Файл', 'Правка'});
     // Подпись — словами той системы, на которой идёт тест: значки ⌘
     // на Windows человеку не говорят ничего.
     expect(commands.first.shortcut, os.menuShortcut(const ['cmd'], 'o'));
     expect(commands[1].shortcut, os.menuShortcut(const ['shift', 'cmd'], 'c'));
+  });
+
+  test('серые пункты из списка не пропадают', () {
+    // Ровно та беда, ради которой проверка и стоит: на пустой очереди
+    // недоступно почти всё, что делается с записями, — и список сочетаний
+    // показывал четыре строки из пятнадцати. То есть был пуст ровно тогда,
+    // когда в справку и заглядывают: до первой записи.
+    final all = menuCommands(menus());
+    expect(all.any((c) => c.label == 'Недоступно'), isTrue);
+    expect(all.length, 4);
   });
 }

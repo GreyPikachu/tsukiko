@@ -6,8 +6,9 @@
 #include "panel_window.h"
 #include "flutter/generated_plugin_registrant.h"
 
-FlutterWindow::FlutterWindow(const flutter::DartProject& project)
-    : project_(project) {}
+FlutterWindow::FlutterWindow(const flutter::DartProject& project,
+                             bool show_on_first_frame)
+    : project_(project), show_on_first_frame_(show_on_first_frame) {}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -49,8 +50,14 @@ bool FlutterWindow::OnCreate() {
   // поверх настроек на каждую правку — правка рассылается всем движкам
   // как «перечитать», главное окно перерисовывается, и обратный вызов
   // срабатывал снова.
+  //
+  // При запуске из автозапуска не показываем вовсе: приложение подняли
+  // ради диктовки, а не ради очереди. Окно никуда не делось — оно
+  // откроется по значку в трее или из панели. Ровно так же устроено
+  // на macOS (MainFlutterWindow.awakeFromNib, --login-item), и Windows
+  // отставала: там окно вылезало на весь экран при каждом входе в систему.
   flutter_controller_->engine()->SetNextFrameCallback([this]() {
-    if (shown_once_) return;
+    if (shown_once_ || !show_on_first_frame_) return;
     shown_once_ = true;
     this->Show();
   });

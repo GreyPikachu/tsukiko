@@ -14,7 +14,11 @@ class PanelWindow;
 class FlutterWindow : public Win32Window {
  public:
   // Creates a new FlutterWindow hosting a Flutter view running |project|.
-  explicit FlutterWindow(const flutter::DartProject& project);
+  //
+  // |show_on_first_frame| — показывать ли окно, когда движок нарисует
+  // первый кадр. При запуске из автозапуска — нет: см. main.cpp.
+  explicit FlutterWindow(const flutter::DartProject& project,
+                         bool show_on_first_frame = true);
   virtual ~FlutterWindow();
 
  protected:
@@ -38,6 +42,10 @@ class FlutterWindow : public Win32Window {
   /// Окно уже показывали. Дальше показывать его самим нельзя: это будет
   /// не показ, а выпрыгивание поверх чужой работы.
   bool shown_once_ = false;
+
+  /// Показывать ли окно вообще. Вход в систему поднимает приложение ради
+  /// диктовки, и окно очереди при этом не нужно.
+  bool show_on_first_frame_ = true;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

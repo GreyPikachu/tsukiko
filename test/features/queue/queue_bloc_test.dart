@@ -479,6 +479,68 @@ void main() {
       // Библиотеку правит окно настроек — очередь обязана оставить её как есть.
       expect(after['libraryPath'], '/чужое/значение');
     });
+
+    test('подсказка ложится рядом с расшифровками и возвращается оттуда',
+        () async {
+      // Установщик Windows стирает настройки при удалении намеренно, и
+      // вместе с ними уносил собранный вручную список слов. Запасная копия
+      // живёт в библиотеке — её установщик не трогает.
+      await Settings.save({'libraryPath': '${tmp.path}/библиотека'});
+
+      final bloc = make();
+      bloc.add(OptionsEdited((o) => o.copyWith(prompt: 'Рында, Микша, Лаба')));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await bloc.flushSettings();
+      await bloc.close();
+
+      expect(Prompts.read(Prompts.transcriber), 'Рында, Микша, Лаба');
+      expect(File('${tmp.path}/библиотека/prompts.json').existsSync(), isTrue);
+    });
+  });
+
+  group('очередь между запусками', () {
+    test('сохранённая очередь возвращается только по просьбе', () async {
+      final path = file('вчера.m4a');
+
+      final first = make();
+      first.add(FilesAdded([path]));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await first.flushSettings();
+      await first.close();
+
+      // Новый запуск — очередь чистая: вчерашние записи стояли бы поперёк
+      // сегодняшней работы.
+      NativeBridge.debugReset();
+      final second = make();
+      expect(second.state.jobs, isEmpty);
+      expect(second.state.savedQueue, isTrue, reason: 'но вернуть их есть чем');
+
+      second.add(const QueueRestored());
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(second.state.jobs.single.name, 'вчера.m4a');
+      expect(second.state.savedQueue, isFalse);
+      await second.close();
+    });
+
+    test('записи, которых больше нет, не возвращаются', () async {
+      final path = file('пропала.m4a');
+
+      final first = make();
+      first.add(FilesAdded([path]));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await first.flushSettings();
+      await first.close();
+
+      File(path).deleteSync();
+
+      NativeBridge.debugReset();
+      final second = make();
+      second.add(const QueueRestored());
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(second.state.jobs, isEmpty,
+          reason: 'строка, за которой нет файла, ничего сделать не даст');
+      await second.close();
+    });
   });
 }
 

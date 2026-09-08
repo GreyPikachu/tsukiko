@@ -24,6 +24,7 @@ extension _Menus on _HomeViewState {
       s.selected.isEmpty,
       s.lead == null,
       s.timestamps,
+      s.savedQueue,
       s.lead?.file.path,
       ...s.recent,
     ];
@@ -87,6 +88,13 @@ extension _Menus on _HomeViewState {
                     ),
                   ]),
               ],
+            ),
+            // Очередь прошлого запуска сама не возвращается — и не должна:
+            // список заводят под задачу, и вчерашние записи стояли бы
+            // поперёк сегодняшней работы. Но и пропасть насовсем им незачем.
+            PlatformMenuItem(
+              label: l10n.menuRestoreQueue,
+              onSelected: s.savedQueue ? () => _send(const QueueRestored()) : null,
             ),
           ]),
           PlatformMenuItemGroup(members: [
