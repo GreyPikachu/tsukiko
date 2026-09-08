@@ -39,6 +39,7 @@ class LibrarySheet extends StatefulWidget {
     required this.root,
     required this.onOpenInQueue,
     required this.onReveal,
+    required this.onTrash,
     required this.onStatus,
   });
 
@@ -52,6 +53,12 @@ class LibrarySheet extends StatefulWidget {
 
   final ValueChanged<String> onReveal;
 
+  /// Убрать выбранные файлы в Корзину. Не стереть: промах по кнопке после
+  /// получаса разбора иначе стоил бы этого получаса, а из Корзины файл
+  /// возвращается средствами самой системы. Возвращает то, что убрать
+  /// не вышло.
+  final Future<List<String>> Function(List<String> paths) onTrash;
+
   /// Сказать что-нибудь в строке состояния главного окна: своей у листа
   /// нет, а молчаливое копирование выглядит как ничего не случилось.
   final ValueChanged<String> onStatus;
@@ -61,8 +68,18 @@ class LibrarySheet extends StatefulWidget {
 }
 
 class _LibrarySheetState extends State<LibrarySheet> {
-  late final List<LibraryEntry> _entries = scanLibrary(widget.root);
+  late List<LibraryEntry> _entries = scanLibrary(widget.root);
   LibraryEntry? _shown;
+
+  /// Режим выбора: строки обзавелись галками, а низ окна — уборкой.
+  ///
+  /// Отдельным режимом, а не постоянными галками: обзор для того и открыт,
+  /// чтобы читать, и галка у каждой строки всё время предлагала бы
+  /// удалять там, где человек пришёл смотреть. Кнопка «Выбрать» — то же
+  /// самое, что в «Фото» и «Файлах»: пока её не нажали, список остаётся
+  /// списком.
+  bool _selecting = false;
+  final _chosen = <String>{};
 
   /// Прочитанное содержимое выбранной строки. Читаем по одному файлу и
   /// только по щелчку: библиотека за год это тысячи файлов, и читать их
@@ -123,15 +140,47 @@ class _LibrarySheetState extends State<LibrarySheet> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 4),
-              child: Text(l10n.sheetLibraryTitle, style: Type.emptyTitle),
+              padding: const EdgeInsets.fromLTRB(24, 18, 16, 4),
+              child: Row(
+                children: [
+                  // Заголовок посередине, кнопка справа — как в списках
+                  // системы. Ширина под кнопку отведена и слева, иначе
+                  // заголовок стоял бы не по центру окна.
+                  const SizedBox(width: 96),
+                  Expanded(
+                    child: Text(
+                      l10n.sheetLibraryTitle,
+                      textAlign: TextAlign.center,
+                      style: Type.emptyTitle,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 96,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: _entries.isEmpty
+                          ? null
+                          : PushButton(
+                              controlSize: ControlSize.regular,
+                              secondary: !_selecting,
+                              onPressed: _toggleSelecting,
+                              child: Text(_selecting
+                                  ? l10n.buttonSelectDone
+                                  : l10n.buttonSelect),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
               child: Text(
                 _entries.isEmpty
                     ? l10n.sheetLibraryEmpty
-                    : l10n.sheetLibrarySubtitle(filesLabel(_entries.length)),
+                    : _selecting
+                        ? l10n.sheetLibrarySelectHint
+                        : l10n.sheetLibrarySubtitle(filesLabel(_entries.length)),
                 textAlign: TextAlign.center,
                 style: Type.caption.copyWith(color: Surface.secondaryText(context)),
               ),
@@ -170,10 +219,50 @@ class _LibrarySheetState extends State<LibrarySheet> {
         itemBuilder: (context, i) => _EntryRow(
           entry: _entries[i],
           folder: _entries[i].folderIn(widget.root),
-          selected: _entries[i] == _shown,
-          onTap: () => _show(_entries[i]),
+          selected: !_selecting && _entries[i] == _shown,
+          choosing: _selecting,
+          chosen: _chosen.contains(_entries[i].path),
+          // В режиме выбора щелчок по строке её отмечает, а не открывает:
+          // два смысла у одного жеста означали бы, что промах стоит
+          // не того, чего ждали.
+          onTap: () =>
+              _selecting ? _toggleChosen(_entries[i]) : _show(_entries[i]),
         ),
       );
+
+  void _toggleSelecting() => setState(() {
+        _selecting = !_selecting;
+        _chosen.clear();
+      });
+
+  void _toggleChosen(LibraryEntry entry) => setState(() {
+        if (!_chosen.remove(entry.path)) _chosen.add(entry.path);
+      });
+
+  /// Убрать выбранное в Корзину.
+  ///
+  /// Без вопроса «вы уверены?»: действие обратимо средствами системы, а
+  /// подтверждение на каждое обратимое действие приучает нажимать «да»
+  /// не глядя — и перестаёт работать там, где оно и правда нужно.
+  Future<void> _trashChosen() async {
+    final doomed = _chosen.toList();
+    if (doomed.isEmpty) return;
+    final left = await widget.onTrash(doomed);
+    if (!mounted) return;
+    final gone = doomed.where((p) => !left.contains(p)).toSet();
+    setState(() {
+      _entries = [for (final e in _entries) if (!gone.contains(e.path)) e];
+      _chosen
+        ..clear()
+        ..addAll(left);
+      if (gone.contains(_shown?.path)) _shown = null;
+      if (_shown == null && _entries.isNotEmpty) _show(_entries.first);
+      if (_entries.isEmpty) _selecting = false;
+    });
+    widget.onStatus(left.isEmpty
+        ? l10n.statusLibraryTrashed(filesLabel(gone.length))
+        : l10n.statusLibraryTrashFailed(filesLabel(left.length)));
+  }
 
   Widget _preview() {
     if (_text.trim().isEmpty) {
@@ -190,7 +279,45 @@ class _LibrarySheetState extends State<LibrarySheet> {
     );
   }
 
-  Widget _buttons() {
+  Widget _buttons() => _selecting ? _selectionButtons() : _readingButtons();
+
+  Widget _selectionButtons() {
+    final all = _chosen.length == _entries.length;
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          PushButton(
+            controlSize: ControlSize.large,
+            secondary: true,
+            onPressed: () => setState(() {
+              _chosen.clear();
+              if (!all) _chosen.addAll(_entries.map((e) => e.path));
+            }),
+            child: Text(all ? l10n.buttonSelectNone : l10n.buttonSelectAll),
+          ),
+          PushButton(
+            controlSize: ControlSize.large,
+            secondary: true,
+            onPressed: _toggleSelecting,
+            child: Text(l10n.buttonSelectDone),
+          ),
+          // Единственная кнопка, за которой пропадают файлы, — и она
+          // названа тем, что делает: не «Удалить», а «Убрать в Корзину».
+          PushButton(
+            controlSize: ControlSize.large,
+            onPressed: _chosen.isEmpty ? null : _trashChosen,
+            child: Text(l10n.buttonDeleteChosen(_chosen.length)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _readingButtons() {
     final shown = _shown;
     // Wrap, а не Row: четыре кнопки с русскими подписями в узком листе
     // в строку не помещаются, а Row на нехватку места отвечает полосатой
@@ -243,12 +370,23 @@ class _EntryRow extends StatefulWidget {
     required this.entry,
     required this.folder,
     required this.selected,
+    required this.choosing,
+    required this.chosen,
     required this.onTap,
   });
 
   final LibraryEntry entry;
   final String folder;
+
+  /// Строка, чей текст показан справа.
   final bool selected;
+
+  /// Идёт выбор — у строк появились галки.
+  final bool choosing;
+
+  /// Эта строка отмечена галкой.
+  final bool chosen;
+
   final VoidCallback onTap;
 
   @override
@@ -261,7 +399,6 @@ class _EntryRowState extends State<_EntryRow> {
   @override
   Widget build(BuildContext context) {
     final accent = MacosTheme.of(context).primaryColor;
-    final e = widget.entry;
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -281,7 +418,34 @@ class _EntryRowState extends State<_EntryRow> {
                     : MacosColors.transparent,
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Column(
+          child: Row(
+            children: [
+              // Галка приезжает слева и раздвигает строку, а не ложится
+              // поверх имени: имя тут — то, по чему запись и узнают.
+              AnimatedSize(
+                duration: Motion.dur(context, Motion.settle),
+                curve: Motion.curve(context, Motion.settleCurve),
+                child: widget.choosing
+                    ? Padding(
+                        padding: const EdgeInsets.only(right: 9),
+                        child: MacosCheckbox(
+                          value: widget.chosen,
+                          onChanged: (_) => widget.onTap(),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              Expanded(child: _lines(context)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _lines(BuildContext context) {
+    final e = widget.entry;
+    return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
@@ -311,9 +475,6 @@ class _EntryRowState extends State<_EntryRow> {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
     );
   }
 
