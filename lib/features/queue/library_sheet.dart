@@ -38,6 +38,8 @@ class LibrarySheet extends StatefulWidget {
     super.key,
     required this.root,
     required this.onOpenInQueue,
+    required this.onOpenSource,
+    required this.onPointAtSource,
     required this.onReveal,
     required this.onTrash,
     required this.onStatus,
@@ -50,6 +52,15 @@ class LibrarySheet extends StatefulWidget {
   /// другой записью: пересохранить в другом формате, поискать по тексту,
   /// скопировать фрагмент.
   final ValueChanged<String> onOpenInQueue;
+
+  /// Положить в очередь саму запись — тот звук, из которого расшифровка
+  /// вышла. Отсюда её можно посчитать другой моделью или нарезать
+  /// субтитры заново, чего с одним текстом уже не сделать.
+  final ValueChanged<String> onOpenSource;
+
+  /// Спросить, где запись лежит теперь, и связать её с расшифровкой.
+  /// Возвращает путь, если человек его назвал.
+  final Future<String?> Function(String transcriptPath) onPointAtSource;
 
   final ValueChanged<String> onReveal;
 
@@ -86,6 +97,12 @@ class _LibrarySheetState extends State<LibrarySheet> {
   /// все ради списка было бы тратой на пустом месте.
   String _text = '';
 
+  /// Где лежит запись выбранной расшифровки, если она вообще жива.
+  /// null и при «связи нет», и при «запись пропала» — их различает
+  /// [_link].
+  String? _source;
+  SourceLink? _link;
+
   AppLocalizations get l10n => AppLocalizations.of(context);
 
   @override
@@ -112,10 +129,59 @@ class _LibrarySheetState extends State<LibrarySheet> {
       // Двоичный файл, чужая кодировка, исчез из-под рук.
       text = '';
     }
+    final link = Sources.of(widget.root, entry.path);
     setState(() {
       _shown = entry;
       _text = text;
+      _link = link;
+      _source = link == null ? null : Sources.locate(widget.root, link, entry.path);
     });
+  }
+
+  /// Строка о записи под текстом: связана ли расшифровка с записью и
+  /// на месте ли та. Единственный вопрос, ради которого это заведено.
+  Widget _sourceLine() {
+    final link = _link;
+    final source = _source;
+    final says = source != null
+        ? l10n.librarySourceHere(os.basename(source))
+        : link != null
+            ? l10n.librarySourceGone(os.basename(link.path))
+            : l10n.librarySourceUnknown;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+      child: Row(
+        children: [
+          MacosIcon(
+            source != null ? CupertinoIcons.waveform : CupertinoIcons.waveform_path,
+            size: 13,
+            color: Surface.secondaryText(context),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              says,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pointAtSource() async {
+    final shown = _shown;
+    if (shown == null) return;
+    final path = await widget.onPointAtSource(shown.path);
+    if (path == null || !mounted) return;
+    final link = Sources.of(widget.root, shown.path);
+    setState(() {
+      _link = link;
+      _source = path;
+    });
+    widget.onStatus(l10n.statusSourceLinked(os.basename(path)));
   }
 
   void _copy() {
@@ -264,7 +330,7 @@ class _LibrarySheetState extends State<LibrarySheet> {
         : l10n.statusLibraryTrashFailed(filesLabel(left.length)));
   }
 
-  Widget _preview() {
+  Widget _previewText() {
     if (_text.trim().isEmpty) {
       return Center(
         child: Text(
@@ -278,6 +344,14 @@ class _LibrarySheetState extends State<LibrarySheet> {
       child: SelectableText(_text, style: Type.body),
     );
   }
+
+  Widget _preview() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: _previewText()),
+          if (_shown != null) _sourceLine(),
+        ],
+      );
 
   Widget _buttons() => _selecting ? _selectionButtons() : _readingButtons();
 
@@ -335,6 +409,26 @@ class _LibrarySheetState extends State<LibrarySheet> {
             onPressed: shown == null ? null : () => widget.onReveal(shown.path),
             child: Text(l10n.buttonShowInFileManager(os.fileManagerName)),
           ),
+          // Запись на месте — её можно взять в работу. Записи нет или
+          // связи нет — на том же месте кнопка «Указать запись…»:
+          // человек знает, куда он её переложил, а мы нет.
+          if (_source case final source?)
+            PushButton(
+              controlSize: ControlSize.large,
+              secondary: true,
+              onPressed: () {
+                Navigator.pop(context);
+                widget.onOpenSource(source);
+              },
+              child: Text(l10n.buttonOpenSourceInQueue),
+            )
+          else if (shown != null)
+            PushButton(
+              controlSize: ControlSize.large,
+              secondary: true,
+              onPressed: _pointAtSource,
+              child: Text(l10n.buttonPointAtSource),
+            ),
           PushButton(
             controlSize: ControlSize.large,
             secondary: true,

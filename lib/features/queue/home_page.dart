@@ -316,11 +316,31 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       builder: (_) => LibrarySheet(
         root: s.libraryPath,
         onOpenInQueue: (path) => _send(TranscriptOpened(path)),
+        onOpenSource: (path) => _send(FilesAdded([path])),
+        onPointAtSource: (transcript) => _pointAtSource(s, transcript),
         onReveal: _revealSource,
         onTrash: _trashFiles,
         onStatus: (text) => _send(StatusReported(text)),
       ),
     );
+  }
+
+  /// Спросить, где теперь лежит запись, из которой вышла расшифровка.
+  ///
+  /// Приложение уже посмотрело два места, куда её могли переложить
+  /// (`Sources.locate`), и обходить весь диск не станет: это минуты
+  /// работы ради одной строки в окне. А человек знает, куда он её дел, —
+  /// и указать проще, чем ждать.
+  Future<String?> _pointAtSource(QueueState s, String transcript) async {
+    final f = await openFile(acceptedTypeGroups: [
+      XTypeGroup(
+        label: l10n.fileTypeAudioVideo,
+        extensions: audioExt.map((e) => e.substring(1)).toList(),
+      ),
+    ]);
+    if (f == null) return null;
+    Sources.remember(s.libraryPath, [transcript], f.path);
+    return f.path;
   }
 
   /// Убрать файлы в Корзину. Возвращает то, что убрать не вышло.

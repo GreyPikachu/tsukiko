@@ -224,7 +224,7 @@ String? rescueRecording(String path) {
   try {
     final root =
         (Settings.load()['libraryPath'] as String?) ?? defaultLibraryPath;
-    final dir = Directory(os.join(root, 'Не распознано'))
+    final dir = Directory(os.join(root, rescuedFolderName))
       ..createSync(recursive: true);
     final t = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
