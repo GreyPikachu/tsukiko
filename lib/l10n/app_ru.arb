@@ -808,6 +808,9 @@
   "askNeedModelBody": "Нажмите «Загрузить модель…» в панели справа.\nTiny — 74 МБ, чтобы попробовать.",
   "askModelNotSelectedBody": "Укажите файл ggml-*.bin в настройках справа.",
   "jobDetailNoModelSelected": "Не выбрана модель",
+  "hudSilent": "Ничего не записалось",
+  "jobDetailSilent": "В записи нет звука",
+  "errorSilentRecording": "Записывать было нечего: микрофон не отдал ни одного отсчёта",
   "jobDetailWhisperFailed": "whisper-cli не справился с этим файлом",
   "statusRecognitionFailed": "Не удалось распознать «{name}»",
   "@statusRecognitionFailed": {

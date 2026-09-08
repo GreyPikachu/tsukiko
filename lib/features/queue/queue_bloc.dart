@@ -661,6 +661,22 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     try {
       final wav = await os.toWav(it.path, '$base.wav');
 
+      // Пустая запись — это не «плохой файл», а ничего: заголовок
+      // и нулевой кусок данных. Движок на таком говорит «failed to read
+      // the frames of the audio data» и валит следом полтора экрана про
+      // тензоры и Metal, по которым не понять ни что случилось, ни что
+      // делать. Случилось же ровно одно, и сказать это надо словами.
+      if (!wavHasAudio(wav)) {
+        emit(_replace(state, it,
+                it.copyWith(
+                  state: JobState.failed,
+                  detail: currentL10n().jobDetailSilent,
+                  error: currentL10n().errorSilentRecording,
+                ))
+            .copyWith(status: currentL10n().statusRecognitionFailed(it.name)));
+        return true;
+      }
+
       // Путь, который до движка не доедет, виден заранее — и сказать
       // об этом надо заранее же. Сам движок скажет только «failed to
       // open», а по этой строке не догадаться ни что дело в пути, ни что

@@ -147,6 +147,53 @@ List<LibraryEntry> scanLibrary(String root, {int limit = 300}) {
   return out.length > limit ? out.sublist(0, limit) : out;
 }
 
+/// Есть ли в WAV хоть один отсчёт.
+///
+/// Пустая запись — это не «плохой файл», а ничего: заголовок на четыре
+/// килобайта и нулевой кусок `data`. `AVAudioRecorder` оставляет такой,
+/// когда запись остановили раньше, чем микрофон отдал первый отсчёт.
+///
+/// Отличать это обязательно, потому что дальше по дороге разницы уже
+/// не видно. Движок на таком файле говорит «failed to read the frames
+/// of the audio data (Invalid argument)» и валит следом полтора экрана
+/// про тензоры и Metal — по этому человеку не понять ни что случилось,
+/// ни что делать. А случилось ровно одно: сказать ничего не успели.
+///
+/// Не RIFF — не наше дело: m4a, mp3 и прочее разбирает движок сам,
+/// и «не знаю» здесь честнее выдуманного ответа.
+bool wavHasAudio(String path) {
+  RandomAccessFile? raf;
+  try {
+    raf = File(path).openSync();
+    final head = raf.readSync(12);
+    if (head.length < 12) return false;
+    if (String.fromCharCodes(head.sublist(0, 4)) != 'RIFF' ||
+        String.fromCharCodes(head.sublist(8, 12)) != 'WAVE') {
+      return true;
+    }
+    var at = 12;
+    final end = raf.lengthSync();
+    while (at + 8 <= end) {
+      raf.setPositionSync(at);
+      final header = raf.readSync(8);
+      if (header.length < 8) break;
+      final id = String.fromCharCodes(header.sublist(0, 4));
+      final size = header[4] | header[5] << 8 | header[6] << 16 | header[7] << 24;
+      if (id == 'data') return size > 0;
+      // Куски выравниваются по чётной границе — нечётный длиной
+      // дополняется байтом, который в его размер не входит.
+      at += 8 + size + (size.isOdd ? 1 : 0);
+    }
+    return false;
+  } catch (_) {
+    return true;
+  } finally {
+    try {
+      raf?.closeSync();
+    } catch (_) {}
+  }
+}
+
 /// Показать файл в проводнике системы. Возвращает false, если показывать
 /// нечего: файл убрали мимо приложения.
 ///

@@ -458,6 +458,7 @@ final class DictationBridge: NSObject {
       case "failed": hud.failed()
       case "copied": hud.copied()
       case "cancelled": hud.cancelled()
+      case "silent": hud.silent()
       default: hud.hide()
       }
       reply(nil)
