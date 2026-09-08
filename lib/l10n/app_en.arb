@@ -8,6 +8,7 @@
   "sectionHotkeys": "Keyboard shortcuts",
   "hotkeyHold": "Hold to talk",
   "hotkeyToggle": "Press once, press again to stop",
+  "tooltipClearHotkey": "Unassign",
   "hotkeyCancel": "Discard",
   "hintHotkeyCancel": "Discard stays off until you assign it. It ends the recording or the transcription and inserts nothing: what you said is simply dropped. The cross next to it unassigns the shortcut.",
   "hintHotkeyCapture": "Click the shortcut and press a new one: keys accumulate while held, and releasing them all sets the combination. Any key, and any number of them, works.",
