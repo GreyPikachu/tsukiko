@@ -7,6 +7,7 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:macos_ui/macos_ui.dart';
 import 'package:macos_ui/src/layout/toolbar/overflow_handler.dart';
 import 'package:macos_ui/src/layout/wallpaper_tinting_settings/wallpaper_tinting_override.dart';
@@ -34,7 +35,7 @@ import '../l10n/gen/app_localizations.dart';
 /// открыты, `createState` тоже — значит достаточно своего состояния,
 /// которое собирает то же дерево, что и пакет, с одной заменой. Копией
 /// файла пришлось бы тянуть ещё и то, чем мы не пользуемся: заголовок
-/// по центру, кнопку «назад», подкладку без размытия.
+/// по центру, кнопку «назад», свою раскладку и свои поля.
 class AppToolBar extends ToolBar {
   const AppToolBar({
     super.key,
@@ -83,9 +84,16 @@ class _AppToolBarState extends State<ToolBar> {
     }
 
     return MediaQuery(
-      // Слева под панелью лежат кнопки окна — там ставить свои пункты нельзя.
-      data: MediaQuery.of(context).copyWith(padding: const EdgeInsets.only(left: 70)),
-      child: WallpaperTintingOverride(
+      // Слева под панелью лежат кнопки окна — там ставить свои пункты
+      // нельзя. Рисует их macOS в самой титульной полосе; на Windows их
+      // там нет вовсе, и тот же отступ был бы просто дырой слева.
+      data: MediaQuery.of(context).copyWith(
+        padding: EdgeInsets.only(
+          left: defaultTargetPlatform == TargetPlatform.macOS ? 70 : 0,
+        ),
+      ),
+      child: _ground(
+        theme,
         child: ClipRect(
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
@@ -132,6 +140,19 @@ class _AppToolBarState extends State<ToolBar> {
       ),
     );
   }
+
+  /// Подложка полосы: либо размытие того, что под ней, либо подкраска
+  /// обоями. То же разделение, что и в пакете, и та же причина: подкраска
+  /// умеет только цвет, а размытие — только там, где под окном есть чему
+  /// размываться.
+  Widget _ground(MacosThemeData theme, {required Widget child}) =>
+      widget.enableBlur
+          ? WallpaperTintingOverride(child: child)
+          : WallpaperTintedArea(
+              backgroundColor: theme.canvasColor,
+              insertRepaintBoundary: true,
+              child: child,
+            );
 }
 
 /// Кнопка «остальное»: та же, что в macos_ui, с многоточием вместо «»»
