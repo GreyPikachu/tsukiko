@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:macos_ui/macos_ui.dart';
+import 'package:tsukiko/core/library.dart';
 import 'package:tsukiko/features/queue/library_sheet.dart';
 import 'package:tsukiko/l10n/gen/app_localizations.dart';
 import 'package:tsukiko/platform/os.dart';
@@ -21,9 +22,15 @@ void main() {
   /// и вычёркивает убранное.
   late List<String> trashed;
 
+  /// Что положили в очередь как саму запись, и что человек указал руками.
+  late List<String> opened;
+  String? pointAt;
+
   setUp(() {
     binding.platformDispatcher.localesTestValue = const [Locale('ru')];
     trashed = [];
+    opened = [];
+    pointAt = null;
     root = Directory.systemTemp.createTempSync('tsukiko-lib-sheet');
     final month = Directory(os.join(root.path, '2026-09'))..createSync();
     File(os.join(month.path, 'Совещание.txt'))
@@ -41,6 +48,12 @@ void main() {
       home: LibrarySheet(
         root: at,
         onOpenInQueue: (_) {},
+        onOpenSource: opened.add,
+        onPointAtSource: (transcript) async {
+          final chosen = pointAt;
+          if (chosen != null) Sources.remember(at, [transcript], chosen);
+          return chosen;
+        },
         onReveal: (_) {},
         onTrash: (paths) async {
           trashed.addAll(paths);
@@ -99,6 +112,49 @@ void main() {
     expect(find.text('Совещание.txt'), findsNothing);
     expect(find.text('Разговор.srt'), findsOneWidget,
         reason: 'чужие строки не трогаем');
+  });
+
+  testWidgets('расшифровка знает свою запись, а потерянную можно указать',
+      (tester) async {
+    final month = os.join(root.path, '2026-09');
+    final audio = File(os.join(month, 'Совещание.m4a'))
+      ..writeAsStringSync('звук');
+    Sources.remember(root.path, [os.join(month, 'Совещание.txt')], audio.path);
+
+    await open(tester, root.path);
+    await tester.tap(find.text('Совещание.txt'));
+    await tester.pumpAndSettle();
+    expect(find.text('Запись: Совещание.m4a'), findsOneWidget);
+
+    // Запись на месте — её можно взять в работу целиком, а не только
+    // прочитать готовый текст.
+    await tester.tap(find.text('Открыть запись в очереди'));
+    await tester.pumpAndSettle();
+    expect(opened.single, audio.path);
+  });
+
+  testWidgets('пропавшая запись названа, и на её место можно указать другую',
+      (tester) async {
+    final month = os.join(root.path, '2026-09');
+    final audio = File(os.join(month, 'Совещание.m4a'))
+      ..writeAsStringSync('звук');
+    Sources.remember(root.path, [os.join(month, 'Совещание.txt')], audio.path);
+    audio.deleteSync();
+
+    // Переложили в другое место — приложение о нём не знает.
+    final moved = File(os.join(root.path, 'где-то.m4a'))
+      ..writeAsStringSync('звук');
+    pointAt = moved.path;
+
+    await open(tester, root.path);
+    await tester.tap(find.text('Совещание.txt'));
+    await tester.pumpAndSettle();
+    expect(find.text('Запись не на месте: Совещание.m4a'), findsOneWidget);
+
+    await tester.tap(find.text('Указать запись…'));
+    await tester.pumpAndSettle();
+    expect(find.text('Запись: где-то.m4a'), findsOneWidget,
+        reason: 'указанное запоминается и видно сразу');
   });
 
   testWidgets('пустая библиотека объясняет себя, а не показывает пустоту',

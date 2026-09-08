@@ -209,10 +209,14 @@ void main() {
     final deep = scanLibrary(root).firstWhere((e) => e.name == 'Совещание.srt');
     expect(deep.folderIn(root), os.join('2026-08', 'Совещание'));
 
-    // Своё хозяйство в списке расшифровок не место: подсказки лежат
-    // в библиотеке нарочно, но расшифровкой от этого не становятся.
+    // Своё хозяйство в списке расшифровок не место: подсказки и указатель
+    // на записи лежат в библиотеке нарочно, но расшифровками от этого
+    // не становятся.
     File(os.join(root, promptsFileName)).writeAsStringSync('{}');
-    expect(scanLibrary(root).any((e) => e.name == promptsFileName), isFalse);
+    File(os.join(root, Sources.fileName)).writeAsStringSync('{}');
+    final names = scanLibrary(root).map((e) => e.name).toSet();
+    expect(names.contains(promptsFileName), isFalse);
+    expect(names.contains(Sources.fileName), isFalse);
 
     // Пропавшей папки не бывает бедой: список просто пуст.
     Directory(root).deleteSync(recursive: true);
@@ -258,6 +262,45 @@ void main() {
     expect(wavHasAudio(os.join(dir.path, 'нет-такого.wav')), isTrue);
 
     dir.deleteSync(recursive: true);
+  });
+
+  test('расшифровка помнит свою запись и находит её на новом месте', () {
+    final root = Directory.systemTemp.createTempSync('tsukiko_src').path;
+    final month = Directory(os.join(root, '2026-09'))..createSync(recursive: true);
+    final transcript = os.join(month.path, 'Совещание.txt');
+    final audio = File(os.join(month.path, 'Совещание.m4a'))
+      ..writeAsStringSync('звук');
+
+    Sources.remember(root, [transcript], audio.path);
+    final link = Sources.of(root, transcript)!;
+    expect(link.path, audio.path);
+    expect(Sources.locate(root, link, transcript), audio.path);
+
+    // Записи не стало — врать про неё нельзя.
+    audio.deleteSync();
+    expect(Sources.locate(root, link, transcript), isNull);
+
+    // А вот переезд в папку спасённых записей находим сами: туда её
+    // кладёт диктовка, и заглянуть туда дешевле, чем спрашивать.
+    final rescued = Directory(os.join(root, rescuedFolderName))..createSync();
+    final moved = File(os.join(rescued.path, 'Совещание.m4a'))
+      ..writeAsStringSync('звук');
+    expect(Sources.locate(root, link, transcript), moved.path);
+
+    // Однофамилец не годится: размер сверяем именно затем.
+    moved.writeAsStringSync('совсем другая запись');
+    expect(Sources.locate(root, link, transcript), isNull);
+
+    // Ключ — путь относительно корня: библиотеку можно переложить
+    // целиком, и связи останутся целы.
+    final away = Directory.systemTemp.createTempSync('tsukiko_src2').path;
+    Directory(os.join(root, '2026-09')).renameSync(os.join(away, '2026-09'));
+    File(os.join(root, Sources.fileName)).copySync(os.join(away, Sources.fileName));
+    expect(Sources.of(away, os.join(away, '2026-09', 'Совещание.txt'))?.path,
+        audio.path);
+
+    Directory(root).deleteSync(recursive: true);
+    Directory(away).deleteSync(recursive: true);
   });
 
   test('папка по умолчанию — в Документах, строчными', () {

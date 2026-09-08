@@ -595,6 +595,33 @@
     }
   },
   "sheetLibrarySelectHint": "Выбранное уходит в Корзину, а не стирается: вернуть его можно средствами системы.",
+  "librarySourceHere": "Запись: {name}",
+  "@librarySourceHere": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "librarySourceGone": "Запись не на месте: {name}",
+  "@librarySourceGone": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "librarySourceUnknown": "Запись неизвестна",
+  "buttonOpenSourceInQueue": "Открыть запись в очереди",
+  "buttonPointAtSource": "Указать запись…",
+  "statusSourceLinked": "Запись связана с расшифровкой: {name}",
+  "@statusSourceLinked": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "sheetLibraryTitle": "Прошлые расшифровки",
   "sheetLibrarySubtitle": "В библиотеке {files}. Новые сверху.",
   "@sheetLibrarySubtitle": {

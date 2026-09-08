@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import '../platform/os.dart';
@@ -137,10 +138,10 @@ List<LibraryEntry> scanLibrary(String root, {int limit = 300}) {
       }
       if (f is! File) continue;
       final name = os.basename(f.path);
-      // Своё хозяйство в списке расшифровок не место: подсказки лежат
-      // в библиотеке нарочно (см. Prompts), но расшифровкой от этого
-      // не становятся.
-      if (name == promptsFileName) continue;
+      // Своё хозяйство в списке расшифровок не место: и подсказки,
+      // и указатель на записи лежат в библиотеке нарочно, но
+      // расшифровками от этого не становятся.
+      if (name == promptsFileName || name == Sources.fileName) continue;
       final at = name.lastIndexOf('.');
       if (at < 0 || !transcriptExt.contains(name.substring(at).toLowerCase())) {
         continue;
@@ -155,6 +156,138 @@ List<LibraryEntry> scanLibrary(String root, {int limit = 300}) {
   take(Directory(root), 2);
   out.sort((a, b) => b.at.compareTo(a.at));
   return out.length > limit ? out.sublist(0, limit) : out;
+}
+
+/// Записать JSON так, чтобы читатель никогда не увидел половину файла.
+///
+/// Живёт рядом с путями, а не с настройками: пользуются этим и настройки,
+/// и подсказки, и указатель на записи, а сама эта строчка про файлы,
+/// а не про то, что в них лежит.
+void writeJsonAtomically(File target, Map<String, dynamic> data) {
+  final tmp = File('${target.path}.tmp');
+  final raf = tmp.openSync(mode: FileMode.write);
+  try {
+    raf.writeStringSync(const JsonEncoder.withIndent('  ').convert(data));
+    raf.flushSync();
+  } finally {
+    raf.closeSync();
+  }
+  tmp.renameSync(target.path);
+}
+
+/// Папка спасённых записей — тех, что не стали текстом. Имя знают двое:
+/// диктовка кладёт их туда, а поиск переехавшей записи туда заглядывает.
+const rescuedFolderName = 'Не распознано';
+
+/// Запись, из которой вышла расшифровка.
+///
+/// Путь, размер и время: путь отвечает, где она была, а размер и время —
+/// та ли это запись. По имени одному верить нельзя: «Диктовка.wav»
+/// бывает не одна.
+class SourceLink {
+  const SourceLink(this.path, this.size, this.at);
+
+  final String path;
+  final int size;
+  final DateTime at;
+
+  Map<String, dynamic> toJson() =>
+      {'path': path, 'size': size, 'at': at.millisecondsSinceEpoch};
+
+  static SourceLink? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final path = raw['path'];
+    if (path is! String || path.isEmpty) return null;
+    return SourceLink(
+      path,
+      (raw['size'] as num?)?.toInt() ?? 0,
+      DateTime.fromMillisecondsSinceEpoch((raw['at'] as num?)?.toInt() ?? 0),
+    );
+  }
+
+  /// Тот ли это файл. Размер сверяем, содержимое — нет: час звука это
+  /// сотни мегабайт, а на вопрос «та ли запись» имя с размером отвечают
+  /// не хуже.
+  bool matches(File f) {
+    try {
+      return size == 0 || f.lengthSync() == size;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+/// Указатель «расшифровка → запись», один на всю библиотеку.
+///
+/// Почему не внутри самой расшифровки: у неё шесть форматов, и txt с srt
+/// от лишней строки испортятся. Почему не файлом-спутником рядом: папку
+/// с расшифровками человек открывает в проводнике, и половина файлов
+/// в ней была бы служебной. Остаётся один указатель на библиотеку —
+/// тем же способом и в том же месте, где лежат подсказки.
+///
+/// Ключ — путь расшифровки относительно корня библиотеки: переложили
+/// библиотеку целиком, и связи остались целы.
+class Sources {
+  Sources._();
+
+  static const fileName = 'sources.json';
+
+  static File _file(String root) => File(os.join(root, fileName));
+
+  static Map<String, dynamic> _load(String root) {
+    try {
+      return jsonDecode(_file(root).readAsStringSync()) as Map<String, dynamic>;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static String _key(String root, String transcriptPath) {
+    if (!transcriptPath.startsWith(root)) return transcriptPath;
+    final rest = transcriptPath.substring(root.length);
+    return rest.startsWith(Platform.pathSeparator) ? rest.substring(1) : rest;
+  }
+
+  static SourceLink? of(String root, String transcriptPath) =>
+      SourceLink.fromJson(_load(root)[_key(root, transcriptPath)]);
+
+  /// Запомнить, из какой записи вышли эти файлы.
+  ///
+  /// Списком, а не по одному: у одной записи бывает шесть форматов, и все
+  /// они про один и тот же звук.
+  static void remember(String root, Iterable<String> transcripts, String audio) {
+    try {
+      final f = File(audio);
+      if (!f.existsSync()) return;
+      final link = SourceLink(audio, f.lengthSync(), f.lastModifiedSync());
+      final was = _load(root);
+      for (final t in transcripts) {
+        was[_key(root, t)] = link.toJson();
+      }
+      Directory(root).createSync(recursive: true);
+      writeJsonAtomically(_file(root), was);
+    } catch (e) {
+      stderr.writeln('tsukiko: связь расшифровки с записью не сохранилась — $e');
+    }
+  }
+
+  /// Где запись лежит сейчас, если она вообще жива.
+  ///
+  /// Сначала там, где была. Потом — с тем же именем и размером в двух
+  /// местах, куда её могли переложить: рядом с расшифровкой и в папке
+  /// спасённых записей. Дальше не ищем: обход диска ради одной строки
+  /// в окне это минуты работы и обещание, которое не всегда выполнимо.
+  static String? locate(String root, SourceLink link, String transcriptPath) {
+    final was = File(link.path);
+    if (was.existsSync() && link.matches(was)) return link.path;
+
+    final name = os.basename(link.path);
+    for (final dir in [os.dirname(transcriptPath), os.join(root, rescuedFolderName)]) {
+      final candidate = File(os.join(dir, name));
+      if (candidate.existsSync() && link.matches(candidate)) return candidate.path;
+    }
+    return null;
+  }
 }
 
 /// Есть ли в WAV хоть один отсчёт.

@@ -1098,10 +1098,16 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       final stem = formats.length == 1
           ? freeStem(plan.dir, plan.stem, formats.first.suffix)
           : plan.stem;
+      final written = <String>[];
       for (final f in formats) {
-        await File(os.join(plan.dir, f.fileName(stem)))
-            .writeAsString(renderFor(f, t, name: job.name));
+        final path = os.join(plan.dir, f.fileName(stem));
+        await File(path).writeAsString(renderFor(f, t, name: job.name));
+        written.add(path);
       }
+      // Расшифровка помнит, из какой записи вышла. Иначе через полгода
+      // текст в библиотеке есть, а что с ним делать — непонятно:
+      // ни распознать другой моделью, ни нарезать субтитры заново.
+      Sources.remember(state.libraryPath, written, job.path);
       return currentL10n().statusSavedInLibrary(
           plan.dir.replaceFirst(state.libraryPath, appName));
     } catch (e) {

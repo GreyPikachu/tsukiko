@@ -5,7 +5,8 @@ import 'dart:isolate';
 import 'dart:ui' show IsolateNameServer;
 
 import '../platform/os.dart' show os;
-import 'library.dart' show defaultLibraryPath, promptsFileName, supportDir;
+import 'library.dart'
+    show defaultLibraryPath, promptsFileName, supportDir, writeJsonAtomically;
 
 /// Хранение настроек на диске.
 ///
@@ -25,19 +26,6 @@ import 'library.dart' show defaultLibraryPath, promptsFileName, supportDir;
 /// пишет всегда один изолят: кто первым занял имя в [IsolateNameServer],
 /// тот и владеет файлом, остальные шлют ему правки портом и ждут ответа.
 /// Читают при этом все напрямую — благодаря атомарной записи это безопасно.
-
-/// Записать JSON так, чтобы читатель никогда не увидел половину файла.
-void writeJsonAtomically(File target, Map<String, dynamic> data) {
-  final tmp = File('${target.path}.tmp');
-  final raf = tmp.openSync(mode: FileMode.write);
-  try {
-    raf.writeStringSync(const JsonEncoder.withIndent('  ').convert(data));
-    raf.flushSync();
-  } finally {
-    raf.closeSync();
-  }
-  tmp.renameSync(target.path);
-}
 
 /// Общие настройки приложения: обычный JSON в Application Support.
 class Settings {
