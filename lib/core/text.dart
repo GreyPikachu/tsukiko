@@ -10,14 +10,15 @@ import 'app_locale.dart';
 /// `appName` объявлен рядом с границей ОС (там он нужен для путей),
 /// но пользуются им повсюду — отдаём дальше отсюда.
 export '../platform/os.dart' show appName, bundleId;
+
+/// Расшифровки, которые приложение умеет открывать, живут рядом с обходом
+/// библиотеки: та ищет их на диске, а сюда бы за списком тянуть переводы.
+export 'library.dart' show transcriptExt;
 const audioExt = {
   '.ogg', '.oga', '.opus', '.mp3', '.m4a', '.aac', '.wav', '.aiff', '.aif',
   '.caf', '.flac', '.mp4', '.mov', '.m4b', '.wma',
 };
 
-/// Расшифровки, которые приложение умеет открывать — и через диалог,
-/// и перетаскиванием.
-const transcriptExt = {'.txt', '.srt', '.vtt', '.json', '.md'};
 
 const languages = [
   'auto', 'ru', 'be', 'uk', 'en', 'pl', 'de', 'fr', 'es', 'it', 'pt', 'tr',

@@ -12,6 +12,10 @@ String get supportDir => os.supportDir;
 /// Библиотека расшифровок — обычная папка, которую видно в проводнике.
 String get defaultLibraryPath => os.defaultLibraryPath;
 
+/// Расшифровки, которые приложение умеет открывать — и через диалог,
+/// и перетаскиванием, и из обзора библиотеки.
+const transcriptExt = {'.txt', '.srt', '.vtt', '.json', '.md'};
+
 String monthFolder(DateTime t) => '${t.year}-${t.month.toString().padLeft(2, '0')}';
 
 /// Куда и под каким именем лечь файлам одной записи.
@@ -75,6 +79,72 @@ String freeStemFor(String dir, String stem, List<String> suffixes) {
   );
   final name = os.basename(path);
   return name.substring(0, name.length - ext.length);
+}
+
+/// Одна расшифровка в библиотеке — файл на диске и то, что о нём видно
+/// не открывая.
+class LibraryEntry {
+  const LibraryEntry(this.path, this.at, this.bytes);
+
+  final String path;
+  final DateTime at;
+  final int bytes;
+
+  String get name => os.basename(path);
+
+  /// Папка, в которой файл лежит, — относительно корня библиотеки.
+  /// Это либо месяц («2026-09»), либо месяц и папка записи, когда
+  /// форматов было несколько.
+  String folderIn(String root) {
+    final dir = os.dirname(path);
+    if (!dir.startsWith(root)) return dir;
+    final rest = dir.substring(root.length);
+    return rest.startsWith(Platform.pathSeparator) ? rest.substring(1) : rest;
+  }
+}
+
+/// Всё, что библиотека накопила, — новое сверху.
+///
+/// Читаем с диска, а не из своего файла состояния: библиотека и есть
+/// хранилище готовых расшифровок, оно переживает и перезапуск, и
+/// переустановку, и правится человеком напрямую. Второй список рядом с ним
+/// разошёлся бы с делом в тот же день, когда человек переложит папку.
+///
+/// [limit] — потолок на число строк: библиотека за год это тысячи файлов,
+/// а список, в который нельзя вглядеться, всё равно никто не читает.
+/// Ищем вглубь на два уровня — ровно так, как раскладывает `planPlacement`:
+/// месяц, а внутри него папка записи, когда форматов было несколько.
+List<LibraryEntry> scanLibrary(String root, {int limit = 300}) {
+  final out = <LibraryEntry>[];
+
+  void take(Directory dir, int depth) {
+    final List<FileSystemEntity> items;
+    try {
+      items = dir.listSync();
+    } catch (_) {
+      // Нет папки, нет прав, том отвалился — не повод не показать остальное.
+      return;
+    }
+    for (final f in items) {
+      if (f is Directory) {
+        if (depth > 0) take(f, depth - 1);
+        continue;
+      }
+      if (f is! File) continue;
+      final at = f.path.lastIndexOf('.');
+      if (at < 0 || !transcriptExt.contains(f.path.substring(at).toLowerCase())) {
+        continue;
+      }
+      try {
+        final stat = f.statSync();
+        out.add(LibraryEntry(f.path, stat.modified, stat.size));
+      } catch (_) {}
+    }
+  }
+
+  take(Directory(root), 2);
+  out.sort((a, b) => b.at.compareTo(a.at));
+  return out.length > limit ? out.sublist(0, limit) : out;
 }
 
 /// Показать файл в проводнике системы. Возвращает false, если показывать

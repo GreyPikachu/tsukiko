@@ -563,17 +563,39 @@
   "menuFile": "Файл",
   "menuAddAudio": "Добавить аудио…",
   "menuOpenTranscript": "Открыть расшифровку…",
-  "menuOpenRecent": "Открыть недавние",
-  "menuRestoreQueue": "Вернуть прошлую очередь",
-  "statusQueueGone": "Возвращать нечего: записей прошлой очереди больше нет на месте",
-  "statusQueueRestored": "Очередь с прошлого запуска возвращена: {records}",
-  "@statusQueueRestored": {
+  "sheetLibraryTitle": "Прошлые расшифровки",
+  "sheetLibrarySubtitle": "В библиотеке {files}. Новые сверху.",
+  "@sheetLibrarySubtitle": {
     "placeholders": {
-      "records": {
+      "files": {
         "type": "String"
       }
     }
   },
+  "sheetLibraryEmpty": "Библиотека пуста",
+  "sheetLibraryEmptyTitle": "Расшифровок пока нет",
+  "sheetLibraryEmptyBody": "Готовые расшифровки складываются в {path}. Если складывать их не надо, это выключено на вкладке «Расшифровщик».",
+  "@sheetLibraryEmptyBody": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "sheetLibraryUnreadable": "Файл не читается как текст",
+  "buttonOpenInQueue": "Открыть в очереди",
+  "buttonCopyText": "Копировать текст",
+  "statusLibraryTextCopied": "Текст расшифровки скопирован",
+  "menuPastTranscripts": "Прошлые расшифровки…",
+  "tooltipPastTranscripts": "Прошлые расшифровки · {shortcut}",
+  "@tooltipPastTranscripts": {
+    "placeholders": {
+      "shortcut": {
+        "type": "String"
+      }
+    }
+  },
+  "menuOpenRecent": "Открыть недавние",
   "menuClearRecentList": "Очистить список",
   "menuSaveAs": "Сохранить как…",
   "menuExportToFolder": "Экспортировать в папку…",

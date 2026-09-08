@@ -180,6 +180,39 @@ void main() {
     Directory(root).deleteSync(recursive: true);
   });
 
+  test('обзор библиотеки: только расшифровки, новое сверху, две ступени вглубь',
+      () {
+    final root = Directory.systemTemp.createTempSync('tsukiko_scan').path;
+    final month = Directory(os.join(root, '2026-08'))..createSync();
+    // Запись, сохранённая в нескольких форматах, лежит в своей папке —
+    // это вторая ступень, и до неё обход обязан доставать.
+    final own = Directory(os.join(month.path, 'Совещание'))..createSync();
+
+    File(os.join(month.path, 'Разговор.txt')).writeAsStringSync('раз');
+    File(os.join(own.path, 'Совещание.srt')).writeAsStringSync('два');
+    // Исходный звук в списке расшифровок делать нечего.
+    File(os.join(month.path, 'Разговор.m4a')).writeAsStringSync('звук');
+
+    final found = scanLibrary(root);
+    expect(found.map((e) => e.name).toSet(), {'Разговор.txt', 'Совещание.srt'},
+        reason: 'звук — не расшифровка, а вложенная папка записи — да');
+
+    // Новое сверху: по этому списку и возвращаются к недавней работе.
+    File(os.join(month.path, 'Разговор.txt'))
+        .setLastModifiedSync(DateTime(2026, 8, 1));
+    File(os.join(own.path, 'Совещание.srt'))
+        .setLastModifiedSync(DateTime(2026, 8, 9));
+    expect(scanLibrary(root).first.name, 'Совещание.srt');
+
+    // Папка относительно корня — то, по чему запись узнают через полгода.
+    final deep = scanLibrary(root).firstWhere((e) => e.name == 'Совещание.srt');
+    expect(deep.folderIn(root), os.join('2026-08', 'Совещание'));
+
+    // Пропавшей папки не бывает бедой: список просто пуст.
+    Directory(root).deleteSync(recursive: true);
+    expect(scanLibrary(root), isEmpty);
+  });
+
   test('папка по умолчанию — в Документах, строчными', () {
     expect(appName, 'tsukiko');
     expect(defaultLibraryPath.endsWith(os.join('Documents', appName)), isTrue);
