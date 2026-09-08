@@ -176,6 +176,8 @@
   "menuFile": "File",
   "menuAddAudio": "Add Audio…",
   "menuOpenTranscript": "Open Transcript…",
+  "toolbarMore": "More",
+  "tooltipToolbarMore": "Items that did not fit",
   "sheetLibraryTitle": "Past Transcripts",
   "sheetLibrarySubtitle": "{files} in the library. Newest first.",
   "sheetLibraryEmpty": "The library is empty",

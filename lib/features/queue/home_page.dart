@@ -24,6 +24,7 @@ import '../../core/text.dart';
 import '../../core/transcript.dart';
 import '../../design/design.dart';
 import '../../design/mascot.dart';
+import '../../design/toolbar.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
@@ -650,12 +651,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         ),
       );
 
-  ToolBar _toolbar(QueueState s) {
+  AppToolBar _toolbar(QueueState s) {
     final ready = s.readyTargets.isNotEmpty;
     final copyFormat = formatById(s.copyFormat);
     final saveFormat = formatById(s.saveFormat);
 
-    return ToolBar(
+    return AppToolBar(
       title: ToolbarTitle(subtitle: _subtitle(s)),
       titleWidth: 240,
       enableBlur: true,
