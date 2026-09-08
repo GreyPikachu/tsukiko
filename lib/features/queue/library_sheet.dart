@@ -8,7 +8,7 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../core/library.dart';
 import '../../core/text.dart';
-import '../../core/transcript.dart';
+import '../../core/labels.dart';
 import '../../design/design.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../platform/os.dart';
@@ -81,6 +81,12 @@ class _LibrarySheetState extends State<LibrarySheet> {
   /// десятки килобайт; чтение такого не успевает пропустить кадр, а
   /// асинхронное чтение стоило бы состояния «читаю», крутилки на его
   /// месте и проверок, что строку не сменили, пока файл ехал.
+  ///
+  /// Показываем файл как он есть, а не пересобранным в простой текст.
+  /// Раньше он разбирался на фрагменты и рисовался заново без таймкодов —
+  /// то есть субтитры, «текст с таймкодами» и markdown выглядели тут
+  /// одинаково, и понять, что за файл открыт, было нельзя. А формат
+  /// человек выбирал сам, и увидеть он хочет именно его.
   void _show(LibraryEntry entry) {
     String text;
     try {
@@ -89,15 +95,9 @@ class _LibrarySheetState extends State<LibrarySheet> {
       // Двоичный файл, чужая кодировка, исчез из-под рук.
       text = '';
     }
-    // Разбираем той же дорогой, что и «Открыть расшифровку…»: субтитры и
-    // JSON показываем текстом, а не разметкой — читают здесь сказанное,
-    // а не формат.
-    final read = readTranscript(entry.path, text);
     setState(() {
       _shown = entry;
-      _text = read.parsed != null
-          ? renderPlain(read.parsed!.segments, false)
-          : (read.raw ?? '');
+      _text = text;
     });
   }
 
@@ -108,7 +108,18 @@ class _LibrarySheetState extends State<LibrarySheet> {
   }
 
   @override
-  Widget build(BuildContext context) => MacosSheet(
+  Widget build(BuildContext context) => CallbackShortcuts(
+        // Esc закрывает — как любое временное окно в системе. Щелчок мимо
+        // листа делает то же самое, и это уже забота showMacosSheet
+        // (barrierDismissible), но клавишу он на себя не берёт.
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () =>
+              Navigator.of(context).maybePop(),
+        },
+        child: Focus(autofocus: true, child: _sheet(context)),
+      );
+
+  Widget _sheet(BuildContext context) => MacosSheet(
         child: Column(
           children: [
             Padding(
@@ -283,8 +294,14 @@ class _EntryRowState extends State<_EntryRow> {
               ),
               const SizedBox(height: 2),
               Text(
-                // Папка и дата: по ним запись и узнают через полгода.
-                [widget.folder, _when(e.at)].where((s) => s.isNotEmpty).join(' · '),
+                // Папка, формат и дата: по ним запись и узнают через
+                // полгода. Формат назван словом, а не расширением: «.srt»
+                // говорит меньше, чем «Субтитры SRT».
+                [
+                  widget.folder,
+                  ?formatOfFile(e.path)?.label,
+                  _when(e.at),
+                ].where((s) => s.isNotEmpty).join(' · '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Type.caption.copyWith(

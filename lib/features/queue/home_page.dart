@@ -309,6 +309,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   void _showLibrary(QueueState s) {
     showMacosSheet<void>(
       context: context,
+      // Щелчок мимо листа закрывает его: временное окно, из которого
+      // ничего не правят, не должно требовать прицельного попадания
+      // в «Закрыть». Esc делает то же — это уже забота самого листа.
+      barrierDismissible: true,
       builder: (_) => LibrarySheet(
         root: s.libraryPath,
         onOpenInQueue: (path) => _send(TranscriptOpened(path)),
@@ -417,7 +421,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       ],
     );
     if (loc == null) return;
-    final chosen = _formatOfPath(loc.path, f);
+    // Ничего не узнали — остаётся тот формат, с которым диалог открывали.
+    final chosen = formatOfFile(loc.path) ?? f;
     // Диалог мог отдать путь без расширения — дописываем сами.
     final path = loc.path.toLowerCase().endsWith(chosen.ext)
         ? loc.path
@@ -425,22 +430,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     _send(SaveRequested(job, path, chosen));
   }
 
-  /// Каким форматом человек назвал файл в системном диалоге.
-  ///
-  /// Сначала по полному окончанию, потом по расширению: «текст с
-  /// таймкодами» и обычный текст оба кончаются на «.txt», и различает их
-  /// только слово в имени. Ничего не узнали — остаётся тот формат,
-  /// с которым диалог открывали.
-  ExportFormat _formatOfPath(String path, ExportFormat fallback) {
-    final name = path.toLowerCase();
-    for (final f in exportFormats) {
-      if (name.endsWith(f.suffix.toLowerCase())) return f;
-    }
-    for (final f in exportFormats) {
-      if (name.endsWith(f.ext)) return f;
-    }
-    return fallback;
-  }
+
 
   Future<void> _exportAll(QueueState s) async {
     final jobs = s.readyTargets.isNotEmpty

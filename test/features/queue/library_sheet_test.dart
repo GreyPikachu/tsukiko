@@ -55,12 +55,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Вторая строка.'), findsOneWidget);
 
-    // Субтитры показываем текстом, а не разметкой: читают здесь сказанное,
-    // а не формат.
+    // Файл показывается как он есть, со своей разметкой: формат человек
+    // выбирал сам, и увидеть он хочет именно его. Раньше всё
+    // пересобиралось в простой текст, и субтитры, «текст с таймкодами»
+    // и markdown выглядели одинаково.
     await tester.tap(find.text('Разговор.srt'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Сказанное вслух'), findsOneWidget);
-    expect(find.textContaining('-->'), findsNothing);
+    expect(find.textContaining('-->'), findsOneWidget);
+    expect(find.textContaining('Субтитры SRT'), findsWidgets,
+        reason: 'формат назван словом: «.srt» говорит меньше');
   });
 
   testWidgets('пустая библиотека объясняет себя, а не показывает пустоту',
