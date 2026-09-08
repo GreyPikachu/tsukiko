@@ -101,6 +101,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Первое состояние приходит мимо listener'а: BlocConsumer зовёт его
+    // только на переменах, а самая первая перемена — это уже вторая. Без
+    // этой строки поле подсказки после запуска стояло пустым, хотя сама
+    // подсказка была прочитана с диска и жила в состоянии: человек видел
+    // пустоту и решал, что настройка слетела.
+    _syncPromptField(_bloc.state);
     _transcriptScroll.addListener(() {
       final scrolled = _transcriptScroll.hasClients && _transcriptScroll.offset > 6;
       if (scrolled != _scrolled) setState(() => _scrolled = scrolled);

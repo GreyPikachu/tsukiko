@@ -103,6 +103,10 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Первое состояние приходит мимо listener'а: BlocConsumer зовёт его
+    // только на переменах. Без этой строки поле подсказки в только что
+    // открытом окне стояло пустым, хотя подсказка была на месте.
+    _syncPromptField(_cubit.state.prompt);
     // Первый вопрос о разрешении задаём сразу: окно только что открыли.
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncVisibility());
   }
