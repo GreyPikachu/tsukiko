@@ -71,14 +71,15 @@ class ModelChipState extends State<ModelChip> {
     return MacosTooltip(
       message: widget.detail,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        padding: const EdgeInsets.symmetric(
+            horizontal: Gap.inner, vertical: Gap.hint),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Пока очередь стоит из-за диктовки, точка пульсирует:
             // состояние временное, а не сломанное.
             Dot(color: color, pulsing: widget.waiting),
-            const SizedBox(width: 7),
+            const SizedBox(width: Gap.inner),
             Text(
               widget.label,
               style: Type.caption
@@ -134,8 +135,11 @@ class DotState extends State<Dot> with SingleTickerProviderStateMixin {
       builder: (context, _) => AnimatedContainer(
         duration: Motion.dur(context, Motion.settle),
         curve: Motion.curve(context, Motion.settleCurve),
-        width: 7,
-        height: 7,
+        // Поперечник тоже с общей шкалы, а не на глаз: точка меньше
+        // самого мелкого значка ([IconSize.inline]) — это не знак, а
+        // отметка при тексте, и спорить с буквами рядом ей нельзя.
+        width: Gap.inner,
+        height: Gap.inner,
         decoration: BoxDecoration(
           color: widget.color.withValues(
             alpha: reduced ? 1 : 1 - _pulse.value * 0.65,
@@ -161,7 +165,7 @@ class EngineErrorBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+        padding: const EdgeInsets.all(Gap.inner),
         decoration: BoxDecoration(
           // Красным намекаем, а не кричим: коробка и так стоит первой.
           color: MacosColors.systemRedColor.withValues(alpha: 0.09),
@@ -185,14 +189,18 @@ class EmptyNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(32),
+        // Ровно то же поле и та же лесенка, что у пустого экрана с котом
+        // (MascotEmpty): это два вида одного состояния, и разойтись видом
+        // они не должны.
+        padding: const EdgeInsets.all(Gap.section + Gap.inner),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            MacosIcon(icon, size: 40, color: Surface.secondaryText(context)),
-            const SizedBox(height: 14),
+            MacosIcon(icon,
+                size: IconSize.hero, color: Surface.secondaryText(context)),
+            const SizedBox(height: Gap.item),
             Text(title, style: Type.emptyTitle, textAlign: TextAlign.center),
-            const SizedBox(height: 6),
+            const SizedBox(height: Gap.hint),
             Text(
               subtitle,
               textAlign: TextAlign.center,

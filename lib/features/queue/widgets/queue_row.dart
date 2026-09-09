@@ -54,8 +54,11 @@ class QueueRowState extends State<QueueRow> {
         child: AnimatedContainer(
           duration: Motion.dur(context, Motion.press),
           curve: Curves.easeOut,
-          margin: const EdgeInsets.only(bottom: 2),
-          padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+          // Между строками очереди — щель, а не отступ: строки читаются
+          // одним списком, и разводить их дальше значит рвать его. Хватает
+          // ровно того, чтобы две подсветки подряд не слились в пятно.
+          margin: const EdgeInsets.only(bottom: Gap.tight),
+          padding: const EdgeInsets.all(Gap.inner),
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(7),
@@ -66,7 +69,7 @@ class QueueRowState extends State<QueueRow> {
               Row(
                 children: [
                   StateGlyph(job: job, tint: fg),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: Gap.inner),
                   Expanded(
                     child: Text(
                       job.name,
@@ -82,14 +85,18 @@ class QueueRowState extends State<QueueRow> {
                       message: AppLocalizations.of(context).tooltipCustomSettings,
                       child: MacosIcon(
                         CupertinoIcons.slider_horizontal_3,
-                        size: 12,
+                        size: IconSize.inline,
                         color: fg ?? Surface.secondaryText(context),
                       ),
                     ),
                 ],
               ),
               Padding(
-                padding: const EdgeInsets.only(left: 24, top: 1),
+                // Подпись встаёт под именем файла, а не под значком:
+                // левый край считаем, а не подбираем — значок плюс
+                // отступ за ним.
+                padding: const EdgeInsets.only(
+                    left: IconSize.button + Gap.inner, top: Gap.tight),
                 // В строку влезает начало одной строки, и на этом всё.
                 // Полный текст ошибки — под курсором; прочитать его
                 // целиком и скопировать можно в инспекторе и в меню
@@ -109,11 +116,14 @@ class QueueRowState extends State<QueueRow> {
               // Прогресс живёт рядом со своим файлом, а не в общей строке снизу.
               if (job.active)
                 Padding(
-                  padding: const EdgeInsets.only(left: 24, top: 6, right: 2),
+                  padding: const EdgeInsets.only(
+                      left: IconSize.button + Gap.inner,
+                      top: Gap.hint,
+                      right: Gap.tight),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(2),
                     child: SizedBox(
-                      height: 3,
+                      height: Gap.hint,
                       child: Stack(
                         children: [
                           Positioned.fill(
@@ -175,7 +185,11 @@ class StateGlyph extends StatelessWidget {
     return AnimatedSwitcher(
       duration: Motion.dur(context, Motion.quick),
       switchInCurve: Motion.curve(context, Motion.quickCurve),
-      child: MacosIcon(icon, key: ValueKey(icon.codePoint), size: 15, color: tint ?? color),
+      // Кнопочная ступень, а не строчная: по этому значку читают
+      // состояние записи через всю колонку, и он тут главный знак,
+      // а не отметка при тексте.
+      child: MacosIcon(icon,
+          key: ValueKey(icon.codePoint), size: IconSize.button, color: tint ?? color),
     );
   }
 }

@@ -43,7 +43,10 @@ class ScopeBanner extends StatelessWidget {
     };
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      // Плашка стоит в колонке сама по себе, и поле у неё в ступень
+      // «между настройками»: у мелких вставок внутри строки поле
+      // [Gap.inner], у самостоятельных — [Gap.item].
+      padding: const EdgeInsets.all(Gap.item),
       decoration: BoxDecoration(
         color: Surface.hover(context),
         borderRadius: BorderRadius.circular(8),
@@ -55,7 +58,7 @@ class ScopeBanner extends StatelessWidget {
             children: [
               MacosIcon(
                 selection == 0 ? CupertinoIcons.slider_horizontal_3 : CupertinoIcons.doc_text,
-                size: 13,
+                size: IconSize.inline,
                 color: Surface.secondaryText(context),
               ),
               const SizedBox(width: Gap.inner),
