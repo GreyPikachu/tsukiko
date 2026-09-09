@@ -325,8 +325,14 @@ class WindowsOs implements Os {
   /// Перекладывание любого звука в 16 кГц моно WAV через ffmpeg.
   ///
   /// Сначала проверяется легковесный встроенный ffmpeg.exe из engineDir,
-  /// затем системный ffmpeg из PATH. Если конвертация не удалась или ffmpeg
-  /// отсутствует — возвращаем исходный файл, пусть whisper попробует сам.
+  /// затем системный ffmpeg из PATH. Если короткие имена 8.3 на томе
+  /// выключены, звук временно перекладывается под латинским именем:
+  /// ffmpeg на Windows получает argv в системной кодировке и путь вроде
+  /// `F:\Загрузки\голос.ogg` иначе не открывается. Рабочая папка передаётся
+  /// Windows отдельным wide-string полем, а в argv остаются только ASCII-имена.
+  ///
+  /// Если конвертация не удалась или ffmpeg отсутствует — возвращаем исходный
+  /// файл, пусть whisper попробует сам.
   @override
   Future<String> toWav(String src, String dst) async {
     final bundledFfmpeg = join(engineDir, 'ffmpeg.exe');
@@ -334,14 +340,29 @@ class WindowsOs implements Os {
         ? bundledFfmpeg
         : (findExecutable('ffmpeg') ?? 'ffmpeg');
 
+    Directory? staging;
+    var input = processPath(src);
+    var output = processPath(dst);
+    String? workingDirectory;
     try {
+      if (!_isAscii(input) || !_isAscii(output)) {
+        staging = await Directory.systemTemp.createTemp('tsukiko-audio-');
+        final srcName = basename(src);
+        final dot = srcName.lastIndexOf('.');
+        final suffix = dot < 0 ? '' : srcName.substring(dot).toLowerCase();
+        final safeSuffix = RegExp(r'^\.[a-z0-9]{1,8}$').hasMatch(suffix)
+            ? suffix
+            : '';
+        final inputName = 'input$safeSuffix';
+        await File(src).copy(join(staging.path, inputName));
+        input = inputName;
+        output = 'output.wav';
+        workingDirectory = staging.path;
+      }
       final r = await Process.run(ffmpeg, [
         '-y',
         '-i',
-        // Та же беда, что и у движка: ffmpeg — программа на C, и путь
-        // с кириллицей до неё не доезжает. Отсюда и «не расшифровываются
-        // m4a и голосовые» — до whisper дело просто не доходило.
-        processPath(src),
+        input,
         '-vn',
         '-ar',
         '16000',
@@ -349,11 +370,21 @@ class WindowsOs implements Os {
         '1',
         '-c:a',
         'pcm_s16le',
-        processPath(dst),
-      ]);
-      return (r.exitCode == 0 && File(dst).existsSync()) ? dst : src;
+        output,
+      ], workingDirectory: workingDirectory);
+      if (r.exitCode != 0) return src;
+      if (staging != null) {
+        final made = File(join(staging.path, output));
+        if (!made.existsSync()) return src;
+        await made.copy(dst);
+      }
+      return File(dst).existsSync() ? dst : src;
     } catch (_) {
       return src;
+    } finally {
+      try {
+        if (staging?.existsSync() ?? false) staging!.deleteSync(recursive: true);
+      } catch (_) {}
     }
   }
 
