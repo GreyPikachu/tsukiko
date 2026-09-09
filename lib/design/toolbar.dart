@@ -24,6 +24,52 @@ import 'design.dart';
 String checkedOverflowLabel(String label, {required bool checked}) =>
     '${checked ? '✓' : ' '} $label';
 
+/// Выпадающая кнопка с цветом доступного действия.
+///
+/// Пакетная [ToolBarPullDownButton] всегда красит значок в 50%
+/// прозрачности — точно как недоступный. В самом меню оставляем
+/// пакетную реализацию, а в панели задаём тот же цвет, что у остальных
+/// рабочих кнопок.
+class AppToolBarPullDownButton extends ToolbarItem {
+  const AppToolBarPullDownButton({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.items,
+    this.tooltipMessage,
+  });
+
+  final String label;
+  final IconData icon;
+  final List<MacosPulldownMenuEntry> items;
+  final String? tooltipMessage;
+
+  @override
+  Widget build(BuildContext context, ToolbarItemDisplayMode displayMode) {
+    final original = ToolBarPullDownButton(
+      label: label,
+      icon: icon,
+      items: items,
+      tooltipMessage: tooltipMessage,
+    );
+    if (displayMode == ToolbarItemDisplayMode.overflowed) {
+      return original.build(context, displayMode);
+    }
+    return CustomToolbarItem(
+      tooltipMessage: tooltipMessage,
+      inToolbarBuilder: (context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: MacosPulldownButtonTheme(
+          data: MacosPulldownButtonTheme.of(context).copyWith(
+            iconColor: Surface.toolbarIcon(context, enabled: true),
+          ),
+          child: MacosPulldownButton(icon: icon, items: items),
+        ),
+      ),
+    ).build(context, displayMode);
+  }
+}
+
 /// Панель инструментов macos_ui с другим значком у списка спрятанного.
 ///
 /// Форк ради одного значка выглядит несоразмерно, поэтому — почему он всё

@@ -816,7 +816,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         // лежащее «Копировать» — не все, и понять, отчего их то шесть,
         // то четыре, было нельзя. Markdown и JSON копируются ровно так
         // же, как сохраняются, — прятать их было не за что.
-        ToolBarPullDownButton(
+        AppToolBarPullDownButton(
           label: l10n.labelCopyFormat,
           icon: CupertinoIcons.doc_on_clipboard,
           tooltipMessage: l10n.tooltipChooseCopyFormat,
@@ -832,7 +832,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           tooltipMessage: l10n.tooltipSaveFormat(saveFormat.label.toLowerCase()),
           onPressed: ready ? () => _saveAs(s) : null,
         ),
-        ToolBarPullDownButton(
+        AppToolBarPullDownButton(
           label: l10n.labelSaveFormat,
           icon: CupertinoIcons.arrow_down_doc,
           tooltipMessage: l10n.tooltipChooseSaveFormat,
