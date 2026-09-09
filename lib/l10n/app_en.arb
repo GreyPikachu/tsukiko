@@ -549,6 +549,13 @@
   "askConversionFailedTitle": "Could not convert",
   "askConversionFailedBody": "Check that the file is still available and the destination folder is writable.",
   "statusTranscriptConverted": "Transcript converted",
+  "sectionVoiceCommands": "Voice commands",
+  "checkVoiceCommands": "Replace spoken commands with text",
+  "hintVoiceCommandsShared": "The list is shared by dictation and the transcriber, but each can be enabled independently. For example, “office address” can insert the full address.",
+  "placeholderCommandPhrase": "What to say",
+  "placeholderCommandReplacement": "What to insert",
+  "tooltipRemoveCommand": "Remove command",
+  "buttonAddCommand": "Add command",
   "skillNotFound": "Not found: {names}",
   "@skillNotFound": {
     "placeholders": {

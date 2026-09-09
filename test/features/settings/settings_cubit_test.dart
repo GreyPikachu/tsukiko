@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/settings.dart';
+import 'package:tsukiko/core/text_commands.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/features/api/api_server.dart' show apiKeySetting;
 import 'package:tsukiko/features/settings/settings_cubit.dart';
@@ -48,8 +49,11 @@ void main() {
     // выпадает из ряда запросто: настройки переехали с машины, где ядер
     // было больше, или их правили руками в файле.
     for (final current in [1, 2, 3, 4, 999]) {
-      expect(threadChoices(current), contains(current),
-          reason: 'потоков $current');
+      expect(
+        threadChoices(current),
+        contains(current),
+        reason: 'потоков $current',
+      );
     }
     // Ряд остаётся возрастающим и без повторов — это всё-таки список
     // на выбор, а не свалка.
@@ -173,6 +177,27 @@ void main() {
   });
 
   group('файлы расшифровок', () {
+    test('команды общие, а выключатели у двух режимов независимы', () async {
+      cubit.addTextCommand();
+      cubit.updateTextCommand(
+        0,
+        const TextCommand('адрес офиса', 'Минск, Немига, 1'),
+      );
+      cubit.setDictationCommandsEnabled(false);
+      cubit.setTranscriberCommandsEnabled(true);
+      await settle();
+
+      final saved = Settings.load();
+      expect(
+        textCommandsFromJson(saved[textCommandsSetting]).single.replacement,
+        'Минск, Немига, 1',
+      );
+      expect(saved[dictationCommandsEnabledSetting], isFalse);
+      expect(saved[transcriberCommandsEnabledSetting], isTrue);
+      expect(cubit.state.dictationCommandsEnabled, isFalse);
+      expect(cubit.state.transcriberCommandsEnabled, isTrue);
+    });
+
     test('форматы кнопок пишутся в общий источник настроек', () async {
       cubit.setCopyFormat('md');
       cubit.setSaveFormat('srt');
@@ -265,7 +290,9 @@ void main() {
 
     test('свой выбор диктовки разводит их по разным файлам', () {
       final s = SettingsState(
-          queueModel: '/большая.bin', dictationModel: '/мелкая.bin');
+        queueModel: '/большая.bin',
+        dictationModel: '/мелкая.bin',
+      );
       expect(s.userOf('/большая.bin'), 'расшифровщик');
       expect(s.userOf('/мелкая.bin'), 'диктовка');
       expect(s.userOf('/лишняя.bin'), isNull, reason: 'ею никто не работает');
@@ -298,8 +325,11 @@ void main() {
 
       cubit.setVisible(false);
       await Future<void>.delayed(const Duration(milliseconds: 1200));
-      expect(native.calls.where((c) => c == 'permissions').length, asked,
-          reason: 'закрытое окно ни о чём не спрашивает');
+      expect(
+        native.calls.where((c) => c == 'permissions').length,
+        asked,
+        reason: 'закрытое окно ни о чём не спрашивает',
+      );
     });
   });
 }
@@ -316,27 +346,26 @@ class _FakeNative {
   Future<void> sendCaptured(Hotkey hotkey) async {
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .handlePlatformMessage(
-      'tsukiko/dictation',
-      const StandardMethodCodec().encodeMethodCall(MethodCall(
-        'captured',
-        hotkey.toJson(),
-      )),
-      (_) {},
-    );
+          'tsukiko/dictation',
+          const StandardMethodCodec().encodeMethodCall(
+            MethodCall('captured', hotkey.toJson()),
+          ),
+          (_) {},
+        );
   }
 
   void install() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, (call) async {
-      calls.add(call.method);
-      return switch (call.method) {
-        'permissions' => permitted,
-        'loginItem' => loginItemAllowed,
-        'trash' => trashAllowed,
-        'initialTab' => 'dictation',
-        _ => null,
-      };
-    });
+          calls.add(call.method);
+          return switch (call.method) {
+            'permissions' => permitted,
+            'loginItem' => loginItemAllowed,
+            'trash' => trashAllowed,
+            'initialTab' => 'dictation',
+            _ => null,
+          };
+        });
   }
 
   void remove() {
