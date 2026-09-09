@@ -947,7 +947,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// Галочкой отмечен формат, который повторяет кнопка.
   MacosPulldownMenuItem _formatItem(ExportFormat f, String current, VoidCallback tap) =>
       MacosPulldownMenuItem(
-        label: f.label,
+        // Обычное меню рисует галочку в title ниже, а меню многоточия
+        // выбрасывает title и оставляет только label. Значит выбранность
+        // обязана жить и в строке — иначе именно в тесном окне, где всё
+        // ушло под многоточие, нынешний формат узнать было невозможно.
+        label: checkedOverflowLabel(f.label, checked: f.id == current),
         onTap: tap,
         title: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1556,4 +1560,3 @@ class _QueueDragListener extends ReorderableDragStartListener {
 }
 
 // ── элементы ────────────────────────────────────────────────────────────────
-
