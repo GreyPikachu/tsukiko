@@ -67,15 +67,25 @@ class QueueRowState extends State<QueueRow> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   StateGlyph(job: job, tint: fg),
                   const SizedBox(width: Gap.inner),
                   Expanded(
-                    child: Text(
-                      job.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Type.fileName.copyWith(color: fg),
+                    child: MacosTooltip(
+                      message: job.name,
+                      child: Text(
+                        job.name,
+                        // Диктовка кладёт дату и точное время в имя файла.
+                        // В одну строку оно не помещается в узкой очереди,
+                        // поэтому раньше от времени оставалось многоточие.
+                        // Вторая строка сохраняет число целиком, не раздувая
+                        // все строки списка до отдельной карточки.
+                        maxLines: 2,
+                        softWrap: true,
+                        overflow: TextOverflow.ellipsis,
+                        style: Type.fileName.copyWith(color: fg),
+                      ),
                     ),
                   ),
                   // Отметка «у этой записи свои настройки» — иначе о них
