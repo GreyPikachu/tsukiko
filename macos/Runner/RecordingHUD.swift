@@ -411,13 +411,20 @@ final class RecordingHUD {
     }
 
     ticker?.invalidate()
-    ticker = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+    let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
       guard let self else { return }
       self.model.push(level: self.levelSource())
       if let started = self.startedAt, self.model.state == .recording {
         self.model.elapsed = Date().timeIntervalSince(started)
       }
     }
+    // scheduledTimer попадает только в default mode главного run loop.
+    // Системное меню переводит его в eventTracking mode на всё время,
+    // пока меню раскрыто, — и панель застывала вместе со временем и
+    // измерителем, хотя рекордер продолжал писать. Common modes включают
+    // оба режима, поэтому интерфейс записи продолжает жить поверх меню.
+    RunLoop.main.add(timer, forMode: .common)
+    ticker = timer
   }
 
   /// Запись кончилась — панель не исчезает, а перетекает в «Распознаю».
