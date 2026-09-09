@@ -85,6 +85,19 @@ void main() {
     expect(first.left - title.right, lessThan(130));
   });
 
+  testWidgets('выключенное размытие не оставляет дорогой фильтр',
+      (tester) async {
+    await pump(
+      tester,
+      AppToolBar(
+        enableBlur: false,
+        actions: buttons(1),
+      ),
+    );
+
+    expect(find.byType(BackdropFilter), findsNothing);
+  });
+
   test('пункт под многоточием не теряет выбранный формат', () {
     expect(checkedOverflowLabel('Текст', checked: true), '✓ Текст');
     expect(checkedOverflowLabel('Субтитры SRT', checked: false), '  Субтитры SRT');

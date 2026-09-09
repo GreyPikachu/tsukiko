@@ -153,10 +153,9 @@ class _AppToolBarState extends State<ToolBar> {
       ),
       child: _ground(
         theme,
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-            child: Container(
+        child: Builder(
+          builder: (context) {
+            final band = Container(
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(
                   horizontal: Gap.inner, vertical: Gap.hint),
@@ -201,8 +200,15 @@ class _AppToolBarState extends State<ToolBar> {
                   ],
                 ),
               ),
-            ),
-          ),
+            );
+            if (!widget.enableBlur) return band;
+            return ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                child: band,
+              ),
+            );
+          },
         ),
       ),
     );
