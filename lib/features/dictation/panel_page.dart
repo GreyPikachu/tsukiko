@@ -166,7 +166,7 @@ class _Header extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(l10n.settingsTabDictation, style: Type.emptyTitle),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: Gap.tight),
                   Text(
                     s.enabled ? l10n.dictationEnabledState : l10n.dictationDisabledState,
                     style: Type.caption.copyWith(color: Surface.secondaryText(context)),
@@ -217,8 +217,11 @@ class _Live extends StatelessWidget {
             children: [
               AnimatedContainer(
                 duration: Motion.dur(context, Motion.quick),
-                width: 9,
-                height: 9,
+                // Тот же поперечник, что у точки состояния модели в
+                // главном окне: одна и та же отметка в двух окнах не
+                // имеет права быть разного размера.
+                width: Gap.inner,
+                height: Gap.inner,
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
               const SizedBox(width: Gap.inner),
@@ -240,7 +243,10 @@ class _Live extends StatelessWidget {
                   style: Type.timestamp.copyWith(color: Surface.secondaryText(context)),
                 ),
               if (s.phase == Phase.transcribing) ...[
-                const SizedBox(width: 14, height: 14, child: ProgressCircle()),
+                const SizedBox(
+                    width: IconSize.button,
+                    height: IconSize.button,
+                    child: ProgressCircle()),
                 // Тот же крестик, что и в плавающей панели, и на том же
                 // месте относительно прогресса: одно действие — один вид
                 // в обеих панелях, искать его дважды не приходится.
@@ -352,15 +358,18 @@ class _AbortButtonState extends State<_AbortButton> {
                 child: AnimatedContainer(
                   duration: Motion.dur(context, Motion.quick),
                   curve: Motion.curve(context, Motion.quickCurve),
-                  width: 20,
-                  height: 20,
+                  // Кружок и значок в нём — ровно те же, что у крестика
+                  // плавающей панели: одно действие обязано быть одного
+                  // размера в обоих окнах, иначе его ищут заново.
+                  width: IconSize.button + Gap.inner,
+                  height: IconSize.button + Gap.inner,
                   decoration: BoxDecoration(
                     color: _hover ? Surface.hover(context) : MacosColors.transparent,
                     shape: BoxShape.circle,
                   ),
                   child: MacosIcon(
                     CupertinoIcons.xmark,
-                    size: 10,
+                    size: IconSize.button,
                     color: Surface.secondaryText(context)
                         .withValues(alpha: _hover ? 1 : 0.55),
                   ),
@@ -384,7 +393,7 @@ class _Meter extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(3),
       child: SizedBox(
-        height: 5,
+        height: Gap.hint,
         child: Stack(
           children: [
             Positioned.fill(child: ColoredBox(color: Surface.hover(context))),
@@ -629,7 +638,7 @@ class _Footer extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 5),
+        padding: const EdgeInsets.all(Gap.hint),
         child: Column(
           children: [
             _MenuRow(
@@ -691,7 +700,10 @@ class _MenuRowState extends State<_MenuRow> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          // Те же поля, что у строки контекстного меню в главном окне:
+          // это один и тот же вид списка команд.
+          padding: const EdgeInsets.symmetric(
+              horizontal: Gap.inner, vertical: Gap.hint),
           decoration: BoxDecoration(
             color: _hover ? accent : MacosColors.transparent,
             borderRadius: BorderRadius.circular(5),
@@ -744,7 +756,9 @@ class _Warning extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     return Container(
         margin: const EdgeInsets.only(bottom: Gap.inner),
-        padding: const EdgeInsets.all(12),
+        // Самостоятельная плашка, поле в ступень «между настройками» —
+        // как у ScopeBanner в инспекторе главного окна.
+        padding: const EdgeInsets.all(Gap.item),
         decoration: BoxDecoration(
           color: MacosColors.systemOrangeColor.withValues(alpha: 0.16),
           borderRadius: BorderRadius.circular(8),

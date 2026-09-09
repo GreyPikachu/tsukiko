@@ -374,7 +374,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         SectionTitle(l10n.sectionCanDownload),
         for (final m in offers)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.symmetric(vertical: Gap.inner),
             child: Row(
               children: [
                 Expanded(
@@ -463,7 +463,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
     await showMacosAlertDialog<void>(
       context: context,
       builder: (dialogContext) => MacosAlertDialog(
-        appIcon: const MacosIcon(CupertinoIcons.trash, size: 56),
+        appIcon: const MacosIcon(CupertinoIcons.trash, size: IconSize.hero),
         title: Text(l10n.deleteModelTitle(m.name), style: Type.emptyTitle),
         message: Text(
           [
@@ -577,7 +577,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                     style: Type.control.copyWith(fontFamily: 'Menlo'),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: Gap.control),
                 PushButton(
                   controlSize: ControlSize.regular,
                   secondary: true,
@@ -634,7 +634,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
             const SizedBox(height: Gap.inner),
             for (final agent in skillAgents)
               Padding(
-                padding: const EdgeInsets.only(bottom: 2),
+                padding: const EdgeInsets.only(bottom: Gap.tight),
                 child: Check(
                   agent.configDir() == null
                       ? '${agent.name} — ${l10n.skillAgentMissing}'
@@ -748,7 +748,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                   onPressed: _cubit.requestPermission,
                   child: Text(l10n.buttonRequestPermission),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: Gap.control),
                 PushButton(
                   controlSize: ControlSize.regular,
                   secondary: true,
@@ -827,8 +827,8 @@ class _TabButtonState extends State<_TabButton> {
           // Ширины хватает самой длинной подписи («Расшифровщик»):
           // ужатая до многоточия вкладка не называет ничего.
           width: 96,
-          margin: const EdgeInsets.symmetric(horizontal: 3),
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          margin: const EdgeInsets.symmetric(horizontal: Gap.hint),
+          padding: const EdgeInsets.symmetric(vertical: Gap.inner),
           decoration: BoxDecoration(
             color: widget.selected
                 ? Surface.pressed(context)
@@ -840,8 +840,11 @@ class _TabButtonState extends State<_TabButton> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              MacosIcon(widget.icon, size: 18, color: color),
-              const SizedBox(height: 3),
+              // Ступень панели инструментов: вкладка стоит в той же
+              // полосе, что и панель в других окнах, и значок в ней
+              // держится сам, без текста рядом.
+              MacosIcon(widget.icon, size: IconSize.toolbar, color: color),
+              const SizedBox(height: Gap.hint),
               Text(
                 widget.label,
                 maxLines: 1,
