@@ -1270,8 +1270,10 @@ bool DictationBridge::PasteText(const std::string& text) {
     in.ki.dwExtraInfo = kOurInput;
     inputs.push_back(in);
   };
-  for (WORD vk : {VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN}) {
-    if (GetAsyncKeyState(vk) & 0x8000) key(vk, true);
+  // int, а не WORD: константы VK_* в заголовках Windows — обычные int,
+  // и вывод типа списка на WORD ругается потерей точности.
+  for (int vk : {VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN}) {
+    if (GetAsyncKeyState(vk) & 0x8000) key(static_cast<WORD>(vk), true);
   }
   key(VK_CONTROL, false);
   key('V', false);
