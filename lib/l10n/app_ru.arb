@@ -462,7 +462,7 @@
     }
   },
   "vadTooSmall": "Файл слишком мал — загрузка оборвалась. Уберите его, и приложение загрузит модель заново.",
-  "modelNotSpeechModel": "«{name}» — не модель распознавания речи: у файлов ggml в начале стоит своя метка, а здесь её нет.",
+  "modelNotSpeechModel": "«{name}» — не модель распознавания речи: сигнатура файла не соответствует его формату.",
   "@modelNotSpeechModel": {
     "placeholders": {
       "name": {
@@ -506,6 +506,7 @@
   "offerMedium": "Точнее Small, заметно медленнее",
   "offerLargeV3Turbo": "Лучшая и при этом быстрая",
   "offerLargeV3": "Точнее Turbo на трудной записи, но вдвое тяжелее и медленнее",
+  "offerNemotron35": "Многоязычная модель NVIDIA для NeMo-Speech.cpp: 40+ языков, включая русский, GGUF и нативный запуск без Python.",
   "downloadNoFolder": "некуда положить файл: папка {folder} недоступна",
   "@downloadNoFolder": {
     "placeholders": {

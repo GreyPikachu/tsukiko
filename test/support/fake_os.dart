@@ -57,7 +57,10 @@ class _TempOs implements Os {
   String get documentsDir => join(_root, 'Documents');
 
   @override
-  List<String> get sharedModelDirs => [join(_root, '.cache/whisper')];
+  List<String> get sharedModelDirs => [
+        join(_root, '.cache/whisper'),
+        join(_root, '.cache/nemo-speech'),
+      ];
 
   @override
   String join(String a, [String? b, String? c]) => _real.join(a, b, c);
