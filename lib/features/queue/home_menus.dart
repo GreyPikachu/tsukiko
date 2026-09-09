@@ -72,6 +72,10 @@ extension _Menus on _HomeViewState {
               onSelected: _openTranscript,
             ),
             PlatformMenuItem(
+              label: l10n.menuConvertTranscript,
+              onSelected: _convertTranscript,
+            ),
+            PlatformMenuItem(
               label: l10n.menuPastTranscripts,
               shortcut: const SingleActivator(LogicalKeyboardKey.keyL, meta: true),
               onSelected: () => _showLibrary(s),
