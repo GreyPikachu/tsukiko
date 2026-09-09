@@ -43,6 +43,35 @@ class TextReplacement {
 
   final int start, end;
   final String original, replacement;
+
+  Map<String, Object> toJson() => {
+    'start': start,
+    'end': end,
+    'original': original,
+    'replacement': replacement,
+  };
+
+  static TextReplacement? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final start = (value['start'] as num?)?.toInt();
+    final end = (value['end'] as num?)?.toInt();
+    final original = value['original'];
+    final replacement = value['replacement'];
+    if (start == null ||
+        end == null ||
+        original is! String ||
+        replacement is! String ||
+        start < 0 ||
+        end < start) {
+      return null;
+    }
+    return TextReplacement(
+      start: start,
+      end: end,
+      original: original,
+      replacement: replacement,
+    );
+  }
 }
 
 class CommandText {
@@ -120,6 +149,9 @@ CommandText applyTextCommands(String source, Iterable<TextCommand> commands) {
 CommandText undoTextReplacement(CommandText text, int index) {
   if (index < 0 || index >= text.replacements.length) return text;
   final hit = text.replacements[index];
+  if (hit.start < 0 || hit.end < hit.start || hit.end > text.text.length) {
+    return text;
+  }
   final restored = text.text.replaceRange(hit.start, hit.end, hit.original);
   final shift = hit.original.length - (hit.end - hit.start);
   final remaining = <TextReplacement>[];
@@ -148,4 +180,14 @@ List<TextCommand> textCommandsFromJson(Object? value) {
     if (command != null) commands.add(command);
   }
   return commands;
+}
+
+List<TextReplacement> textReplacementsFromJson(Object? value) {
+  if (value is! List) return const [];
+  final replacements = <TextReplacement>[];
+  for (final item in value) {
+    final replacement = TextReplacement.fromJson(item);
+    if (replacement != null) replacements.add(replacement);
+  }
+  return replacements;
 }

@@ -56,8 +56,10 @@ class Job extends Equatable {
   /// Список заменяется целиком на каждый фрагмент: добавление в общий
   /// прошло бы мимо сравнения состояний. Цена невелика — фрагмент приходит
   /// раз в пару секунд, а не в каждом кадре. В сравнение при этом входит
-  /// только длина (см. [props]): список растёт и никогда не переписывается,
-  /// а сверять тысячи фрагментов поэлементно на каждой перерисовке незачем.
+  /// сам список (см. [props]): обычно он только растёт, и сравнение сразу
+  /// замечает разную длину. Но голосовую замену можно отменить, переписав
+  /// один фрагмент без смены числа строк, — такая правка тоже должна стать
+  /// видна окну.
   final List<Segment> live;
 
   final Transcript? transcript;
@@ -117,26 +119,36 @@ class Job extends Equatable {
     // не отличить от «не передали».
     bool clearDetail = false,
     bool clearOverrides = false,
-  }) =>
-      Job(
-        file,
-        imported: imported,
-        state: state ?? this.state,
-        detail: clearDetail ? null : (detail ?? this.detail),
-        error: clearDetail ? null : (error ?? this.error),
-        progress: progress ?? this.progress,
-        live: live ?? this.live,
-        transcript: transcript ?? this.transcript,
-        raw: raw ?? this.raw,
-        overrides: clearOverrides ? null : (overrides ?? this.overrides),
-        besideSource: besideSource ?? this.besideSource,
-        startedAt: startedAt ?? this.startedAt,
-        took: took ?? this.took,
-        resumeFrom: resumeFrom ?? this.resumeFrom,
-      );
+  }) => Job(
+    file,
+    imported: imported,
+    state: state ?? this.state,
+    detail: clearDetail ? null : (detail ?? this.detail),
+    error: clearDetail ? null : (error ?? this.error),
+    progress: progress ?? this.progress,
+    live: live ?? this.live,
+    transcript: transcript ?? this.transcript,
+    raw: raw ?? this.raw,
+    overrides: clearOverrides ? null : (overrides ?? this.overrides),
+    besideSource: besideSource ?? this.besideSource,
+    startedAt: startedAt ?? this.startedAt,
+    took: took ?? this.took,
+    resumeFrom: resumeFrom ?? this.resumeFrom,
+  );
 
   /// Записать ещё один распознанный фрагмент.
   Job withSegment(Segment s) => copyWith(live: [...live, s]);
+
+  Job replaceSegment(Segment old, Segment replacement) {
+    List<Segment> replace(List<Segment> source) => [
+      for (final segment in source)
+        if (identical(segment, old)) replacement else segment,
+    ];
+    final ready = transcript;
+    return ready == null
+        ? copyWith(live: replace(live))
+        : copyWith(transcript: Transcript(ready.lang, replace(ready.segments)));
+  }
 
   /// Забыть результат и встать обратно в очередь — «распознать заново».
   Job get reset => Job(file, imported: imported, overrides: overrides);
@@ -145,19 +157,19 @@ class Job extends Equatable {
   /// Остальное входит в сравнение, чтобы перерисовка замечала перемены.
   @override
   List<Object?> get props => [
-        file.path,
-        imported,
-        state,
-        detail,
-        error,
-        progress,
-        live.length,
-        transcript,
-        raw,
-        overrides,
-        besideSource,
-        startedAt,
-        took,
-        resumeFrom,
-      ];
+    file.path,
+    imported,
+    state,
+    detail,
+    error,
+    progress,
+    live,
+    transcript,
+    raw,
+    overrides,
+    besideSource,
+    startedAt,
+    took,
+    resumeFrom,
+  ];
 }

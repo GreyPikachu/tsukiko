@@ -1363,6 +1363,8 @@
   "placeholderCommandReplacement": "Что вставить",
   "tooltipRemoveCommand": "Убрать команду",
   "buttonAddCommand": "Добавить команду",
+  "tooltipUndoVoiceCommand": "Вернуть сказанные слова",
+  "statusVoiceCommandUndone": "Автозамена отменена",
   "skillNotFound": "Не найдены: {names}",
   "@skillNotFound": {
     "placeholders": {

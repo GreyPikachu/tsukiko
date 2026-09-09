@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/settings.dart';
+import 'package:tsukiko/core/text_commands.dart';
 import 'package:tsukiko/core/transcript.dart';
 import 'package:tsukiko/core/whisper.dart';
 import 'package:tsukiko/features/queue/job.dart';
@@ -136,8 +137,9 @@ void main() {
       act: (b) {
         final p = '${tmp.path}/речь.srt';
         File(p).writeAsStringSync(
-            '1\n00:00:00,000 --> 00:00:01,500\nраз\n\n'
-            '2\n00:00:01,500 --> 00:00:03,000\nдва\n');
+          '1\n00:00:00,000 --> 00:00:01,500\nраз\n\n'
+          '2\n00:00:01,500 --> 00:00:03,000\nдва\n',
+        );
         b.add(TranscriptOpened(p));
       },
       wait: const Duration(milliseconds: 50),
@@ -217,15 +219,17 @@ void main() {
       expect(bloc.state.lead, three[2]);
     });
 
-    test('убрать выбранное: ведущей становится соседка, а не пустота',
-        () async {
-      bloc.add(JobSelected(three[1]));
-      bloc.add(const SelectedRemoved());
-      await Future<void>.delayed(Duration.zero);
-      expect(bloc.state.jobs.length, 2);
-      expect(bloc.state.lead, isNotNull);
-      expect(bloc.state.selected, {bloc.state.lead});
-    });
+    test(
+      'убрать выбранное: ведущей становится соседка, а не пустота',
+      () async {
+        bloc.add(JobSelected(three[1]));
+        bloc.add(const SelectedRemoved());
+        await Future<void>.delayed(Duration.zero);
+        expect(bloc.state.jobs.length, 2);
+        expect(bloc.state.lead, isNotNull);
+        expect(bloc.state.selected, {bloc.state.lead});
+      },
+    );
 
     test('без выделения команда применяется к ведущей', () async {
       bloc.add(JobSelected(three[1]));
@@ -280,10 +284,7 @@ void main() {
     blocTest<QueueBloc, QueueState>(
       'без whisper-cli очередь не идёт, а объясняет почему',
       build: make,
-      seed: () => QueueState(
-        jobs: [job('а.m4a')],
-        whisperFound: false,
-      ),
+      seed: () => QueueState(jobs: [job('а.m4a')], whisperFound: false),
       act: (b) => b.add(const RunRequested()),
       verify: (b) {
         expect(b.state.running, isFalse);
@@ -367,15 +368,20 @@ void main() {
     });
 
     test('готовыми считаются только записи с текстом', () {
-      final done = job('а.m4a').copyWith(
-          transcript: const Transcript('ru', [Segment(0, 1, 'раз')]));
+      final done = job(
+        'а.m4a',
+      ).copyWith(transcript: const Transcript('ru', [Segment(0, 1, 'раз')]));
       final s = QueueState(jobs: [done, job('б.m4a')], selected: {done});
       expect(s.readyTargets, [done]);
     });
 
     test('импортированная расшифровка не считается ждущей распознавания', () {
-      final imported = Job(File('${tmp.path}/речь.srt'),
-          imported: true, raw: 'текст', state: JobState.done);
+      final imported = Job(
+        File('${tmp.path}/речь.srt'),
+        imported: true,
+        raw: 'текст',
+        state: JobState.done,
+      );
       expect(QueueState(jobs: [imported]).hasPending, isFalse);
       expect(QueueState(jobs: [job('а.m4a')]).hasPending, isTrue);
     });
@@ -418,21 +424,27 @@ void main() {
       expect(half.reset.live, isEmpty);
     });
 
-    test('«распознать заново» забывает результат, но помнит свои настройки',
-        () {
-      const mine = RunOptions(model: '/m.bin', lang: 'ru', threads: 8);
-      final done = job('а.m4a').copyWith(
-        overrides: mine,
-        state: JobState.done,
-        transcript: const Transcript('ru', [Segment(0, 1, 'раз')]),
-        progress: 1,
-      );
-      final again = done.reset;
-      expect(again.transcript, isNull);
-      expect(again.state, JobState.queued);
-      expect(again.progress, 0);
-      expect(again.overrides, mine, reason: 'настройки записи переживают сброс');
-    });
+    test(
+      '«распознать заново» забывает результат, но помнит свои настройки',
+      () {
+        const mine = RunOptions(model: '/m.bin', lang: 'ru', threads: 8);
+        final done = job('а.m4a').copyWith(
+          overrides: mine,
+          state: JobState.done,
+          transcript: const Transcript('ru', [Segment(0, 1, 'раз')]),
+          progress: 1,
+        );
+        final again = done.reset;
+        expect(again.transcript, isNull);
+        expect(again.state, JobState.queued);
+        expect(again.progress, 0);
+        expect(
+          again.overrides,
+          mine,
+          reason: 'настройки записи переживают сброс',
+        );
+      },
+    );
 
     test('текст ошибки живёт отдельно от подписи и не переживает сброс', () {
       // Ошибка движка бывает в несколько строк, а в подпись под именем
@@ -448,8 +460,11 @@ void main() {
       expect(failed.error, contains('\n'), reason: 'храним весь вывод');
       expect(failed.reset.error, isNull);
       expect(failed.copyWith(clearDetail: true).error, isNull);
-      expect(failed == failed.copyWith(error: 'другое'), isFalse,
-          reason: 'перемена ошибки обязана дойти до перерисовки');
+      expect(
+        failed == failed.copyWith(error: 'другое'),
+        isFalse,
+        reason: 'перемена ошибки обязана дойти до перерисовки',
+      );
     });
 
     test('равные записи не заставляют очередь перерисовываться', () {
@@ -462,6 +477,64 @@ void main() {
   });
 
   group('настройки приложения', () {
+    test('живой фрагмент сразу выполняет включённую команду', () async {
+      await Settings.save({
+        textCommandsSetting: [
+          const TextCommand('адрес офиса', 'Минск, Немига, 1').toJson(),
+        ],
+        transcriberCommandsEnabledSetting: true,
+      });
+      final bloc = make();
+      bloc.add(FilesAdded([file('команда.m4a')]));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final target = bloc.state.jobs.single;
+
+      bloc.add(
+        JobAdvanced(
+          target,
+          segment: const Segment(0, 1000, 'Скажи адрес офиса'),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final segment = bloc.state.jobs.single.live.single;
+      expect(segment.text, 'Скажи Минск, Немига, 1');
+      expect(segment.replacements.single.original, 'адрес офиса');
+      await bloc.close();
+    });
+
+    blocTest<QueueBloc, QueueState>(
+      'заменённый фрагмент возвращается к сказанным словам',
+      build: make,
+      seed: () {
+        final segment = const Segment(
+          0,
+          1000,
+          'Минск, Немига, 1',
+          replacements: [
+            TextReplacement(
+              start: 0,
+              end: 16,
+              original: 'адрес офиса',
+              replacement: 'Минск, Немига, 1',
+            ),
+          ],
+        );
+        final target = job('команда.m4a').copyWith(live: [segment]);
+        return QueueState(jobs: [target], lead: target, selected: {target});
+      },
+      act: (bloc) {
+        final target = bloc.state.jobs.single;
+        bloc.add(CommandReplacementUndone(target, target.live.single, 0));
+      },
+      verify: (bloc) {
+        final segment = bloc.state.jobs.single.live.single;
+        expect(segment.text, 'адрес офиса');
+        expect(segment.replacements, isEmpty);
+        expect(bloc.state.status, 'Автозамена отменена');
+      },
+    );
+
     test('форматы перечитываются после правки в окне настроек', () async {
       final bloc = make();
       await Settings.save({'copyFormat': 'json', 'saveFormat': 'vtt'});
@@ -494,8 +567,9 @@ void main() {
     test('открытая из обзора запись приходит с готовым текстом', () async {
       final audio = file('вчера.m4a');
       final transcript = '${tmp.path}/вчера.txt';
-      File(transcript).writeAsStringSync(
-          '[00:00:00.000 --> 00:00:02.000]  Сказанное вслух\n');
+      File(
+        transcript,
+      ).writeAsStringSync('[00:00:00.000 --> 00:00:02.000]  Сказанное вслух\n');
 
       final bloc = make();
       bloc.add(SourceOpened(audio, transcript));
@@ -528,24 +602,30 @@ void main() {
       expect(after['libraryPath'], '/чужое/значение');
     });
 
-    test('подсказка ложится рядом с расшифровками и возвращается оттуда',
-        () async {
-      // Установщик Windows стирает настройки при удалении намеренно, и
-      // вместе с ними уносил собранный вручную список слов. Запасная копия
-      // живёт в библиотеке — её установщик не трогает.
-      await Settings.save({'libraryPath': '${tmp.path}/библиотека'});
+    test(
+      'подсказка ложится рядом с расшифровками и возвращается оттуда',
+      () async {
+        // Установщик Windows стирает настройки при удалении намеренно, и
+        // вместе с ними уносил собранный вручную список слов. Запасная копия
+        // живёт в библиотеке — её установщик не трогает.
+        await Settings.save({'libraryPath': '${tmp.path}/библиотека'});
 
-      final bloc = make();
-      bloc.add(OptionsEdited((o) => o.copyWith(prompt: 'Рында, Микша, Лаба')));
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await bloc.flushSettings();
-      await bloc.close();
+        final bloc = make();
+        bloc.add(
+          OptionsEdited((o) => o.copyWith(prompt: 'Рында, Микша, Лаба')),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await bloc.flushSettings();
+        await bloc.close();
 
-      expect(Prompts.read(Prompts.transcriber), 'Рында, Микша, Лаба');
-      expect(File('${tmp.path}/библиотека/prompts.json').existsSync(), isTrue);
-    });
+        expect(Prompts.read(Prompts.transcriber), 'Рында, Микша, Лаба');
+        expect(
+          File('${tmp.path}/библиотека/prompts.json').existsSync(),
+          isTrue,
+        );
+      },
+    );
   });
-
 }
 
 /// Подставная родная сторона: очередь спрашивает у неё разрешение забрать
@@ -557,13 +637,13 @@ class _FakeNative {
   void install() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, (call) async {
-      calls.add(call.method);
-      return switch (call.method) {
-        'requestModel' => true,
-        'permissions' => true,
-        _ => null,
-      };
-    });
+          calls.add(call.method);
+          return switch (call.method) {
+            'requestModel' => true,
+            'permissions' => true,
+            _ => null,
+          };
+        });
   }
 
   void remove() {

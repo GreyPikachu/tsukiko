@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' show SelectableText;
 import 'package:flutter/services.dart';
 import 'package:macos_ui/macos_ui.dart';
@@ -17,28 +18,61 @@ class SegmentRow extends StatefulWidget {
     required this.segment,
     required this.showTimestamp,
     required this.onCopied,
+    required this.onReplacementUndo,
     this.highlight = '',
   });
   final Segment segment;
   final bool showTimestamp;
   final VoidCallback onCopied;
+  final ValueChanged<int> onReplacementUndo;
   final String highlight;
 
   @override
   State<SegmentRow> createState() => SegmentRowState();
 }
 
-class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMixin {
+class SegmentRowState extends State<SegmentRow>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _enter = AnimationController(
     vsync: this,
     duration: Motion.settle,
   )..forward();
   bool _hover = false, _copied = false;
   Timer? _resetCopied;
+  final _replacementTaps = <TapGestureRecognizer>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _syncReplacementTaps();
+  }
+
+  @override
+  void didUpdateWidget(covariant SegmentRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.segment, widget.segment)) {
+      _syncReplacementTaps();
+    }
+  }
+
+  void _syncReplacementTaps() {
+    for (final tap in _replacementTaps) {
+      tap.dispose();
+    }
+    _replacementTaps
+      ..clear()
+      ..addAll([
+        for (var i = 0; i < widget.segment.replacements.length; i++)
+          TapGestureRecognizer()..onTap = () => widget.onReplacementUndo(i),
+      ]);
+  }
 
   @override
   void dispose() {
     _resetCopied?.cancel();
+    for (final tap in _replacementTaps) {
+      tap.dispose();
+    }
     _enter.dispose();
     super.dispose();
   }
@@ -58,23 +92,60 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
   TextSpan _spans(BuildContext context) {
     final text = widget.segment.text;
     final needle = widget.highlight;
-    if (needle.isEmpty) return TextSpan(text: text, style: Type.body);
-
     final accent = MacosTheme.of(context).primaryColor;
     final spans = <TextSpan>[];
-    final lower = text.toLowerCase(), q = needle.toLowerCase();
-    var at = 0;
-    while (true) {
-      final hit = lower.indexOf(q, at);
-      if (hit < 0) break;
-      if (hit > at) spans.add(TextSpan(text: text.substring(at, hit)));
-      spans.add(TextSpan(
-        text: text.substring(hit, hit + q.length),
-        style: TextStyle(backgroundColor: accent.withValues(alpha: 0.28)),
-      ));
-      at = hit + q.length;
+
+    void addSearchable(String part) {
+      if (part.isEmpty) return;
+      final q = needle.toLowerCase();
+      if (q.isEmpty) {
+        spans.add(TextSpan(text: part));
+        return;
+      }
+      final lower = part.toLowerCase();
+      var at = 0;
+      while (true) {
+        final hit = lower.indexOf(q, at);
+        if (hit < 0) break;
+        if (hit > at) spans.add(TextSpan(text: part.substring(at, hit)));
+        spans.add(
+          TextSpan(
+            text: part.substring(hit, hit + q.length),
+            style: TextStyle(backgroundColor: accent.withValues(alpha: 0.28)),
+          ),
+        );
+        at = hit + q.length;
+      }
+      spans.add(TextSpan(text: part.substring(at)));
     }
-    spans.add(TextSpan(text: text.substring(at)));
+
+    var at = 0;
+    for (final (index, replacement) in widget.segment.replacements.indexed) {
+      if (replacement.start < at ||
+          replacement.end < replacement.start ||
+          replacement.end > text.length) {
+        continue;
+      }
+      addSearchable(text.substring(at, replacement.start));
+      spans.add(
+        TextSpan(
+          text: text.substring(replacement.start, replacement.end),
+          style: TextStyle(
+            backgroundColor: MacosColors.systemYellowColor.withValues(
+              alpha: 0.24,
+            ),
+            decoration: TextDecoration.underline,
+            decorationColor: MacosColors.systemYellowColor.withValues(
+              alpha: 0.8,
+            ),
+          ),
+          recognizer: _replacementTaps[index],
+          mouseCursor: SystemMouseCursors.click,
+        ),
+      );
+      at = replacement.end;
+    }
+    addSearchable(text.substring(at));
     return TextSpan(style: Type.body, children: spans);
   }
 
@@ -107,8 +178,8 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
             color: _copied
                 ? MacosTheme.of(context).primaryColor.withValues(alpha: 0.14)
                 : _hover
-                    ? Surface.hover(context)
-                    : MacosColors.transparent,
+                ? Surface.hover(context)
+                : MacosColors.transparent,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -120,13 +191,42 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
                   // ступень «между кнопками»: на восьми точках столбец
                   // прилипал к первому слову и переставал читаться числом.
                   padding: const EdgeInsets.only(
-                      right: Gap.control, top: Gap.tight),
+                    right: Gap.control,
+                    top: Gap.tight,
+                  ),
                   child: Text(
                     fmtTs(widget.segment.from).substring(0, 8),
-                    style: Type.timestamp.copyWith(color: Surface.secondaryText(context)),
+                    style: Type.timestamp.copyWith(
+                      color: Surface.secondaryText(context),
+                    ),
                   ),
                 ),
               Expanded(child: SelectableText.rich(_spans(context))),
+              if (widget.segment.replacements.isNotEmpty)
+                SizedBox(
+                  width: IconSize.toolbar + Gap.inner,
+                  height: IconSize.toolbar + Gap.inner,
+                  child: AnimatedOpacity(
+                    duration: Motion.dur(context, Motion.quick),
+                    opacity: _hover ? 1 : 0,
+                    child: MacosTooltip(
+                      message: AppLocalizations.of(
+                        context,
+                      ).tooltipUndoVoiceCommand,
+                      child: MacosIconButton(
+                        icon: const MacosIcon(
+                          CupertinoIcons.arrow_uturn_left,
+                          size: IconSize.toolbar,
+                        ),
+                        onPressed: _hover
+                            ? () => widget.onReplacementUndo(
+                                widget.segment.replacements.length - 1,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
               // Копирование — самостоятельная цель нажатия, а не отметка
               // при тексте: значок кнопочной ступени, и коробка вокруг
               // него шире значка на [Gap.inner], чтобы в неё попадали.
@@ -141,9 +241,13 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
                   opacity: _hover || _copied ? 1 : 0,
                   child: MacosIconButton(
                     icon: MacosIcon(
-                      _copied ? CupertinoIcons.checkmark_alt : CupertinoIcons.doc_on_doc,
+                      _copied
+                          ? CupertinoIcons.checkmark_alt
+                          : CupertinoIcons.doc_on_doc,
                       size: IconSize.toolbar,
-                      color: _copied ? MacosTheme.of(context).primaryColor : null,
+                      color: _copied
+                          ? MacosTheme.of(context).primaryColor
+                          : null,
                     ),
                     onPressed: _hover || _copied ? _copy : null,
                   ),
@@ -160,8 +264,7 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
 /// Полог при перетаскивании: материал приходит с лёгким перелётом —
 /// жест уже нёс импульс.
 class DropVeil extends StatelessWidget {
-  const DropVeil({
-    super.key,required this.active, this.compact = false});
+  const DropVeil({super.key, required this.active, this.compact = false});
   final bool active;
 
   /// Узкая колонка очереди: коту в ней не поместиться, и он там не нужен —
@@ -186,11 +289,18 @@ class DropVeil extends StatelessWidget {
                 // Снизу вчетверо больше, чем с боков: там лежит нижняя
                 // полоса окна, и вуаль не должна залезать под неё.
                 : const EdgeInsets.fromLTRB(
-                    Gap.item, Gap.item, Gap.item, Gap.item * 4),
+                    Gap.item,
+                    Gap.item,
+                    Gap.item,
+                    Gap.item * 4,
+                  ),
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: accent.withValues(alpha: 0.55), width: 1.5),
+              border: Border.all(
+                color: accent.withValues(alpha: 0.55),
+                width: 1.5,
+              ),
             ),
             child: Center(
               child: Column(
@@ -209,8 +319,9 @@ class DropVeil extends StatelessWidget {
                   Text(
                     AppLocalizations.of(context).dropVeilHint,
                     textAlign: TextAlign.center,
-                    style: (compact ? Type.caption : Type.emptyTitle)
-                        .copyWith(color: accent),
+                    style: (compact ? Type.caption : Type.emptyTitle).copyWith(
+                      color: accent,
+                    ),
                   ),
                 ],
               ),
