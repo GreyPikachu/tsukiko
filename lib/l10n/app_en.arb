@@ -532,6 +532,8 @@
   "skillForeign": "Taken by another skill — left alone",
   "skillFailed": "Could not write",
   "skillNoAgents": "No suitable agent found on this computer. The skill lives in the repository's skills folder and can be copied by hand.",
+  "sheetApplicationMenuTitle": "Application Menu",
+  "tooltipApplicationMenu": "All application commands",
   "menuConvertTranscript": "Convert Transcript…",
   "askConversionNeedsTimestampsTitle": "Timestamps are required",
   "askConversionNeedsTimestampsBody": "Plain text does not preserve segment boundaries. Choose SRT, VTT, JSON, or timed text.",

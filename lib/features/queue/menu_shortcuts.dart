@@ -83,7 +83,7 @@ List<MenuCommand> menuCommands(List<PlatformMenuItem> menus) {
         walk(item.members, section);
         continue;
       }
-      final label = _shortcutLabel(item.shortcut);
+      final label = menuShortcutLabel(item.shortcut);
       if (label == null) continue;
       out.add((menu: section, label: item.label, shortcut: label));
     }
@@ -97,7 +97,7 @@ List<MenuCommand> menuCommands(List<PlatformMenuItem> menus) {
 ///
 /// Модификаторы называются по-макосному — так они и записаны в пунктах
 /// меню; в слова и значки их переводит граница системы.
-String? _shortcutLabel(MenuSerializableShortcut? shortcut) {
+String? menuShortcutLabel(MenuSerializableShortcut? shortcut) {
   if (shortcut is! SingleActivator) return null;
   return os.menuShortcut([
     if (shortcut.control) 'ctrl',
