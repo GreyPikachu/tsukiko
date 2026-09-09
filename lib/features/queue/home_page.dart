@@ -180,7 +180,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     return MacosAlertDialog(
       appIcon: MacosIcon(
         ask.confirm ? CupertinoIcons.waveform_circle : CupertinoIcons.waveform,
-        size: 56,
+        size: IconSize.hero,
       ),
       title: Text(ask.title, style: Type.emptyTitle),
       message:
@@ -219,7 +219,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     await showMacosAlertDialog<void>(
       context: context,
       builder: (dialogContext) => MacosAlertDialog(
-        appIcon: const MacosIcon(CupertinoIcons.arrow_down_circle, size: 56),
+        appIcon: const MacosIcon(CupertinoIcons.arrow_down_circle, size: IconSize.hero),
         title: Text(l10n.updateFoundTitle(update.version), style: Type.emptyTitle),
         message: Text(
           update.notes.isEmpty ? l10n.updateFoundBody : update.notes,
@@ -259,22 +259,23 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 12),
+              padding: const EdgeInsets.fromLTRB(
+                  Gap.section, Gap.section, Gap.section, Gap.control),
               child: Text(l10n.sheetShortcutsTitle, style: Type.emptyTitle),
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(horizontal: Gap.section),
                 children: [
                   for (final section in _bySection(commands)) ...[
                     SectionTitle(section.key),
                     for (final c in section.value)
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        padding: const EdgeInsets.symmetric(vertical: Gap.hint),
                         child: Row(
                           children: [
                             Expanded(child: Text(c.label, style: Type.control)),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: Gap.item),
                             Text(
                               c.shortcut,
                               style: Type.timestamp.copyWith(
@@ -288,7 +289,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(Gap.edge),
               child: PushButton(
                 controlSize: ControlSize.large,
                 onPressed: () => Navigator.pop(sheetContext),
@@ -370,7 +371,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   void _about() => showMacosAlertDialog<void>(
         context: context,
         builder: (dialogContext) => MacosAlertDialog(
-          appIcon: const MacosIcon(CupertinoIcons.waveform_circle_fill, size: 56),
+          appIcon: const MacosIcon(CupertinoIcons.waveform_circle_fill, size: IconSize.hero),
           title: const Text(appName, style: Type.emptyTitle),
           message: Text(
             l10n.aboutBody,
@@ -869,7 +870,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// а не занимает место в панели инструментов всё время.
   Widget _findBar(QueueState s) => Container(
         height: 40,
-        padding: const EdgeInsets.fromLTRB(16, 0, 10, 0),
+        padding: const EdgeInsets.fromLTRB(Gap.item, 0, Gap.inner, 0),
         decoration: BoxDecoration(
           color: Surface.chrome(context),
           border: Border(bottom: BorderSide(color: Surface.hairline(context))),
@@ -895,14 +896,14 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: Gap.control),
             Text(
               _findSummary(s),
               style: Type.caption.copyWith(color: Surface.secondaryText(context)),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: Gap.inner),
             MacosIconButton(
-              icon: const MacosIcon(CupertinoIcons.xmark, size: 12),
+              icon: const MacosIcon(CupertinoIcons.xmark, size: IconSize.button),
               onPressed: _closeFind,
             ),
           ],
@@ -942,9 +943,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             // подписи разъезжаются. Сама галка была вдвое мельче
             // системной и стояла вплотную к тексту.
             SizedBox(
-              width: 22,
+              width: IconSize.button + Gap.inner,
               child: f.id == current
-                  ? const MacosIcon(CupertinoIcons.checkmark_alt, size: 15)
+                  ? const MacosIcon(CupertinoIcons.checkmark_alt,
+                      size: IconSize.button)
                   : null,
             ),
             Text(f.label),
@@ -986,7 +988,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     if (s.jobs.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 22),
+          padding: const EdgeInsets.symmetric(horizontal: Gap.edge),
           child: Text(
             l10n.emptyQueueHint(l10n.buttonAdd),
             textAlign: TextAlign.center,
@@ -1024,7 +1026,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       child: ReorderableListView.builder(
         scrollController: controller,
         buildDefaultDragHandles: false,
-        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        padding: const EdgeInsets.all(Gap.inner),
         onReorderItem: (from, to) => _send(JobsReordered(from, to)),
         itemCount: s.jobs.length,
         itemBuilder: (context, i) {
@@ -1128,7 +1130,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   }
 
   Widget _queueButtons(QueueState s) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        padding: const EdgeInsets.fromLTRB(
+            Gap.control, Gap.inner, Gap.control, Gap.control),
         child: Row(
           children: [
             Expanded(
@@ -1138,7 +1141,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                 child: Text(l10n.buttonAdd),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: Gap.control),
             PushButton(
               controlSize: ControlSize.regular,
               secondary: true,
@@ -1211,7 +1214,14 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     } else if (job.transcript == null && job.raw != null) {
       content = SingleChildScrollView(
         controller: _transcriptScroll,
-        padding: const EdgeInsets.fromLTRB(28, 20, 28, 64),
+        // Левый край тот же, что у списка фрагментов ниже: поле самого
+        // списка плюс поле его строки. Это одна и та же панель в двух
+        // видах, и текст в ней обязан начинаться в одном месте.
+        //
+        // Снизу вчетверо больше — там висит полоса состояния, и последняя
+        // строка не должна уезжать под неё.
+        padding: const EdgeInsets.fromLTRB(
+            Gap.edge + Gap.inner, Gap.edge, Gap.edge + Gap.inner, Gap.item * 4),
         child: SelectableText(job.raw!, style: Type.body),
       );
     } else {
@@ -1227,7 +1237,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       } else {
         content = ListView.builder(
           controller: _transcriptScroll,
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 66),
+          padding: const EdgeInsets.fromLTRB(
+              Gap.edge, Gap.edge, Gap.edge, Gap.item * 4),
           itemCount: segments.length,
           // Ключом служит сам сегмент: время начала у двух соседних
           // фрагментов совпадает (VAD режет по паузам и выдаёт их
@@ -1286,7 +1297,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
         child: Container(
           height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: Gap.item),
           decoration: BoxDecoration(
             color: Surface.chrome(context),
             border: Border(top: BorderSide(color: Surface.hairline(context))),
@@ -1295,11 +1306,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             children: [
               if (busy) ...[
                 SizedBox(
-                  width: 14,
-                  height: 14,
+                  width: IconSize.button,
+                  height: IconSize.button,
                   child: ProgressCircle(value: (job!.progress * 100).clamp(0, 100)),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: Gap.inner),
               ],
               Expanded(
                 child: AnimatedSwitcher(
@@ -1314,7 +1325,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
               ),
               if (eta != null && eta.inSeconds > 3)
                 Padding(
-                  padding: const EdgeInsets.only(right: 14),
+                  padding: const EdgeInsets.only(right: Gap.item),
                   child: Text(
                     l10n.statusRemainingTime(humanDuration(eta.inMilliseconds)),
                     style: Type.caption.copyWith(color: Surface.secondaryText(context)),
@@ -1322,7 +1333,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                 ),
               if (stats != null)
                 Padding(
-                  padding: const EdgeInsets.only(right: 14),
+                  padding: const EdgeInsets.only(right: Gap.item),
                   child: Text(
                     stats,
                     style: Type.caption.copyWith(color: Surface.secondaryText(context)),

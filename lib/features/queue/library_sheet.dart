@@ -153,17 +153,22 @@ class _LibrarySheetState extends State<LibrarySheet> {
         ? l10n.librarySourceGone(os.basename(link.path))
         : l10n.librarySourceUnknown;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+      // Сверху отступа не было вовсе, и строка о записи прилипала к
+      // последней строке расшифровки — читалась её продолжением, а не
+      // подписью к ней. Теперь она отделена ступенью «между кнопками»
+      // сверху и стоит ровно по тому же левому краю, что и сам текст.
+      padding: const EdgeInsets.fromLTRB(
+          Gap.edge, Gap.control, Gap.edge, Gap.control),
       child: Row(
         children: [
           MacosIcon(
             source != null
                 ? CupertinoIcons.waveform
                 : CupertinoIcons.waveform_path,
-            size: 13,
+            size: IconSize.inline,
             color: Surface.secondaryText(context),
           ),
-          const SizedBox(width: 7, height: 10),
+          const SizedBox(width: Gap.inner),
           Expanded(
             child: Text(
               says,
@@ -214,7 +219,8 @@ class _LibrarySheetState extends State<LibrarySheet> {
     child: Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 18, 16, 4),
+          padding: const EdgeInsets.fromLTRB(
+              Gap.section, Gap.edge, Gap.item, Gap.hint),
           child: Row(
             children: [
               // Заголовок посередине, кнопка справа — как в списках
@@ -250,7 +256,8 @@ class _LibrarySheetState extends State<LibrarySheet> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+          padding: const EdgeInsets.fromLTRB(
+              Gap.section, 0, Gap.section, Gap.control),
           child: Text(
             _entries.isEmpty
                 ? l10n.sheetLibraryEmpty
@@ -288,7 +295,7 @@ class _LibrarySheetState extends State<LibrarySheet> {
   );
 
   Widget _list() => ListView.builder(
-    padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+    padding: const EdgeInsets.fromLTRB(Gap.item, 0, Gap.inner, Gap.inner),
     itemCount: _entries.length,
     itemBuilder: (context, i) => _EntryRow(
       entry: _entries[i],
@@ -352,7 +359,10 @@ class _LibrarySheetState extends State<LibrarySheet> {
       );
     }
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(22, 4, 22, 12),
+      // Тот же левый и правый край, что у строки о записи под ней:
+      // два разных поля рядом читались бы как два разных столбца.
+      padding: const EdgeInsets.fromLTRB(
+          Gap.edge, Gap.control, Gap.edge, Gap.control),
       child: SelectableText(_text, style: Type.body),
     );
   }
@@ -370,11 +380,14 @@ class _LibrarySheetState extends State<LibrarySheet> {
   Widget _selectionButtons() {
     final all = _chosen.length == _entries.length;
     return Padding(
-      padding: const EdgeInsets.all(20),
+      // Поле по краям листа и ступень «между кнопками» между самими
+      // кнопками: на восьми точках соседние кнопки читались одной
+      // широкой полосой, а их зоны нажатия сходились вплотную.
+      padding: const EdgeInsets.all(Gap.edge),
       child: Wrap(
         alignment: WrapAlignment.end,
-        spacing: 8,
-        runSpacing: 8,
+        spacing: Gap.control,
+        runSpacing: Gap.inner,
         children: [
           PushButton(
             controlSize: ControlSize.large,
@@ -409,11 +422,14 @@ class _LibrarySheetState extends State<LibrarySheet> {
     // в строку не помещаются, а Row на нехватку места отвечает полосатой
     // лентой поверх интерфейса. Здесь они просто переносятся.
     return Padding(
-      padding: const EdgeInsets.all(20),
+      // Поле по краям листа и ступень «между кнопками» между самими
+      // кнопками: на восьми точках соседние кнопки читались одной
+      // широкой полосой, а их зоны нажатия сходились вплотную.
+      padding: const EdgeInsets.all(Gap.edge),
       child: Wrap(
         alignment: WrapAlignment.end,
-        spacing: 8,
-        runSpacing: 8,
+        spacing: Gap.control,
+        runSpacing: Gap.inner,
         children: [
           // Строка не выбрана или расшифровок нет вовсе — показывать
           // нечего, но открыть саму папку есть смысл всегда: человек
@@ -522,8 +538,8 @@ class _EntryRowState extends State<_EntryRow> {
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: Motion.dur(context, Motion.press),
-          margin: const EdgeInsets.only(bottom: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          margin: const EdgeInsets.only(bottom: Gap.tight),
+          padding: const EdgeInsets.all(Gap.inner),
           decoration: BoxDecoration(
             color: widget.selected
                 ? accent
@@ -541,7 +557,7 @@ class _EntryRowState extends State<_EntryRow> {
                 curve: Motion.curve(context, Motion.settleCurve),
                 child: widget.choosing
                     ? Padding(
-                        padding: const EdgeInsets.only(right: 9),
+                        padding: const EdgeInsets.only(right: Gap.inner),
                         child: MacosCheckbox(
                           value: widget.chosen,
                           onChanged: (_) => widget.onTap(),
@@ -570,7 +586,7 @@ class _EntryRowState extends State<_EntryRow> {
             color: widget.selected ? MacosColors.white : null,
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: Gap.tight),
         Text(
           // Папка, формат и дата: по ним запись и узнают через
           // полгода. Формат назван словом, а не расширением: «.srt»

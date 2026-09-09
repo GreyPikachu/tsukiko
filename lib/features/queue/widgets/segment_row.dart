@@ -101,8 +101,8 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
         child: AnimatedContainer(
           duration: Motion.dur(context, Motion.quick),
           curve: Motion.curve(context, Motion.quickCurve),
-          margin: const EdgeInsets.only(bottom: 4),
-          padding: const EdgeInsets.fromLTRB(8, 7, 6, 7),
+          margin: const EdgeInsets.only(bottom: Gap.tight),
+          padding: const EdgeInsets.all(Gap.inner),
           decoration: BoxDecoration(
             color: _copied
                 ? MacosTheme.of(context).primaryColor.withValues(alpha: 0.14)
@@ -116,16 +116,25 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
             children: [
               if (widget.showTimestamp)
                 Padding(
-                  padding: const EdgeInsets.only(right: 14, top: 2),
+                  // Время — отдельный столбец слева, и до текста от него
+                  // ступень «между кнопками»: на восьми точках столбец
+                  // прилипал к первому слову и переставал читаться числом.
+                  padding: const EdgeInsets.only(
+                      right: Gap.control, top: Gap.tight),
                   child: Text(
                     fmtTs(widget.segment.from).substring(0, 8),
                     style: Type.timestamp.copyWith(color: Surface.secondaryText(context)),
                   ),
                 ),
               Expanded(child: SelectableText.rich(_spans(context))),
+              // Копирование — самостоятельная цель нажатия, а не отметка
+              // при тексте: значок кнопочной ступени, и коробка вокруг
+              // него шире значка на [Gap.inner], чтобы в неё попадали.
+              // Раньше тут стоял значок в тринадцать точек — мельче
+              // соседнего времени записи, и найти его глазом было нечем.
               SizedBox(
-                width: 26,
-                height: 22,
+                width: IconSize.button + Gap.inner,
+                height: IconSize.button + Gap.inner,
                 child: AnimatedOpacity(
                   duration: Motion.dur(context, Motion.quick),
                   curve: Motion.curve(context, Motion.quickCurve),
@@ -133,7 +142,7 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
                   child: MacosIconButton(
                     icon: MacosIcon(
                       _copied ? CupertinoIcons.checkmark_alt : CupertinoIcons.doc_on_doc,
-                      size: 13,
+                      size: IconSize.button,
                       color: _copied ? MacosTheme.of(context).primaryColor : null,
                     ),
                     onPressed: _hover || _copied ? _copy : null,
@@ -173,8 +182,11 @@ class DropVeil extends StatelessWidget {
           scale: active ? 1 : 0.97,
           child: Container(
             margin: compact
-                ? const EdgeInsets.all(8)
-                : const EdgeInsets.fromLTRB(14, 14, 14, 54),
+                ? const EdgeInsets.all(Gap.inner)
+                // Снизу вчетверо больше, чем с боков: там лежит нижняя
+                // полоса окна, и вуаль не должна залезать под неё.
+                : const EdgeInsets.fromLTRB(
+                    Gap.item, Gap.item, Gap.item, Gap.item * 4),
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(14),
@@ -192,7 +204,7 @@ class DropVeil extends StatelessWidget {
                       height: 116,
                       interactive: false,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Gap.inner),
                   ],
                   Text(
                     AppLocalizations.of(context).dropVeilHint,
