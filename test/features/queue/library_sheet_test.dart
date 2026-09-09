@@ -96,6 +96,11 @@ void main() {
   testWidgets('выбор включается кнопкой, а убранное уходит из списка',
       (tester) async {
     await open(tester, root.path);
+    expect(
+      tester.getCenter(find.text('Выбрать')).dx,
+      lessThan(tester.getCenter(find.text('Прошлые расшифровки')).dx),
+      reason: '«Выбрать» стоит в левом углу шапки',
+    );
     // Пока «Выбрать» не нажали, список остаётся списком: галок нет.
     expect(find.byType(MacosCheckbox), findsNothing);
 
