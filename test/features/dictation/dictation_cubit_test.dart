@@ -37,7 +37,8 @@ void main() {
   });
 
   /// Дать очереди микрозадач провернуться: почти всё в кубите асинхронно.
-  Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 20));
+  Future<void> settle() =>
+      Future<void>.delayed(const Duration(milliseconds: 20));
 
   group('запись', () {
     test('начинается и переходит в распознавание', () async {
@@ -49,8 +50,7 @@ void main() {
       expect(cubit.state.phase, Phase.idle);
     });
 
-    test('второе нажатие во время записи ничего не начинает заново',
-        () async {
+    test('второе нажатие во время записи ничего не начинает заново', () async {
       await cubit.start();
       final startedAt = cubit.state.elapsed;
       await cubit.start();
@@ -78,12 +78,31 @@ void main() {
 
       final starting = cubit.start();
       await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(
+        cubit.state.phase,
+        Phase.recording,
+        reason: 'реакция видна сразу, пока система поднимает микрофон',
+      );
       await cubit.stop();
       await starting;
       await Future<void>.delayed(const Duration(milliseconds: 120));
 
       expect(cubit.state.phase, Phase.idle, reason: 'микрофон уже молчит');
     });
+
+    test(
+      'ошибка запуска микрофона не выдаётся за сохранённую запись',
+      () async {
+        native.recordPath = '';
+
+        await cubit.start();
+
+        expect(cubit.state.phase, Phase.idle);
+        expect(cubit.state.failure, contains('Не удалось запустить микрофон'));
+        expect(native.hudStates.last, 'failed');
+        expect(native.calls, isNot(contains('stopRecord')));
+      },
+    );
 
     test('отмена не из записи ничего не делает', () async {
       await cubit.cancel();
@@ -93,18 +112,24 @@ void main() {
   });
 
   group('вставка текста', () {
-    test('не удалась — текст не теряется, а уходит в буфер и в предупреждение',
-        () async {
-      native.pasteSucceeds = false;
-      await cubit.start();
-      await cubit.stop();
+    test(
+      'не удалась — текст не теряется, а уходит в буфер и в предупреждение',
+      () async {
+        native.pasteSucceeds = false;
+        await cubit.start();
+        await cubit.stop();
 
-      // Раньше сторона macOS отвечала «получилось» всегда, и панель
-      // показывала галочку над пропавшим текстом.
-      expect(cubit.state.failure, contains('буфер обмена'));
-      expect(cubit.state.failurePath, isNull, reason: 'запись тут ни при чём');
-      expect(native.hudStates.last, 'copied');
-    });
+        // Раньше сторона macOS отвечала «получилось» всегда, и панель
+        // показывала галочку над пропавшим текстом.
+        expect(cubit.state.failure, contains('буфер обмена'));
+        expect(
+          cubit.state.failurePath,
+          isNull,
+          reason: 'запись тут ни при чём',
+        );
+        expect(native.hudStates.last, 'copied');
+      },
+    );
 
     test('удалась — панель говорит «Готово» и молчит про беду', () async {
       await cubit.start();
@@ -122,8 +147,11 @@ void main() {
 
       await cubit.start();
       await cubit.abortTranscription();
-      expect(cubit.state.phase, Phase.recording,
-          reason: 'во время записи отменяют иначе — кнопкой «Отменить»');
+      expect(
+        cubit.state.phase,
+        Phase.recording,
+        reason: 'во время записи отменяют иначе — кнопкой «Отменить»',
+      );
     });
   });
 
@@ -159,8 +187,10 @@ void main() {
     });
 
     test('очистка полей отличима от «не передали»', () {
-      const withFailure =
-          DictationState(failure: 'беда', failurePath: '/tmp/a.wav');
+      const withFailure = DictationState(
+        failure: 'беда',
+        failurePath: '/tmp/a.wav',
+      );
       expect(withFailure.copyWith(last: 'x').failure, 'беда');
       expect(withFailure.copyWith(clearFailure: true).failure, isNull);
       expect(withFailure.copyWith(clearFailure: true).failurePath, isNull);
@@ -176,7 +206,10 @@ void main() {
       expect(three.models.length, 3);
       // Список входит в сравнение состояний: без этого смена набора
       // моделей не доходила бы до перерисовки панели.
-      expect(three == const DictationState(models: ['/a.bin', '/b.bin']), isFalse);
+      expect(
+        three == const DictationState(models: ['/a.bin', '/b.bin']),
+        isFalse,
+      );
     });
   });
 }
@@ -220,36 +253,39 @@ class _FakeNative {
 
   /// Насколько система тянет с ответом «микрофон готов».
   Duration recordDelay = Duration.zero;
+  String? recordPath = '/tmp/тест-диктовки.wav';
 
   static const _channel = MethodChannel('tsukiko/dictation');
 
   void install() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, (call) async {
-      calls.add(call.method);
-      switch (call.method) {
-        case 'record':
-          if (recordDelay > Duration.zero) await Future<void>.delayed(recordDelay);
-          return '/tmp/тест-диктовки.wav';
-        case 'stopRecord':
-          return null;
-        case 'level':
-          return 0.3;
-        case 'permissions':
-          return permitted;
-        case 'paste':
-          return pasteSucceeds;
-        case 'hud':
-          hudStates.add((call.arguments as Map)['state'] as String);
-          return null;
-        case 'requestModel':
-          return true;
-        case 'trash':
-          return true;
-        default:
-          return null;
-      }
-    });
+          calls.add(call.method);
+          switch (call.method) {
+            case 'record':
+              if (recordDelay > Duration.zero) {
+                await Future<void>.delayed(recordDelay);
+              }
+              return recordPath;
+            case 'stopRecord':
+              return null;
+            case 'level':
+              return 0.3;
+            case 'permissions':
+              return permitted;
+            case 'paste':
+              return pasteSucceeds;
+            case 'hud':
+              hudStates.add((call.arguments as Map)['state'] as String);
+              return null;
+            case 'requestModel':
+              return true;
+            case 'trash':
+              return true;
+            default:
+              return null;
+          }
+        });
   }
 
   void remove() {

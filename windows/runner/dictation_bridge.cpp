@@ -432,7 +432,14 @@ void DictationBridge::RegisterHandler(
       result->Success();
     } else if (method == "record") {
       std::string path = StartAudioRecording();
-      result->Success(flutter::EncodableValue(path));
+      // Пустая строка в Dart выглядит как настоящий путь. Из-за этого
+      // не поднявшийся микрофон отправлял в whisper файл с именем "",
+      // а человек получал ложное «запись сохранена» вместо причины.
+      if (path.empty()) {
+        result->Success();
+      } else {
+        result->Success(flutter::EncodableValue(path));
+      }
     } else if (method == "stopRecord") {
       std::string path = StopAudioRecording();
       result->Success(flutter::EncodableValue(path));
@@ -1046,6 +1053,16 @@ std::string DictationBridge::StartAudioRecording() {
   }
   ma_encoder_ = encoder;
 
+  if (HANDLE old = audio_ready_event_.exchange(nullptr)) CloseHandle(old);
+  HANDLE ready_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  audio_ready_event_.store(ready_event);
+  if (!ready_event) {
+    ma_encoder_uninit(encoder);
+    delete encoder;
+    ma_encoder_ = nullptr;
+    return "";
+  }
+
   auto* device = new ma_device();
   ma_device_config devConfig = ma_device_config_init(ma_device_type_capture);
   devConfig.capture.format = ma_format_s16;
@@ -1058,6 +1075,7 @@ std::string DictationBridge::StartAudioRecording() {
     ma_encoder_uninit(encoder);
     delete encoder;
     ma_encoder_ = nullptr;
+    CloseHandle(audio_ready_event_.exchange(nullptr));
     delete device;
     return "";
   }
@@ -1070,6 +1088,7 @@ std::string DictationBridge::StartAudioRecording() {
     ma_encoder_uninit(encoder);
     delete encoder;
     ma_encoder_ = nullptr;
+    CloseHandle(audio_ready_event_.exchange(nullptr));
     return "";
   }
 
@@ -1081,6 +1100,12 @@ std::string DictationBridge::StartAudioRecording() {
 std::string DictationBridge::StopAudioRecording() {
   if (!is_recording_) return current_record_path_;
 
+  // ma_device_start сообщает только о запуске устройства, не о том, что
+  // WASAPI уже отдал звук. Быстрое отпускание клавиши раньше закрывало
+  // устройство в этой щели и оставляло WAV без единого отсчёта. Ждём не
+  // произвольную задержку, а ровно первый callback; таймаут нужен для
+  // физически исчезнувшего или зависшего микрофона.
+  if (HANDLE ready = audio_ready_event_.load()) WaitForSingleObject(ready, 500);
   is_recording_ = false;
   if (ma_device_) {
     auto* device = static_cast<ma_device*>(ma_device_);
@@ -1095,6 +1120,7 @@ std::string DictationBridge::StopAudioRecording() {
     delete encoder;
     ma_encoder_ = nullptr;
   }
+  if (HANDLE ready = audio_ready_event_.exchange(nullptr)) CloseHandle(ready);
 
   ResetLevelMeter();
   return current_record_path_;
@@ -1118,6 +1144,11 @@ std::string DictationBridge::StopAudioRecording() {
 void DictationBridge::PushAudioFrames(const int16_t* samples, uint32_t frames,
                                       uint32_t sample_rate) {
   if (!samples || frames == 0 || sample_rate == 0) return;
+
+  // Callback пишет в encoder до этого вызова (см. AudioCaptureCallback),
+  // поэтому сигнал означает не просто «устройство ожило», а «в WAV уже
+  // попал хотя бы один блок, его можно безопасно закрывать».
+  if (HANDLE ready = audio_ready_event_.load()) SetEvent(ready);
 
   // Среднеквадратичное, а не пиковое: на macOS берётся averagePower —
   // средняя мощность за промежуток. По пику речь и щелчок мышью выглядят

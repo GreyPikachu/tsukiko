@@ -30,19 +30,22 @@ class DictationCubit extends Cubit<DictationState> {
   /// [server] подменяют только тесты: настоящий поднимает whisper-server
   /// и читает в память полтора гигабайта, а проверять надо не это.
   DictationCubit(this.bridge, {WhisperServer? server})
-      : super(const DictationState()) {
-    _server = server ??
+    : super(const DictationState()) {
+    _server =
+        server ??
         WhisperServer(idleTimeout: Duration(seconds: _settings.idleSeconds));
     _server.onChanged = _onServerChanged;
 
     bridge.events.listen(_onHotkey);
     // Кнопки плавающей панели — те же действия, что и клавишами, плюс
     // отмена уже идущего распознавания, которой у клавиш нет.
-    bridge.hudActions.listen((a) => switch (a) {
-          'cancel' => cancel(),
-          'abort' => abortTranscription(),
-          _ => stop(),
-        });
+    bridge.hudActions.listen(
+      (a) => switch (a) {
+        'cancel' => cancel(),
+        'abort' => abortTranscription(),
+        _ => stop(),
+      },
+    );
     bridge.panelShown.listen((_) => _onPanelShown());
     bridge.panelHidden.listen((_) => _onPanelHidden());
     // Очередь спрашивает, можно ли забрать модель. Отвечаем мы: диктовка
@@ -134,14 +137,14 @@ class DictationCubit extends Cubit<DictationState> {
   /// в очереди: фразы короткие, и на секундах тишины whisper сочиняет
   /// «Продолжение следует…».
   RunOptions get _options => RunOptions(
-        model: state.chosenModel,
-        lang: 'auto',
-        threads: _settings.threads,
-        prompt: _settings.prompt,
-        punctuate: _settings.punctuate,
-        vad: _hasVad,
-        vadModel: _hasVad ? vadModelPath : '',
-      );
+    model: state.chosenModel,
+    lang: 'auto',
+    threads: _settings.threads,
+    prompt: _settings.prompt,
+    punctuate: _settings.punctuate,
+    vad: _hasVad,
+    vadModel: _hasVad ? vadModelPath : '',
+  );
 
   bool _hasVad = false;
 
@@ -253,12 +256,14 @@ class DictationCubit extends Cubit<DictationState> {
     _syncMeter();
   }
 
-  void _onServerChanged() => _emit(state.copyWith(
-        serverUp: _server.up,
-        memoryMb: _server.up ? state.memoryMb : 0,
-        untilUnload: _server.untilUnload,
-        clearUnload: _server.untilUnload == null,
-      ));
+  void _onServerChanged() => _emit(
+    state.copyWith(
+      serverUp: _server.up,
+      memoryMb: _server.up ? state.memoryMb : 0,
+      untilUnload: _server.untilUnload,
+      clearUnload: _server.untilUnload == null,
+    ),
+  );
 
   Future<void> _tick() async {
     // Спрашиваем о разрешении каждую секунду: человек уходит выдавать его
@@ -277,10 +282,12 @@ class DictationCubit extends Cubit<DictationState> {
     // Раньше он был за тем же гейтом, что и замер памяти: панель открывали
     // и видели «освободится через 2:35», застывшее с прошлого раза, — а во
     // время диктовки модель вообще никуда не освобождается, её держит аренда.
-    _emit(state.copyWith(
-      untilUnload: _server.untilUnload,
-      clearUnload: _server.untilUnload == null,
-    ));
+    _emit(
+      state.copyWith(
+        untilUnload: _server.untilUnload,
+        clearUnload: _server.untilUnload == null,
+      ),
+    );
 
     // А вот память сервера считает отдельная утилита, то есть целый процесс
     // на каждый замер. Вот его и придерживаем: число видно только в панели.
@@ -318,7 +325,9 @@ class DictationCubit extends Cubit<DictationState> {
     _vadDownload = null;
     _hasVad = path != null;
     if (isClosed) return;
-    _emit(state.copyWith(clearVad: true, vadError: path == null ? d.error : null));
+    _emit(
+      state.copyWith(clearVad: true, vadError: path == null ? d.error : null),
+    );
   }
 
   /// Повтор после неудачи. Недокачанное лежит в «.part», так что второй
@@ -373,7 +382,20 @@ class DictationCubit extends Cubit<DictationState> {
 
   Future<void> _beginRecording() async {
     _aborted = false;
-    _emit(state.copyWith(clearFailure: true));
+    // Реакция на клавишу должна быть мгновенной. На Windows один только
+    // подъём WASAPI занимает заметное время; прежде всё это время панель
+    // молчала и казалось, что хоткей не сработал. Запуск микрофона всё ещё
+    // ждём ниже, но состояние и HUD показываем сразу.
+    _startedAt = DateTime.now();
+    _emit(
+      state.copyWith(
+        phase: Phase.recording,
+        elapsed: Duration.zero,
+        clearFailure: true,
+      ),
+    );
+    if (_settings.hud) unawaited(bridge.hud(HudState.recording));
+    _syncMeter();
 
     // Сервер поднимается параллельно записи: пока человек говорит, модель
     // успевает загрузиться, и после отпускания клавиши ждать уже нечего.
@@ -393,15 +415,19 @@ class DictationCubit extends Cubit<DictationState> {
     unawaited(_bringingUp);
 
     final path = await bridge.startRecording();
-    if (path == null) {
+    if (path == null || path.isEmpty) {
+      _stopMeter();
       _server.release();
+      if (_settings.hud) unawaited(bridge.hud(HudState.failed));
+      _emit(
+        state.copyWith(
+          phase: Phase.idle,
+          failure: currentL10n().errorRecordingStart,
+        ),
+      );
       return;
     }
     _wav = path;
-    _startedAt = DateTime.now();
-    _emit(state.copyWith(phase: Phase.recording, elapsed: Duration.zero));
-    if (_settings.hud) unawaited(bridge.hud(HudState.recording));
-    _syncMeter();
   }
 
   Future<void> stop() async {
@@ -443,11 +469,11 @@ class DictationCubit extends Cubit<DictationState> {
           failurePath = saved ?? path;
           failure = _aborted
               ? saved == null
-                  ? currentL10n().dictationAbortedNoSave(path)
-                  : currentL10n().dictationAbortedSaved
+                    ? currentL10n().dictationAbortedNoSave(path)
+                    : currentL10n().dictationAbortedSaved
               : saved == null
-                  ? currentL10n().dictationFailedNoSave(path)
-                  : currentL10n().dictationFailedSaved(saved);
+              ? currentL10n().dictationFailedNoSave(path)
+              : currentL10n().dictationFailedSaved(saved);
         } else {
           _discard(path);
           if (text.isNotEmpty) {
@@ -478,24 +504,28 @@ class DictationCubit extends Cubit<DictationState> {
     // молча — иначе человек так и не узнает, что записи он лишился.
     // Исходы разные: пропала запись, пропала только вставка, или мы сами
     // прервали счёт, — и говорить о них одним и тем же нельзя.
-    await bridge.hud(ok
-        ? HudState.done
-        : silent
-            ? HudState.silent
-            : _aborted
-                ? HudState.cancelled
-                : failurePath != null
-                    ? HudState.failed
-                    : failure != null
-                        ? HudState.copied
-                        : HudState.hidden);
+    await bridge.hud(
+      ok
+          ? HudState.done
+          : silent
+          ? HudState.silent
+          : _aborted
+          ? HudState.cancelled
+          : failurePath != null
+          ? HudState.failed
+          : failure != null
+          ? HudState.copied
+          : HudState.hidden,
+    );
     if (isClosed) return;
-    _emit(state.copyWith(
-      phase: Phase.idle,
-      failure: failure,
-      failurePath: failurePath,
-      clearFailure: failure == null,
-    ));
+    _emit(
+      state.copyWith(
+        phase: Phase.idle,
+        failure: failure,
+        failurePath: failurePath,
+        clearFailure: failure == null,
+      ),
+    );
   }
 
   /// Передумал. Записанное выбрасываем, ничего не распознаём и не
@@ -549,10 +579,12 @@ class DictationCubit extends Cubit<DictationState> {
     _meter = Timer.periodic(const Duration(milliseconds: 100), (_) async {
       final level = await bridge.level();
       if (isClosed) return;
-      _emit(state.copyWith(
-        level: level,
-        elapsed: DateTime.now().difference(_startedAt ?? DateTime.now()),
-      ));
+      _emit(
+        state.copyWith(
+          level: level,
+          elapsed: DateTime.now().difference(_startedAt ?? DateTime.now()),
+        ),
+      );
     });
   }
 
@@ -606,11 +638,11 @@ class DictationCubit extends Cubit<DictationState> {
     if (path == null) return;
     final gone = await bridge.trash(path);
     if (isClosed) return;
-    _emit(gone
-        ? state.copyWith(clearFailure: true)
-        : state.copyWith(
-            failure: currentL10n().recordingTrashFailed(path),
-          ));
+    _emit(
+      gone
+          ? state.copyWith(clearFailure: true)
+          : state.copyWith(failure: currentL10n().recordingTrashFailed(path)),
+    );
   }
 
   /// Показать спасённую запись в проводнике — оттуда её перетаскивают
@@ -629,10 +661,12 @@ class DictationCubit extends Cubit<DictationState> {
   /// исправит, — и само сообщение тоже не вечное: сказали и убрали,
   /// иначе панель так и стоит с надписью о том, чего уже не вернуть.
   void _reportGone() {
-    _emit(state.copyWith(
-      failure: currentL10n().recordingGoneExternally,
-      clearFailurePath: true,
-    ));
+    _emit(
+      state.copyWith(
+        failure: currentL10n().recordingGoneExternally,
+        clearFailurePath: true,
+      ),
+    );
     Future.delayed(const Duration(seconds: 6), () {
       if (isClosed || state.failurePath != null) return;
       if (state.failure == currentL10n().recordingGoneExternally) {

@@ -876,6 +876,7 @@
   "hudSilent": "Ничего не записалось",
   "jobDetailSilent": "В записи нет звука",
   "errorSilentRecording": "Записывать было нечего: микрофон не отдал ни одного отсчёта",
+  "errorRecordingStart": "Не удалось запустить микрофон. Проверьте, что он подключён и разрешён для tsukiko.",
   "jobDetailWhisperFailed": "whisper-cli не справился с этим файлом",
   "statusRecognitionFailed": "Не удалось распознать «{name}»",
   "@statusRecognitionFailed": {
