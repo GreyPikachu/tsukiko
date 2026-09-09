@@ -48,7 +48,7 @@ void main() {
       home: LibrarySheet(
         root: at,
         onOpenInQueue: (_) {},
-        onOpenSource: opened.add,
+        onOpenSource: (audio, transcript) => opened.add(audio),
         onPointAtSource: (transcript) async {
           final chosen = pointAt;
           if (chosen != null) Sources.remember(at, [transcript], chosen);

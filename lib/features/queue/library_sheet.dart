@@ -54,9 +54,11 @@ class LibrarySheet extends StatefulWidget {
   final ValueChanged<String> onOpenInQueue;
 
   /// Положить в очередь саму запись — тот звук, из которого расшифровка
-  /// вышла. Отсюда её можно посчитать другой моделью или нарезать
-  /// субтитры заново, чего с одним текстом уже не сделать.
-  final ValueChanged<String> onOpenSource;
+  /// вышла, вместе с самой расшифровкой. Отсюда её можно посчитать
+  /// другой моделью или нарезать субтитры заново, чего с одним текстом
+  /// уже не сделать, — а готовый текст при этом виден сразу, а не прячется
+  /// за «готово к распознаванию».
+  final void Function(String audio, String transcript) onOpenSource;
 
   /// Спросить, где запись лежит теперь, и связать её с расшифровкой.
   /// Возвращает путь, если человек его назвал.
@@ -413,11 +415,19 @@ class _LibrarySheetState extends State<LibrarySheet> {
         spacing: 8,
         runSpacing: 8,
         children: [
+          // Строка не выбрана или расшифровок нет вовсе — показывать
+          // нечего, но открыть саму папку есть смысл всегда: человек
+          // пришёл сюда за файлами, и серая кнопка на пустом списке
+          // была бы тупиком.
           PushButton(
             controlSize: ControlSize.large,
             secondary: true,
-            onPressed: shown == null ? null : () => widget.onReveal(shown.path),
-            child: Text(l10n.buttonShowInFileManager(os.fileManagerName)),
+            onPressed: () => widget.onReveal(shown?.path ?? widget.root),
+            child: Text(
+              shown == null
+                  ? l10n.buttonOpenLibraryFolder
+                  : l10n.buttonShowInFileManager(os.fileManagerName),
+            ),
           ),
           // Запись на месте — её можно взять в работу. Записи нет или
           // связи нет — на том же месте кнопка «Указать запись…»:
@@ -428,7 +438,7 @@ class _LibrarySheetState extends State<LibrarySheet> {
               secondary: true,
               onPressed: () {
                 Navigator.pop(context);
-                widget.onOpenSource(source);
+                widget.onOpenSource(source, shown!.path);
               },
               child: Text(l10n.buttonOpenSourceInQueue),
             )

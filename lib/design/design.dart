@@ -182,6 +182,21 @@ class Surface {
     return color == null ? null : BoxDecoration(color: color);
   }
 
+  /// Значок в панели инструментов: доступный и недоступный.
+  ///
+  /// macos_ui красит их одинаково — половинной прозрачностью и на
+  /// доступном, и на сером. То есть по виду кнопки нельзя было понять,
+  /// нажмётся она или нет: человек жал «Сохранить» на пустой очереди
+  /// и ничего не происходило. Недоступное должно быть видно
+  /// недоступным.
+  static Color toolbarIcon(BuildContext context, {required bool enabled}) {
+    final dark = isDark(context);
+    if (enabled) {
+      return dark ? const Color(0xE6FFFFFF) : const Color(0xD9000000);
+    }
+    return dark ? const Color(0x40FFFFFF) : const Color(0x40000000);
+  }
+
   /// Цвет подсказки в пустом поле ввода. Умолчание macos_ui —
   /// CupertinoColors.placeholderText, а он разрешается через CupertinoTheme,
   /// которого под MacosApp нет: на тёмной теме получалось тёмное на тёмном.
