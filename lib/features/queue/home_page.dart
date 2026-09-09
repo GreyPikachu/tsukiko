@@ -40,6 +40,7 @@ import 'widgets/queue_row.dart';
 import 'widgets/scope_banner.dart';
 import 'widgets/segment_row.dart';
 import 'windows_menu_sheet.dart';
+import 'windows_pane_layout.dart';
 import '../../core/labels.dart';
 
 part 'home_menus.dart';
@@ -693,40 +694,19 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     );
   }
 
-  /// Окно с подложкой под ним — там, где системного материала окна нет.
-  ///
-  /// Прошлая правка (`Sidebar.decoration`) не помогла, и вот почему.
-  /// macos_ui заворачивает содержимое левой колонки в
-  /// `DecoratedBox(color: чёрный, backgroundBlendMode: BlendMode.clear)` —
-  /// он нарочно вырезает дыру в кадре, чтобы сквозь неё был виден
-  /// NSVisualEffectView. Дыра прорезается поверх всего, что нарисовано
-  /// ниже в том же слое, — в том числе поверх нашего цвета из decoration.
-  /// На macOS в дыре материал, на Windows за ней нет ничего: чернота.
-  /// Правая колонка цела как раз потому, что там этой дыры нет.
-  ///
-  /// Закрасить дыру изнутри нельзя целиком: часть её — поля, которые
-  /// рисует сам macos_ui, и до них из `builder` не дотянуться. Поэтому
-  /// вместо спора с ним даём вырезанию отдельный слой и кладём подложку
-  /// под него: чистит оно тогда только свой слой, а сквозь очищенное
-  /// видно наш цвет.
-  ///
-  /// Слой заводится `ClipRect(clipBehavior: antiAliasWithSaveLayer)`.
-  /// RepaintBoundary здесь не годится, хотя и просится: его слой —
-  /// смещение, а не отдельная поверхность, и вырезание пробивает его
-  /// насквозь. Проверено: test/features/queue/sidebar_ground_test.dart.
-  ///
-  /// Цена — буфер размером с окно на каждую перерисовку. Дёшево это
-  /// не назвать, но дешевле, чем перекладывать всю боковую колонку
-  /// мимо macos_ui, а на macOS этого не происходит вовсе.
+  /// На macOS колонки рисует [MacosWindow] поверх системного материала.
+  /// На Windows та же пакетная раскладка вырезает прозрачную дыру и
+  /// требует полноэкранного saveLayer, поэтому там — обычные непрозрачные
+  /// колонки без дорогостоящего промежуточного буфера.
   Widget _windowBody(QueueState s) {
-    final window = _macosWindow(s);
-    final ground = Surface.sidebar(context);
-    if (ground == null) return window;
-    return Stack(
-      children: [
-        Positioned.fill(child: ColoredBox(color: ground)),
-        ClipRect(clipBehavior: Clip.antiAliasWithSaveLayer, child: window),
-      ],
+    if (os.hasWindowMaterial) return _macosWindow(s);
+    return WindowsPaneLayout(
+      leftBuilder: (context, controller) => _queue(s, controller),
+      leftBottom: _queueButtons(s),
+      center: _contentScaffold(s),
+      rightBuilder: s.downloadProgress == null
+          ? (context, controller) => _inspector(s, controller)
+          : null,
     );
   }
 
@@ -760,26 +740,27 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                   decoration: Surface.sidebarDecoration(context),
                   builder: (context, controller) => _inspector(s, controller),
                 ),
-          child: MacosScaffold(
-            toolBar: _toolbar(s),
-            children: [
-              ContentArea(
-                builder: (context, _) => Stack(
-                  children: [
-                    Positioned.fill(
-                      child: Column(children: [
-                        if (_findOpen) _findBar(s),
-                        Expanded(child: _transcriptArea(s)),
-                      ]),
-                    ),
-                    Positioned(
-                        left: 0, right: 0, bottom: 0, child: _statusBar(s)),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          child: _contentScaffold(s),
         ),
+      );
+
+  Widget _contentScaffold(QueueState s) => MacosScaffold(
+        toolBar: _toolbar(s),
+        children: [
+          ContentArea(
+            builder: (context, _) => Stack(
+              children: [
+                Positioned.fill(
+                  child: Column(children: [
+                    if (_findOpen) _findBar(s),
+                    Expanded(child: _transcriptArea(s)),
+                  ]),
+                ),
+                Positioned(left: 0, right: 0, bottom: 0, child: _statusBar(s)),
+              ],
+            ),
+          ),
+        ],
       );
 
   /// Значок панели инструментов, окрашенный по доступности.
@@ -803,7 +784,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       // Имя окна остаётся читаемым, но не забирает ширину трёх
       // кнопок. Полное имя записи всё равно видно в очереди.
       titleWidth: 152,
-      enableBlur: true,
+      enableBlur: os.hasWindowMaterial,
       // Кромка появляется только когда под панель что-то уехало.
       dividerColor: _scrolled ? Surface.hairline(context) : MacosColors.transparent,
       actions: [
@@ -1406,10 +1387,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     final eta = busy ? job!.eta : null;
     final stats = busy ? null : _stats(s);
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-        child: Container(
+    final bar = Container(
           height: 40,
           padding: const EdgeInsets.symmetric(horizontal: Gap.item),
           decoration: BoxDecoration(
@@ -1465,7 +1443,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
               ),
             ],
           ),
-        ),
+        );
+    if (!os.hasWindowMaterial) return bar;
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+        child: bar,
       ),
     );
   }
