@@ -68,6 +68,12 @@ SetupIconFile=..\windows\runner\resources\app_icon.ico
 ; так что на любом обычном масштабе растягивать почти нечего.
 WizardImageFile=..\design\installer-banner-164x314.bmp,..\design\installer-banner-192x386.bmp,..\design\installer-banner-292x534.bmp,..\design\installer-banner-386x690.bmp,..\design\installer-banner-423x797.bmp,..\design\installer-banner-637x1200.bmp
 WizardSmallImageFile=..\design\installer-logo-55x58.bmp,..\design\installer-logo-64x68.bmp,..\design\installer-logo-92x97.bmp,..\design\installer-logo-119x123.bmp,..\design\installer-logo-128x132.bmp,..\design\installer-logo-138x140.bmp,..\design\installer-logo-192x192.bmp
+; В dynamic-режиме тёмная тема берёт картинки из отдельных
+; *DynamicDark-директив. Без них новый Inno Setup подставляет
+; свои штатные картинки. Наши работают на обеих подложках,
+; поэтому списки нарочно те же.
+WizardImageFileDynamicDark=..\design\installer-banner-164x314.bmp,..\design\installer-banner-192x386.bmp,..\design\installer-banner-292x534.bmp,..\design\installer-banner-386x690.bmp,..\design\installer-banner-423x797.bmp,..\design\installer-banner-637x1200.bmp
+WizardSmallImageFileDynamicDark=..\design\installer-logo-55x58.bmp,..\design\installer-logo-64x68.bmp,..\design\installer-logo-92x97.bmp,..\design\installer-logo-119x123.bmp,..\design\installer-logo-128x132.bmp,..\design\installer-logo-138x140.bmp,..\design\installer-logo-192x192.bmp
 WizardImageStretch=yes
 ; Значок в шапке лежит 32-битным BMP с прозрачностью, и «defined» значит,
 ; что цвет в нём не помножен на альфу заранее. Без этой строки Inno
