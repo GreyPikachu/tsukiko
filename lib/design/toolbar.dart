@@ -145,7 +145,10 @@ class _AppToolBarState extends State<ToolBar> {
       // там нет вовсе, и тот же отступ был бы просто дырой слева.
       data: MediaQuery.of(context).copyWith(
         padding: EdgeInsets.only(
-          left: defaultTargetPlatform == TargetPlatform.macOS ? 70 : 0,
+          left: defaultTargetPlatform == TargetPlatform.macOS &&
+                  !(scope?.isSidebarShown ?? false)
+              ? 70
+              : 0,
         ),
       ),
       child: _ground(
@@ -163,32 +166,39 @@ class _AppToolBarState extends State<ToolBar> {
                       color: widget.dividerColor ?? theme.dividerColor),
                 ),
               ),
-              child: NavigationToolbar(
-                middle: title,
-                middleSpacing: Gap.inner,
-                trailing: OverflowHandler(
-                  // Заголовок места пунктам не уступает: его ширину
-                  // считаем занятой заранее.
-                  overflowBreakpoint: title == null ? 0 : widget.titleWidth,
-                  overflowWidget: _MoreButton(
-                    items: [
-                      for (final a in overflowed)
-                        a.build(context, ToolbarItemDisplayMode.overflowed),
-                    ],
-                  ),
-                  overflowChangedCallback: (hidden) =>
-                      setState(() => _hidden = hidden.length),
+              // Заголовок и кнопки идут одним рядом от левого края.
+              // NavigationToolbar ставил заголовок в геометрический центр,
+              // а кнопки прижимал вправо: между ними возникала пустыня,
+              // хотя последние значки уже уходили под многоточие. Row отдаёт
+              // OverflowHandler ровно остаток, поэтому ширину заголовка второй
+              // раз в overflowBreakpoint вычитать не нужно.
+              child: SafeArea(
+                top: false,
+                right: false,
+                bottom: false,
+                child: Row(
                   children: [
-                    for (final a in actions)
-                      a.build(context, ToolbarItemDisplayMode.inToolbar),
+                    if (title != null) ...[
+                      title,
+                      const SizedBox(width: Gap.inner),
+                    ],
+                    Expanded(
+                      child: OverflowHandler(
+                        overflowWidget: _MoreButton(
+                          items: [
+                            for (final a in overflowed)
+                              a.build(context, ToolbarItemDisplayMode.overflowed),
+                          ],
+                        ),
+                        overflowChangedCallback: (hidden) =>
+                            setState(() => _hidden = hidden.length),
+                        children: [
+                          for (final a in actions)
+                            a.build(context, ToolbarItemDisplayMode.inToolbar),
+                        ],
+                      ),
+                    ),
                   ],
-                ),
-                leading: SafeArea(
-                  top: false,
-                  right: false,
-                  bottom: false,
-                  left: !(scope?.isSidebarShown ?? false),
-                  child: const SizedBox.shrink(),
                 ),
               ),
             ),

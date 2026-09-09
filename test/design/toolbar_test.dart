@@ -69,6 +69,22 @@ void main() {
     expect(icon(CupertinoIcons.chevron_right_2), findsNothing);
   });
 
+  testWidgets('кнопки начинаются сразу за заголовком', (tester) async {
+    await pump(
+      tester,
+      AppToolBar(
+        title: const Text('tsukiko'),
+        titleWidth: 152,
+        actions: buttons(2),
+      ),
+    );
+
+    final title = tester.getRect(find.text('tsukiko'));
+    final first = tester.getRect(icon(CupertinoIcons.add).first);
+    expect(first.left, greaterThan(title.right));
+    expect(first.left - title.right, lessThan(130));
+  });
+
   test('пункт под многоточием не теряет выбранный формат', () {
     expect(checkedOverflowLabel('Текст', checked: true), '✓ Текст');
     expect(checkedOverflowLabel('Субтитры SRT', checked: false), '  Субтитры SRT');
