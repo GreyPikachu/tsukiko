@@ -1404,6 +1404,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           changed: own == null ? const [] : own.diffAgainst(s.defaults),
           onReset: own == null ? null : _sendResetOverrides,
           onMakeDefault: own == null ? null : _sendMakeDefault,
+          onOpenSettings: () => _openSettings('transcriber'),
         ),
         // Беда важнее настроек: она стоит первой, до модели и языка.
         // Здесь же единственное место, где длинную ошибку видно целиком —
@@ -1506,19 +1507,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         Hint(l10n.hintPromptHelps),
 
         // Остальное — куда сохранять текст, диктовка, склад моделей,
-        // поведение приложения — живёт в своём окне. Дорога туда должна
-        // быть видна и отсюда.
+        // поведение приложения — живёт в своём окне. Дорога туда теперь
+        // закреплена в правом верхнем углу первой плашки: до неё не нужно
+        // прокручивать весь инспектор.
         const SizedBox(height: Gap.section),
-        // Открываем вкладку расшифровщика: из главного окна следующий
-        // вопрос — что станет с готовым текстом, а не как настроена
-        // диктовка. Вкладки в окне рядом, промахнуться некуда.
-        PushButton(
-          controlSize: ControlSize.regular,
-          secondary: true,
-          onPressed: () => _openSettings('transcriber'),
-          child: Text(l10n.buttonTranscriptionSettingsEllipsis(os.settingsShortcut)),
-        ),
-        const SizedBox(height: Gap.item),
         Text(
           // Чей движок работает — видно сразу. На системном мы за поведение
           // не отвечаем: в старых сборках нет и половины наших флагов.

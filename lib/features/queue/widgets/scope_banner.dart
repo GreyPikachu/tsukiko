@@ -15,12 +15,14 @@ class ScopeBanner extends StatelessWidget {
     required this.changed,
     required this.onReset,
     required this.onMakeDefault,
+    required this.onOpenSettings,
   });
 
   final int selection;
   final String? name;
   final List<String> changed;
   final VoidCallback? onReset, onMakeDefault;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +67,21 @@ class ScopeBanner extends StatelessWidget {
               Expanded(
                 child: Text(title,
                     maxLines: 1, overflow: TextOverflow.ellipsis, style: Type.fileName),
+              ),
+              const SizedBox(width: Gap.inner),
+              MacosTooltip(
+                message: l10n.buttonTranscriptionSettingsEllipsis('').trim(),
+                child: MacosIconButton(
+                  icon: const MacosIcon(
+                    CupertinoIcons.gear,
+                    size: IconSize.button,
+                  ),
+                  boxConstraints: const BoxConstraints.tightFor(
+                    width: IconSize.button + Gap.control,
+                    height: IconSize.button + Gap.control,
+                  ),
+                  onPressed: onOpenSettings,
+                ),
               ),
             ],
           ),
