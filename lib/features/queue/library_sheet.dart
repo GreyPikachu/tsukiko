@@ -223,21 +223,13 @@ class _LibrarySheetState extends State<LibrarySheet> {
               Gap.section, Gap.edge, Gap.item, Gap.hint),
           child: Row(
             children: [
-              // Заголовок посередине, кнопка справа — как в списках
-              // системы. Ширина под кнопку отведена и слева, иначе
+              // Кнопка в левом углу, заголовок посередине. Такая же
+              // ширина отведена справа, иначе
               // заголовок стоял бы не по центру окна.
-              const SizedBox(width: 96),
-              Expanded(
-                child: Text(
-                  l10n.sheetLibraryTitle,
-                  textAlign: TextAlign.center,
-                  style: Type.emptyTitle,
-                ),
-              ),
               SizedBox(
                 width: 96,
                 child: Align(
-                  alignment: Alignment.centerRight,
+                  alignment: Alignment.centerLeft,
                   child: _entries.isEmpty
                       ? null
                       : PushButton(
@@ -252,6 +244,14 @@ class _LibrarySheetState extends State<LibrarySheet> {
                         ),
                 ),
               ),
+              Expanded(
+                child: Text(
+                  l10n.sheetLibraryTitle,
+                  textAlign: TextAlign.center,
+                  style: Type.emptyTitle,
+                ),
+              ),
+              const SizedBox(width: 96),
             ],
           ),
         ),
