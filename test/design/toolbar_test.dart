@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:macos_ui/macos_ui.dart';
 import 'package:tsukiko/design/toolbar.dart';
+import 'package:tsukiko/design/design.dart';
 import 'package:tsukiko/l10n/gen/app_localizations.dart';
 
 /// Панель инструментов: список спрятанного открывается многоточием,
@@ -71,5 +72,35 @@ void main() {
   test('пункт под многоточием не теряет выбранный формат', () {
     expect(checkedOverflowLabel('Текст', checked: true), '✓ Текст');
     expect(checkedOverflowLabel('Субтитры SRT', checked: false), '  Субтитры SRT');
+  });
+
+  testWidgets('список форматов выглядит доступным', (tester) async {
+    await pump(
+      tester,
+      AppToolBar(
+        actions: [
+          AppToolBarPullDownButton(
+            label: 'Формат копирования',
+            icon: CupertinoIcons.doc_on_clipboard,
+            items: [
+              MacosPulldownMenuItem(
+                label: 'Текст',
+                title: const Text('Текст'),
+                onTap: () {},
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    final theme = tester.widget<MacosPulldownButtonTheme>(
+      find.byType(MacosPulldownButtonTheme),
+    );
+    final context = tester.element(find.byType(MacosPulldownButton));
+    expect(
+      theme.data.iconColor,
+      Surface.toolbarIcon(context, enabled: true),
+    );
   });
 }
