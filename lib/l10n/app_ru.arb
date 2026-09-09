@@ -1339,6 +1339,8 @@
   "skillForeign": "Место занято чужим скиллом — не тронули",
   "skillFailed": "Не удалось записать",
   "skillNoAgents": "Ни одного подходящего агента на компьютере не найдено. Скилл лежит в папке skills репозитория — его можно положить руками.",
+  "sheetApplicationMenuTitle": "Меню приложения",
+  "tooltipApplicationMenu": "Все команды приложения",
   "menuConvertTranscript": "Преобразовать расшифровку…",
   "askConversionNeedsTimestampsTitle": "Не хватает тайм-кодов",
   "askConversionNeedsTimestampsBody": "Обычный текст не хранит границ фрагментов. Выберите SRT, VTT, JSON или текст с тайм-кодами.",

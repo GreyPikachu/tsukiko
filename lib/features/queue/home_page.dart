@@ -39,6 +39,7 @@ import 'widgets/chrome.dart';
 import 'widgets/queue_row.dart';
 import 'widgets/scope_banner.dart';
 import 'widgets/segment_row.dart';
+import 'windows_menu_sheet.dart';
 import '../../core/labels.dart';
 
 part 'home_menus.dart';
@@ -314,6 +315,13 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       ),
     );
   }
+
+  /// На Windows родная строка меню не рисуется. Показываем то же
+  /// дерево внутри окна — вместе с доступностью и теми же сочетаниями.
+  void _showWindowsMenu(QueueState s) => showMacosSheet<void>(
+    context: context,
+    builder: (_) => WindowsMenuSheet(sections: windowsMenuSections(_menus(s))),
+  );
 
   /// Прошлые расшифровки — всё, что накопила библиотека.
   ///
@@ -806,6 +814,14 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           tooltipMessage: l10n.tooltipAddAudioShortcut,
           onPressed: _pickFiles,
         ),
+        if (!os.hasSystemMenuBar)
+          ToolBarIconButton(
+            label: l10n.sheetApplicationMenuTitle,
+            icon: _toolIcon(CupertinoIcons.line_horizontal_3, on: true),
+            showLabel: false,
+            tooltipMessage: l10n.tooltipApplicationMenu,
+            onPressed: () => _showWindowsMenu(s),
+          ),
         // Рядом с «Добавить», и это одно и то же действие с двух сторон:
         // взять в работу новую запись или вернуться к разобранной.
         ToolBarIconButton(
