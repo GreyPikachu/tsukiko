@@ -1,0 +1,34 @@
+Подсказка должна жить отдельно от текста предыдущего окна.
+
+Tsukiko запускает whisper с `-mc 0`, чтобы не переносить сорвавшийся
+в повтор текст между тридцатисекундными окнами, и одновременно с
+`--carry-initial-prompt`, чтобы словарь и стиль попадали в каждое окно.
+
+В whisper.cpp 1.9.3 обе вещи делят один бюджет: `-mc 0` делает
+max_prompt_ctx нулевым, поэтому переданная через `--prompt` строка
+токенизируется, но ни один её токен не попадает в декодер.
+
+Патч разделяет статическую подсказку и динамическую историю:
+
+* carry-initial-prompt получает обычные полконтекста модели даже при
+  max-context 0;
+* история распознанного текста всё равно остаётся выключенной.
+
+Так сохраняются и пользовательский словарь, и защита от зацикливания.
+
+--- a/src/whisper.cpp
++++ b/src/whisper.cpp
+@@ -6943 +6943,5 @@
+-    const int max_prompt_ctx = std::min(params.n_max_text_ctx, whisper_n_text_ctx(ctx)/2);
++    // tsukiko: static initial prompt is not rolling transcription history.
++    // Keep it available when -mc 0 disables only the latter.
++    const int max_prompt_ctx = params.carry_initial_prompt
++        ? whisper_n_text_ctx(ctx)/2
++        : std::min(params.n_max_text_ctx, whisper_n_text_ctx(ctx)/2);
+@@ -7127 +7131,2 @@
+-                if (params.n_max_text_ctx > 0 && t_cur < WHISPER_HISTORY_CONDITIONING_TEMP_CUTOFF) {
++                if ((params.n_max_text_ctx > 0 || params.carry_initial_prompt) &&
++                        t_cur < WHISPER_HISTORY_CONDITIONING_TEMP_CUTOFF) {
+@@ -7129 +7134 @@
+-                    const bool can_take1 = !prompt_past1.empty();
++                    const bool can_take1 = params.n_max_text_ctx > 0 && !prompt_past1.empty();

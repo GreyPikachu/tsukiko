@@ -60,7 +60,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: windows/Engine
-          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch') }}
+          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
 
       # Ставится только когда движок собирается заново: две минуты
       # на установку ради восстановления из кэша — работа впустую.
@@ -83,7 +83,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: windows/Engine
-          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch') }}
+          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
 
       # Аудиодекодер: whisper читает сам только wav, mp3, flac и ogg
       # с Vorbis, а в разговор приходят голосовые (Opus), записи

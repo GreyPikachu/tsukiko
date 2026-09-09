@@ -793,13 +793,17 @@ void _hotkeyTaps() {
 
 
   test('окно не наследует текст предыдущего — иначе повтор кормит сам себя', () {
+    const hint = 'Минина, Сытый двор, Рында';
     final args = buildArgs(
-        const RunOptions(model: 'm', lang: 'ru', threads: 4), '/a.wav', '/o');
+        const RunOptions(model: 'm', lang: 'ru', threads: 4, prompt: hint),
+        '/a.wav', '/o');
     expect(args.contains('-mc'), isTrue);
     expect(args[args.indexOf('-mc') + 1], '0');
-    // Затравка при этом должна доставаться каждому окну, иначе с
-    // контекстом уйдут и знаки препинания.
+    // Комплектный движок отделяет initial prompt от нулевого бюджета
+    // истории: подсказка должна быть и передана, и возвращена в каждое
+    // окно. Иначе все три флага формально есть, но словарь не действует.
     expect(args.contains('--carry-initial-prompt'), isTrue);
+    expect(args[args.indexOf('--prompt') + 1], hint);
   });
 
   test('движок работает под своим именем и остаётся тем же движком', () {
