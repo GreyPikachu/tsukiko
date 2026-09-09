@@ -333,7 +333,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
                 ? l10n.statusUnsupportedFiles
                 : next.status;
     next = next.copyWith(status: status);
-    if (last != null && next.selected.isEmpty) next = _select(next, last!);
+    // Добавленная запись — новая точка работы. Переводим на неё
+    // инспектор и центральную часть, даже если до этого была открыта
+    // другая расшифровка.
+    if (last != null) next = _select(next, last!);
     emit(next);
     _persist();
   }
