@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Directory, File, Platform;
+import 'dart:io' show Directory, File, Platform, stderr;
 import 'dart:ui' show ImageFilter;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -429,6 +429,68 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       ),
     ]);
     if (f != null) _send(TranscriptOpened(f.path));
+  }
+
+  /// Переложить готовую расшифровку в другой формат.
+  ///
+  /// На входе нужны метки времени: из обычного txt нельзя честно
+  /// восстановить границы субтитров. Разобранные SRT, VTT, JSON и наш txt
+  /// с метками имеют одну модель [Transcript], поэтому между ними нет
+  /// цепочки потерь-парсеров: читаем один раз, пишем один раз.
+  Future<void> _convertTranscript() async {
+    final input = await openFile(acceptedTypeGroups: [
+      XTypeGroup(
+        label: l10n.fileTypeTranscripts,
+        extensions: transcriptExt.map((e) => e.substring(1)).toList(),
+      ),
+    ]);
+    if (input == null) return;
+
+    try {
+      final read = readTranscript(input.path, await File(input.path).readAsString());
+      final transcript = read.parsed;
+      if (transcript == null) {
+        return _showAsk(Ask(
+          l10n.askConversionNeedsTimestampsTitle,
+          l10n.askConversionNeedsTimestampsBody,
+        ));
+      }
+
+      final preferred = formatById(_bloc.state.saveFormat);
+      final offered = [
+        preferred,
+        ...exportFormats.where((f) => f.id != preferred.id),
+      ];
+      final inputName = os.basename(input.path);
+      final inputFormat = formatOfFile(inputName);
+      final stem = inputFormat != null &&
+              inputName.toLowerCase().endsWith(inputFormat.suffix.toLowerCase())
+          ? inputName.substring(0, inputName.length - inputFormat.suffix.length)
+          : _stem(inputName);
+      final location = await getSaveLocation(
+        suggestedName: preferred.fileName(stem),
+        acceptedTypeGroups: [
+          for (final format in offered)
+            XTypeGroup(
+              label: format.label,
+              extensions: [format.ext.substring(1)],
+            ),
+        ],
+      );
+      if (location == null) return;
+      final chosen = formatOfFile(location.path) ?? preferred;
+      final output = location.path.toLowerCase().endsWith(chosen.ext)
+          ? location.path
+          : '${location.path}${chosen.ext}';
+      await File(output).writeAsString(
+        renderFor(chosen, transcript, name: os.basename(input.path)),
+      );
+      _send(SaveFormatChosen(chosen));
+      _send(StatusReported(l10n.statusTranscriptConverted));
+    } catch (error) {
+      stderr.writeln('tsukiko: расшифровка не преобразовалась — $error');
+      _showAsk(Ask(l10n.askConversionFailedTitle, l10n.askConversionFailedBody));
+    }
   }
 
   /// Выбранный руками файл проверяем: «.bin» лежит на чём угодно, а
@@ -866,6 +928,17 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           tooltipMessage: l10n.tooltipFindShortcut,
           onPressed: s.lead == null ? null : _openFind,
         ),
+        // На macOS преобразование живёт в системном меню «Файл».
+        // На Windows системной строки меню нет, поэтому даём тому же
+        // действию свою кнопку; в тесном окне она остаётся под многоточием.
+        if (!os.hasSystemMenuBar)
+          ToolBarIconButton(
+            label: l10n.menuConvertTranscript,
+            icon: _toolIcon(CupertinoIcons.arrow_2_squarepath, on: true),
+            showLabel: false,
+            tooltipMessage: l10n.menuConvertTranscript,
+            onPressed: _convertTranscript,
+          ),
         // Последним — и это не случайность. Панель инструментов прячет
         // лишнее с конца: чем шире боковая колонка, тем меньше её остаётся,
         // и первыми уходят те, кто стоит правее. Раньше кнопка сочетаний

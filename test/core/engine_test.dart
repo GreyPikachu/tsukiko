@@ -147,6 +147,18 @@ void main() {
     expect(formatById('txt-ts').label, 'Текст с таймкодами');
   });
 
+  test('расшифровка с метками переходит между форматами', () {
+    const srt = '1\n00:00:01,000 --> 00:00:02,500\nраз\n';
+    final timed = readTranscript('речь.srt', srt).parsed;
+    expect(timed, isNotNull);
+    expect(renderAs(formatVtt, timed!), startsWith('WEBVTT'));
+    expect(renderAs(formatJson, timed), contains('"from": 1000'));
+    expect(renderAs(formatMarkdown, timed), contains('**[00:00:01.000]**'));
+
+    expect(readTranscript('речь.txt', 'раз два').parsed, isNull,
+        reason: 'без меток границы субтитров не восстановить');
+  });
+
   test('раскладка библиотеки: месяц, папка записи, номера при совпадении', () {
     final root = Directory.systemTemp.createTempSync('tsukiko_lib').path;
     final when = DateTime(2026, 8, 2);
