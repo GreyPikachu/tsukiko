@@ -251,6 +251,41 @@ class Sources {
   static SourceLink? of(String root, String transcriptPath) =>
       SourceLink.fromJson(_load(root)[_key(root, transcriptPath)]);
 
+  /// Все уже сохранённые форматы этой записи, новые сверху.
+  ///
+  /// Путь — главный признак. Если запись перенесли, узнаём её так же,
+  /// как [locate]: имя, размер и время файла должны совпасть. Одного
+  /// размера мало: две минутные диктовки легко могут весить одинаково.
+  static List<String> transcriptsFor(String root, String audio) {
+    final file = File(audio);
+    if (!file.existsSync()) return const [];
+    final targetPath = _comparablePath(file.absolute.path);
+    final targetName = os.basename(audio);
+    final targetSize = file.lengthSync();
+    final targetAt = file.lastModifiedSync().millisecondsSinceEpoch;
+    final found = <String>[];
+    for (final entry in _load(root).entries) {
+      final link = SourceLink.fromJson(entry.value);
+      if (link == null) continue;
+      final exact = _comparablePath(File(link.path).absolute.path) == targetPath;
+      final moved = os.basename(link.path) == targetName &&
+          link.size == targetSize &&
+          link.at.millisecondsSinceEpoch == targetAt;
+      if (!exact && !moved) continue;
+      final path = File(entry.key).isAbsolute
+          ? entry.key
+          : os.join(root, entry.key);
+      if (File(path).existsSync()) found.add(path);
+    }
+    found.sort((a, b) =>
+        File(b).lastModifiedSync().compareTo(File(a).lastModifiedSync()));
+    return found;
+  }
+
+  static String _comparablePath(String path) => os.platformId == 'windows'
+      ? path.replaceAll('/', r'\').toLowerCase()
+      : path;
+
   /// Запомнить, из какой записи вышли эти файлы.
   ///
   /// Списком, а не по одному: у одной записи бывает шесть форматов, и все
