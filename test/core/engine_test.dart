@@ -734,6 +734,34 @@ void main() {
 }
 
 void _hotkeyTaps() {
+  group('физические модификаторы', () {
+    test('левая и правая стороны различаются, старое общее имя совместимо',
+        () {
+      const left = Hotkey(['leftctrl']);
+      const right = Hotkey(['rightctrl']);
+      const legacy = Hotkey(['ctrl']);
+
+      expect(left.sameAs(right), isFalse);
+      expect(left.sameAs(legacy), isTrue,
+          reason: 'старый Ctrl срабатывает и от левого Ctrl');
+      expect(right.sameAs(legacy), isTrue);
+      expect(left.label, contains('L'));
+      expect(right.label, contains('R'));
+    });
+
+    test('одиночная клавиша требует согласия, двойной стук — нет', () {
+      expect(const Hotkey(['leftctrl']).requiresExclusiveConsent, isTrue);
+      expect(const Hotkey([], keys: ['y']).requiresExclusiveConsent, isTrue);
+      expect(
+          const Hotkey(['leftctrl'], taps: 2).requiresExclusiveConsent, isFalse);
+      expect(
+        const Hotkey(['leftctrl'], keys: ['space'])
+            .requiresExclusiveConsent,
+        isFalse,
+      );
+    });
+  });
+
   group('двойное нажатие', () {
     test('число стуков хранится и читается', () {
       const twice = Hotkey(['fn'], taps: 2);

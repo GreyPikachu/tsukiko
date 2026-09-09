@@ -175,7 +175,10 @@ class SettingsCubit extends Cubit<SettingsState> {
   /// Одно и то же сочетание на оба действия назначить нельзя: «держать
   /// и говорить» и «нажать, ещё раз — остановить» тогда сработали бы
   /// вместе, и что из этого получится, не знает никто.
-  Future<void> reassign(String id) async {
+  Future<void> reassign(
+    String id, {
+    Future<bool> Function(Hotkey hotkey)? confirmExclusive,
+  }) async {
     final hk = await bridge.capture();
     if (hk == null) return;
     final taken = {
@@ -187,6 +190,10 @@ class SettingsCubit extends Cubit<SettingsState> {
       return _emit(state.copyWith(
         problem: currentL10n().hotkeyTakenProblem(hk.label),
       ));
+    }
+    if (hk.requiresExclusiveConsent &&
+        !(await confirmExclusive?.call(hk) ?? false)) {
+      return;
     }
     _emit(state.copyWith(clearProblem: true));
     _saveDictation((d) => switch (id) {

@@ -115,16 +115,30 @@ class MacOs implements Os {
   static const _modSymbols = {
     'fn': 'fn',
     'ctrl': '⌃',
+    'leftctrl': 'L⌃',
+    'rightctrl': 'R⌃',
     'opt': '⌥',
+    'leftopt': 'L⌥',
+    'rightopt': 'R⌥',
     'shift': '⇧',
+    'leftshift': 'L⇧',
+    'rightshift': 'R⇧',
     'cmd': '⌘',
+    'leftcmd': 'L⌘',
+    'rightcmd': 'R⌘',
   };
 
   /// Порядок значков в macOS закреплён: ⌃⌥⇧⌘, и никак иначе.
-  static const _modOrder = ['fn', 'ctrl', 'opt', 'shift', 'cmd'];
+  static const _modOrder = [
+    'fn',
+    'leftctrl', 'rightctrl', 'ctrl',
+    'leftopt', 'rightopt', 'opt',
+    'leftshift', 'rightshift', 'shift',
+    'leftcmd', 'rightcmd', 'cmd',
+  ];
 
   @override
-  String modifierLabel(String mod) => _modSymbols[mod] ?? mod;
+  String modifierLabel(String mod) => _modSymbols[mod.toLowerCase()] ?? mod;
 
   @override
   String get appIconAreaName => 'Dock';

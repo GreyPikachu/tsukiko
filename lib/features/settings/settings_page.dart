@@ -12,6 +12,7 @@ import '../../core/library.dart';
 import '../../core/models.dart';
 import '../../core/skill_install.dart';
 import '../../core/transcript.dart';
+import '../../core/whisper_server.dart' show Hotkey;
 import '../../design/design.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../platform/bridge.dart';
@@ -228,12 +229,12 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         HotkeyRow(
           label: l10n.hotkeyHold,
           keys: s.hold.label,
-          onTap: () => _cubit.reassign('hold'),
+          onTap: () => _reassignHotkey('hold'),
         ),
         HotkeyRow(
           label: l10n.hotkeyToggle,
           keys: s.toggle.label,
-          onTap: () => _cubit.reassign('toggle'),
+          onTap: () => _reassignHotkey('toggle'),
         ),
         // Третье действие — и единственное, которое можно не назначать
         // вовсе. «Остановить» и «передумал» это разные намерения, а у
@@ -242,7 +243,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         HotkeyRow(
           label: l10n.hotkeyCancel,
           keys: s.cancel.label,
-          onTap: () => _cubit.reassign('cancel'),
+          onTap: () => _reassignHotkey('cancel'),
           // Снимать нечего — и крестика нет: пустая строка не должна
           // выбиваться из столбика ради кнопки, которой не на что нажать.
           onClear: s.cancel.empty ? null : _cubit.clearCancelHotkey,
@@ -336,6 +337,49 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
         Check(l10n.checkShowHud, s.hud, _cubit.setHud),
         Hint(l10n.hintHud, under: true),
       ];
+
+  Future<void> _reassignHotkey(String id) => _cubit.reassign(
+        id,
+        confirmExclusive: _confirmExclusiveHotkey,
+      );
+
+  Future<bool> _confirmExclusiveHotkey(Hotkey hotkey) async {
+    if (!mounted) return false;
+    var accepted = false;
+    await showMacosAlertDialog<void>(
+      context: context,
+      builder: (dialogContext) => MacosAlertDialog(
+        appIcon: const MacosIcon(
+          CupertinoIcons.keyboard,
+          size: IconSize.hero,
+        ),
+        title: Text(
+          l10n.singleHotkeyTitle(hotkey.label),
+          style: Type.emptyTitle,
+        ),
+        message: Text(
+          l10n.singleHotkeyBody,
+          textAlign: TextAlign.center,
+          style: Type.control,
+        ),
+        primaryButton: PushButton(
+          controlSize: ControlSize.large,
+          onPressed: () {
+            accepted = true;
+            Navigator.pop(dialogContext);
+          },
+          child: Text(l10n.buttonAssign),
+        ),
+        secondaryButton: PushButton(
+          controlSize: ControlSize.large,
+          secondary: true,
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(l10n.buttonCancel),
+        ),
+      ),
+    );
+    return accepted;
+  }
 
   // ── модели ────────────────────────────────────────────────────────────────
 
