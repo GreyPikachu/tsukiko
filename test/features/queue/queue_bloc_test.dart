@@ -91,6 +91,21 @@ void main() {
     );
 
     blocTest<QueueBloc, QueueState>(
+      'новая запись сменяет открытую расшифровку',
+      build: make,
+      act: (b) async {
+        b.add(FilesAdded([file('старая.m4a')]));
+        await Future<void>.delayed(Duration.zero);
+        b.add(FilesAdded([file('новая.m4a')]));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (b) {
+        expect(b.state.lead?.name, 'новая.m4a');
+        expect(b.state.selected.map((j) => j.name), {'новая.m4a'});
+      },
+    );
+
+    blocTest<QueueBloc, QueueState>(
       'чужое расширение не берём, но объясняем',
       build: make,
       act: (b) => b.add(FilesAdded([file('таблица.xlsx')])),
