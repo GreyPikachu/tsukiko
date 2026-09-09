@@ -122,6 +122,71 @@ std::string VkToKeyName(int vk) {
   return "#" + std::to_string(vk);
 }
 
+std::string ModifierFamily(std::string name) {
+  if (name.rfind("left", 0) == 0) name.erase(0, 4);
+  if (name.rfind("right", 0) == 0) name.erase(0, 5);
+  if (name == "opt") return "alt";
+  if (name == "win") return "cmd";
+  return name;
+}
+
+bool IsSidedModifier(const std::string& name) {
+  return name.rfind("left", 0) == 0 || name.rfind("right", 0) == 0;
+}
+
+bool ModifiersCanCoincide(const std::string& a, const std::string& b) {
+  if (a == b) return true;
+  if (ModifierFamily(a) != ModifierFamily(b)) return false;
+  // Старое общее имя — маска любого физического бока.
+  return !IsSidedModifier(a) || !IsSidedModifier(b);
+}
+
+bool ModifiersContain(const std::set<std::string>& current,
+                      const std::set<std::string>& expected) {
+  return std::all_of(expected.begin(), expected.end(), [&](const auto& wanted) {
+    return std::any_of(current.begin(), current.end(), [&](const auto& actual) {
+      return ModifiersCanCoincide(wanted, actual);
+    });
+  });
+}
+
+bool ModifiersMatch(const std::set<std::string>& current,
+                    const std::set<std::string>& expected) {
+  return current.size() == expected.size() &&
+         ModifiersContain(current, expected) &&
+         ModifiersContain(expected, current);
+}
+
+int PhysicalModifierVk(const KBDLLHOOKSTRUCT& kbd) {
+  const int raw = static_cast<int>(kbd.vkCode);
+  if (raw == VK_CONTROL) {
+    return (kbd.flags & LLKHF_EXTENDED) ? VK_RCONTROL : VK_LCONTROL;
+  }
+  if (raw == VK_MENU) {
+    return (kbd.flags & LLKHF_EXTENDED) ? VK_RMENU : VK_LMENU;
+  }
+  if (raw == VK_SHIFT) {
+    const int mapped = static_cast<int>(
+        MapVirtualKeyW(kbd.scanCode, MAPVK_VSC_TO_VK_EX));
+    if (mapped == VK_LSHIFT || mapped == VK_RSHIFT) return mapped;
+  }
+  return raw;
+}
+
+const char* ModifierName(int vk) {
+  switch (vk) {
+    case VK_LCONTROL: return "leftctrl";
+    case VK_RCONTROL: return "rightctrl";
+    case VK_LMENU: return "leftalt";
+    case VK_RMENU: return "rightalt";
+    case VK_LSHIFT: return "leftshift";
+    case VK_RSHIFT: return "rightshift";
+    case VK_LWIN: return "leftwin";
+    case VK_RWIN: return "rightwin";
+    default: return nullptr;
+  }
+}
+
 void AudioCaptureCallback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
   auto* bridge = static_cast<DictationBridge*>(pDevice->pUserData);
   if (!bridge || !pInput) return;
@@ -365,6 +430,7 @@ void DictationBridge::RegisterHandler(
       is_capturing_ = true;
       captured_mods_.clear();
       captured_keys_.clear();
+      held_keys_.clear();
       // Начало отсчёта и ожидание второго стука — с чистого листа:
       // прошлый захват мог кончиться на полпути.
       capture_started_at_ = 0;
@@ -644,9 +710,15 @@ void DictationBridge::UninstallKeyboardHook() {
     UnhookWindowsHookEx(keyboard_hook_);
     keyboard_hook_ = nullptr;
   }
+  held_keys_.clear();
 }
 
-bool DictationBridge::TapState::Update(bool raw, bool is_double, ULONGLONG now) {
+bool DictationBridge::TapState::Update(bool raw, bool is_double,
+                                      bool base_held, ULONGLONG now) {
+  if (suppressed) {
+    if (base_held) return false;
+    suppressed = false;
+  }
   const bool was_pressed = pressed_at != 0;
   if (raw == was_pressed) return false;
 
@@ -670,16 +742,22 @@ bool DictationBridge::TapState::Update(bool raw, bool is_double, ULONGLONG now) 
   return true;
 }
 
+void DictationBridge::TapState::SuppressUntilRelease() {
+  suppressed = true;
+  active = false;
+  pressed_at = 0;
+  armed_at = 0;
+}
+
 /// Второй стук не пришёл вовремя.
 ///
-/// Годный набор назначаем одиночным нажатием, а одинокий модификатор
-/// отпускаем: сам по себе он срабатывал бы непрерывно и отнял бы клавишу
-/// у всей системы. Окно захвата при этом продолжает ждать, пока наберут
-/// годное, — как на macOS.
+/// Любой непустой набор назначаем одиночным нажатием. Если это ровно одна
+/// клавиша, окно настроек отдельно спросит согласие до сохранения.
 void DictationBridge::OnCaptureTimeout() {
   if (!has_pending_capture_) return;
   has_pending_capture_ = false;
-  const bool alone_is_enough = !pending_keys_.empty() || pending_mods_.size() >= 2;
+  const bool alone_is_enough =
+      !pending_keys_.empty() || !pending_mods_.empty();
   if (alone_is_enough) {
     FinishCapture(pending_mods_, pending_keys_, 1);
   }
@@ -701,7 +779,7 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
     auto* kbd = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
     bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
     bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
-    int vk = static_cast<int>(kbd->vkCode);
+    int vk = PhysicalModifierVk(*kbd);
 
     // Своё же Ctrl+V от вставки текста. Для перехватчика оно выглядит
     // как настоящее нажатие, и сочетание с Ctrl срабатывало бы от
@@ -732,34 +810,27 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
     // flags-снимок вместе с событием.
     //
     // Про клавишу события отвечаем сами, про остальные — как раньше.
-    // Своей таблицы не заводим: пропущенное отпускание (чужой хук съел,
-    // окно UAC перехватило) залипало бы в ней навсегда.
     auto pressed = [](int k) { return (GetAsyncKeyState(k) & 0x8000) != 0; };
-    auto twin = [](int k) -> std::pair<int, int> {
-      switch (k) {
-        case VK_CONTROL: return {VK_LCONTROL, VK_RCONTROL};
-        case VK_MENU: return {VK_LMENU, VK_RMENU};
-        case VK_SHIFT: return {VK_LSHIFT, VK_RSHIFT};
-        default: return {k, k};
-      }
-    };
     auto held = [&](int k) -> bool {
-      const auto pair = twin(k);
-      const bool self = (k == vk || pair.first == vk || pair.second == vk);
-      if (!self) return pressed(k);
+      if (k != vk) return pressed(k);
       if (isDown) return true;
       if (!isUp) return pressed(k);
-      // Отпустили одну из пары — вторая могла остаться зажатой, и про
-      // неё система уже не врёт.
-      const int other = (vk == pair.first) ? pair.second : pair.first;
-      return other != vk && pressed(other);
+      return false;
     };
 
     std::set<std::string> currentMods;
-    if (held(VK_CONTROL)) currentMods.insert("ctrl");
-    if (held(VK_MENU)) currentMods.insert("alt");
-    if (held(VK_SHIFT)) currentMods.insert("shift");
-    if (held(VK_LWIN) || held(VK_RWIN)) currentMods.insert("cmd");
+    for (int modifier : {VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU,
+                         VK_LSHIFT, VK_RSHIFT, VK_LWIN, VK_RWIN}) {
+      if (held(modifier)) currentMods.insert(ModifierName(modifier));
+    }
+
+    // В отличие от модификаторов, Windows не отдаёт снимок всех обычных
+    // клавиш. Храним их края сами: иначе одиночный Ctrl продолжал бы
+    // совпадать и внутри Ctrl+C, хотя пользователь разрешил только его.
+    if (!isModifierVk(vk)) {
+      if (isDown) bridge.held_keys_.insert(vk);
+      if (isUp) bridge.held_keys_.erase(vk);
+    }
 
     if (bridge.is_capturing_) {
       const ULONGLONG now = GetTickCount64();
@@ -781,9 +852,7 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
 
       // Всё отпущено — сочетание набрано. Пока держат, набор копится.
       const bool anythingHeld =
-          !currentMods.empty() ||
-          std::any_of(bridge.captured_keys_.begin(), bridge.captured_keys_.end(),
-                      [&](int k) { return held(k); });
+          !currentMods.empty() || !bridge.held_keys_.empty();
       if (anythingHeld ||
           (bridge.captured_keys_.empty() && bridge.captured_mods_.empty())) {
         return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -805,10 +874,9 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
         return 1;
       }
 
-      // Годится ли этот набор одиночным нажатием. Одинокий модификатор
-      // не годится: он срабатывал бы непрерывно и отнял бы клавишу
-      // у всей системы, а два быстрых стука по нему свободны.
-      const bool alone_is_enough = !keys.empty() || mods.size() >= 2;
+      // Одна клавиша тоже годится; явное согласие на глобальный бинд
+      // спрашивает окно настроек после захвата.
+      const bool alone_is_enough = !keys.empty() || !mods.empty();
 
       // Затянувшееся нажатие вторым стуком уже не станет.
       if (!quick) {
@@ -826,17 +894,16 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
     }
 
     // Сопоставление с hold_spec_ и toggle_spec_
-    auto keysDown = [&](const HotkeySpec& spec) -> bool {
-      for (int k : spec.keys) {
-        if (!held(k)) return false;
-      }
-      return true;
+    auto containsSpec = [&](const HotkeySpec& spec) -> bool {
+      if (spec.is_empty) return false;
+      return ModifiersContain(currentMods, spec.mods) &&
+             std::includes(bridge.held_keys_.begin(), bridge.held_keys_.end(),
+                           spec.keys.begin(), spec.keys.end());
     };
 
     auto matchSpec = [&](const HotkeySpec& spec) -> bool {
-      if (spec.is_empty) return false;
-      if (spec.mods != currentMods) return false;
-      return keysDown(spec);
+      return containsSpec(spec) && ModifiersMatch(currentMods, spec.mods) &&
+             bridge.held_keys_ == spec.keys;
     };
 
     // Сочетание зажато целиком, но сверху добавили лишнее.
@@ -847,15 +914,7 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
     // и ничего не диктовал. Такое отпускание — отмена: записанное
     // выбрасывается, и панель уходит с экрана сразу.
     auto exceedsSpec = [&](const HotkeySpec& spec) -> bool {
-      if (spec.is_empty) return false;
-      if (!keysDown(spec)) return false;
-      for (const auto& m : spec.mods) {
-        if (!currentMods.count(m)) return false;
-      }
-      // Лишнее — это либо лишний модификатор, либо посторонняя клавиша
-      // поверх уже зажатого сочетания.
-      if (currentMods.size() > spec.mods.size()) return true;
-      return isDown && !spec.keys.count(vk) && !isModifierVk(vk);
+      return containsSpec(spec) && !matchSpec(spec);
     };
 
     // Одно правило на все случаи, как и на macOS: сочетание работает,
@@ -865,30 +924,37 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
     const ULONGLONG now = GetTickCount64();
 
     if (bridge.hold_state_.Update(matchSpec(bridge.hold_spec_),
-                                  bridge.hold_spec_.is_double(), now)) {
+                                  bridge.hold_spec_.is_double(),
+                                  containsSpec(bridge.hold_spec_), now)) {
       const bool active = bridge.hold_state_.active;
-      bridge.SendHotkeyEvent("hold", active,
-                             !active && exceedsSpec(bridge.hold_spec_));
+      const bool cancelled = !active && exceedsSpec(bridge.hold_spec_);
+      bridge.SendHotkeyEvent("hold", active, cancelled);
+      if (cancelled) bridge.hold_state_.SuppressUntilRelease();
     }
 
     // Отпускание само по себе ничего не переключает — оно лишь
     // разрешает следующему нажатию сработать. Кроме отмены: набрали
     // сверху лишнее — включённое той же клавишей выключается назад.
     if (bridge.toggle_state_.Update(matchSpec(bridge.toggle_spec_),
-                                    bridge.toggle_spec_.is_double(), now)) {
+                                    bridge.toggle_spec_.is_double(),
+                                    containsSpec(bridge.toggle_spec_), now)) {
       if (bridge.toggle_state_.active) {
         bridge.SendHotkeyEvent("toggle", true);
       } else if (exceedsSpec(bridge.toggle_spec_)) {
         bridge.SendHotkeyEvent("toggle", false, true);
+        bridge.toggle_state_.SuppressUntilRelease();
       }
     }
 
     // «Бросить начатое» — одно нажатие, отпускание ничего не значит.
     // Не назначено — spec пуст, и matchSpec на нём всегда false.
     if (bridge.cancel_state_.Update(matchSpec(bridge.cancel_spec_),
-                                    bridge.cancel_spec_.is_double(), now)) {
+                                    bridge.cancel_spec_.is_double(),
+                                    containsSpec(bridge.cancel_spec_), now)) {
       if (bridge.cancel_state_.active) {
         bridge.SendHotkeyEvent("cancel", true);
+      } else if (exceedsSpec(bridge.cancel_spec_)) {
+        bridge.cancel_state_.SuppressUntilRelease();
       }
     }
   }

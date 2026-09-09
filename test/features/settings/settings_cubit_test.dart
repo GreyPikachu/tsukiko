@@ -88,6 +88,32 @@ void main() {
       await settle();
       expect(cubit.state.dictationModel, isEmpty);
     });
+
+    test('одна клавиша сохраняется только после явного согласия', () async {
+      final before = cubit.state.hold;
+      var asked = '';
+      final declined = cubit.reassign(
+        'hold',
+        confirmExclusive: (hotkey) async {
+          asked = hotkey.label;
+          return false;
+        },
+      );
+      await native.sendCaptured(const Hotkey([], keys: ['y']));
+      await declined;
+
+      expect(asked, 'Y');
+      expect(cubit.state.hold.sameAs(before), isTrue);
+
+      final accepted = cubit.reassign(
+        'hold',
+        confirmExclusive: (_) async => true,
+      );
+      await native.sendCaptured(const Hotkey(['leftctrl']));
+      await accepted;
+
+      expect(cubit.state.hold.mods, ['leftctrl']);
+    });
   });
 
   group('модели', () {
@@ -286,6 +312,18 @@ class _FakeNative {
   bool permitted = true;
   bool loginItemAllowed = true;
   bool trashAllowed = true;
+
+  Future<void> sendCaptured(Hotkey hotkey) async {
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+      'tsukiko/dictation',
+      const StandardMethodCodec().encodeMethodCall(MethodCall(
+        'captured',
+        hotkey.toJson(),
+      )),
+      (_) {},
+    );
+  }
 
   void install() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

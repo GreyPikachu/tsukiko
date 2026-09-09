@@ -191,11 +191,13 @@ class DictationBridge {
   /// «стук, стук-и-держать».
   struct TapState {
     bool active = false;
+    bool suppressed = false;
     ULONGLONG pressed_at = 0;
     ULONGLONG armed_at = 0;
 
     /// true, когда «сочетание работает» изменилось на этом событии.
-    bool Update(bool raw, bool is_double, ULONGLONG now);
+    bool Update(bool raw, bool is_double, bool base_held, ULONGLONG now);
+    void SuppressUntilRelease();
   };
 
   /// За сколько должен уложиться второй стук, и с какого мгновения
@@ -207,6 +209,11 @@ class DictationBridge {
 
   HotkeySpec hold_spec_;
   HotkeySpec toggle_spec_;
+
+  /// Обычные клавиши, которые сейчас физически зажаты. Нужны для строгого
+  /// совпадения: один Ctrl перестаёт быть одиночным хоткеем в ту же
+  /// миллисекунду, когда рядом нажали C или любую другую клавишу.
+  std::set<int> held_keys_;
 
   /// «Бросить начатое». Может остаться пустым: это единственное сочетание,
   /// которое разрешено не назначать вовсе.

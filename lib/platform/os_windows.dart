@@ -261,14 +261,28 @@ class WindowsOs implements Os {
   static const _modLabels = {
     'fn': 'Fn',
     'ctrl': 'Ctrl',
+    'leftctrl': 'L Ctrl',
+    'rightctrl': 'R Ctrl',
     'alt': 'Alt',
     'opt': 'Alt',
+    'leftalt': 'L Alt',
+    'rightalt': 'R Alt',
     'shift': 'Shift',
+    'leftshift': 'L Shift',
+    'rightshift': 'R Shift',
     'cmd': 'Win',
     'win': 'Win',
+    'leftwin': 'L Win',
+    'rightwin': 'R Win',
   };
 
-  static const _modOrder = ['ctrl', 'alt', 'shift', 'win', 'fn'];
+  static const _modOrder = [
+    'leftctrl', 'rightctrl', 'ctrl',
+    'leftalt', 'rightalt', 'alt',
+    'leftshift', 'rightshift', 'shift',
+    'leftwin', 'rightwin', 'win',
+    'fn',
+  ];
 
   @override
   String modifierLabel(String mod) => _modLabels[mod.toLowerCase()] ?? mod;

@@ -585,7 +585,9 @@ class WhisperServer {
 class Hotkey {
   const Hotkey(this.mods, {this.keys = const [], this.taps = 1});
 
-  /// 'fn', 'ctrl', 'opt', 'shift', 'cmd' — в этом же виде их читает Swift.
+  /// Старые общие имена: 'fn', 'ctrl', 'opt', 'shift', 'cmd'. Новые
+  /// позиционные добавляют бок: 'leftctrl', 'rightopt' и так далее.
+  /// В этом же виде их читают Swift и Windows-мост.
   final List<String> mods;
 
   /// Обычные клавиши сочетания. Именно набор, а не одна: годится и «Y»,
@@ -598,6 +600,12 @@ class Hotkey {
   final int taps;
 
   bool get isDouble => taps >= 2;
+
+  /// Одна физическая клавиша без второго стука и без сочетания забирает
+  /// привычное действие у всей системы. Такое назначение допустимо, но
+  /// только после отдельного согласия человека в настройках.
+  bool get requiresExclusiveConsent =>
+      !isDouble && mods.length + keys.length == 1;
 
   /// Не `const`: у каждой системы своё (см. `Os.defaultHold`), а `const`
   /// про систему знать не может.
@@ -663,8 +671,7 @@ class Hotkey {
   /// и держать их на двух действиях можно.
   bool sameAs(Hotkey other) =>
       taps == other.taps &&
-      mods.toSet().difference(other.mods.toSet()).isEmpty &&
-      other.mods.toSet().difference(mods.toSet()).isEmpty &&
+      _sameModifierSet(mods, other.mods) &&
       keys.toSet().difference(other.keys.toSet()).isEmpty &&
       other.keys.toSet().difference(keys.toSet()).isEmpty;
 
@@ -684,8 +691,42 @@ class Hotkey {
       !empty &&
       !isDouble &&
       !sameAs(other) &&
-      mods.toSet().difference(other.mods.toSet()).isEmpty &&
+      _modifierSubset(mods, other.mods) &&
       keys.toSet().difference(other.keys.toSet()).isEmpty;
+
+  /// Старое `ctrl` означает «любой Ctrl», а новый `leftctrl` — только
+  /// физический левый. Они пересекаются и не должны назначаться двум
+  /// действиям как будто это разные сочетания.
+  static bool _sameModifierSet(List<String> a, List<String> b) =>
+      a.length == b.length && _modifierSubset(a, b) && _modifierSubset(b, a);
+
+  static bool _modifierSubset(List<String> a, List<String> b) => a.every(
+        (wanted) => b.any((actual) => _modifiersCanCoincide(wanted, actual)),
+      );
+
+  static bool _modifiersCanCoincide(String a, String b) {
+    final left = a.toLowerCase();
+    final right = b.toLowerCase();
+    if (left == right) return true;
+    if (_modifierFamily(left) != _modifierFamily(right)) return false;
+    // Два явно разных физических бока не совпадают. Общее старое имя
+    // остаётся маской любого бока ради настроек прежних версий.
+    return !_isSided(left) || !_isSided(right);
+  }
+
+  static bool _isSided(String mod) =>
+      mod.startsWith('left') || mod.startsWith('right');
+
+  static String _modifierFamily(String mod) {
+    var value = mod;
+    if (value.startsWith('left')) value = value.substring(4);
+    if (value.startsWith('right')) value = value.substring(5);
+    return switch (value) {
+      'opt' || 'alt' => 'alt',
+      'cmd' || 'win' => 'cmd',
+      _ => value,
+    };
+  }
 
   /// Подпись для панели: «fn + ⌃», «fn + Пробел», «X + Y». Значки
   /// модификаторов рисует система: на macOS это ⌘ и ⌥, на Windows —

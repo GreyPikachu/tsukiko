@@ -20,9 +20,57 @@ private let modifierFlags: [(String, CGEventFlags)] = [
   ("cmd", .maskCommand),
 ]
 
-private func modNames(_ flags: CGEventFlags) -> Set<String> {
-  var out = Set<String>()
-  for (name, mask) in modifierFlags where flags.contains(mask) { out.insert(name) }
+private let sidedModifierNames: [CGKeyCode: String] = [
+  54: "rightcmd", 55: "leftcmd",
+  56: "leftshift", 60: "rightshift",
+  58: "leftopt", 61: "rightopt",
+  59: "leftctrl", 62: "rightctrl",
+  63: "fn",
+]
+
+private func modifierFamily(_ raw: String) -> String {
+  var name = raw.lowercased()
+  if name.hasPrefix("left") { name.removeFirst(4) }
+  if name.hasPrefix("right") { name.removeFirst(5) }
+  switch name {
+  case "alt": return "opt"
+  case "win": return "cmd"
+  default: return name
+  }
+}
+
+private func isSidedModifier(_ name: String) -> Bool {
+  name.hasPrefix("left") || name.hasPrefix("right")
+}
+
+private func modifiersCanCoincide(_ a: String, _ b: String) -> Bool {
+  if a == b { return true }
+  guard modifierFamily(a) == modifierFamily(b) else { return false }
+  // Общее имя из настроек прежних версий — маска любого физического бока.
+  return !isSidedModifier(a) || !isSidedModifier(b)
+}
+
+private func modifiersContain(_ current: Set<String>, _ expected: Set<String>) -> Bool {
+  expected.allSatisfy { wanted in
+    current.contains { modifiersCanCoincide(wanted, $0) }
+  }
+}
+
+private func modifiersMatch(_ current: Set<String>, _ expected: Set<String>) -> Bool {
+  current.count == expected.count && modifiersContain(current, expected)
+    && modifiersContain(expected, current)
+}
+
+private func modNames(_ flags: CGEventFlags, physical: Set<String>) -> Set<String> {
+  var out = physical
+  // Если tap включился, когда модификатор уже держали, его физическая
+  // сторона неизвестна. Оставляем старое общее имя: прежний бинд сработает,
+  // а новый позиционный честно подождёт следующего полного нажатия.
+  for (name, mask) in modifierFlags where flags.contains(mask) {
+    if !physical.contains(where: { modifierFamily($0) == name }) {
+      out.insert(name)
+    }
+  }
   return out
 }
 
@@ -69,7 +117,7 @@ private let tapMaxHold: TimeInterval = 0.25
 /// обычное нажатие клавиши. Если его засчитать, «fn» превращается в
 /// «fn + #63»: модификатор и он же в виде клавиши. Считаем такие коды
 /// только модификаторами — какие из них нажаты, и без того видно по флагам.
-private let modifierKeyCodes: Set<CGKeyCode> = [54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+private let modifierKeyCodes = Set(sidedModifierNames.keys).union([57])
 
 private func keyName(_ code: CGKeyCode) -> String {
   keyNames[code] ?? "#\(code)"
@@ -123,7 +171,11 @@ private struct HotkeySpec {
   /// Совпадение строгое: fn+ctrl не должно срабатывать на fn+ctrl+cmd,
   /// иначе диктовка вклинивалась бы в чужие сочетания.
   func pressed(_ mods: Set<String>, _ held: Set<CGKeyCode>) -> Bool {
-    !isEmpty && mods == self.mods && held == keys
+    !isEmpty && modifiersMatch(mods, self.mods) && held == keys
+  }
+
+  func contained(in mods: Set<String>, _ held: Set<CGKeyCode>) -> Bool {
+    !isEmpty && modifiersContain(mods, self.mods) && held.isSuperset(of: keys)
   }
 
   /// Сочетание зажато, но сверху добавили лишнее.
@@ -134,15 +186,14 @@ private struct HotkeySpec {
   /// диктовал. Такое отпускание — отмена: записанное выбрасывается,
   /// и панель уходит с экрана сразу.
   func exceeded(_ mods: Set<String>, _ held: Set<CGKeyCode>) -> Bool {
-    !isEmpty && mods.isSuperset(of: self.mods) && held.isSuperset(of: keys)
-      && !pressed(mods, held)
+    contained(in: mods, held) && !pressed(mods, held)
   }
 
   /// Эта клавиша принадлежит сочетанию, и модификаторы сейчас те самые.
   /// По этому признаку событие поглощается, чтобы буква не попала в чужое
   /// поле ввода.
   func claims(_ code: CGKeyCode, _ mods: Set<String>) -> Bool {
-    !isEmpty && keys.contains(code) && mods == self.mods
+    !isEmpty && keys.contains(code) && modifiersMatch(mods, self.mods)
   }
 }
 
@@ -158,11 +209,18 @@ private struct HotkeySpec {
 /// Для «держать и говорить» это привычный жест «стук, стук-и-держать».
 private struct TapState {
   private(set) var active = false
+  private var suppressed = false
   private var pressedAt: Date?
   private var armedAt: Date?
 
   /// Отдаёт true, когда «сочетание работает» изменилось на этом событии.
-  mutating func update(raw: Bool, double: Bool, now: Date = Date()) -> Bool {
+  mutating func update(
+    raw: Bool, double: Bool, baseHeld: Bool, now: Date = Date()
+  ) -> Bool {
+    if suppressed {
+      if baseHeld { return false }
+      suppressed = false
+    }
     guard raw != (pressedAt != nil) else { return false }
 
     if raw {
@@ -182,6 +240,13 @@ private struct TapState {
     guard active else { return false }
     active = false
     return true
+  }
+
+  mutating func suppressUntilRelease() {
+    suppressed = true
+    active = false
+    pressedAt = nil
+    armedAt = nil
   }
 }
 
@@ -239,6 +304,7 @@ final class DictationBridge: NSObject {
   private var tapSource: CFRunLoopSource?
 
   /// Что зажато прямо сейчас и что мы поглотили как своё.
+  private var heldModifiers = Set<String>()
   private var heldKeys = Set<CGKeyCode>()
   private var swallowed = Set<CGKeyCode>()
 
@@ -352,6 +418,8 @@ final class DictationBridge: NSObject {
       // инспектор и панель живут на разных движках.
       captureChannel = source
       capturing = true
+      heldModifiers = []
+      heldKeys = []
       captureMods = []
       captureKeys = []
       captureStartedAt = nil
@@ -577,12 +645,37 @@ final class DictationBridge: NSObject {
     // приложения; именно этим и болеют соседние диктовки.
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
       if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+      heldModifiers = []
+      heldKeys = []
+      swallowed = []
+      holdState = TapState()
+      toggleState = TapState()
+      cancelState = TapState()
       return Unmanaged.passUnretained(event)
     }
 
     let flags = event.flags
-    let mods = modNames(flags)
     let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+
+    // Флаги CGEvent говорят только «какой-то Control», а keyCode события
+    // говорит, какой именно. Ведём физические стороны отдельно; простое
+    // переключение не годится при двух одновременно зажатых Ctrl, поэтому
+    // учитываем и общий флаг семейства.
+    if type == .flagsChanged, let name = sidedModifierNames[code],
+      let mask = modifierFlags.first(where: { $0.0 == modifierFamily(name) })?.1
+    {
+      if flags.contains(mask) {
+        if heldModifiers.contains(name) {
+          heldModifiers.remove(name)
+        } else {
+          heldModifiers.insert(name)
+        }
+      } else {
+        let family = modifierFamily(name)
+        heldModifiers = Set(heldModifiers.filter { modifierFamily($0) != family })
+      }
+    }
+    let mods = modNames(flags, physical: heldModifiers)
 
     // Что зажато прямо сейчас. Без этого «сочетание» ограничивалось одной
     // клавишей: набор X+Y отследить по одному событию нельзя.
@@ -601,26 +694,41 @@ final class DictationBridge: NSObject {
     // Одно правило на все случаи: сочетание сработало, когда зажаты ровно
     // его модификаторы и ровно его клавиши. Раньше «модификаторы плюс
     // клавиша» и «одни модификаторы» разбирались двумя разными ветками.
-    if holdState.update(raw: hold.pressed(mods, heldKeys), double: hold.isDouble) {
+    if holdState.update(
+      raw: hold.pressed(mods, heldKeys), double: hold.isDouble,
+      baseHeld: hold.contained(in: mods, heldKeys))
+    {
+      let cancelled = !holdState.active && hold.exceeded(mods, heldKeys)
       send(
         "hold", down: holdState.active,
-        cancel: !holdState.active && hold.exceeded(mods, heldKeys))
+        cancel: cancelled)
+      if cancelled { holdState.suppressUntilRelease() }
     }
 
     // Отпускание само по себе ничего не переключает — оно лишь
     // разрешает следующему нажатию сработать. Кроме отмены: набрали
     // сверху лишнее — включённое той же клавишей выключается назад.
-    if toggleState.update(raw: toggle.pressed(mods, heldKeys), double: toggle.isDouble) {
+    if toggleState.update(
+      raw: toggle.pressed(mods, heldKeys), double: toggle.isDouble,
+      baseHeld: toggle.contained(in: mods, heldKeys))
+    {
       if toggleState.active {
         send("toggle", down: true)
       } else if toggle.exceeded(mods, heldKeys) {
         send("toggle", down: false, cancel: true)
+        toggleState.suppressUntilRelease()
       }
     }
 
     // «Бросить начатое» — одно нажатие, отпускание ничего не значит.
-    if cancelState.update(raw: cancelKey.pressed(mods, heldKeys), double: cancelKey.isDouble) {
+    if cancelState.update(
+      raw: cancelKey.pressed(mods, heldKeys), double: cancelKey.isDouble,
+      baseHeld: cancelKey.contained(in: mods, heldKeys))
+    {
       if cancelState.active { send("cancel", down: true) }
+      else if cancelKey.exceeded(mods, heldKeys) {
+        cancelState.suppressUntilRelease()
+      }
     }
 
     // Свою клавишу поглощаем, чтобы буква не попала в чужое поле ввода.
@@ -654,11 +762,8 @@ final class DictationBridge: NSObject {
   /// ждём [doubleTapWindow], и если то же самое пришло второй раз, значит
   /// человек назначает двойное. Отдельной галочки для этого нет.
   ///
-  /// Одинокий модификатор — только двойным стуком. Одна ⇧ или ⌘ сама по
-  /// себе срабатывала бы непрерывно и отняла бы модификатор у всей системы,
-  /// а вот два быстрых стука по ней свободны — на этом же держится
-  /// системное «дважды fn». Поэтому одиночное нажатие одного модификатора
-  /// не назначается вовсе: окно продолжает ждать, пока наберут годное.
+  /// Одна клавиша тоже годится: согласие на глобальный одиночный бинд
+  /// спрашивает окно настроек уже после захвата, до сохранения.
   private func capture(
     type: CGEventType, mods: Set<String>, code: CGKeyCode
   ) -> Unmanaged<CGEvent>? {
@@ -685,7 +790,7 @@ final class DictationBridge: NSObject {
     let quick = Date().timeIntervalSince(captureStartedAt ?? Date()) < tapMaxHold
     let combo = (mods: captureMods, keys: captureKeys.map(keyName).sorted())
     // Годится ли этот набор одиночным нажатием.
-    let aloneIsEnough = !combo.keys.isEmpty || combo.mods.count >= 2
+    let aloneIsEnough = !combo.keys.isEmpty || !combo.mods.isEmpty
     captureKeys = []
     captureMods = []
     captureStartedAt = nil

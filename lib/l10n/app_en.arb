@@ -11,9 +11,17 @@
   "tooltipClearHotkey": "Unassign",
   "hotkeyCancel": "Discard",
   "hintHotkeyCancel": "Discard stays off until you assign it. It ends the recording or the transcription and inserts nothing: what you said is simply dropped. The cross next to it unassigns the shortcut.",
-  "hintHotkeyCapture": "Click the shortcut and press a new one: keys accumulate while held, and releasing them all sets the combination. Any key, and any number of them, works.",
+  "hintHotkeyCapture": "Click the shortcut and press a new one: keys accumulate while held, and releasing them all sets the combination. Left and right modifier keys are distinct.",
   "hintHotkeyDoubleTap": "Tap twice to assign a double-press: the shortcut then triggers only on two quick presses in a row and stays out of the way of normal use.",
-  "hintHotkeyExclusive": "A shortcut assigned here is taken from the whole system. Assigning a single letter means you can no longer type it anywhere — pair it with a modifier key.",
+  "hintHotkeyExclusive": "A single key can be assigned without a combination. Before saving, tsukiko warns that it will react to every standalone press of that key.",
+  "singleHotkeyTitle": "Assign “{combo}” as a single key?",
+  "@singleHotkeyTitle": {
+    "placeholders": {
+      "combo": {"type": "String"}
+    }
+  },
+  "singleHotkeyBody": "This hotkey works in every application. It fires only while exactly this key is pressed; pressing a second key cancels it.",
+  "buttonAssign": "Assign",
   "sectionDictationRecognition": "How dictation is recognized",
   "hintDictationOwnSettings": "These settings are separate from transcription: dictation and transcription are different jobs, and one shared value would serve neither well. Dictation detects the language on its own and always trims pauses.",
   "fieldDictationModel": "Dictation model",
