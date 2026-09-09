@@ -169,4 +169,26 @@ void main() {
     expect(find.text('Расшифровок пока нет'), findsOneWidget);
     empty.deleteSync(recursive: true);
   });
+
+  testWidgets('после удаления всего кнопка записи исчезает', (tester) async {
+    final month = os.join(root.path, '2026-09');
+    final audio = File(os.join(month, 'Совещание.m4a'))
+      ..writeAsStringSync('звук');
+    Sources.remember(root.path, [os.join(month, 'Совещание.txt')], audio.path);
+
+    await open(tester, root.path);
+    await tester.tap(find.text('Совещание.txt'));
+    await tester.pumpAndSettle();
+    expect(find.text('Открыть запись в очереди'), findsOneWidget);
+
+    await tester.tap(find.text('Выбрать'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Выбрать все'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Убрать в Корзину (2)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Расшифровок пока нет'), findsOneWidget);
+    expect(find.text('Открыть запись в очереди'), findsNothing);
+  });
 }

@@ -330,6 +330,7 @@ class _LibrarySheetState extends State<LibrarySheet> {
     final left = await widget.onTrash(doomed);
     if (!mounted) return;
     final gone = doomed.where((p) => !left.contains(p)).toSet();
+    LibraryEntry? next;
     setState(() {
       _entries = [
         for (final e in _entries)
@@ -338,10 +339,16 @@ class _LibrarySheetState extends State<LibrarySheet> {
       _chosen
         ..clear()
         ..addAll(left);
-      if (gone.contains(_shown?.path)) _shown = null;
-      if (_shown == null && _entries.isNotEmpty) _show(_entries.first);
+      if (gone.contains(_shown?.path)) {
+        _shown = null;
+        _text = '';
+        _link = null;
+        _source = null;
+      }
+      if (_shown == null && _entries.isNotEmpty) next = _entries.first;
       if (_entries.isEmpty) _selecting = false;
     });
+    if (next case final entry?) _show(entry);
     widget.onStatus(
       left.isEmpty
           ? l10n.statusLibraryTrashed(filesLabel(gone.length))
