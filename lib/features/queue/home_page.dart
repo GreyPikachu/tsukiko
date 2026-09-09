@@ -730,7 +730,9 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
     return AppToolBar(
       title: ToolbarTitle(subtitle: _subtitle(s)),
-      titleWidth: 240,
+      // Имя окна остаётся читаемым, но не забирает ширину трёх
+      // кнопок. Полное имя записи всё равно видно в очереди.
+      titleWidth: 152,
       enableBlur: true,
       // Кромка появляется только когда под панель что-то уехало.
       dividerColor: _scrolled ? Surface.hairline(context) : MacosColors.transparent,
