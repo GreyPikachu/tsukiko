@@ -662,6 +662,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   Widget _macosWindow(QueueState s) => Builder(
         builder: (context) => MacosWindow(
+          // При загрузке модели инспектор нечего настраивать: освобождаем
+          // его ширину для длинного хода загрузки. Ключ нужен пакетному
+          // MacosWindow: он не умеет возвращать endSidebar после null.
+          key: ValueKey(s.downloadProgress != null),
           // «Подкраска обоями» на macOS показывает сквозь окно рабочий
           // стол — и делает это родным плагином, которого на Windows
           // нет вовсе. Оставить включённой значит получить там
@@ -676,14 +680,16 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             builder: (context, controller) => _queue(s, controller),
             bottom: _queueButtons(s),
           ),
-          endSidebar: Sidebar(
-            minWidth: 290,
-            startWidth: 312,
-            maxWidth: 380,
-            shownByDefault: true,
-            decoration: Surface.sidebarDecoration(context),
-            builder: (context, controller) => _inspector(s, controller),
-          ),
+          endSidebar: s.downloadProgress != null
+              ? null
+              : Sidebar(
+                  minWidth: 290,
+                  startWidth: 312,
+                  maxWidth: 380,
+                  shownByDefault: true,
+                  decoration: Surface.sidebarDecoration(context),
+                  builder: (context, controller) => _inspector(s, controller),
+                ),
           child: MacosScaffold(
             toolBar: _toolbar(s),
             children: [
@@ -1340,6 +1346,9 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                   ),
                 ),
               ),
+              // Длинный ход загрузки обрезается, но не склеивается со
+              // статистикой вроде «141 МБ33 фрагмента».
+              const SizedBox(width: Gap.item),
               if (eta != null && eta.inSeconds > 3)
                 Padding(
                   padding: const EdgeInsets.only(right: Gap.item),
