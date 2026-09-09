@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import '../../core/app_locale.dart';
 import '../../core/models.dart';
 import '../../core/skill_install.dart';
+import '../../core/text_commands.dart';
 import '../../core/whisper_server.dart' show Hotkey;
 
 /// Сколько потоков предложить на выбор.
@@ -20,8 +21,7 @@ List<int> threadChoices(int current) {
   final out = <int>{
     for (var t = 2; t <= Platform.numberOfProcessors; t += 2) t,
     if (current > 0) current,
-  }.toList()
-    ..sort();
+  }.toList()..sort();
   return out;
 }
 
@@ -52,6 +52,9 @@ class SettingsState extends Equatable {
     this.threads = 4,
     this.punctuate = true,
     this.prompt = '',
+    this.textCommands = const [],
+    this.dictationCommandsEnabled = true,
+    this.transcriberCommandsEnabled = true,
     this.idleSeconds = 180,
     this.insert = true,
     this.hud = true,
@@ -70,9 +73,9 @@ class SettingsState extends Equatable {
     this.apiKey = '',
     this.apiPort = 0,
     this.apiError = '',
-  })  : hold = hold ?? Hotkey.holdDefault,
-        toggle = toggle ?? Hotkey.toggleDefault,
-        cancel = cancel ?? Hotkey.none;
+  }) : hold = hold ?? Hotkey.holdDefault,
+       toggle = toggle ?? Hotkey.toggleDefault,
+       cancel = cancel ?? Hotkey.none;
 
   /// Какая вкладка открыта. Приходит и снаружи: окно могут попросить
   /// открыться сразу на «Моделях».
@@ -86,8 +89,10 @@ class SettingsState extends Equatable {
   final InstalledModel? vad;
 
   /// Пути годных моделей — для выпадающих списков.
-  List<String> get usable =>
-      [for (final m in models) if (!m.broken) m.path];
+  List<String> get usable => [
+    for (final m in models)
+      if (!m.broken) m.path,
+  ];
 
   /// Модель расшифровщика. Правит её главное окно, здесь она только
   /// показывается: без неё в списке моделей не сказать, какая из них
@@ -164,6 +169,8 @@ class SettingsState extends Equatable {
   final int threads;
   final bool punctuate;
   final String prompt;
+  final List<TextCommand> textCommands;
+  final bool dictationCommandsEnabled, transcriberCommandsEnabled;
   final int idleSeconds;
   final bool insert, hud;
 
@@ -231,6 +238,9 @@ class SettingsState extends Equatable {
     int? threads,
     bool? punctuate,
     String? prompt,
+    List<TextCommand>? textCommands,
+    bool? dictationCommandsEnabled,
+    bool? transcriberCommandsEnabled,
     int? idleSeconds,
     bool? insert,
     bool? hud,
@@ -252,80 +262,90 @@ class SettingsState extends Equatable {
     // не отличить от «не передали».
     bool clearDownload = false,
     bool clearProblem = false,
-  }) =>
-      SettingsState(
-        tab: tab ?? this.tab,
-        models: models ?? this.models,
-        vad: clearVadModel ? null : (vad ?? this.vad),
-        downloadTitle: clearDownload ? null : (downloadTitle ?? this.downloadTitle),
-        downloadProgress:
-            clearDownload ? null : (downloadProgress ?? this.downloadProgress),
-        downloadPercent: clearDownload ? 0 : (downloadPercent ?? this.downloadPercent),
-        problem: clearProblem ? null : (problem ?? this.problem),
-        allowed: allowed ?? this.allowed,
-        hold: hold ?? this.hold,
-        toggle: toggle ?? this.toggle,
-        cancel: cancel ?? this.cancel,
-        dictationModel: dictationModel ?? this.dictationModel,
-        queueModel: queueModel ?? this.queueModel,
-        threads: threads ?? this.threads,
-        punctuate: punctuate ?? this.punctuate,
-        prompt: prompt ?? this.prompt,
-        idleSeconds: idleSeconds ?? this.idleSeconds,
-        insert: insert ?? this.insert,
-        hud: hud ?? this.hud,
-        toLibrary: toLibrary ?? this.toLibrary,
-        saveNextToSource: saveNextToSource ?? this.saveNextToSource,
-        timestamps: timestamps ?? this.timestamps,
-        dockIcon: dockIcon ?? this.dockIcon,
-        loginItem: loginItem ?? this.loginItem,
-        libraryPath: libraryPath ?? this.libraryPath,
-        libraryFormats: libraryFormats ?? this.libraryFormats,
-        copyFormat: copyFormat ?? this.copyFormat,
-        saveFormat: saveFormat ?? this.saveFormat,
-        locale: locale ?? this.locale,
-        apiEnabled: apiEnabled ?? this.apiEnabled,
-        apiKey: apiKey ?? this.apiKey,
-        skillResult: skillResult ?? this.skillResult,
-        apiPort: apiPort ?? this.apiPort,
-        apiError: apiError ?? this.apiError,
-      );
+  }) => SettingsState(
+    tab: tab ?? this.tab,
+    models: models ?? this.models,
+    vad: clearVadModel ? null : (vad ?? this.vad),
+    downloadTitle: clearDownload ? null : (downloadTitle ?? this.downloadTitle),
+    downloadProgress: clearDownload
+        ? null
+        : (downloadProgress ?? this.downloadProgress),
+    downloadPercent: clearDownload
+        ? 0
+        : (downloadPercent ?? this.downloadPercent),
+    problem: clearProblem ? null : (problem ?? this.problem),
+    allowed: allowed ?? this.allowed,
+    hold: hold ?? this.hold,
+    toggle: toggle ?? this.toggle,
+    cancel: cancel ?? this.cancel,
+    dictationModel: dictationModel ?? this.dictationModel,
+    queueModel: queueModel ?? this.queueModel,
+    threads: threads ?? this.threads,
+    punctuate: punctuate ?? this.punctuate,
+    prompt: prompt ?? this.prompt,
+    textCommands: textCommands ?? this.textCommands,
+    dictationCommandsEnabled:
+        dictationCommandsEnabled ?? this.dictationCommandsEnabled,
+    transcriberCommandsEnabled:
+        transcriberCommandsEnabled ?? this.transcriberCommandsEnabled,
+    idleSeconds: idleSeconds ?? this.idleSeconds,
+    insert: insert ?? this.insert,
+    hud: hud ?? this.hud,
+    toLibrary: toLibrary ?? this.toLibrary,
+    saveNextToSource: saveNextToSource ?? this.saveNextToSource,
+    timestamps: timestamps ?? this.timestamps,
+    dockIcon: dockIcon ?? this.dockIcon,
+    loginItem: loginItem ?? this.loginItem,
+    libraryPath: libraryPath ?? this.libraryPath,
+    libraryFormats: libraryFormats ?? this.libraryFormats,
+    copyFormat: copyFormat ?? this.copyFormat,
+    saveFormat: saveFormat ?? this.saveFormat,
+    locale: locale ?? this.locale,
+    apiEnabled: apiEnabled ?? this.apiEnabled,
+    apiKey: apiKey ?? this.apiKey,
+    skillResult: skillResult ?? this.skillResult,
+    apiPort: apiPort ?? this.apiPort,
+    apiError: apiError ?? this.apiError,
+  );
 
   @override
   List<Object?> get props => [
-        tab,
-        models,
-        vad,
-        downloadTitle,
-        downloadProgress,
-        downloadPercent,
-        problem,
-        allowed,
-        hold.label,
-        toggle.label,
-        cancel.label,
-        dictationModel,
-        queueModel,
-        threads,
-        punctuate,
-        prompt,
-        idleSeconds,
-        insert,
-        hud,
-        toLibrary,
-        saveNextToSource,
-        timestamps,
-        dockIcon,
-        loginItem,
-        libraryPath,
-        libraryFormats,
-        copyFormat,
-        saveFormat,
-        locale,
-        apiEnabled,
-        apiKey,
-        skillResult,
-        apiPort,
-        apiError,
-      ];
+    tab,
+    models,
+    vad,
+    downloadTitle,
+    downloadProgress,
+    downloadPercent,
+    problem,
+    allowed,
+    hold.label,
+    toggle.label,
+    cancel.label,
+    dictationModel,
+    queueModel,
+    threads,
+    punctuate,
+    prompt,
+    textCommands.map((command) => command.toJson()).toList(),
+    dictationCommandsEnabled,
+    transcriberCommandsEnabled,
+    idleSeconds,
+    insert,
+    hud,
+    toLibrary,
+    saveNextToSource,
+    timestamps,
+    dockIcon,
+    loginItem,
+    libraryPath,
+    libraryFormats,
+    copyFormat,
+    saveFormat,
+    locale,
+    apiEnabled,
+    apiKey,
+    skillResult,
+    apiPort,
+    apiError,
+  ];
 }

@@ -1356,6 +1356,13 @@
   "askConversionFailedTitle": "Не удалось преобразовать",
   "askConversionFailedBody": "Проверьте, что файл ещё на месте и в папку можно записывать.",
   "statusTranscriptConverted": "Расшифровка преобразована",
+  "sectionVoiceCommands": "Голосовые команды",
+  "checkVoiceCommands": "Заменять сказанные команды текстом",
+  "hintVoiceCommandsShared": "Список общий для диктовки и расшифровщика, но включаются они независимо. Например, «адрес офиса» может вставлять полный адрес.",
+  "placeholderCommandPhrase": "Что сказать",
+  "placeholderCommandReplacement": "Что вставить",
+  "tooltipRemoveCommand": "Убрать команду",
+  "buttonAddCommand": "Добавить команду",
   "skillNotFound": "Не найдены: {names}",
   "@skillNotFound": {
     "placeholders": {

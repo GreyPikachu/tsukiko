@@ -11,6 +11,7 @@ import '../../core/app_locale.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
 import '../../core/skill_install.dart';
+import '../../core/text_commands.dart';
 import '../../core/transcript.dart';
 import '../../core/whisper_server.dart' show Hotkey;
 import '../../design/design.dart';
@@ -46,38 +47,44 @@ void runSettings() {
 /// у каждой настройки есть ровно один хозяин. Теперь первые две вкладки —
 /// это и есть хозяева, «Модели» — общий склад файлов на двоих, а
 /// «Приложение» — то, что не принадлежит ни одному из них.
-List<({String id, String label, IconData icon})> _settingsTabs(AppLocalizations l10n) => [
-      (id: 'transcriber', label: l10n.settingsTabTranscription, icon: CupertinoIcons.doc_text),
-      (id: 'dictation', label: l10n.settingsTabDictation, icon: CupertinoIcons.mic),
-      (id: 'models', label: l10n.settingsTabModels, icon: CupertinoIcons.cube_box),
-      (id: 'app', label: l10n.settingsTabApp, icon: CupertinoIcons.gear),
-    ];
+List<({String id, String label, IconData icon})> _settingsTabs(
+  AppLocalizations l10n,
+) => [
+  (
+    id: 'transcriber',
+    label: l10n.settingsTabTranscription,
+    icon: CupertinoIcons.doc_text,
+  ),
+  (id: 'dictation', label: l10n.settingsTabDictation, icon: CupertinoIcons.mic),
+  (id: 'models', label: l10n.settingsTabModels, icon: CupertinoIcons.cube_box),
+  (id: 'app', label: l10n.settingsTabApp, icon: CupertinoIcons.gear),
+];
 
 class SettingsApp extends StatelessWidget {
   const SettingsApp({super.key});
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-        create: (_) => SettingsCubit(NativeBridge()),
-        child: ValueListenableBuilder<Locale?>(
-          valueListenable: appLocale,
-          builder: (context, locale, _) => MacosApp(
-            locale: locale,
-            // Локализованный заголовок окна недоступен здесь: builder ниже
-            // ещё не построен, а MacosApp.title читается до первого кадра.
-            // Заголовок панели инструментов настоящий, локализованный —
-            // системная рамка окна этот берёт только для VoiceOver и Dock.
-            title: currentL10n().settingsWindowTitle,
-            theme: MacosThemeData.light(),
-            darkTheme: MacosThemeData.dark(),
-            themeMode: ThemeMode.system,
-            debugShowCheckedModeBanner: false,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: const SettingsBody(),
-          ),
-        ),
-      );
+    create: (_) => SettingsCubit(NativeBridge()),
+    child: ValueListenableBuilder<Locale?>(
+      valueListenable: appLocale,
+      builder: (context, locale, _) => MacosApp(
+        locale: locale,
+        // Локализованный заголовок окна недоступен здесь: builder ниже
+        // ещё не построен, а MacosApp.title читается до первого кадра.
+        // Заголовок панели инструментов настоящий, локализованный —
+        // системная рамка окна этот берёт только для VoiceOver и Dock.
+        title: currentL10n().settingsWindowTitle,
+        theme: MacosThemeData.light(),
+        darkTheme: MacosThemeData.dark(),
+        themeMode: ThemeMode.system,
+        debugShowCheckedModeBanner: false,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: const SettingsBody(),
+      ),
+    ),
+  );
 }
 
 class SettingsBody extends StatefulWidget {
@@ -87,7 +94,8 @@ class SettingsBody extends StatefulWidget {
   State<SettingsBody> createState() => _SettingsBodyState();
 }
 
-class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver {
+class _SettingsBodyState extends State<SettingsBody>
+    with WidgetsBindingObserver {
   /// Единственное, что остаётся окну: поле ввода подсказки.
   final _promptCtrl = TextEditingController();
   String _promptShown = '';
@@ -116,7 +124,8 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   void didChangeAppLifecycleState(AppLifecycleState state) => _syncVisibility();
 
   void _syncVisibility() => _cubit.setVisible(
-      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed);
+    WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
+  );
 
   @override
   void dispose() {
@@ -138,15 +147,19 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
 
   Future<void> _pickModel() async {
     final f = await openFile(
-        acceptedTypeGroups: const [XTypeGroup(label: 'GGML', extensions: ['bin'])]);
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'GGML', extensions: ['bin']),
+      ],
+    );
     if (f != null) _cubit.pickModel(f.path);
   }
 
   Future<void> _pickLibrary(SettingsState s) async {
     final dir = await getDirectoryPath(
       confirmButtonText: l10n.buttonChoose,
-      initialDirectory:
-          Directory(s.libraryPath).existsSync() ? s.libraryPath : os.documentsDir,
+      initialDirectory: Directory(s.libraryPath).existsSync()
+          ? s.libraryPath
+          : os.documentsDir,
     );
     if (dir != null) _cubit.setLibraryPath(dir);
   }
@@ -165,7 +178,11 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                 child: ListView(
                   // Поля слева и справа одинаковые и одни на все вкладки.
                   padding: const EdgeInsets.fromLTRB(
-                      Gap.edge, Gap.inner, Gap.edge, Gap.section),
+                    Gap.edge,
+                    Gap.inner,
+                    Gap.edge,
+                    Gap.section,
+                  ),
                   children: [
                     // Жалоба стоит над вкладкой, а не внутри неё: назначить
                     // занятое сочетание можно на «Диктовке», выбрать не тот
@@ -189,13 +206,15 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// Что пошло не так с последним действием: занятое сочетание, чужой
   /// файл вместо модели, отказ Корзины.
   Widget _problem(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: Gap.inner),
-        child: Text(
-          text,
-          style: Type.caption
-              .copyWith(color: MacosColors.systemOrangeColor, height: 1.4),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: Gap.inner),
+    child: Text(
+      text,
+      style: Type.caption.copyWith(
+        color: MacosColors.systemOrangeColor,
+        height: 1.4,
+      ),
+    ),
+  );
 
   // ── вкладки ───────────────────────────────────────────────────────────────
 
@@ -203,145 +222,151 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// и вкладки в ней по центру: слева живут кнопки окна, и наезжать на них
   /// нельзя.
   Widget _tabs(BuildContext context, SettingsState s) => Container(
-        height: 58,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: Surface.hairline(context))),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final t in _settingsTabs(l10n))
-              _TabButton(
-                label: t.label,
-                icon: t.icon,
-                selected: s.tab == t.id,
-                onTap: () => _cubit.setTab(t.id),
-              ),
-          ],
-        ),
-      );
+    height: 58,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      border: Border(bottom: BorderSide(color: Surface.hairline(context))),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final t in _settingsTabs(l10n))
+          _TabButton(
+            label: t.label,
+            icon: t.icon,
+            selected: s.tab == t.id,
+            onTap: () => _cubit.setTab(t.id),
+          ),
+      ],
+    ),
+  );
 
   // ── диктовка ──────────────────────────────────────────────────────────────
 
   List<Widget> _dictationTab(SettingsState s) => [
-        SectionTitle(l10n.sectionHotkeys),
-        HotkeyRow(
-          label: l10n.hotkeyHold,
-          keys: s.hold.label,
-          onTap: () => _reassignHotkey('hold'),
+    SectionTitle(l10n.sectionHotkeys),
+    HotkeyRow(
+      label: l10n.hotkeyHold,
+      keys: s.hold.label,
+      onTap: () => _reassignHotkey('hold'),
+    ),
+    HotkeyRow(
+      label: l10n.hotkeyToggle,
+      keys: s.toggle.label,
+      onTap: () => _reassignHotkey('toggle'),
+    ),
+    // Третье действие — и единственное, которое можно не назначать
+    // вовсе. «Остановить» и «передумал» это разные намерения, а у
+    // клавиш второго не было: бросить начатое можно было только мышью,
+    // по крестику на плавающей панели, которую человек мог и выключить.
+    HotkeyRow(
+      label: l10n.hotkeyCancel,
+      keys: s.cancel.label,
+      onTap: () => _reassignHotkey('cancel'),
+      // Снимать нечего — и крестика нет: пустая строка не должна
+      // выбиваться из столбика ради кнопки, которой не на что нажать.
+      onClear: s.cancel.empty ? null : _cubit.clearCancelHotkey,
+    ),
+    // Пара, где одно сочетание входит в другое, ведёт себя непонятно,
+    // а не ломается: запись начинается по дороге ко второму. Молчать
+    // об этом нельзя — человеку неоткуда догадаться.
+    if (s.shadowingHotkey case final early?)
+      _problem(
+        l10n.hotkeyShadowProblem(
+          early.label,
+          (s.shadowedHotkey ?? early).label,
         ),
-        HotkeyRow(
-          label: l10n.hotkeyToggle,
-          keys: s.toggle.label,
-          onTap: () => _reassignHotkey('toggle'),
-        ),
-        // Третье действие — и единственное, которое можно не назначать
-        // вовсе. «Остановить» и «передумал» это разные намерения, а у
-        // клавиш второго не было: бросить начатое можно было только мышью,
-        // по крестику на плавающей панели, которую человек мог и выключить.
-        HotkeyRow(
-          label: l10n.hotkeyCancel,
-          keys: s.cancel.label,
-          onTap: () => _reassignHotkey('cancel'),
-          // Снимать нечего — и крестика нет: пустая строка не должна
-          // выбиваться из столбика ради кнопки, которой не на что нажать.
-          onClear: s.cancel.empty ? null : _cubit.clearCancelHotkey,
-        ),
-        // Пара, где одно сочетание входит в другое, ведёт себя непонятно,
-        // а не ломается: запись начинается по дороге ко второму. Молчать
-        // об этом нельзя — человеку неоткуда догадаться.
-        if (s.shadowingHotkey case final early?)
-          _problem(l10n.hotkeyShadowProblem(
-              early.label, (s.shadowedHotkey ?? early).label)),
-        Hint(l10n.hintHotkeyCancel),
-        Hint(l10n.hintHotkeyCapture),
-        Hint(l10n.hintHotkeyDoubleTap, under: false),
-        Hint(l10n.hintHotkeyExclusive, under: false),
-        SectionTitle(l10n.sectionDictationRecognition),
-        Hint(l10n.hintDictationOwnSettings),
-        const SizedBox(height: Gap.item),
-        _Field(
-          l10n.fieldDictationModel,
-          ModelField(
-            installed: s.usable,
-            value: s.dictationModel,
-            fallback: l10n.fallbackSameAsTranscription,
-            onChosen: (v) => _cubit.setDictationModel(v),
-            onDownload: _cubit.download,
-          ),
-        ),
-        Hint(l10n.hintDictationModelFallback),
-        const SizedBox(height: Gap.inner),
-        // Кнопка стоит здесь, а не на вкладке «Модели»: она не пополняет
-        // список, а выбирает модель диктовки — раньше из общего склада
-        // это делалось молча, и понять, кому достался файл, было нельзя.
-        PushButton(
-          controlSize: ControlSize.regular,
-          secondary: true,
-          onPressed: _pickModel,
-          child: Text(l10n.buttonPickModelFile),
-        ),
-        const SizedBox(height: Gap.item),
-        _Field(
-          l10n.fieldSpeed,
-          MacosPopupButton<int>(
-            value: s.threads,
-            items: [
-              for (final t in threadChoices(s.threads))
-                MacosPopupMenuItem(value: t, child: Text(l10n.threadsCount(t))),
-            ],
-            onChanged: (v) =>
-                _cubit.setThreads(v ?? s.threads),
-          ),
-        ),
-        const SizedBox(height: Gap.item),
-        Check(l10n.checkPunctuate, s.punctuate, _cubit.setPunctuate),
-        const SizedBox(height: Gap.item),
-        // Подпись стоит над полем, а не под ним: под полем она читалась
-        // как пояснение ко всему разделу.
-        _Field(
-          l10n.fieldModelPrompt,
-          AppTextField(
-            controller: _promptCtrl,
-            placeholder: l10n.placeholderPromptExample,
-            minLines: 3,
-            maxLines: null,
-            onChanged: (v) => _cubit.setPrompt(v),
-          ),
-        ),
-        Hint(l10n.hintPromptHelps),
-        SectionTitle(l10n.sectionModelInMemory),
-        _Field(
-          l10n.fieldKeepModel,
-          MacosPopupButton<int>(
-            value: s.idleSeconds,
-            items: [
-              MacosPopupMenuItem(value: 30, child: Text(l10n.duration30s)),
-              MacosPopupMenuItem(value: 60, child: Text(l10n.duration1m)),
-              MacosPopupMenuItem(value: 180, child: Text(l10n.duration3m)),
-              MacosPopupMenuItem(value: 600, child: Text(l10n.duration10m)),
-              MacosPopupMenuItem(value: 3600, child: Text(l10n.duration1h)),
-            ],
-            onChanged: (v) => _cubit.setIdleSeconds(v ?? 180),
-          ),
-        ),
-        // Размер берём у той модели, которая выбрана, а не пишем числом
-        // в тексте: раньше здесь стояло «полтора гигабайта» — верно ровно
-        // для Large v3 Turbo и неправда для всех остальных.
-        Hint('${l10n.hintMemoryCostPrefix} ${_memoryCost(s)}'),
-        SectionTitle(l10n.sectionAfterDictation),
-        Check(l10n.checkInsertText, s.insert, _cubit.setInsert),
-        Hint(l10n.hintInsertOff, under: true),
-        const SizedBox(height: Gap.item),
-        Check(l10n.checkShowHud, s.hud, _cubit.setHud),
-        Hint(l10n.hintHud, under: true),
-      ];
+      ),
+    Hint(l10n.hintHotkeyCancel),
+    Hint(l10n.hintHotkeyCapture),
+    Hint(l10n.hintHotkeyDoubleTap, under: false),
+    Hint(l10n.hintHotkeyExclusive, under: false),
+    SectionTitle(l10n.sectionDictationRecognition),
+    Hint(l10n.hintDictationOwnSettings),
+    const SizedBox(height: Gap.item),
+    _Field(
+      l10n.fieldDictationModel,
+      ModelField(
+        installed: s.usable,
+        value: s.dictationModel,
+        fallback: l10n.fallbackSameAsTranscription,
+        onChosen: (v) => _cubit.setDictationModel(v),
+        onDownload: _cubit.download,
+      ),
+    ),
+    Hint(l10n.hintDictationModelFallback),
+    const SizedBox(height: Gap.inner),
+    // Кнопка стоит здесь, а не на вкладке «Модели»: она не пополняет
+    // список, а выбирает модель диктовки — раньше из общего склада
+    // это делалось молча, и понять, кому достался файл, было нельзя.
+    PushButton(
+      controlSize: ControlSize.regular,
+      secondary: true,
+      onPressed: _pickModel,
+      child: Text(l10n.buttonPickModelFile),
+    ),
+    const SizedBox(height: Gap.item),
+    _Field(
+      l10n.fieldSpeed,
+      MacosPopupButton<int>(
+        value: s.threads,
+        items: [
+          for (final t in threadChoices(s.threads))
+            MacosPopupMenuItem(value: t, child: Text(l10n.threadsCount(t))),
+        ],
+        onChanged: (v) => _cubit.setThreads(v ?? s.threads),
+      ),
+    ),
+    const SizedBox(height: Gap.item),
+    Check(l10n.checkPunctuate, s.punctuate, _cubit.setPunctuate),
+    const SizedBox(height: Gap.item),
+    // Подпись стоит над полем, а не под ним: под полем она читалась
+    // как пояснение ко всему разделу.
+    _Field(
+      l10n.fieldModelPrompt,
+      AppTextField(
+        controller: _promptCtrl,
+        placeholder: l10n.placeholderPromptExample,
+        minLines: 3,
+        maxLines: null,
+        onChanged: (v) => _cubit.setPrompt(v),
+      ),
+    ),
+    Hint(l10n.hintPromptHelps),
+    ..._textCommands(
+      s,
+      enabled: s.dictationCommandsEnabled,
+      onEnabled: _cubit.setDictationCommandsEnabled,
+    ),
+    SectionTitle(l10n.sectionModelInMemory),
+    _Field(
+      l10n.fieldKeepModel,
+      MacosPopupButton<int>(
+        value: s.idleSeconds,
+        items: [
+          MacosPopupMenuItem(value: 30, child: Text(l10n.duration30s)),
+          MacosPopupMenuItem(value: 60, child: Text(l10n.duration1m)),
+          MacosPopupMenuItem(value: 180, child: Text(l10n.duration3m)),
+          MacosPopupMenuItem(value: 600, child: Text(l10n.duration10m)),
+          MacosPopupMenuItem(value: 3600, child: Text(l10n.duration1h)),
+        ],
+        onChanged: (v) => _cubit.setIdleSeconds(v ?? 180),
+      ),
+    ),
+    // Размер берём у той модели, которая выбрана, а не пишем числом
+    // в тексте: раньше здесь стояло «полтора гигабайта» — верно ровно
+    // для Large v3 Turbo и неправда для всех остальных.
+    Hint('${l10n.hintMemoryCostPrefix} ${_memoryCost(s)}'),
+    SectionTitle(l10n.sectionAfterDictation),
+    Check(l10n.checkInsertText, s.insert, _cubit.setInsert),
+    Hint(l10n.hintInsertOff, under: true),
+    const SizedBox(height: Gap.item),
+    Check(l10n.checkShowHud, s.hud, _cubit.setHud),
+    Hint(l10n.hintHud, under: true),
+  ];
 
-  Future<void> _reassignHotkey(String id) => _cubit.reassign(
-        id,
-        confirmExclusive: _confirmExclusiveHotkey,
-      );
+  Future<void> _reassignHotkey(String id) =>
+      _cubit.reassign(id, confirmExclusive: _confirmExclusiveHotkey);
 
   Future<bool> _confirmExclusiveHotkey(Hotkey hotkey) async {
     if (!mounted) return false;
@@ -349,10 +374,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
     await showMacosAlertDialog<void>(
       context: context,
       builder: (dialogContext) => MacosAlertDialog(
-        appIcon: const MacosIcon(
-          CupertinoIcons.keyboard,
-          size: IconSize.hero,
-        ),
+        appIcon: const MacosIcon(CupertinoIcons.keyboard, size: IconSize.hero),
         title: Text(
           l10n.singleHotkeyTitle(hotkey.label),
           style: Type.emptyTitle,
@@ -426,9 +448,12 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('${m.title} · ${m.size}', style: Type.fileName),
-                      Text(m.about,
-                          style: Type.caption
-                              .copyWith(color: Surface.secondaryText(context))),
+                      Text(
+                        m.about,
+                        style: Type.caption.copyWith(
+                          color: Surface.secondaryText(context),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -466,7 +491,9 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
               l10n.modelsFolderLabel(os.modelsDir.replaceFirst(home, '~')),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+              style: Type.caption.copyWith(
+                color: Surface.secondaryText(context),
+              ),
             ),
           ),
           const SizedBox(width: Gap.inner),
@@ -502,7 +529,9 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// вопрос один и без запугивания.
   Future<void> _confirmDelete(SettingsState s, InstalledModel m) async {
     final usedBy = s.userOf(m.path);
-    final where = m.ours ? l10n.deleteModelToTrash : l10n.deleteModelSharedFolder(appName);
+    final where = m.ours
+        ? l10n.deleteModelToTrash
+        : l10n.deleteModelSharedFolder(appName);
     var yes = false;
     await showMacosAlertDialog<void>(
       context: context,
@@ -549,70 +578,119 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// раздел говорит об этом прямо — раньше человек искал их тут и не
   /// находил.
   List<Widget> _transcriberTab(SettingsState s) => [
-        SectionTitle(l10n.sectionHowToRecognize),
-        Hint(l10n.hintPerRecordingSettings),
-        const SizedBox(height: Gap.item),
-        Hint(l10n.hintWaitBusyModel, under: true),
-        SectionTitle(l10n.sectionAutoSave),
-        Check(l10n.checkSaveToDisk, s.toLibrary, _cubit.setToLibrary),
-        Hint(l10n.hintSaveToDisk(appName), under: true),
-        SectionTitle(l10n.sectionWhereToSave),
-        LibraryPath(
-          path: s.libraryPath,
-          onReveal: () => _cubit.revealLibrary(s.libraryPath),
-          onChange: () => _pickLibrary(s),
-          hint: l10n.libraryHint(
-              appName, monthFolder(DateTime.now()), os.fileManagerName),
+    SectionTitle(l10n.sectionHowToRecognize),
+    Hint(l10n.hintPerRecordingSettings),
+    const SizedBox(height: Gap.item),
+    Hint(l10n.hintWaitBusyModel, under: true),
+    ..._textCommands(
+      s,
+      enabled: s.transcriberCommandsEnabled,
+      onEnabled: _cubit.setTranscriberCommandsEnabled,
+    ),
+    SectionTitle(l10n.sectionAutoSave),
+    Check(l10n.checkSaveToDisk, s.toLibrary, _cubit.setToLibrary),
+    Hint(l10n.hintSaveToDisk(appName), under: true),
+    SectionTitle(l10n.sectionWhereToSave),
+    LibraryPath(
+      path: s.libraryPath,
+      onReveal: () => _cubit.revealLibrary(s.libraryPath),
+      onChange: () => _pickLibrary(s),
+      hint: l10n.libraryHint(
+        appName,
+        monthFolder(DateTime.now()),
+        os.fileManagerName,
+      ),
+    ),
+    if (s.toLibrary) ...[
+      SectionTitle(l10n.sectionAutoSaveFormats),
+      for (final f in exportFormats)
+        // suffix у «текста с таймкодами» начинается с пробела: он
+        // дописывается к имени файла. В подписи этот пробел — дыра.
+        Check(
+          '${f.label} · ${f.suffix.trim()}',
+          s.libraryFormats.contains(f.id),
+          (v) => _cubit.toggleFormat(f.id, v),
         ),
-        if (s.toLibrary) ...[
-          SectionTitle(l10n.sectionAutoSaveFormats),
-          for (final f in exportFormats)
-            // suffix у «текста с таймкодами» начинается с пробела: он
-            // дописывается к имени файла. В подписи этот пробел — дыра.
-            Check('${f.label} · ${f.suffix.trim()}',
-                s.libraryFormats.contains(f.id),
-                (v) => _cubit.toggleFormat(f.id, v)),
-          Hint(
-              s.libraryFormats.length > 1
-                  ? l10n.hintFormatsMulti
-                  : l10n.hintFormatsSingle,
-              under: true),
-        ],
-        SectionTitle(l10n.labelCopyFormat),
-        MacosPopupButton<String>(
-          value: s.copyFormat,
-          items: [
-            for (final f in exportFormats)
-              MacosPopupMenuItem(value: f.id, child: Text(f.label)),
-          ],
-          onChanged: (value) {
-            if (value != null) _cubit.setCopyFormat(value);
-          },
+      Hint(
+        s.libraryFormats.length > 1
+            ? l10n.hintFormatsMulti
+            : l10n.hintFormatsSingle,
+        under: true,
+      ),
+    ],
+    SectionTitle(l10n.labelCopyFormat),
+    MacosPopupButton<String>(
+      value: s.copyFormat,
+      items: [
+        for (final f in exportFormats)
+          MacosPopupMenuItem(value: f.id, child: Text(f.label)),
+      ],
+      onChanged: (value) {
+        if (value != null) _cubit.setCopyFormat(value);
+      },
+    ),
+    Hint(l10n.hintCopyFormatSynced),
+    SectionTitle(l10n.labelSaveFormat),
+    MacosPopupButton<String>(
+      value: s.saveFormat,
+      items: [
+        for (final f in exportFormats)
+          MacosPopupMenuItem(value: f.id, child: Text(f.label)),
+      ],
+      onChanged: (value) {
+        if (value != null) _cubit.setSaveFormat(value);
+      },
+    ),
+    Hint(l10n.hintSaveFormatSynced),
+    SectionTitle(l10n.sectionCopyBesideSource),
+    Check(
+      l10n.checkSaveBesideSource,
+      s.saveNextToSource,
+      _cubit.setSaveNextToSource,
+    ),
+    Hint(l10n.hintSaveBesideSource, under: true),
+    // Метки времени переехали сюда из «Общих»: они рисуются в окне
+    // расшифровщика и больше нигде — в диктовке текста с таймкодами
+    // нет вовсе.
+    SectionTitle(l10n.sectionInTranscriberWindow),
+    Check(l10n.checkShowTimestamps, s.timestamps, _cubit.setTimestamps),
+    Hint(l10n.hintShowTimestamps, under: true),
+  ];
+
+  /// Список один на диктовку и расшифровщик, а выключатели разные.
+  /// Показываем редактор в обеих вкладках: человеку не приходится помнить,
+  /// на какой стороне он когда-то завёл команду.
+  List<Widget> _textCommands(
+    SettingsState s, {
+    required bool enabled,
+    required ValueChanged<bool> onEnabled,
+  }) => [
+    SectionTitle(l10n.sectionVoiceCommands),
+    Check(l10n.checkVoiceCommands, enabled, onEnabled),
+    Hint(l10n.hintVoiceCommandsShared, under: true),
+    if (enabled) ...[
+      const SizedBox(height: Gap.item),
+      for (final (index, command) in s.textCommands.indexed)
+        Padding(
+          padding: const EdgeInsets.only(bottom: Gap.inner),
+          child: _TextCommandRow(
+            key: ValueKey(index),
+            command: command,
+            phraseHint: l10n.placeholderCommandPhrase,
+            replacementHint: l10n.placeholderCommandReplacement,
+            removeHint: l10n.tooltipRemoveCommand,
+            onChanged: (next) => _cubit.updateTextCommand(index, next),
+            onRemove: () => _cubit.removeTextCommand(index),
+          ),
         ),
-        Hint(l10n.hintCopyFormatSynced),
-        SectionTitle(l10n.labelSaveFormat),
-        MacosPopupButton<String>(
-          value: s.saveFormat,
-          items: [
-            for (final f in exportFormats)
-              MacosPopupMenuItem(value: f.id, child: Text(f.label)),
-          ],
-          onChanged: (value) {
-            if (value != null) _cubit.setSaveFormat(value);
-          },
-        ),
-        Hint(l10n.hintSaveFormatSynced),
-        SectionTitle(l10n.sectionCopyBesideSource),
-        Check(l10n.checkSaveBesideSource, s.saveNextToSource,
-            _cubit.setSaveNextToSource),
-        Hint(l10n.hintSaveBesideSource, under: true),
-        // Метки времени переехали сюда из «Общих»: они рисуются в окне
-        // расшифровщика и больше нигде — в диктовке текста с таймкодами
-        // нет вовсе.
-        SectionTitle(l10n.sectionInTranscriberWindow),
-        Check(l10n.checkShowTimestamps, s.timestamps, _cubit.setTimestamps),
-        Hint(l10n.hintShowTimestamps, under: true),
-      ];
+      PushButton(
+        controlSize: ControlSize.small,
+        secondary: true,
+        onPressed: _cubit.addTextCommand,
+        child: Text(l10n.buttonAddCommand),
+      ),
+    ],
+  ];
 
   /// Местное API: та самая галка, которой открывают дверь наружу.
   ///
@@ -621,46 +699,46 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// целиком — прятать его за звёздочками бессмысленно, он нужен именно
   /// для того, чтобы его скопировать и отдать своей программе.
   List<Widget> _apiSection(SettingsState s) => [
-        SectionTitle(l10n.sectionApi),
-        Check(l10n.checkApiEnabled, s.apiEnabled, (v) {
-          setState(() => _keyCopied = false);
-          _cubit.setApiEnabled(v);
-        }),
-        Hint(
-            s.apiEnabled
-                ? l10n.hintApiEnabled('${s.apiPort}')
-                : l10n.hintApiDisabled,
-            under: true),
-        if (s.apiEnabled) ...[
-          if (s.apiError.isNotEmpty) _problem(l10n.apiFailed(s.apiError, '${s.apiPort}')),
-          const SizedBox(height: Gap.item),
-          _Field(
-            l10n.fieldApiKey,
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    s.apiKey,
-                    maxLines: 1,
-                    style: Type.control.copyWith(fontFamily: 'Menlo'),
-                  ),
-                ),
-                const SizedBox(width: Gap.control),
-                PushButton(
-                  controlSize: ControlSize.regular,
-                  secondary: true,
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: s.apiKey));
-                    setState(() => _keyCopied = true);
-                  },
-                  child: Text(l10n.buttonCopyKey),
-                ),
-              ],
+    SectionTitle(l10n.sectionApi),
+    Check(l10n.checkApiEnabled, s.apiEnabled, (v) {
+      setState(() => _keyCopied = false);
+      _cubit.setApiEnabled(v);
+    }),
+    Hint(
+      s.apiEnabled ? l10n.hintApiEnabled('${s.apiPort}') : l10n.hintApiDisabled,
+      under: true,
+    ),
+    if (s.apiEnabled) ...[
+      if (s.apiError.isNotEmpty)
+        _problem(l10n.apiFailed(s.apiError, '${s.apiPort}')),
+      const SizedBox(height: Gap.item),
+      _Field(
+        l10n.fieldApiKey,
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                s.apiKey,
+                maxLines: 1,
+                style: Type.control.copyWith(fontFamily: 'Menlo'),
+              ),
             ),
-          ),
-          Hint(_keyCopied ? l10n.apiKeyCopied : l10n.hintApiKey),
-        ],
-      ];
+            const SizedBox(width: Gap.control),
+            PushButton(
+              controlSize: ControlSize.regular,
+              secondary: true,
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: s.apiKey));
+                setState(() => _keyCopied = true);
+              },
+              child: Text(l10n.buttonCopyKey),
+            ),
+          ],
+        ),
+      ),
+      Hint(_keyCopied ? l10n.apiKeyCopied : l10n.hintApiKey),
+    ],
+  ];
 
   /// Скилл для нейросетевых агентов.
   ///
@@ -674,7 +752,10 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// значило бы решать за него. Папку тогда заводим мы — но только
   /// по его нажатию и только ту, что этому агенту и принадлежит.
   List<Widget> _skillSection(SettingsState s) {
-    final installed = [for (final a in skillAgents) if (a.alreadyInstalled()) a];
+    final installed = [
+      for (final a in skillAgents)
+        if (a.alreadyInstalled()) a,
+    ];
     return [
       SectionTitle(l10n.sectionSkill),
       Hint(l10n.hintSkill, under: true),
@@ -717,8 +798,10 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                 PushButton(
                   controlSize: ControlSize.regular,
                   secondary: true,
-                  onPressed: () => _cubit.installSkillToAgents(
-                      [for (final a in skillAgents) if (_skillPicked(a)) a]),
+                  onPressed: () => _cubit.installSkillToAgents([
+                    for (final a in skillAgents)
+                      if (_skillPicked(a)) a,
+                  ]),
                   child: Text(l10n.buttonInstallSkillChosen),
                 ),
               ],
@@ -761,79 +844,174 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
   /// ни диктовке: как приложение живёт в системе и что ему разрешено.
   /// Всё остальное разъехалось по хозяевам.
   List<Widget> _appTab(SettingsState s) => [
-        SectionTitle(l10n.sectionLanguage),
-        _Field(
-          l10n.fieldLanguage,
-          MacosPopupButton<String>(
-            value: s.locale,
-            items: [
-              MacosPopupMenuItem(value: '', child: Text(l10n.languageSystem)),
-              // Языки названы на себе самих: так их узнают и те, кто
-              // случайно переключился на незнакомый.
-              const MacosPopupMenuItem(value: 'ru', child: Text('Русский')),
-              const MacosPopupMenuItem(value: 'en', child: Text('English')),
-            ],
-            onChanged: (v) => _cubit.setLocale(v ?? ''),
+    SectionTitle(l10n.sectionLanguage),
+    _Field(
+      l10n.fieldLanguage,
+      MacosPopupButton<String>(
+        value: s.locale,
+        items: [
+          MacosPopupMenuItem(value: '', child: Text(l10n.languageSystem)),
+          // Языки названы на себе самих: так их узнают и те, кто
+          // случайно переключился на незнакомый.
+          const MacosPopupMenuItem(value: 'ru', child: Text('Русский')),
+          const MacosPopupMenuItem(value: 'en', child: Text('English')),
+        ],
+        onChanged: (v) => _cubit.setLocale(v ?? ''),
+      ),
+    ),
+    Hint(l10n.hintLanguage),
+    SectionTitle(l10n.sectionInSystem),
+    Check(l10n.checkLoginItem, s.loginItem, _cubit.setLoginItem),
+    Hint(l10n.hintLoginItem(os.menuBarName), under: true),
+    const SizedBox(height: Gap.item),
+    Check(
+      l10n.checkShowDockIcon(os.appIconAreaName),
+      s.dockIcon,
+      _cubit.setDockIcon,
+    ),
+    Hint(
+      l10n.hintDockIcon(appName, os.appIconAreaName, os.menuBarName),
+      under: true,
+    ),
+    ..._apiSection(s),
+    ..._skillSection(s),
+    // Разрешение системы — вещь macOS: там без «Универсального доступа»
+    // не перехватить клавишу и не вставить текст. На Windows такого
+    // разрешения нет вовсе, и раздел о нём обещал бы работу, которой
+    // не существует. Микрофон — другое дело, но его спрашивает сама
+    // система при первой записи.
+    if (os.needsAccessibilityPermission) ...[
+      SectionTitle(l10n.sectionPermissions),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              s.allowed
+                  ? l10n.permissionGranted(os.accessibilityName)
+                  : l10n.permissionMissing(os.accessibilityName, appName),
+              style: Type.control.copyWith(height: 1.4),
+            ),
           ),
-        ),
-        Hint(l10n.hintLanguage),
-        SectionTitle(l10n.sectionInSystem),
-        Check(l10n.checkLoginItem, s.loginItem, _cubit.setLoginItem),
-        Hint(l10n.hintLoginItem(os.menuBarName), under: true),
-        const SizedBox(height: Gap.item),
-        Check(l10n.checkShowDockIcon(os.appIconAreaName), s.dockIcon,
-            _cubit.setDockIcon),
-        Hint(l10n.hintDockIcon(appName, os.appIconAreaName, os.menuBarName),
-            under: true),
-        ..._apiSection(s),
-        ..._skillSection(s),
-        // Разрешение системы — вещь macOS: там без «Универсального доступа»
-        // не перехватить клавишу и не вставить текст. На Windows такого
-        // разрешения нет вовсе, и раздел о нём обещал бы работу, которой
-        // не существует. Микрофон — другое дело, но его спрашивает сама
-        // система при первой записи.
-        if (os.needsAccessibilityPermission) ...[
-          SectionTitle(l10n.sectionPermissions),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  s.allowed
-                      ? l10n.permissionGranted(os.accessibilityName)
-                      : l10n.permissionMissing(os.accessibilityName, appName),
-                  style: Type.control.copyWith(height: 1.4),
-                ),
-              ),
-            ],
-          ),
-          Hint(l10n.hintPermissionWhy),
-          const SizedBox(height: Gap.item),
-          if (!s.allowed)
-            Row(
-              children: [
-                PushButton(
-                  controlSize: ControlSize.regular,
-                  onPressed: _cubit.requestPermission,
-                  child: Text(l10n.buttonRequestPermission),
-                ),
-                const SizedBox(width: Gap.control),
-                PushButton(
-                  controlSize: ControlSize.regular,
-                  secondary: true,
-                  onPressed: _cubit.openPermissionSettings,
-                  child: Text(l10n.buttonOpenSystemSettings),
-                ),
-              ],
-            )
-          else
+        ],
+      ),
+      Hint(l10n.hintPermissionWhy),
+      const SizedBox(height: Gap.item),
+      if (!s.allowed)
+        Row(
+          children: [
+            PushButton(
+              controlSize: ControlSize.regular,
+              onPressed: _cubit.requestPermission,
+              child: Text(l10n.buttonRequestPermission),
+            ),
+            const SizedBox(width: Gap.control),
             PushButton(
               controlSize: ControlSize.regular,
               secondary: true,
               onPressed: _cubit.openPermissionSettings,
               child: Text(l10n.buttonOpenSystemSettings),
             ),
-        ],
-      ];
+          ],
+        )
+      else
+        PushButton(
+          controlSize: ControlSize.regular,
+          secondary: true,
+          onPressed: _cubit.openPermissionSettings,
+          child: Text(l10n.buttonOpenSystemSettings),
+        ),
+    ],
+  ];
+}
+
+/// Одна команда редактируется на месте. Контроллеры принадлежат строке,
+/// иначе новая буква возвращала бы курсор в конец при каждом состоянии
+/// кубита, а удаление соседней строки оставляло бы в поле чужой текст.
+class _TextCommandRow extends StatefulWidget {
+  const _TextCommandRow({
+    super.key,
+    required this.command,
+    required this.phraseHint,
+    required this.replacementHint,
+    required this.removeHint,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final TextCommand command;
+  final String phraseHint, replacementHint, removeHint;
+  final ValueChanged<TextCommand> onChanged;
+  final VoidCallback onRemove;
+
+  @override
+  State<_TextCommandRow> createState() => _TextCommandRowState();
+}
+
+class _TextCommandRowState extends State<_TextCommandRow> {
+  late final _phrase = TextEditingController(text: widget.command.phrase);
+  late final _replacement = TextEditingController(
+    text: widget.command.replacement,
+  );
+
+  @override
+  void didUpdateWidget(covariant _TextCommandRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_phrase.text != widget.command.phrase) {
+      _phrase.text = widget.command.phrase;
+    }
+    if (_replacement.text != widget.command.replacement) {
+      _replacement.text = widget.command.replacement;
+    }
+  }
+
+  @override
+  void dispose() {
+    _phrase.dispose();
+    _replacement.dispose();
+    super.dispose();
+  }
+
+  void _changed() =>
+      widget.onChanged(TextCommand(_phrase.text, _replacement.text));
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: AppTextField(
+          controller: _phrase,
+          placeholder: widget.phraseHint,
+          onChanged: (_) => _changed(),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Gap.inner),
+        child: MacosIcon(
+          CupertinoIcons.arrow_right,
+          size: IconSize.button,
+          color: Surface.secondaryText(context),
+        ),
+      ),
+      Expanded(
+        child: AppTextField(
+          controller: _replacement,
+          placeholder: widget.replacementHint,
+          onChanged: (_) => _changed(),
+        ),
+      ),
+      const SizedBox(width: Gap.inner),
+      MacosTooltip(
+        message: widget.removeHint,
+        child: MacosIconButton(
+          icon: const MacosIcon(
+            CupertinoIcons.minus_circle,
+            size: IconSize.button,
+          ),
+          onPressed: widget.onRemove,
+        ),
+      ),
+    ],
+  );
 }
 
 /// Подпись над полем, а не слева от него: выпадающий список в macOS
@@ -846,16 +1024,18 @@ class _Field extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label,
-              style: Type.caption.copyWith(color: Surface.secondaryText(context))),
-          // Подпись прижата к своему полю, а расстояние до следующей
-          // настройки задаётся снаружи и всегда больше.
-          const SizedBox(height: Gap.hint),
-          child,
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+      ),
+      // Подпись прижата к своему полю, а расстояние до следующей
+      // настройки задаётся снаружи и всегда больше.
+      const SizedBox(height: Gap.hint),
+      child,
+    ],
+  );
 }
 
 /// Вкладка в полосе: значок над подписью — как в панели инструментов
@@ -901,8 +1081,8 @@ class _TabButtonState extends State<_TabButton> {
             color: widget.selected
                 ? Surface.pressed(context)
                 : _hover
-                    ? Surface.hover(context)
-                    : MacosColors.transparent,
+                ? Surface.hover(context)
+                : MacosColors.transparent,
             borderRadius: BorderRadius.circular(7),
           ),
           child: Column(

@@ -11,6 +11,7 @@ import '../../core/app_locale.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
 import '../../core/settings.dart';
+import '../../core/text_commands.dart';
 import '../../core/transcript.dart';
 import '../../core/whisper_server.dart';
 import '../api/api_server.dart';
@@ -72,45 +73,57 @@ class SettingsCubit extends Cubit<SettingsState> {
         .map((v) => v.startsWith('.') ? v.substring(1) : v)
         .where((v) => exportFormats.any((f) => f.id == v))
         .toList();
-    _emit(state.copyWith(
-      models: scanModels(),
-      vad: findVadModel(),
-      clearVadModel: findVadModel() == null,
-      // Модель расшифровщика окно только показывает: правит её главное
-      // окно, и переписать её здесь значило бы драться с ним за один ключ.
-      queueModel: (s['model'] as String?) ?? '',
-      toLibrary: (s['toLibrary'] as bool?) ?? true,
-      saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
-      timestamps: (s['timestamps'] as bool?) ?? true,
-      dockIcon: (s['dockIcon'] as bool?) ?? true,
-      libraryPath: (s['libraryPath'] as String?) ?? defaultLibraryPath,
-      locale: (s[localeSetting] as String?) ?? '',
-      apiEnabled: (s[apiEnabledSetting] as bool?) ?? false,
-      apiKey: (s[apiKeySetting] as String?) ?? '',
-      apiPort: (s[apiPortSetting] as int?) ?? apiPort,
-      apiError: (s[apiErrorSetting] as String?) ?? '',
-      libraryFormats:
-          formats != null && formats.isNotEmpty ? formats : state.libraryFormats,
-      copyFormat: _knownFormat(s['copyFormat']),
-      saveFormat: _knownFormat(s['saveFormat']),
-    ));
+    _emit(
+      state.copyWith(
+        models: scanModels(),
+        vad: findVadModel(),
+        clearVadModel: findVadModel() == null,
+        // Модель расшифровщика окно только показывает: правит её главное
+        // окно, и переписать её здесь значило бы драться с ним за один ключ.
+        queueModel: (s['model'] as String?) ?? '',
+        toLibrary: (s['toLibrary'] as bool?) ?? true,
+        saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
+        timestamps: (s['timestamps'] as bool?) ?? true,
+        dockIcon: (s['dockIcon'] as bool?) ?? true,
+        libraryPath: (s['libraryPath'] as String?) ?? defaultLibraryPath,
+        locale: (s[localeSetting] as String?) ?? '',
+        apiEnabled: (s[apiEnabledSetting] as bool?) ?? false,
+        apiKey: (s[apiKeySetting] as String?) ?? '',
+        apiPort: (s[apiPortSetting] as int?) ?? apiPort,
+        apiError: (s[apiErrorSetting] as String?) ?? '',
+        libraryFormats: formats != null && formats.isNotEmpty
+            ? formats
+            : state.libraryFormats,
+        copyFormat: _knownFormat(s['copyFormat']),
+        saveFormat: _knownFormat(s['saveFormat']),
+        textCommands: textCommandsFromJson(s[textCommandsSetting]),
+        dictationCommandsEnabled:
+            (s[dictationCommandsEnabledSetting] as bool?) ?? true,
+        transcriberCommandsEnabled:
+            (s[transcriberCommandsEnabledSetting] as bool?) ?? true,
+      ),
+    );
     // Автозапуск держит система, а не наш файл: его можно выключить
     // и в системных настройках, и галка обязана это показывать.
-    unawaited(bridge.loginItem().then((on) => _emit(state.copyWith(loginItem: on))));
+    unawaited(
+      bridge.loginItem().then((on) => _emit(state.copyWith(loginItem: on))),
+    );
   }
 
-  void _readDictation() => _emit(state.copyWith(
-        hold: _dictation.hold,
-        toggle: _dictation.toggle,
-        cancel: _dictation.cancel,
-        dictationModel: _dictation.model,
-        threads: _dictation.threads,
-        punctuate: _dictation.punctuate,
-        prompt: _dictation.prompt,
-        idleSeconds: _dictation.idleSeconds,
-        insert: _dictation.insert,
-        hud: _dictation.hud,
-      ));
+  void _readDictation() => _emit(
+    state.copyWith(
+      hold: _dictation.hold,
+      toggle: _dictation.toggle,
+      cancel: _dictation.cancel,
+      dictationModel: _dictation.model,
+      threads: _dictation.threads,
+      punctuate: _dictation.punctuate,
+      prompt: _dictation.prompt,
+      idleSeconds: _dictation.idleSeconds,
+      insert: _dictation.insert,
+      hud: _dictation.hud,
+    ),
+  );
 
   // ── запись на диск ────────────────────────────────────────────────────────
 
@@ -144,8 +157,10 @@ class SettingsCubit extends Cubit<SettingsState> {
     // Разрешение выдают в другом приложении и возвращаются к этому окну:
     // спрашивать надо самим, уведомления об этом нет.
     unawaited(checkPermission());
-    _timer =
-        Timer.periodic(const Duration(seconds: 1), (_) => checkPermission());
+    _timer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => checkPermission(),
+    );
   }
 
   /// Тот же счёт отказов, что и в панели: сразу после запуска система
@@ -187,30 +202,30 @@ class SettingsCubit extends Cubit<SettingsState> {
       'cancel': _dictation.cancel,
     }..remove(id);
     if (taken.values.any((other) => !other.empty && hk.sameAs(other))) {
-      return _emit(state.copyWith(
-        problem: currentL10n().hotkeyTakenProblem(hk.label),
-      ));
+      return _emit(
+        state.copyWith(problem: currentL10n().hotkeyTakenProblem(hk.label)),
+      );
     }
     if (hk.requiresExclusiveConsent &&
         !(await confirmExclusive?.call(hk) ?? false)) {
       return;
     }
     _emit(state.copyWith(clearProblem: true));
-    _saveDictation((d) => switch (id) {
-          'hold' => d.hold = hk,
-          'cancel' => d.cancel = hk,
-          _ => d.toggle = hk,
-        });
+    _saveDictation(
+      (d) => switch (id) {
+        'hold' => d.hold = hk,
+        'cancel' => d.cancel = hk,
+        _ => d.toggle = hk,
+      },
+    );
   }
 
   /// Снять сочетание совсем. Есть только у «бросить»: без «держать
   /// и говорить» и «включить» диктовки нет вовсе, а бросать начатое можно
   /// и мышью — по крестику на плавающей панели.
-  void clearCancelHotkey() =>
-      _saveDictation((d) => d.cancel = Hotkey.none);
+  void clearCancelHotkey() => _saveDictation((d) => d.cancel = Hotkey.none);
 
-  void setDictationModel(String path) =>
-      _saveDictation((d) => d.model = path);
+  void setDictationModel(String path) => _saveDictation((d) => d.model = path);
 
   void setThreads(int n) => _saveDictation((d) => d.threads = n);
 
@@ -223,6 +238,11 @@ class SettingsCubit extends Cubit<SettingsState> {
   void setInsert(bool v) => _saveDictation((d) => d.insert = v);
 
   void setHud(bool v) => _saveDictation((d) => d.hud = v);
+
+  void setDictationCommandsEnabled(bool value) {
+    _emit(state.copyWith(dictationCommandsEnabled: value));
+    unawaited(_saveApp({dictationCommandsEnabledSetting: value}));
+  }
 
   // ── модели ────────────────────────────────────────────────────────────────
 
@@ -241,20 +261,24 @@ class SettingsCubit extends Cubit<SettingsState> {
     // Файл мог лежать за пределами обеих наших папок — тогда обход его
     // не найдёт, и в списке он появится только так.
     final known = state.models.any((m) => m.path == path);
-    _emit(state.copyWith(
-      clearProblem: true,
-      models: known
-          ? state.models
-          : [
-              ...state.models,
-              InstalledModel(
-                path: path,
-                sizeBytes: File(path).existsSync() ? File(path).lengthSync() : 0,
-                problem: null,
-                ours: false,
-              ),
-            ],
-    ));
+    _emit(
+      state.copyWith(
+        clearProblem: true,
+        models: known
+            ? state.models
+            : [
+                ...state.models,
+                InstalledModel(
+                  path: path,
+                  sizeBytes: File(path).existsSync()
+                      ? File(path).lengthSync()
+                      : 0,
+                  problem: null,
+                  ours: false,
+                ),
+              ],
+      ),
+    );
     setDictationModel(path);
   }
 
@@ -264,22 +288,32 @@ class SettingsCubit extends Cubit<SettingsState> {
     if (_download != null) return;
     final d = Download(m.url, m.path, title: m.title);
     _download = d;
-    _emit(state.copyWith(
-      downloadTitle: d.title,
-      downloadProgress: d.progressLabel,
-      downloadPercent: d.percent,
-    ));
-    final path = await d.run(onProgress: () {
-      _emit(state.copyWith(
-          downloadProgress: d.progressLabel, downloadPercent: d.percent));
-    });
+    _emit(
+      state.copyWith(
+        downloadTitle: d.title,
+        downloadProgress: d.progressLabel,
+        downloadPercent: d.percent,
+      ),
+    );
+    final path = await d.run(
+      onProgress: () {
+        _emit(
+          state.copyWith(
+            downloadProgress: d.progressLabel,
+            downloadPercent: d.percent,
+          ),
+        );
+      },
+    );
     _download = null;
-    _emit(state.copyWith(
-      clearDownload: true,
-      models: path != null ? scanModels() : null,
-      vad: findVadModel(),
-      clearVadModel: findVadModel() == null,
-    ));
+    _emit(
+      state.copyWith(
+        clearDownload: true,
+        models: path != null ? scanModels() : null,
+        vad: findVadModel(),
+        clearVadModel: findVadModel() == null,
+      ),
+    );
     // Список моделей стал другим — соседним окнам надо его перечитать.
     if (path != null) unawaited(bridge.settingsChanged());
   }
@@ -303,6 +337,38 @@ class SettingsCubit extends Cubit<SettingsState> {
     unawaited(_saveApp({'timestamps': v}));
   }
 
+  void setTranscriberCommandsEnabled(bool value) {
+    _emit(state.copyWith(transcriberCommandsEnabled: value));
+    unawaited(_saveApp({transcriberCommandsEnabledSetting: value}));
+  }
+
+  void addTextCommand() {
+    final commands = [...state.textCommands, const TextCommand('', '')];
+    _saveTextCommands(commands);
+  }
+
+  void updateTextCommand(int index, TextCommand command) {
+    if (index < 0 || index >= state.textCommands.length) return;
+    final commands = [...state.textCommands]..[index] = command;
+    _saveTextCommands(commands);
+  }
+
+  void removeTextCommand(int index) {
+    if (index < 0 || index >= state.textCommands.length) return;
+    final commands = [...state.textCommands]..removeAt(index);
+    _saveTextCommands(commands);
+  }
+
+  void _saveTextCommands(List<TextCommand> commands) {
+    _emit(state.copyWith(textCommands: commands));
+    unawaited(
+      _saveApp({
+        textCommandsSetting: commands
+            .map((command) => command.toJson())
+            .toList(),
+      }),
+    );
+  }
 
   /// Язык интерфейса. Своё окно перерисовываем сразу, соседние узнают
   /// из общего файла: [refreshLocale] вызывается у всех на «reload».
@@ -321,11 +387,9 @@ class SettingsCubit extends Cubit<SettingsState> {
   void setApiEnabled(bool v) {
     final key = v ? newApiKey() : '';
     _emit(state.copyWith(apiEnabled: v, apiKey: key, apiError: ''));
-    unawaited(_saveApp({
-      apiEnabledSetting: v,
-      apiKeySetting: key,
-      apiErrorSetting: '',
-    }));
+    unawaited(
+      _saveApp({apiEnabledSetting: v, apiKeySetting: key, apiErrorSetting: ''}),
+    );
   }
 
   /// Поставить скилл найденным агентам.
@@ -341,9 +405,11 @@ class SettingsCubit extends Cubit<SettingsState> {
       _emit(state.copyWith(skillResult: installSkill(targets, text)));
     } catch (e) {
       stderr.writeln('tsukiko: скилл не поставился — $e');
-      _emit(state.copyWith(skillResult: {
-        for (final t in targets) t.id: SkillOutcome.failed,
-      }));
+      _emit(
+        state.copyWith(
+          skillResult: {for (final t in targets) t.id: SkillOutcome.failed},
+        ),
+      );
     }
   }
 
@@ -388,8 +454,8 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   static String _knownFormat(Object? id) =>
       exportFormats.any((format) => format.id == id)
-          ? id as String
-          : formatPlainText.id;
+      ? id as String
+      : formatPlainText.id;
 
   /// Убрать модель в Корзину.
   ///
@@ -401,19 +467,22 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> deleteModel(String path) async {
     final gone = await bridge.trash(path);
     if (!gone) {
-      return _emit(state.copyWith(
-          problem: currentL10n().modelTrashFailed(path)));
+      return _emit(
+        state.copyWith(problem: currentL10n().modelTrashFailed(path)),
+      );
     }
     // Выбранной эта модель быть больше не может.
     if (_dictation.model == path) {
       _saveDictation((d) => d.model = '');
     }
-    _emit(state.copyWith(
-      clearProblem: true,
-      models: scanModels(),
-      vad: findVadModel(),
-      clearVadModel: findVadModel() == null,
-    ));
+    _emit(
+      state.copyWith(
+        clearProblem: true,
+        models: scanModels(),
+        vad: findVadModel(),
+        clearVadModel: findVadModel() == null,
+      ),
+    );
     // Список моделей стал другим — соседним окнам надо его перечитать.
     unawaited(bridge.settingsChanged());
   }
@@ -431,12 +500,14 @@ class SettingsCubit extends Cubit<SettingsState> {
   /// говорим об этом и обновляем список, а не открываем пустоту.
   Future<void> revealModel(String path) async {
     if (await revealInFinder(path)) return;
-    _emit(state.copyWith(
-      problem: currentL10n().modelFileGone(os.basename(path)),
-      models: scanModels(),
-      vad: findVadModel(),
-      clearVadModel: findVadModel() == null,
-    ));
+    _emit(
+      state.copyWith(
+        problem: currentL10n().modelFileGone(os.basename(path)),
+        models: scanModels(),
+        vad: findVadModel(),
+        clearVadModel: findVadModel() == null,
+      ),
+    );
   }
 
   @override
