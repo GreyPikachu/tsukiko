@@ -143,12 +143,25 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     );
   }
 
+  /// Догон хвоста уже назначен на ближайший кадр.
+  ///
+  /// Движок отдаёт фрагменты не по одному, а пачкой: он считает окно
+  /// в тридцать секунд целиком и печатает всё, что в нём нашлось, разом.
+  /// Пачка в полтора десятка строк заводила полтора десятка прокруток
+  /// подряд, каждая на 380 мс, и они наезжали друг на друга — список
+  /// дёргался, а окно перекладывалось столько же раз. Отсюда и рывки
+  /// во время счёта: не память и не модель, а собственная анимация,
+  /// запущенная пятнадцать раз вместо одного.
+  bool _tailPending = false;
+
   /// Держимся хвоста, пока пользователь сам не отлистал вверх.
   void _followTail() {
-    if (!_transcriptScroll.hasClients) return;
+    if (_tailPending || !_transcriptScroll.hasClients) return;
     final pos = _transcriptScroll.position;
     if (pos.maxScrollExtent - pos.pixels > 120) return;
+    _tailPending = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _tailPending = false;
       if (!_transcriptScroll.hasClients) return;
       _transcriptScroll.animateTo(
         _transcriptScroll.position.maxScrollExtent,
