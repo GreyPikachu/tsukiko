@@ -133,8 +133,8 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
               // Раньше тут стоял значок в тринадцать точек — мельче
               // соседнего времени записи, и найти его глазом было нечем.
               SizedBox(
-                width: IconSize.button + Gap.inner,
-                height: IconSize.button + Gap.inner,
+                width: IconSize.toolbar + Gap.inner,
+                height: IconSize.toolbar + Gap.inner,
                 child: AnimatedOpacity(
                   duration: Motion.dur(context, Motion.quick),
                   curve: Motion.curve(context, Motion.quickCurve),
@@ -142,7 +142,7 @@ class SegmentRowState extends State<SegmentRow> with SingleTickerProviderStateMi
                   child: MacosIconButton(
                     icon: MacosIcon(
                       _copied ? CupertinoIcons.checkmark_alt : CupertinoIcons.doc_on_doc,
-                      size: IconSize.button,
+                      size: IconSize.toolbar,
                       color: _copied ? MacosTheme.of(context).primaryColor : null,
                     ),
                     onPressed: _hover || _copied ? _copy : null,
