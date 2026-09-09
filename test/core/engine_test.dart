@@ -63,6 +63,36 @@ void main() {
     );
   });
 
+  test('аргументы nemo-speech', () {
+    const options = RunOptions(
+      model: '/models/nemotron.gguf',
+      lang: 'ru',
+      threads: 8,
+      prompt: 'Цукика, Немотрон',
+      punctuate: false,
+    );
+    final args = buildNemoArgs(options, '/audio.wav', '/result.json');
+    expect(args.take(2), ['transcribe', '/audio.wav']);
+    expect(args[args.indexOf('--model') + 1], options.model);
+    expect(args[args.indexOf('--output') + 1], '/result.json');
+    expect(args[args.indexOf('--format') + 1], 'json');
+    expect(args[args.indexOf('--language') + 1], 'ru');
+    expect(args, contains('--no-punctuation'));
+    expect(args[args.indexOf('--speech-context') + 1], options.prompt);
+    expect(args[args.indexOf('--speech-context-boost') + 1], '3');
+    expect(args, isNot(contains('8')),
+        reason: 'nemo-speech сам управляет потоками своего backend');
+
+    final automatic = buildNemoArgs(
+      const RunOptions(model: 'm.gguf', lang: 'auto', threads: 4),
+      '/audio.wav',
+      '/result.json',
+    );
+    expect(automatic, isNot(contains('--language')));
+    expect(automatic, isNot(contains('--speech-context')),
+        reason: 'затравка Whisper не является словарём NeMo');
+  });
+
   test('затравка на пунктуацию', () {
     // по умолчанию — подсказка на языке записи
     const ru = RunOptions(model: 'm', lang: 'ru', threads: 4);
@@ -121,6 +151,42 @@ void main() {
     expect(t.lang, 'be');
     expect(t.segments.single.text, 'прывітанне');
     expect(t.segments.single.to, 900);
+  });
+
+  test('разбор json от NeMo собирает слова в фрагменты', () {
+    final json = jsonEncode({
+      'text': 'Первое предложение. После паузы второе',
+      'duration': 3.4,
+      'languages': ['ru-RU'],
+      'words': [
+        {'word': 'Первое', 'start': 0.1, 'end': 0.5, 'confidence': 0.9},
+        {'word': 'предложение.', 'start': 0.5, 'end': 1.1, 'confidence': 0.8},
+        {'word': 'После', 'start': 2.0, 'end': 2.4, 'confidence': 0.9},
+        {'word': 'паузы', 'start': 2.4, 'end': 2.8, 'confidence': 0.9},
+        {'word': 'второе', 'start': 2.8, 'end': 3.4, 'confidence': 0.9},
+      ],
+    });
+    final transcript = parseNemoJson(json);
+    expect(transcript.lang, 'ru-RU');
+    expect(transcript.segments, hasLength(2));
+    expect(transcript.segments.first.text, 'Первое предложение.');
+    expect(transcript.segments.first.from, 100);
+    expect(transcript.segments.first.to, 1100);
+    expect(transcript.segments.last.text, 'После паузы второе');
+    expect(transcript.segments.last.from, 2000);
+    expect(transcript.segments.last.to, 3400);
+  });
+
+  test('ответ NeMo без времён остаётся доступным как один фрагмент', () {
+    final transcript = parseNemoJson(jsonEncode({
+      'text': 'Короткая фраза',
+      'duration': 1.25,
+      'language': 'ru',
+      'words': [],
+    }));
+    expect(transcript.lang, 'ru');
+    expect(transcript.segments.single.text, 'Короткая фраза');
+    expect(transcript.segments.single.to, 1250);
   });
 
   test('форматы экспорта различимы и не зависят от настроек вида', () {

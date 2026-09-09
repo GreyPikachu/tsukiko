@@ -191,6 +191,64 @@ Transcript parseWhisperJson(String jsonText) {
   return Transcript(lang, collapseRepeats(segs));
 }
 
+/// Разобрать JSON, который пишет `nemo-speech transcribe --format json`.
+///
+/// NeMo отдаёт времена отдельных слов, а интерфейс работает с фрагментами.
+/// Собираем слова по естественным границам: конец предложения, заметная
+/// пауза, либо достаточно длинная строка. Таймкоды при этом не теряются.
+Transcript parseNemoJson(String jsonText) {
+  final data = jsonDecode(jsonText) as Map<String, dynamic>;
+  final languages = (data['languages'] as List? ?? const [])
+      .whereType<String>()
+      .where((value) => value.isNotEmpty)
+      .toList();
+  final lang = languages.isNotEmpty
+      ? languages.first
+      : (data['language']?.toString().isNotEmpty == true
+          ? data['language'].toString()
+          : '?');
+  final words = (data['words'] as List? ?? const [])
+      .whereType<Map>()
+      .map((raw) {
+        final text = raw['word']?.toString().trim() ?? '';
+        final from = (((raw['start'] as num?) ?? 0) * 1000).round();
+        final to = (((raw['end'] as num?) ?? 0) * 1000).round();
+        return Segment(from, to, text);
+      })
+      .where((word) => word.text.isNotEmpty)
+      .toList();
+
+  if (words.isEmpty) {
+    final text = data['text']?.toString().trim() ?? '';
+    if (text.isEmpty || looksLikeSilenceHallucination(text)) {
+      return Transcript(lang, const []);
+    }
+    final duration = (((data['duration'] as num?) ?? 0) * 1000).round();
+    return Transcript(lang, [Segment(0, duration, text)]);
+  }
+
+  final segments = <Segment>[];
+  var start = 0;
+  for (var i = 0; i < words.length; i++) {
+    final current = words[i];
+    final next = i + 1 < words.length ? words[i + 1] : null;
+    final chars = words
+        .sublist(start, i + 1)
+        .fold<int>(0, (sum, word) => sum + word.text.length + 1);
+    final sentenceEnd = RegExp(r'[.!?…][\"»”’)]*$').hasMatch(current.text);
+    final pause = next != null && next.from - current.to >= 700;
+    final tooLong = chars >= 90 || current.to - words[start].from >= 12000;
+    if (next == null || sentenceEnd || pause || tooLong) {
+      final text = words.sublist(start, i + 1).map((word) => word.text).join(' ');
+      if (!looksLikeSilenceHallucination(text)) {
+        segments.add(Segment(words[start].from, current.to, text));
+      }
+      start = i + 1;
+    }
+  }
+  return Transcript(lang, collapseRepeats(segments));
+}
+
 String fmtTs(int ms, {String msSep = '.'}) {
   final h = ms ~/ 3600000;
   final m = (ms % 3600000) ~/ 60000;

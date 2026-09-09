@@ -10,6 +10,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../../core/app_locale.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
+import '../../core/recognition.dart';
 import '../../core/settings.dart';
 import '../../core/text.dart';
 import '../../core/text_commands.dart';
@@ -168,7 +169,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       jobs: _unfinished(),
       models: _withOwn(models, defaults.model),
       defaults: defaults,
-      whisperFound: findWhisper() != null,
+      whisperFound: anyRecognitionEngineFound,
       timestamps: (s['timestamps'] as bool?) ?? true,
       saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
       toLibrary: (s['toLibrary'] as bool?) ?? true,
@@ -860,19 +861,38 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       if (!await _yieldToDictation(it, emit)) return false;
       it = _find(it) ?? it;
 
-      // Заход за заходом с одного и того же места: остановленное посреди
-      // распознавание не начинают заново — whisper продолжает с той
-      // миллисекунды, до которой досчитал (`-ot`), а метки времени всё
-      // равно отдаёт от начала файла.
+      final engine = engineForModel(opts.model);
+      if (findRecognitionEngine(engine) == null) {
+        final name = engineTechnicalName(engine);
+        emit(
+          _replace(
+            state,
+            it,
+            it.copyWith(
+              state: JobState.failed,
+              detail: currentL10n().jobDetailEngineMissing(name),
+            ),
+          ).copyWith(status: currentL10n().statusRecognitionFailed(it.name)),
+        );
+        return true;
+      }
+
+      // Whisper продолжает с последней готовой миллисекунды. NeMo выдаёт
+      // результат одним JSON в конце, поэтому после вытеснения диктовкой
+      // безопасно начинает файл заново и ничего не дублирует.
       var code = 0;
       while (true) {
         it = _find(it) ?? it;
         it = it.copyWith(state: JobState.transcribing, clearDetail: true);
         emit(_replace(state, job, it).copyWith(status: it.name));
 
-        code = await _runWhisper(
+        final args = engine == RecognitionEngine.whisperCpp
+            ? buildArgs(opts, wav, base, from: it.resumeFrom)
+            : buildNemoArgs(opts, wav, jsonFile.path);
+        code = await _runRecognizer(
           it,
-          buildArgs(opts, wav, base, from: it.resumeFrom),
+          engine,
+          args,
         );
         it = _find(it) ?? it;
         if (!_pausing || _stopRequested) break;
@@ -903,8 +923,9 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
             it.copyWith(
               state: JobState.failed,
               detail: _lastEngineError.isEmpty
-                  ? currentL10n().jobDetailWhisperFailed
-                  : '${currentL10n().jobDetailWhisperFailed} · $_lastEngineError',
+                  ? currentL10n()
+                      .jobDetailEngineFailed(engineTechnicalName(engine))
+                  : '${currentL10n().jobDetailEngineFailed(engineTechnicalName(engine))} · $_lastEngineError',
               // В подпись влезает начало одной строки, и выделить её
               // оттуда нельзя. Целиком вывод живёт здесь — его показывают
               // подсказкой и отдают в буфер обмена одним пунктом меню.
@@ -915,7 +936,9 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         return true;
       }
 
-      var t = parseWhisperJson(await jsonFile.readAsString());
+      var t = engine == RecognitionEngine.whisperCpp
+          ? parseWhisperJson(await jsonFile.readAsString())
+          : parseNemoJson(await jsonFile.readAsString());
       if (_commandsEnabled) {
         t = Transcript(t.lang, [
           for (final segment in t.segments) _applyCommands(segment),
@@ -923,7 +946,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       }
       // Заход после паузы знает только свою половину записи. Начало
       // осталось в том, что уже показали на экране, — оттуда и берём.
-      if (it.resumeFrom > 0) {
+      if (engine == RecognitionEngine.whisperCpp && it.resumeFrom > 0) {
         t = Transcript(t.lang, [
           ...it.live.where((seg) => seg.from < it.resumeFrom),
           ...t.segments,
@@ -1083,17 +1106,29 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// Вся жалоба целиком — для подсказки, инспектора и буфера обмена.
   String get _engineErrorText => _engineLog.join('\n');
 
-  /// Запуск whisper-cli с разбором вывода на лету.
+  /// Запуск выбранного нативного движка с разбором вывода на лету.
   ///
   /// Сборка движка может не запуститься вовсе — на Windows их две, и
   /// Vulkan-сборку роняет старый драйвер видеокарты. Тогда вычёркиваем
   /// её на весь сеанс и тут же перезапускаемся на процессорной: человек
   /// видит секундную задержку, а не «не справился» на каждой записи.
-  Future<int> _runWhisper(Job job, List<String> args) async {
+  Future<int> _runRecognizer(
+    Job job,
+    RecognitionEngine engine,
+    List<String> args,
+  ) async {
+    final processName = recognitionExecutableName(engine);
     while (true) {
-      final exe = findWhisper();
+      final exe = findRecognitionEngine(engine);
       if (exe == null) return _noEngine;
-      final code = await _runEngine(job, exe, args);
+      int code;
+      try {
+        code = await _runEngine(job, exe, args, processName);
+      } catch (error) {
+        _sawEngineOutput = false;
+        _rememberEngineLine('$exe: $error');
+        code = _noEngine;
+      }
       // Не запустился — это когда процесс умер, не сказав ни слова о ходе
       // работы. Отличать по коду возврата нельзя: whisper и на негодном
       // звуке возвращает не ноль, а вычёркивать из-за одного битого файла
@@ -1114,7 +1149,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         '(0x${(code & 0xFFFFFFFF).toRadixString(16).toUpperCase()}), '
         'ни строчки вывода',
       );
-      if (!engineFailedToStart(exe, recognizerExeName)) return code;
+      if (!engineFailedToStart(exe, processName)) return code;
       stderr.writeln(
         'tsukiko: сборка движка $exe не запустилась — берём следующую',
       );
@@ -1142,18 +1177,23 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   DateTime? _lastProgressAt;
   static const _progressEvery = Duration(milliseconds: 120);
 
-  Future<int> _runEngine(Job job, String exe, List<String> args) async {
+  Future<int> _runEngine(
+    Job job,
+    String exe,
+    List<String> args,
+    String processName,
+  ) async {
     _sawEngineOutput = false;
     _lastProgressAt = null;
     void onLine(String line) {
+      final text = line.trim();
+      if (text.isNotEmpty) _sawEngineOutput = true;
       final seg = parseSegmentLine(line);
       if (seg != null) {
-        _sawEngineOutput = true;
         return add(JobAdvanced(job, segment: seg));
       }
       final p = RegExp(r'progress\s*=\s*(\d+)%').firstMatch(line);
       if (p != null) {
-        _sawEngineOutput = true;
         final value = double.parse(p.group(1)!) / 100;
         final now = DateTime.now();
         final was = _lastProgressAt;
@@ -1167,17 +1207,15 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       }
       final l = RegExp(r'auto-detected language:\s*(\w+)').firstMatch(line);
       if (l != null) {
-        _sawEngineOutput = true;
         add(JobAdvanced(job, language: l.group(1)));
       }
-      final text = line.trim();
       if (text.isNotEmpty) _rememberEngineLine(text);
     }
 
     // Под своим именем: иначе в «Мониторинге системы» память числится
     // за безымянным whisper-cli, и чей он — не понять.
     final proc = await Process.start(
-      runnableWhisper(exe, recognizerExeName)!,
+      runnableEngine(exe, processName)!,
       args,
     );
     _proc = proc;

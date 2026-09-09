@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../platform/os.dart';
+import 'recognition.dart';
 
 /// Где лежат файлы приложения и куда ложатся готовые расшифровки:
 /// раскладка по месяцам и выбор свободного имени.
@@ -393,6 +394,7 @@ Future<bool> revealInFinder(String path, {bool createIfMissing = false}) async {
 /// безымянным whisper-cli, про который не скажешь, чей он.
 const recognizerExeName = 'tsukiko-recognizer';
 const dictationExeName = 'tsukiko-dictation';
+const nemoSpeechExeName = 'nemo-speech';
 
 /// Свой движок — тот, что лежит внутри самого приложения.
 ///
@@ -458,10 +460,29 @@ bool pathBeyondEngine(String path) =>
 String? findWhisper() =>
     bundledEngine(recognizerExeName) ?? os.findExecutable('whisper-cli');
 
+String? findNemoSpeech() =>
+    bundledEngine(nemoSpeechExeName) ?? os.findExecutable(nemoSpeechExeName);
+
+String recognitionExecutableName(RecognitionEngine engine) => switch (engine) {
+      RecognitionEngine.whisperCpp => recognizerExeName,
+      RecognitionEngine.nemoSpeechCpp => nemoSpeechExeName,
+    };
+
+String? findRecognitionEngine(RecognitionEngine engine) => switch (engine) {
+      RecognitionEngine.whisperCpp => findWhisper(),
+      RecognitionEngine.nemoSpeechCpp => findNemoSpeech(),
+    };
+
+bool get anyRecognitionEngineFound =>
+    findWhisper() != null || findNemoSpeech() != null;
+
 /// Работаем на своём движке, а не на системном. Разница видна человеку
 /// в одной строке — и она честная: на чужой сборке мы за поведение
 /// не отвечаем.
 bool get engineIsOurs => bundledEngine(recognizerExeName) != null;
+
+bool recognitionEngineIsOurs(RecognitionEngine engine) =>
+    bundledEngine(recognitionExecutableName(engine)) != null;
 
 /// Имя, под которым движок работает у нас.
 ///
@@ -473,7 +494,7 @@ bool get engineIsOurs => bundledEngine(recognizerExeName) != null;
 /// Ссылка, а не копия: копия теряет свои библиотеки (они ищутся рядом
 /// с самим файлом) и ломает подпись, а по ссылке система запускает тот же
 /// бинарник и называет процесс её именем.
-String? runnableWhisper(String? exe, String as) {
+String? runnableEngine(String? exe, String as) {
   if (exe == null) return null;
   // Свой уже назван как надо (в том числе с .exe или суффиксами на Windows) — ссылка ни к чему.
   final base = os.basename(exe);
@@ -497,3 +518,5 @@ String? runnableWhisper(String? exe, String as) {
     return exe;
   }
 }
+
+String? runnableWhisper(String? exe, String as) => runnableEngine(exe, as);
