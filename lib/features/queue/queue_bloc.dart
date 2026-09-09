@@ -1158,6 +1158,32 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     if (state.libraryFormats.isEmpty) return null;
     try {
       final formats = state.libraryFormats.map(formatById).toList();
+      final existing = Sources.transcriptsFor(state.libraryPath, job.path);
+      if (existing.isNotEmpty) {
+        final represented = <String>{};
+        final written = <String>[];
+        // Все форматы прежней расшифровки перезаписываются новым
+        // результатом. Другая модель не рождает «Запись 2» — она улучшает
+        // ту же запись. Если форматы в настройках расширили, недостающие
+        // ложатся рядом, но уже имеющиеся не дублируются.
+        for (final path in existing) {
+          final format = formatOfFile(path);
+          if (format == null) continue;
+          await File(path).writeAsString(renderFor(format, t, name: job.name));
+          represented.add(format.id);
+          written.add(path);
+        }
+        final dir = os.dirname(existing.first);
+        for (final format in formats.where((f) => !represented.contains(f.id))) {
+          final stem = freeStem(dir, _stem(job.name), format.suffix);
+          final path = os.join(dir, format.fileName(stem));
+          await File(path).writeAsString(renderFor(format, t, name: job.name));
+          written.add(path);
+        }
+        Sources.remember(state.libraryPath, written, job.path);
+        return currentL10n().statusSavedInLibrary(
+            dir.replaceFirst(state.libraryPath, appName));
+      }
       final plan = planPlacement(
         root: state.libraryPath,
         stem: _stem(job.name),

@@ -303,6 +303,25 @@ void main() {
     Directory(away).deleteSync(recursive: true);
   });
 
+  test('по записи находятся все её готовые форматы', () {
+    final root = Directory.systemTemp.createTempSync('tsukiko_src').path;
+    final month = Directory(os.join(root, '2026-09'))..createSync(recursive: true);
+    final audio = File(os.join(root, 'Совещание.m4a'))
+      ..writeAsStringSync('звук');
+    final txt = File(os.join(month.path, 'Совещание.txt'))
+      ..writeAsStringSync('текст');
+    final srt = File(os.join(month.path, 'Совещание.srt'))
+      ..writeAsStringSync('субтитры');
+    Sources.remember(root, [txt.path, srt.path], audio.path);
+
+    expect(Sources.transcriptsFor(root, audio.path).toSet(), {txt.path, srt.path});
+
+    srt.deleteSync();
+    expect(Sources.transcriptsFor(root, audio.path), [txt.path],
+        reason: 'старая служебная связь не возвращает пропавший файл');
+    Directory(root).deleteSync(recursive: true);
+  });
+
   test('папка по умолчанию — в Документах, строчными', () {
     expect(appName, 'tsukiko');
     expect(defaultLibraryPath.endsWith(os.join('Documents', appName)), isTrue);
