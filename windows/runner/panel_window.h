@@ -17,6 +17,16 @@ class HudWindow {
  public:
   ~HudWindow();
 
+  /// Завести окно и поднять на нём движок, но на экран не выводить.
+  ///
+  /// Отдельно от [Show] затем, что подъём движка — это новый изолят,
+  /// загрузка снимка приложения и первый кадр, и делается он на том же
+  /// потоке, что и обработка сообщений окна. Сделанный в ответ на нажатие
+  /// клавиши, он этим нажатием и оплачивается: первая диктовка после
+  /// запуска ждала подъёма панели, и ждала заметно.
+  void Prepare(const flutter::DartProject& base,
+               const std::function<void(flutter::BinaryMessenger*)>& on_ready);
+
   void Show(const flutter::DartProject& base,
             const std::function<void(flutter::BinaryMessenger*)>& on_ready);
   void Hide();

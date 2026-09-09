@@ -134,7 +134,9 @@ class _LibrarySheetState extends State<LibrarySheet> {
       _shown = entry;
       _text = text;
       _link = link;
-      _source = link == null ? null : Sources.locate(widget.root, link, entry.path);
+      _source = link == null
+          ? null
+          : Sources.locate(widget.root, link, entry.path);
     });
   }
 
@@ -146,24 +148,28 @@ class _LibrarySheetState extends State<LibrarySheet> {
     final says = source != null
         ? l10n.librarySourceHere(os.basename(source))
         : link != null
-            ? l10n.librarySourceGone(os.basename(link.path))
-            : l10n.librarySourceUnknown;
+        ? l10n.librarySourceGone(os.basename(link.path))
+        : l10n.librarySourceUnknown;
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
       child: Row(
         children: [
           MacosIcon(
-            source != null ? CupertinoIcons.waveform : CupertinoIcons.waveform_path,
+            source != null
+                ? CupertinoIcons.waveform
+                : CupertinoIcons.waveform_path,
             size: 13,
             color: Surface.secondaryText(context),
           ),
-          const SizedBox(width: 7),
+          const SizedBox(width: 7, height: 10),
           Expanded(
             child: Text(
               says,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+              style: Type.caption.copyWith(
+                color: Surface.secondaryText(context),
+              ),
             ),
           ),
         ],
@@ -192,118 +198,117 @@ class _LibrarySheetState extends State<LibrarySheet> {
 
   @override
   Widget build(BuildContext context) => CallbackShortcuts(
-        // Esc закрывает — как любое временное окно в системе. Щелчок мимо
-        // листа делает то же самое, и это уже забота showMacosSheet
-        // (barrierDismissible), но клавишу он на себя не берёт.
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.escape): () =>
-              Navigator.of(context).maybePop(),
-        },
-        child: Focus(autofocus: true, child: _sheet(context)),
-      );
+    // Esc закрывает — как любое временное окно в системе. Щелчок мимо
+    // листа делает то же самое, и это уже забота showMacosSheet
+    // (barrierDismissible), но клавишу он на себя не берёт.
+    bindings: {
+      const SingleActivator(LogicalKeyboardKey.escape): () =>
+          Navigator.of(context).maybePop(),
+    },
+    child: Focus(autofocus: true, child: _sheet(context)),
+  );
 
   Widget _sheet(BuildContext context) => MacosSheet(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 18, 16, 4),
-              child: Row(
-                children: [
-                  // Заголовок посередине, кнопка справа — как в списках
-                  // системы. Ширина под кнопку отведена и слева, иначе
-                  // заголовок стоял бы не по центру окна.
-                  const SizedBox(width: 96),
-                  Expanded(
-                    child: Text(
-                      l10n.sheetLibraryTitle,
-                      textAlign: TextAlign.center,
-                      style: Type.emptyTitle,
-                    ),
-                  ),
-                  SizedBox(
-                    width: 96,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: _entries.isEmpty
-                          ? null
-                          : PushButton(
-                              controlSize: ControlSize.regular,
-                              secondary: !_selecting,
-                              onPressed: _toggleSelecting,
-                              child: Text(_selecting
-                                  ? l10n.buttonSelectDone
-                                  : l10n.buttonSelect),
-                            ),
-                    ),
-                  ),
-                ],
+    child: Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 18, 16, 4),
+          child: Row(
+            children: [
+              // Заголовок посередине, кнопка справа — как в списках
+              // системы. Ширина под кнопку отведена и слева, иначе
+              // заголовок стоял бы не по центру окна.
+              const SizedBox(width: 96),
+              Expanded(
+                child: Text(
+                  l10n.sheetLibraryTitle,
+                  textAlign: TextAlign.center,
+                  style: Type.emptyTitle,
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-              child: Text(
-                _entries.isEmpty
-                    ? l10n.sheetLibraryEmpty
-                    : _selecting
-                        ? l10n.sheetLibrarySelectHint
-                        : l10n.sheetLibrarySubtitle(filesLabel(_entries.length)),
-                textAlign: TextAlign.center,
-                style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+              SizedBox(
+                width: 96,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _entries.isEmpty
+                      ? null
+                      : PushButton(
+                          controlSize: ControlSize.regular,
+                          secondary: !_selecting,
+                          onPressed: _toggleSelecting,
+                          child: Text(
+                            _selecting
+                                ? l10n.buttonSelectDone
+                                : l10n.buttonSelect,
+                          ),
+                        ),
+                ),
               ),
-            ),
-            Expanded(
-              child: _entries.isEmpty ? _empty() : _split(),
-            ),
-            _buttons(),
-          ],
+            ],
+          ),
         ),
-      );
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+          child: Text(
+            _entries.isEmpty
+                ? l10n.sheetLibraryEmpty
+                : _selecting
+                ? l10n.sheetLibrarySelectHint
+                : l10n.sheetLibrarySubtitle(filesLabel(_entries.length)),
+            textAlign: TextAlign.center,
+            style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+          ),
+        ),
+        Expanded(child: _entries.isEmpty ? _empty() : _split()),
+        _buttons(),
+      ],
+    ),
+  );
 
   /// Пустая библиотека — не беда и не ошибка: расшифровок ещё не было,
   /// или их складывание выключено на вкладке расшифровщика. Говорим прямо,
   /// а не показываем пустой список.
   Widget _empty() => Center(
-        child: EmptyNotice(
-          icon: CupertinoIcons.tray,
-          title: l10n.sheetLibraryEmptyTitle,
-          subtitle: l10n.sheetLibraryEmptyBody(widget.root),
-        ),
-      );
+    child: EmptyNotice(
+      icon: CupertinoIcons.tray,
+      title: l10n.sheetLibraryEmptyTitle,
+      subtitle: l10n.sheetLibraryEmptyBody(widget.root),
+    ),
+  );
 
   Widget _split() => Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(width: 300, child: _list()),
-          Container(width: 1, color: Surface.hairline(context)),
-          Expanded(child: _preview()),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      SizedBox(width: 300, child: _list()),
+      Container(width: 1, color: Surface.hairline(context)),
+      Expanded(child: _preview()),
+    ],
+  );
 
   Widget _list() => ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
-        itemCount: _entries.length,
-        itemBuilder: (context, i) => _EntryRow(
-          entry: _entries[i],
-          folder: _entries[i].folderIn(widget.root),
-          selected: !_selecting && _entries[i] == _shown,
-          choosing: _selecting,
-          chosen: _chosen.contains(_entries[i].path),
-          // В режиме выбора щелчок по строке её отмечает, а не открывает:
-          // два смысла у одного жеста означали бы, что промах стоит
-          // не того, чего ждали.
-          onTap: () =>
-              _selecting ? _toggleChosen(_entries[i]) : _show(_entries[i]),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+    itemCount: _entries.length,
+    itemBuilder: (context, i) => _EntryRow(
+      entry: _entries[i],
+      folder: _entries[i].folderIn(widget.root),
+      selected: !_selecting && _entries[i] == _shown,
+      choosing: _selecting,
+      chosen: _chosen.contains(_entries[i].path),
+      // В режиме выбора щелчок по строке её отмечает, а не открывает:
+      // два смысла у одного жеста означали бы, что промах стоит
+      // не того, чего ждали.
+      onTap: () => _selecting ? _toggleChosen(_entries[i]) : _show(_entries[i]),
+    ),
+  );
 
   void _toggleSelecting() => setState(() {
-        _selecting = !_selecting;
-        _chosen.clear();
-      });
+    _selecting = !_selecting;
+    _chosen.clear();
+  });
 
   void _toggleChosen(LibraryEntry entry) => setState(() {
-        if (!_chosen.remove(entry.path)) _chosen.add(entry.path);
-      });
+    if (!_chosen.remove(entry.path)) _chosen.add(entry.path);
+  });
 
   /// Убрать выбранное в Корзину.
   ///
@@ -317,7 +322,10 @@ class _LibrarySheetState extends State<LibrarySheet> {
     if (!mounted) return;
     final gone = doomed.where((p) => !left.contains(p)).toSet();
     setState(() {
-      _entries = [for (final e in _entries) if (!gone.contains(e.path)) e];
+      _entries = [
+        for (final e in _entries)
+          if (!gone.contains(e.path)) e,
+      ];
       _chosen
         ..clear()
         ..addAll(left);
@@ -325,9 +333,11 @@ class _LibrarySheetState extends State<LibrarySheet> {
       if (_shown == null && _entries.isNotEmpty) _show(_entries.first);
       if (_entries.isEmpty) _selecting = false;
     });
-    widget.onStatus(left.isEmpty
-        ? l10n.statusLibraryTrashed(filesLabel(gone.length))
-        : l10n.statusLibraryTrashFailed(filesLabel(left.length)));
+    widget.onStatus(
+      left.isEmpty
+          ? l10n.statusLibraryTrashed(filesLabel(gone.length))
+          : l10n.statusLibraryTrashFailed(filesLabel(left.length)),
+    );
   }
 
   Widget _previewText() {
@@ -346,12 +356,12 @@ class _LibrarySheetState extends State<LibrarySheet> {
   }
 
   Widget _preview() => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: _previewText()),
-          if (_shown != null) _sourceLine(),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Expanded(child: _previewText()),
+      if (_shown != null) _sourceLine(),
+    ],
+  );
 
   Widget _buttons() => _selecting ? _selectionButtons() : _readingButtons();
 
@@ -508,8 +518,8 @@ class _EntryRowState extends State<_EntryRow> {
             color: widget.selected
                 ? accent
                 : _hover
-                    ? Surface.hover(context)
-                    : MacosColors.transparent,
+                ? Surface.hover(context)
+                : MacosColors.transparent,
             borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
@@ -540,35 +550,35 @@ class _EntryRowState extends State<_EntryRow> {
   Widget _lines(BuildContext context) {
     final e = widget.entry;
     return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                e.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Type.fileName.copyWith(
-                  color: widget.selected ? MacosColors.white : null,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                // Папка, формат и дата: по ним запись и узнают через
-                // полгода. Формат назван словом, а не расширением: «.srt»
-                // говорит меньше, чем «Субтитры SRT».
-                [
-                  widget.folder,
-                  ?formatOfFile(e.path)?.label,
-                  _when(e.at),
-                ].where((s) => s.isNotEmpty).join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Type.caption.copyWith(
-                  color: widget.selected
-                      ? MacosColors.white.withValues(alpha: 0.8)
-                      : Surface.secondaryText(context),
-                ),
-              ),
-            ],
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          e.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Type.fileName.copyWith(
+            color: widget.selected ? MacosColors.white : null,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          // Папка, формат и дата: по ним запись и узнают через
+          // полгода. Формат назван словом, а не расширением: «.srt»
+          // говорит меньше, чем «Субтитры SRT».
+          [
+            widget.folder,
+            ?formatOfFile(e.path)?.label,
+            _when(e.at),
+          ].where((s) => s.isNotEmpty).join(' · '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Type.caption.copyWith(
+            color: widget.selected
+                ? MacosColors.white.withValues(alpha: 0.8)
+                : Surface.secondaryText(context),
+          ),
+        ),
+      ],
     );
   }
 

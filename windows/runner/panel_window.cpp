@@ -267,6 +267,21 @@ HudWindow::~HudWindow() {
 void HudWindow::Show(
     const flutter::DartProject& base,
     const std::function<void(flutter::BinaryMessenger*)>& on_ready) {
+  Prepare(base, on_ready);
+  if (!window_) return;
+
+  // Внизу по центру рабочей области — там же, где она стоит на macOS.
+  RECT work;
+  SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+  const int x = (work.left + work.right) / 2 - kHudWidth / 2;
+  const int y = work.bottom - kHudHeight - 92;
+  SetWindowPos(window_, HWND_TOPMOST, x, y, kHudWidth, kHudHeight,
+               SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+void HudWindow::Prepare(
+    const flutter::DartProject& base,
+    const std::function<void(flutter::BinaryMessenger*)>& on_ready) {
   if (!window_) {
     WNDCLASSW wc = {};
     wc.lpfnWndProc = HudWindow::WndProc;
@@ -304,14 +319,6 @@ void HudWindow::Show(
     ShowWindow(view, SW_SHOW);
     on_ready(controller_->engine()->messenger());
   }
-
-  // Внизу по центру рабочей области — там же, где она стоит на macOS.
-  RECT work;
-  SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
-  const int x = (work.left + work.right) / 2 - kHudWidth / 2;
-  const int y = work.bottom - kHudHeight - 92;
-  SetWindowPos(window_, HWND_TOPMOST, x, y, kHudWidth, kHudHeight,
-               SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
 void HudWindow::Hide() {

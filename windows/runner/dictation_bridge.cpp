@@ -29,6 +29,18 @@
 #define ID_TRAY_QUIT 1003
 // Ожидание второго стука при назначении сочетания.
 #define ID_CAPTURE_TIMER 2001
+#define ID_PASTE_TIMER 2003
+#define ID_PREWARM_TIMER 2004
+
+/// Метка на наших же событиях клавиатуры.
+///
+/// Ctrl+V мы отправляем сами, и наш же перехватчик его видит. Без метки
+/// это выглядит для него как настоящее нажатие: «ctrl» на сочетании
+/// диктовки сработал бы от собственной вставки. Свои события узнаём
+/// по dwExtraInfo, а не по флагу «внедрено» вообще: чужие внедрённые
+/// нажатия (переназначения клавиш, экранная клавиатура) для человека
+/// такие же настоящие, как обычные, и глотать их нельзя.
+static const ULONG_PTR kOurInput = 0x7375'6B69;  // 'suki'
 // Сколько итоговое состояние висит на плавающей панели.
 #define ID_HUD_TIMER 2002
 
@@ -144,6 +156,11 @@ void DictationBridge::Initialize(flutter::BinaryMessenger* messenger, HWND windo
   RegisterMethodChannel();
   SetupTrayIcon();
   InstallKeyboardHook();
+  // Панель записи поднимаем не сейчас, а когда приложение уже встало
+  // и никто ничего не ждёт: подъём движка стоит сотен миллисекунд на том
+  // же потоке, и в запуск его добавлять незачем — как и в первое нажатие
+  // клавиши диктовки, чем он был раньше (см. PrewarmHud).
+  SetTimer(main_window_, ID_PREWARM_TIMER, 2500, nullptr);
 }
 
 void DictationBridge::AttachPanel(flutter::BinaryMessenger* messenger,
@@ -553,6 +570,18 @@ bool DictationBridge::HandleWindowMessage(HWND hwnd, UINT message, WPARAM wparam
     if (hud_) hud_->Hide();
     return true;
   }
+  if (message == WM_TIMER && wparam == ID_PREWARM_TIMER) {
+    KillTimer(main_window_, ID_PREWARM_TIMER);
+    PrewarmHud();
+    return true;
+  }
+
+  if (message == WM_TIMER && wparam == ID_PASTE_TIMER) {
+    KillTimer(main_window_, ID_PASTE_TIMER);
+    RestoreClipboard();
+    return true;
+  }
+
   if (message == WM_TIMER && wparam == ID_CAPTURE_TIMER) {
     KillTimer(main_window_, ID_CAPTURE_TIMER);
     OnCaptureTimeout();
@@ -666,6 +695,15 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
     bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
     bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
     int vk = static_cast<int>(kbd->vkCode);
+
+    // Своё же Ctrl+V от вставки текста. Для перехватчика оно выглядит
+    // как настоящее нажатие, и сочетание с Ctrl срабатывало бы от
+    // собственной вставки. Чужие внедрённые нажатия при этом остаются
+    // настоящими: переназначенная клавиша для человека такая же, как
+    // обычная.
+    if (kbd->dwExtraInfo == kOurInput) {
+      return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
 
     auto isModifierVk = [](int k) {
       return k == VK_CONTROL || k == VK_LCONTROL || k == VK_RCONTROL ||
@@ -932,6 +970,18 @@ void DictationBridge::ShowSettings(const std::string& tab) {
 ///
 /// Движок под неё поднимается при первом показе: панель приходит только
 /// во время диктовки, а до тех пор держать ради неё сто мегабайт незачем.
+void DictationBridge::PrewarmHud() {
+  if (!project_ || hud_) return;
+  hud_ = std::make_unique<HudWindow>();
+  hud_->Prepare(*project_, [this](flutter::BinaryMessenger* messenger) {
+    hud_channel_ =
+        std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+            messenger, "tsukiko/dictation",
+            &flutter::StandardMethodCodec::GetInstance());
+    RegisterHandler(hud_channel_.get());
+  });
+}
+
 void DictationBridge::SetHudState(const std::string& state) {
   if (state == "hidden") {
     if (hud_) hud_->Hide();
@@ -958,6 +1008,7 @@ void DictationBridge::SetHudState(const std::string& state) {
   if (state == "done") linger = 700;
   if (state == "cancelled") linger = 2200;
   if (state == "failed" || state == "copied") linger = 2600;
+  if (state == "silent") linger = 1800;
   if (linger) SetTimer(main_window_, ID_HUD_TIMER, linger, nullptr);
 }
 
@@ -1124,10 +1175,67 @@ double DictationBridge::GetAudioLevel() {
 
 // ── Вставка текста ─────────────────────────────────────────────────────────
 
+namespace {
+
+/// Открыть буфер обмена, не сдаваясь с первой попытки.
+///
+/// Буфер — вещь общая на всю систему, и держать его может кто угодно:
+/// браузер, менеджер буфера, соседнее окно. Отказ с первой попытки
+/// означал бы «текст пропал», хотя ждать надо было двадцать миллисекунд.
+bool OpenClipboardPatiently(HWND owner) {
+  for (int i = 0; i < 12; ++i) {
+    if (OpenClipboard(owner)) return true;
+    Sleep(20);
+  }
+  return false;
+}
+
+/// Форматы, которые лежат не в общей памяти, а отдельными объектами
+/// системы (картинки, метафайлы, палитры). Скопировать их так же, как
+/// текст, нельзя, а испортить попыткой — можно.
+bool IsGlobalFormat(UINT format) {
+  return format != CF_BITMAP && format != CF_DSPBITMAP &&
+         format != CF_PALETTE && format != CF_METAFILEPICT &&
+         format != CF_DSPMETAFILEPICT && format != CF_ENHMETAFILE &&
+         format != CF_DSPENHMETAFILE && format != CF_OWNERDISPLAY;
+}
+
+}  // namespace
+
+/// Вставить текст в чужое окно, вернув человеку его буфер обмена.
+///
+/// Другого способа вставки нет: Windows не даёт положить текст в чужое
+/// поле ввода напрямую, только через буфер и Ctrl+V. Значит чужое
+/// содержимое буфера надо сначала запомнить, а потом вернуть, — иначе
+/// каждая продиктованная фраза стирает то, что человек копировал.
+/// На macOS это делается ровно так же (см. `paste` в Dictation.swift),
+/// а здесь возврата не было вовсе.
+///
+/// Возвращаем не сразу: получатель читает буфер уже после того, как
+/// Ctrl+V до него дошло. Отсюда таймер, и число то же, что на macOS, —
+/// 400 мс.
 bool DictationBridge::PasteText(const std::string& text) {
   if (text.empty()) return true;
 
-  if (!OpenClipboard(main_window_)) return false;
+  if (!OpenClipboardPatiently(main_window_)) return false;
+
+  // Снимок чужого буфера — до того, как его затрём.
+  clipboard_backup_.clear();
+  for (UINT format = EnumClipboardFormats(0); format != 0;
+       format = EnumClipboardFormats(format)) {
+    if (!IsGlobalFormat(format)) continue;
+    HANDLE handle = GetClipboardData(format);
+    if (!handle) continue;
+    const SIZE_T size = GlobalSize(handle);
+    if (size == 0) continue;
+    const void* src = GlobalLock(handle);
+    if (!src) continue;
+    const BYTE* bytes = static_cast<const BYTE*>(src);
+    clipboard_backup_.emplace_back(format,
+                                   std::vector<BYTE>(bytes, bytes + size));
+    GlobalUnlock(handle);
+  }
+
   EmptyClipboard();
 
   std::wstring wtext = Utf8ToWide(text);
@@ -1135,29 +1243,68 @@ bool DictationBridge::PasteText(const std::string& text) {
   HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
   if (!hMem) {
     CloseClipboard();
+    clipboard_backup_.clear();
     return false;
   }
 
   memcpy(GlobalLock(hMem), wtext.c_str(), bytes);
   GlobalUnlock(hMem);
-  SetClipboardData(CF_UNICODETEXT, hMem);
+  if (!SetClipboardData(CF_UNICODETEXT, hMem)) {
+    // Не приняли — память наша, и освобождать её тоже нам.
+    GlobalFree(hMem);
+    CloseClipboard();
+    clipboard_backup_.clear();
+    return false;
+  }
   CloseClipboard();
 
-  // Симуляция нажатия Ctrl + V
-  INPUT inputs[4] = {};
-  inputs[0].type = INPUT_KEYBOARD;
-  inputs[0].ki.wVk = VK_CONTROL;
-  inputs[1].type = INPUT_KEYBOARD;
-  inputs[1].ki.wVk = 'V';
-  inputs[2].type = INPUT_KEYBOARD;
-  inputs[2].ki.wVk = 'V';
-  inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
-  inputs[3].type = INPUT_KEYBOARD;
-  inputs[3].ki.wVk = VK_CONTROL;
-  inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
+  // Человек мог ещё держать сочетание диктовки: на Windows это
+  // Ctrl+Alt или Ctrl+Shift+Пробел. Отпустить их надо самим, иначе
+  // получатель увидит не Ctrl+V, а Ctrl+Alt+V — и не вставит ничего.
+  std::vector<INPUT> inputs;
+  auto key = [&](WORD vk, bool up) {
+    INPUT in = {};
+    in.type = INPUT_KEYBOARD;
+    in.ki.wVk = vk;
+    in.ki.dwFlags = up ? KEYEVENTF_KEYUP : 0;
+    in.ki.dwExtraInfo = kOurInput;
+    inputs.push_back(in);
+  };
+  for (WORD vk : {VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN}) {
+    if (GetAsyncKeyState(vk) & 0x8000) key(vk, true);
+  }
+  key(VK_CONTROL, false);
+  key('V', false);
+  key('V', true);
+  key(VK_CONTROL, true);
 
-  SendInput(4, inputs, sizeof(INPUT));
+  SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
+
+  KillTimer(main_window_, ID_PASTE_TIMER);
+  SetTimer(main_window_, ID_PASTE_TIMER, 400, nullptr);
   return true;
+}
+
+void DictationBridge::RestoreClipboard() {
+  if (clipboard_backup_.empty()) return;
+  auto saved = std::move(clipboard_backup_);
+  clipboard_backup_.clear();
+
+  if (!OpenClipboardPatiently(main_window_)) return;
+  EmptyClipboard();
+  for (const auto& [format, bytes] : saved) {
+    HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, bytes.size());
+    if (!mem) continue;
+    void* dst = GlobalLock(mem);
+    if (!dst) {
+      GlobalFree(mem);
+      continue;
+    }
+    memcpy(dst, bytes.data(), bytes.size());
+    GlobalUnlock(mem);
+    if (!SetClipboardData(format, mem)) GlobalFree(mem);
+  }
+  CloseClipboard();
 }
 
 // ── Корзина и автозапуск ───────────────────────────────────────────────────
