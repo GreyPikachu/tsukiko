@@ -868,8 +868,8 @@
       }
     }
   },
-  "askWhisperNotFoundTitle": "Не найден whisper-cli",
-  "askWhisperNotFoundBody": "Программа не нашлась ни в PATH, ни в обычных местах.\n{hint}",
+  "askWhisperNotFoundTitle": "Не найден движок распознавания",
+  "askWhisperNotFoundBody": "Ни whisper-cli, ни nemo-speech не нашлись в PATH или внутри приложения.\n{hint}",
   "@askWhisperNotFoundBody": {
     "placeholders": {
       "hint": {
@@ -880,13 +880,29 @@
   "askNeedModelTitle": "Нужна модель",
   "askModelNotSelectedTitle": "Не выбрана модель",
   "askNeedModelBody": "Нажмите «Загрузить модель…» в панели справа.\nTiny — 74 МБ, чтобы попробовать.",
-  "askModelNotSelectedBody": "Укажите файл ggml-*.bin в настройках справа.",
+  "askModelNotSelectedBody": "Укажите файл модели GGML или GGUF в настройках справа.",
   "jobDetailNoModelSelected": "Не выбрана модель",
   "hudSilent": "Ничего не записалось",
   "jobDetailSilent": "В записи нет звука",
   "errorSilentRecording": "Записывать было нечего: микрофон не отдал ни одного отсчёта",
   "errorRecordingStart": "Не удалось запустить микрофон. Проверьте, что он подключён и разрешён для tsukiko.",
   "jobDetailWhisperFailed": "whisper-cli не справился с этим файлом",
+  "jobDetailEngineMissing": "Не найден движок {engine}",
+  "@jobDetailEngineMissing": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
+  "jobDetailEngineFailed": "{engine} не справился с этим файлом",
+  "@jobDetailEngineFailed": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
   "statusRecognitionFailed": "Не удалось распознать «{name}»",
   "@statusRecognitionFailed": {
     "placeholders": {
@@ -1168,6 +1184,30 @@
     }
   },
   "statusWhisperNotFound": "whisper-cli не найден",
+  "statusRecognizerNotFound": "Локально · {engine} не найден",
+  "@statusRecognizerNotFound": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
+  "statusRecognizerOurs": "Локально · свой {engine}",
+  "@statusRecognizerOurs": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
+  "statusRecognizerSystem": "Локально · {engine} из системы",
+  "@statusRecognizerSystem": {
+    "placeholders": {
+      "engine": {
+        "type": "String"
+      }
+    }
+  },
   "statusLocalWhisperCpp": "Локально · whisper.cpp",
   "labelExportToFolder": "Экспортировать в папку",
   "timedTextSuffix": " (таймкоды)",

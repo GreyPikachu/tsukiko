@@ -282,13 +282,13 @@ void main() {
 
   group('запуск', () {
     blocTest<QueueBloc, QueueState>(
-      'без whisper-cli очередь не идёт, а объясняет почему',
+      'без движка очередь не идёт, а объясняет почему',
       build: make,
       seed: () => QueueState(jobs: [job('а.m4a')], whisperFound: false),
       act: (b) => b.add(const RunRequested()),
       verify: (b) {
         expect(b.state.running, isFalse);
-        expect(b.state.ask?.title, 'Не найден whisper-cli');
+        expect(b.state.ask?.title, 'Не найден движок распознавания');
       },
     );
 

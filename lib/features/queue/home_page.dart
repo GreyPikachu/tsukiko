@@ -20,6 +20,7 @@ import 'package:macos_ui/macos_ui.dart';
 import '../dictation/dictation_repository.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
+import '../../core/recognition.dart';
 import '../../core/text.dart';
 import '../../core/transcript.dart';
 import '../../design/design.dart';
@@ -1569,6 +1570,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   Widget _inspector(QueueState s, ScrollController controller) {
     final o = s.shown;
     final own = s.lead?.overrides;
+    final selectedEngine = engineForModel(o.model);
+    final selectedEngineName = engineTechnicalName(selectedEngine);
     return ListView(
       controller: controller,
       // Сверху отступа нет: колонка и так начинается под панелью
@@ -1722,11 +1725,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         Text(
           // Чей движок работает — видно сразу. На системном мы за поведение
           // не отвечаем: в старых сборках нет и половины наших флагов.
-          !s.whisperFound
-              ? l10n.statusWhisperNotFound
-              : engineIsOurs
-              ? l10n.statusEngineOurs
-              : l10n.statusEngineSystem,
+          findRecognitionEngine(selectedEngine) == null
+              ? l10n.statusRecognizerNotFound(selectedEngineName)
+              : recognitionEngineIsOurs(selectedEngine)
+                  ? l10n.statusRecognizerOurs(selectedEngineName)
+                  : l10n.statusRecognizerSystem(selectedEngineName),
           style: Type.caption.copyWith(color: Surface.secondaryText(context)),
         ),
       ],

@@ -163,3 +163,28 @@ List<String> buildArgs(RunOptions o, String wav, String outBase, {int from = 0})
       if (o.effectivePrompt.isNotEmpty) ...['--prompt', o.effectivePrompt],
       os.processPath(wav),
     ];
+
+/// Доводы для нативного `nemo-speech transcribe`.
+///
+/// NeMo сам отдаёт один JSON с таймкодами слов. Остальные форматы, как и
+/// у Whisper, приложение строит из него — тогда копирование, библиотека и
+/// конвертация всегда видят один и тот же результат.
+List<String> buildNemoArgs(RunOptions o, String wav, String jsonPath) => [
+      'transcribe',
+      os.processPath(wav),
+      '--model',
+      os.processPath(o.model),
+      '--format',
+      'json',
+      '--output',
+      os.processPath(jsonPath),
+      '--force',
+      if (o.lang != 'auto' && o.lang.isNotEmpty) ...['--language', o.lang],
+      if (!o.punctuate) '--no-punctuation',
+      if (o.prompt.trim().isNotEmpty) ...[
+        '--speech-context',
+        o.prompt.trim(),
+        '--speech-context-boost',
+        '3',
+      ],
+    ];

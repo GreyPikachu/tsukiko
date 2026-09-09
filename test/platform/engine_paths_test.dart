@@ -44,6 +44,26 @@ void main() {
       expect(args.where((a) => a.contains(r'\') && !a.startsWith('<')), isEmpty);
     });
 
+    test('buildNemoArgs тоже преобразует все пути', () {
+      const o = RunOptions(
+        model: r'C:\Users\Роман\models\nemotron.gguf',
+        lang: 'ru',
+        threads: 4,
+      );
+      final args = buildNemoArgs(
+        o,
+        r'C:\Users\Роман\tmp\1.wav',
+        r'C:\Users\Роман\tmp\1.json',
+      );
+      expect(args[1], r'<C:\Users\Роман\tmp\1.wav>');
+      expect(args[args.indexOf('--model') + 1], '<${o.model}>');
+      expect(
+        args[args.indexOf('--output') + 1],
+        r'<C:\Users\Роман\tmp\1.json>',
+      );
+      expect(args.where((a) => a.contains(r'\') && !a.startsWith('<')), isEmpty);
+    });
+
     test('serverArgs преобразует модель, но не метку своего процесса', () {
       const o = RunOptions(
         model: r'C:\Users\Роман\models\ggml.bin',
