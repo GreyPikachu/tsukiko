@@ -447,6 +447,17 @@ void main() {
   });
 
   group('настройки приложения', () {
+    test('форматы перечитываются после правки в окне настроек', () async {
+      final bloc = make();
+      await Settings.save({'copyFormat': 'json', 'saveFormat': 'vtt'});
+      bloc.add(const SettingsReloaded());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(bloc.state.copyFormat, 'json');
+      expect(bloc.state.saveFormat, 'vtt');
+      await bloc.close();
+    });
+
     blocTest<QueueBloc, QueueState>(
       'метки времени переключаются и переживают перечитывание',
       build: make,

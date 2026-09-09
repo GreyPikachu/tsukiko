@@ -521,7 +521,7 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
               appName, monthFolder(DateTime.now()), os.fileManagerName),
         ),
         if (s.toLibrary) ...[
-          SectionTitle(l10n.sectionSaveFormat),
+          SectionTitle(l10n.sectionAutoSaveFormats),
           for (final f in exportFormats)
             // suffix у «текста с таймкодами» начинается с пробела: он
             // дописывается к имени файла. В подписи этот пробел — дыра.
@@ -534,6 +534,30 @@ class _SettingsBodyState extends State<SettingsBody> with WidgetsBindingObserver
                   : l10n.hintFormatsSingle,
               under: true),
         ],
+        SectionTitle(l10n.labelCopyFormat),
+        MacosPopupButton<String>(
+          value: s.copyFormat,
+          items: [
+            for (final f in exportFormats)
+              MacosPopupMenuItem(value: f.id, child: Text(f.label)),
+          ],
+          onChanged: (value) {
+            if (value != null) _cubit.setCopyFormat(value);
+          },
+        ),
+        Hint(l10n.hintCopyFormatSynced),
+        SectionTitle(l10n.labelSaveFormat),
+        MacosPopupButton<String>(
+          value: s.saveFormat,
+          items: [
+            for (final f in exportFormats)
+              MacosPopupMenuItem(value: f.id, child: Text(f.label)),
+          ],
+          onChanged: (value) {
+            if (value != null) _cubit.setSaveFormat(value);
+          },
+        ),
+        Hint(l10n.hintSaveFormatSynced),
         SectionTitle(l10n.sectionCopyBesideSource),
         Check(l10n.checkSaveBesideSource, s.saveNextToSource,
             _cubit.setSaveNextToSource),

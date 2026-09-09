@@ -91,6 +91,8 @@ class SettingsCubit extends Cubit<SettingsState> {
       apiError: (s[apiErrorSetting] as String?) ?? '',
       libraryFormats:
           formats != null && formats.isNotEmpty ? formats : state.libraryFormats,
+      copyFormat: _knownFormat(s['copyFormat']),
+      saveFormat: _knownFormat(s['saveFormat']),
     ));
     // Автозапуск держит система, а не наш файл: его можно выключить
     // и в системных настройках, и галка обязана это показывать.
@@ -364,6 +366,23 @@ class SettingsCubit extends Cubit<SettingsState> {
     _emit(state.copyWith(libraryFormats: formats));
     unawaited(_saveApp({'libraryFormats': formats}));
   }
+
+  void setCopyFormat(String id) {
+    final format = _knownFormat(id);
+    _emit(state.copyWith(copyFormat: format));
+    unawaited(_saveApp({'copyFormat': format}));
+  }
+
+  void setSaveFormat(String id) {
+    final format = _knownFormat(id);
+    _emit(state.copyWith(saveFormat: format));
+    unawaited(_saveApp({'saveFormat': format}));
+  }
+
+  static String _knownFormat(Object? id) =>
+      exportFormats.any((format) => format.id == id)
+          ? id as String
+          : formatPlainText.id;
 
   /// Убрать модель в Корзину.
   ///

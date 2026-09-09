@@ -63,6 +63,8 @@ class SettingsState extends Equatable {
     this.loginItem = false,
     this.libraryPath = '',
     this.libraryFormats = const ['txt'],
+    this.copyFormat = 'txt',
+    this.saveFormat = 'txt',
     this.locale = '',
     this.apiEnabled = false,
     this.apiKey = '',
@@ -176,6 +178,11 @@ class SettingsState extends Equatable {
   final String libraryPath;
   final List<String> libraryFormats;
 
+  /// Форматы двух явных действий в главном окне. Набор автоматического
+  /// сохранения выше — отдельная настройка: там файлов может быть несколько,
+  /// а одно нажатие «Копировать» или «Сохранить» всегда выбирает один.
+  final String copyFormat, saveFormat;
+
   /// Язык интерфейса: 'ru', 'en' или пусто — «как в системе». Язык речи
   /// это не задаёт: его выбирают отдельно, в инспекторе записи.
   final String locale;
@@ -234,6 +241,8 @@ class SettingsState extends Equatable {
     bool? loginItem,
     String? libraryPath,
     List<String>? libraryFormats,
+    String? copyFormat,
+    String? saveFormat,
     String? locale,
     bool? apiEnabled,
     String? apiKey,
@@ -272,6 +281,8 @@ class SettingsState extends Equatable {
         loginItem: loginItem ?? this.loginItem,
         libraryPath: libraryPath ?? this.libraryPath,
         libraryFormats: libraryFormats ?? this.libraryFormats,
+        copyFormat: copyFormat ?? this.copyFormat,
+        saveFormat: saveFormat ?? this.saveFormat,
         locale: locale ?? this.locale,
         apiEnabled: apiEnabled ?? this.apiEnabled,
         apiKey: apiKey ?? this.apiKey,
@@ -308,6 +319,8 @@ class SettingsState extends Equatable {
         loginItem,
         libraryPath,
         libraryFormats,
+        copyFormat,
+        saveFormat,
         locale,
         apiEnabled,
         apiKey,
