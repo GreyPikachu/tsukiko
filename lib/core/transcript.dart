@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'text_commands.dart';
+
 /// Что whisper сочиняет на тишине.
 ///
 /// Модель обучена в том числе на субтитрах, и в тишине она договаривает
@@ -39,7 +41,19 @@ bool looksLikeSilenceHallucination(String text) {
 class Segment {
   final int from, to;
   final String text;
-  const Segment(this.from, this.to, this.text);
+  final List<TextReplacement> replacements;
+
+  const Segment(this.from, this.to, this.text, {this.replacements = const []});
+
+  Segment applyCommands(Iterable<TextCommand> commands) {
+    final result = applyTextCommands(text, commands);
+    return Segment(from, to, result.text, replacements: result.replacements);
+  }
+
+  Segment undoReplacement(int index) {
+    final result = undoTextReplacement(CommandText(text, replacements), index);
+    return Segment(from, to, result.text, replacements: result.replacements);
+  }
 }
 
 class Transcript {
@@ -49,7 +63,8 @@ class Transcript {
 }
 
 final _segmentLine = RegExp(
-    r'^\[(\d+):(\d+):(\d+)\.(\d+)\s*-->\s*(\d+):(\d+):(\d+)\.(\d+)\]\s*(.*)$');
+  r'^\[(\d+):(\d+):(\d+)\.(\d+)\s*-->\s*(\d+):(\d+):(\d+)\.(\d+)\]\s*(.*)$',
+);
 
 /// whisper-cli печатает готовые сегменты по ходу работы — ловим их сразу,
 /// чтобы текст появлялся во время распознавания, а не только в конце.
@@ -64,7 +79,8 @@ Segment? parseSegmentLine(String line) {
 }
 
 final _cue = RegExp(
-    r'(\d+):(\d{2}):(\d{2})[.,](\d{3})\s*(?:-->|→)\s*(\d+):(\d{2}):(\d{2})[.,](\d{3})');
+  r'(\d+):(\d{2}):(\d{2})[.,](\d{3})\s*(?:-->|→)\s*(\d+):(\d{2}):(\d{2})[.,](\d{3})',
+);
 
 /// SRT, VTT и наш собственный «текст с таймкодами» — один разбор на всех:
 /// у всех трёх пара времён в строке, а текст идёт следом. Разобранная
@@ -83,7 +99,9 @@ Transcript? parseSubtitles(String text) {
     // Текст либо идёт после метки в той же строке («[00:00 → 00:01]  раз»),
     // либо со следующей и до пустой строки — как в SRT.
     final buf = <String>[];
-    final tail = lines[i].substring(m.end).replaceFirst(RegExp(r'^\s*\]?\s*'), '');
+    final tail = lines[i]
+        .substring(m.end)
+        .replaceFirst(RegExp(r'^\s*\]?\s*'), '');
     if (tail.trim().isNotEmpty) {
       buf.add(tail.trim());
     } else {
@@ -121,9 +139,11 @@ List<Segment> collapseRepeats(List<Segment> segs) {
       j++;
     }
     final run = j - i;
-    out.add(run >= _loopRun
-        ? Segment(segs[i].from, segs[j - 1].to, segs[i].text)
-        : segs[i]);
+    out.add(
+      run >= _loopRun
+          ? Segment(segs[i].from, segs[j - 1].to, segs[i].text)
+          : segs[i],
+    );
     i = run >= _loopRun ? j : i + 1;
   }
   return out;
@@ -146,7 +166,9 @@ List<Segment> collapseRepeats(List<Segment> segs) {
     }
   }
   final parsed = parseSubtitles(text);
-  return parsed == null ? (parsed: null, raw: text) : (parsed: parsed, raw: null);
+  return parsed == null
+      ? (parsed: null, raw: text)
+      : (parsed: parsed, raw: null);
 }
 
 Transcript parseWhisperJson(String jsonText) {
@@ -158,11 +180,13 @@ Transcript parseWhisperJson(String jsonText) {
     // Фрагмент, целиком совпавший с известной выдумкой, — это тишина,
     // которую модель договорила за себя. В расшифровке ему не место.
     if (looksLikeSilenceHallucination(text)) continue;
-    segs.add(Segment(
-      (t['offsets']['from'] as num).toInt(),
-      (t['offsets']['to'] as num).toInt(),
-      text,
-    ));
+    segs.add(
+      Segment(
+        (t['offsets']['from'] as num).toInt(),
+        (t['offsets']['to'] as num).toInt(),
+        text,
+      ),
+    );
   }
   return Transcript(lang, collapseRepeats(segs));
 }
@@ -177,7 +201,9 @@ String fmtTs(int ms, {String msSep = '.'}) {
 }
 
 String renderPlain(List<Segment> segs, bool timestamps) => timestamps
-    ? segs.map((s) => '[${fmtTs(s.from)} → ${fmtTs(s.to)}]  ${s.text}').join('\n')
+    ? segs
+          .map((s) => '[${fmtTs(s.from)} → ${fmtTs(s.to)}]  ${s.text}')
+          .join('\n')
     : segs.map((s) => s.text).join('\n');
 
 String renderSrt(List<Segment> segs) {
@@ -203,11 +229,11 @@ String renderVtt(List<Segment> segs) {
 }
 
 String renderJson(Transcript t) => const JsonEncoder.withIndent('  ').convert({
-      'language': t.lang,
-      'segments': [
-        for (final s in t.segments) {'from': s.from, 'to': s.to, 'text': s.text},
-      ],
-    });
+  'language': t.lang,
+  'segments': [
+    for (final s in t.segments) {'from': s.from, 'to': s.to, 'text': s.text},
+  ],
+});
 
 /// Markdown с готовой шапкой. Шапку сюда передают: в ней имя записи,
 /// язык и число фрагментов — то есть переведённый текст, а переводы
@@ -261,17 +287,20 @@ ExportFormat formatById(String id) =>
 /// простая, из одного имени. Приложение подставляет переведённую
 /// (`renderFor` в `labels.dart`), отдельная программа расшифровки
 /// обходится простой: переводов у неё нет.
-String renderAs(ExportFormat f, Transcript t,
-        {String name = '', String? markdownHeader}) =>
-    switch (f.id) {
-      'txt' => renderPlain(t.segments, false),
-      'txt-ts' => renderPlain(t.segments, true),
-      'srt' => renderSrt(t.segments),
-      'vtt' => renderVtt(t.segments),
-      'md' => renderMarkdown(markdownHeader ?? '# $name\n\n', t.segments),
-      'json' => renderJson(t),
-      _ => renderPlain(t.segments, false),
-    };
+String renderAs(
+  ExportFormat f,
+  Transcript t, {
+  String name = '',
+  String? markdownHeader,
+}) => switch (f.id) {
+  'txt' => renderPlain(t.segments, false),
+  'txt-ts' => renderPlain(t.segments, true),
+  'srt' => renderSrt(t.segments),
+  'vtt' => renderVtt(t.segments),
+  'md' => renderMarkdown(markdownHeader ?? '# $name\n\n', t.segments),
+  'json' => renderJson(t),
+  _ => renderPlain(t.segments, false),
+};
 
 // Настройки живут в lib/settings.dart: им нужен dart:ui ради очереди
 // записи между изолятами, а этот файл должен оставаться пригодным для

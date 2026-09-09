@@ -56,9 +56,9 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-        create: (_) => QueueBloc(NativeBridge())..add(FilesAdded(initialFiles)),
-        child: const _HomeView(),
-      );
+    create: (_) => QueueBloc(NativeBridge())..add(FilesAdded(initialFiles)),
+    child: const _HomeView(),
+  );
 }
 
 class _HomeView extends StatefulWidget {
@@ -76,7 +76,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   final _queueFocus = FocusNode(debugLabel: 'очередь');
   final _transcriptScroll = ScrollController();
 
-  bool _dragging = false, _draggingQueue = false, _scrolled = false, _findOpen = false;
+  bool _dragging = false,
+      _draggingQueue = false,
+      _scrolled = false,
+      _findOpen = false;
   String _query = '';
 
   /// Подсказка модели правится полем ввода, а приходит из состояния:
@@ -110,7 +113,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     // пустоту и решал, что настройка слетела.
     _syncPromptField(_bloc.state);
     _transcriptScroll.addListener(() {
-      final scrolled = _transcriptScroll.hasClients && _transcriptScroll.offset > 6;
+      final scrolled =
+          _transcriptScroll.hasClients && _transcriptScroll.offset > 6;
       if (scrolled != _scrolled) setState(() => _scrolled = scrolled);
     });
     _searchCtrl.addListener(() {
@@ -198,8 +202,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         size: IconSize.hero,
       ),
       title: Text(ask.title, style: Type.emptyTitle),
-      message:
-          Text(ask.message, textAlign: TextAlign.center, style: Type.control),
+      message: Text(
+        ask.message,
+        textAlign: TextAlign.center,
+        style: Type.control,
+      ),
       primaryButton: PushButton(
         controlSize: ControlSize.large,
         onPressed: () {
@@ -234,8 +241,14 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     await showMacosAlertDialog<void>(
       context: context,
       builder: (dialogContext) => MacosAlertDialog(
-        appIcon: const MacosIcon(CupertinoIcons.arrow_down_circle, size: IconSize.hero),
-        title: Text(l10n.updateFoundTitle(update.version), style: Type.emptyTitle),
+        appIcon: const MacosIcon(
+          CupertinoIcons.arrow_down_circle,
+          size: IconSize.hero,
+        ),
+        title: Text(
+          l10n.updateFoundTitle(update.version),
+          style: Type.emptyTitle,
+        ),
         message: Text(
           update.notes.isEmpty ? l10n.updateFoundBody : update.notes,
           textAlign: TextAlign.center,
@@ -275,7 +288,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                  Gap.section, Gap.section, Gap.section, Gap.control),
+                Gap.section,
+                Gap.section,
+                Gap.section,
+                Gap.control,
+              ),
               child: Text(l10n.sheetShortcutsTitle, style: Type.emptyTitle),
             ),
             Expanded(
@@ -294,7 +311,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
                             Text(
                               c.shortcut,
                               style: Type.timestamp.copyWith(
-                                  color: Surface.secondaryText(context)),
+                                color: Surface.secondaryText(context),
+                              ),
                             ),
                           ],
                         ),
@@ -356,12 +374,14 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// работы ради одной строки в окне. А человек знает, куда он её дел, —
   /// и указать проще, чем ждать.
   Future<String?> _pointAtSource(QueueState s, String transcript) async {
-    final f = await openFile(acceptedTypeGroups: [
-      XTypeGroup(
-        label: l10n.fileTypeAudioVideo,
-        extensions: audioExt.map((e) => e.substring(1)).toList(),
-      ),
-    ]);
+    final f = await openFile(
+      acceptedTypeGroups: [
+        XTypeGroup(
+          label: l10n.fileTypeAudioVideo,
+          extensions: audioExt.map((e) => e.substring(1)).toList(),
+        ),
+      ],
+    );
     if (f == null) return null;
     Sources.remember(s.libraryPath, [transcript], f.path);
     return f.path;
@@ -382,7 +402,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   /// Команды по разделам, в том же порядке, в каком они стоят в меню.
   List<MapEntry<String, List<MenuCommand>>> _bySection(
-      List<MenuCommand> commands) {
+    List<MenuCommand> commands,
+  ) {
     final out = <String, List<MenuCommand>>{};
     for (final c in commands) {
       (out[c.menu] ??= []).add(c);
@@ -391,52 +412,59 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   }
 
   void _about() => showMacosAlertDialog<void>(
-        context: context,
-        builder: (dialogContext) => MacosAlertDialog(
-          appIcon: const MacosIcon(CupertinoIcons.waveform_circle_fill, size: IconSize.hero),
-          title: const Text(appName, style: Type.emptyTitle),
-          message: Text(
-            l10n.aboutBody,
-            textAlign: TextAlign.center,
-            style: Type.control,
-          ),
-          primaryButton: PushButton(
-            controlSize: ControlSize.large,
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(l10n.buttonClose),
-          ),
-          // Своего самообновления нет намеренно — см. lib/core/update.dart.
-          // Приложение только смотрит, не вышло ли новее, и отводит
-          // на страницу выпуска.
-          secondaryButton: PushButton(
-            controlSize: ControlSize.large,
-            secondary: true,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _checkUpdates();
-            },
-            child: Text(l10n.buttonCheckUpdates),
-          ),
-        ),
-      );
+    context: context,
+    builder: (dialogContext) => MacosAlertDialog(
+      appIcon: const MacosIcon(
+        CupertinoIcons.waveform_circle_fill,
+        size: IconSize.hero,
+      ),
+      title: const Text(appName, style: Type.emptyTitle),
+      message: Text(
+        l10n.aboutBody,
+        textAlign: TextAlign.center,
+        style: Type.control,
+      ),
+      primaryButton: PushButton(
+        controlSize: ControlSize.large,
+        onPressed: () => Navigator.pop(dialogContext),
+        child: Text(l10n.buttonClose),
+      ),
+      // Своего самообновления нет намеренно — см. lib/core/update.dart.
+      // Приложение только смотрит, не вышло ли новее, и отводит
+      // на страницу выпуска.
+      secondaryButton: PushButton(
+        controlSize: ControlSize.large,
+        secondary: true,
+        onPressed: () {
+          Navigator.pop(dialogContext);
+          _checkUpdates();
+        },
+        child: Text(l10n.buttonCheckUpdates),
+      ),
+    ),
+  );
 
   Future<void> _pickFiles() async {
-    final files = await openFiles(acceptedTypeGroups: [
-      XTypeGroup(
-        label: l10n.fileTypeAudioVideo,
-        extensions: audioExt.map((e) => e.substring(1)).toList(),
-      ),
-    ]);
+    final files = await openFiles(
+      acceptedTypeGroups: [
+        XTypeGroup(
+          label: l10n.fileTypeAudioVideo,
+          extensions: audioExt.map((e) => e.substring(1)).toList(),
+        ),
+      ],
+    );
     if (files.isNotEmpty) _send(FilesAdded(files.map((f) => f.path)));
   }
 
   Future<void> _openTranscript() async {
-    final f = await openFile(acceptedTypeGroups: [
-      XTypeGroup(
-        label: l10n.fileTypeTranscripts,
-        extensions: transcriptExt.map((e) => e.substring(1)).toList(),
-      ),
-    ]);
+    final f = await openFile(
+      acceptedTypeGroups: [
+        XTypeGroup(
+          label: l10n.fileTypeTranscripts,
+          extensions: transcriptExt.map((e) => e.substring(1)).toList(),
+        ),
+      ],
+    );
     if (f != null) _send(TranscriptOpened(f.path));
   }
 
@@ -447,22 +475,29 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// с метками имеют одну модель [Transcript], поэтому между ними нет
   /// цепочки потерь-парсеров: читаем один раз, пишем один раз.
   Future<void> _convertTranscript() async {
-    final input = await openFile(acceptedTypeGroups: [
-      XTypeGroup(
-        label: l10n.fileTypeTranscripts,
-        extensions: transcriptExt.map((e) => e.substring(1)).toList(),
-      ),
-    ]);
+    final input = await openFile(
+      acceptedTypeGroups: [
+        XTypeGroup(
+          label: l10n.fileTypeTranscripts,
+          extensions: transcriptExt.map((e) => e.substring(1)).toList(),
+        ),
+      ],
+    );
     if (input == null) return;
 
     try {
-      final read = readTranscript(input.path, await File(input.path).readAsString());
+      final read = readTranscript(
+        input.path,
+        await File(input.path).readAsString(),
+      );
       final transcript = read.parsed;
       if (transcript == null) {
-        return _showAsk(Ask(
-          l10n.askConversionNeedsTimestampsTitle,
-          l10n.askConversionNeedsTimestampsBody,
-        ));
+        return _showAsk(
+          Ask(
+            l10n.askConversionNeedsTimestampsTitle,
+            l10n.askConversionNeedsTimestampsBody,
+          ),
+        );
       }
 
       final preferred = formatById(_bloc.state.saveFormat);
@@ -472,7 +507,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       ];
       final inputName = os.basename(input.path);
       final inputFormat = formatOfFile(inputName);
-      final stem = inputFormat != null &&
+      final stem =
+          inputFormat != null &&
               inputName.toLowerCase().endsWith(inputFormat.suffix.toLowerCase())
           ? inputName.substring(0, inputName.length - inputFormat.suffix.length)
           : _stem(inputName);
@@ -498,7 +534,9 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       _send(StatusReported(l10n.statusTranscriptConverted));
     } catch (error) {
       stderr.writeln('tsukiko: расшифровка не преобразовалась — $error');
-      _showAsk(Ask(l10n.askConversionFailedTitle, l10n.askConversionFailedBody));
+      _showAsk(
+        Ask(l10n.askConversionFailedTitle, l10n.askConversionFailedBody),
+      );
     }
   }
 
@@ -507,10 +545,15 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// из неё не понять, что он выбрал не то.
   Future<void> _pickModel() async {
     final f = await openFile(
-        acceptedTypeGroups: const [XTypeGroup(label: 'GGML', extensions: ['bin'])]);
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'GGML', extensions: ['bin']),
+      ],
+    );
     if (f == null) return;
     final problem = modelFileProblem(f.path);
-    if (problem != null) return _showAsk(Ask(l10n.askNotRecognitionModelTitle, problem));
+    if (problem != null) {
+      return _showAsk(Ask(l10n.askNotRecognitionModelTitle, problem));
+    }
     _send(ModelChosen(f.path));
   }
 
@@ -549,8 +592,6 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         : '${loc.path}${chosen.ext}';
     _send(SaveRequested(job, path, chosen));
   }
-
-
 
   Future<void> _exportAll(QueueState s) async {
     final jobs = s.readyTargets.isNotEmpty
@@ -646,12 +687,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   /// Настроение кота выводится из того, что приложение делает прямо сейчас.
   Mood _mood(QueueState s, Job? job) => moodFor(
-        dragging: _dragging || _draggingQueue,
-        running: s.running,
-        jobActive: job?.active ?? false,
-        hasJobs: job != null,
-        longWait: (job?.segments.isEmpty ?? true) && job?.raw == null,
-      );
+    dragging: _dragging || _draggingQueue,
+    running: s.running,
+    jobActive: job?.active ?? false,
+    hasJobs: job != null,
+    longWait: (job?.segments.isEmpty ?? true) && job?.raw == null,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -711,57 +752,59 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   }
 
   Widget _macosWindow(QueueState s) => Builder(
-        builder: (context) => MacosWindow(
-          // При загрузке модели инспектор нечего настраивать: освобождаем
-          // его ширину для длинного хода загрузки. Ключ нужен пакетному
-          // MacosWindow: он не умеет возвращать endSidebar после null.
-          key: ValueKey(s.downloadProgress != null),
-          // «Подкраска обоями» на macOS показывает сквозь окно рабочий
-          // стол — и делает это родным плагином, которого на Windows
-          // нет вовсе. Оставить включённой значит получить там
-          // MissingPluginException на каждой перерисовке.
-          disableWallpaperTinting: !os.hasWindowMaterial,
-          sidebar: Sidebar(
-            minWidth: 248,
-            startWidth: 276,
-            // Там, где материала окна нет, боковая колонка остаётся
-            // прозрачной — то есть чёрной. Красим сами.
-            decoration: Surface.sidebarDecoration(context),
-            builder: (context, controller) => _queue(s, controller),
-            bottom: _queueButtons(s),
-          ),
-          endSidebar: s.downloadProgress != null
-              ? null
-              : Sidebar(
-                  minWidth: 290,
-                  startWidth: 312,
-                  maxWidth: 380,
-                  shownByDefault: true,
-                  decoration: Surface.sidebarDecoration(context),
-                  builder: (context, controller) => _inspector(s, controller),
-                ),
-          child: _contentScaffold(s),
-        ),
-      );
+    builder: (context) => MacosWindow(
+      // При загрузке модели инспектор нечего настраивать: освобождаем
+      // его ширину для длинного хода загрузки. Ключ нужен пакетному
+      // MacosWindow: он не умеет возвращать endSidebar после null.
+      key: ValueKey(s.downloadProgress != null),
+      // «Подкраска обоями» на macOS показывает сквозь окно рабочий
+      // стол — и делает это родным плагином, которого на Windows
+      // нет вовсе. Оставить включённой значит получить там
+      // MissingPluginException на каждой перерисовке.
+      disableWallpaperTinting: !os.hasWindowMaterial,
+      sidebar: Sidebar(
+        minWidth: 248,
+        startWidth: 276,
+        // Там, где материала окна нет, боковая колонка остаётся
+        // прозрачной — то есть чёрной. Красим сами.
+        decoration: Surface.sidebarDecoration(context),
+        builder: (context, controller) => _queue(s, controller),
+        bottom: _queueButtons(s),
+      ),
+      endSidebar: s.downloadProgress != null
+          ? null
+          : Sidebar(
+              minWidth: 290,
+              startWidth: 312,
+              maxWidth: 380,
+              shownByDefault: true,
+              decoration: Surface.sidebarDecoration(context),
+              builder: (context, controller) => _inspector(s, controller),
+            ),
+      child: _contentScaffold(s),
+    ),
+  );
 
   Widget _contentScaffold(QueueState s) => MacosScaffold(
-        toolBar: _toolbar(s),
-        children: [
-          ContentArea(
-            builder: (context, _) => Stack(
-              children: [
-                Positioned.fill(
-                  child: Column(children: [
-                    if (_findOpen) _findBar(s),
-                    Expanded(child: _transcriptArea(s)),
-                  ]),
-                ),
-                Positioned(left: 0, right: 0, bottom: 0, child: _statusBar(s)),
-              ],
+    toolBar: _toolbar(s),
+    children: [
+      ContentArea(
+        builder: (context, _) => Stack(
+          children: [
+            Positioned.fill(
+              child: Column(
+                children: [
+                  if (_findOpen) _findBar(s),
+                  Expanded(child: _transcriptArea(s)),
+                ],
+              ),
             ),
-          ),
-        ],
-      );
+            Positioned(left: 0, right: 0, bottom: 0, child: _statusBar(s)),
+          ],
+        ),
+      ),
+    ],
+  );
 
   /// Значок панели инструментов, окрашенный по доступности.
   ///
@@ -786,7 +829,9 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       titleWidth: 152,
       enableBlur: os.hasWindowMaterial,
       // Кромка появляется только когда под панель что-то уехало.
-      dividerColor: _scrolled ? Surface.hairline(context) : MacosColors.transparent,
+      dividerColor: _scrolled
+          ? Surface.hairline(context)
+          : MacosColors.transparent,
       actions: [
         ToolBarIconButton(
           label: l10n.buttonAdd,
@@ -809,8 +854,9 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           label: l10n.sheetLibraryTitle,
           icon: _toolIcon(CupertinoIcons.clock, on: true),
           showLabel: false,
-          tooltipMessage:
-              l10n.tooltipPastTranscripts(os.menuShortcut(const ['cmd'], 'l')),
+          tooltipMessage: l10n.tooltipPastTranscripts(
+            os.menuShortcut(const ['cmd'], 'l'),
+          ),
           onPressed: () => _showLibrary(s),
         ),
         ToolBarIconButton(
@@ -819,25 +865,27 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             s.running
                 ? CupertinoIcons.stop_fill
                 : s.dictation == DictationStatus.busy
-                    ? CupertinoIcons.pause_circle
-                    : CupertinoIcons.play_fill,
+                ? CupertinoIcons.pause_circle
+                : CupertinoIcons.play_fill,
             on: s.running || s.hasPending,
           ),
           showLabel: false,
           tooltipMessage: s.running
               ? (s.waitingForModel
-                  ? l10n.tooltipWaitingForDictation
-                  : l10n.tooltipStopShortcut)
+                    ? l10n.tooltipWaitingForDictation
+                    : l10n.tooltipStopShortcut)
               : s.dictation == DictationStatus.busy
-                  ? l10n.tooltipDictationBusyWillStart
-                  : l10n.tooltipRunQueueShortcut,
+              ? l10n.tooltipDictationBusyWillStart
+              : l10n.tooltipRunQueueShortcut,
           onPressed: s.running ? _sendStop : (s.hasPending ? _sendStart : null),
         ),
         // Пауза отдельной кнопкой, а не вместо остановки: это разные
         // вещи. Остановленное начинают заново, приостановленное —
         // досчитывают с той же секунды.
         ToolBarIconButton(
-          label: s.hasPaused && !s.running ? l10n.buttonResume : l10n.buttonPause,
+          label: s.hasPaused && !s.running
+              ? l10n.buttonResume
+              : l10n.buttonPause,
           icon: _toolIcon(
             s.hasPaused && !s.running
                 ? CupertinoIcons.play_circle
@@ -851,8 +899,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           onPressed: s.running
               ? () => _send(const PauseRequested())
               : s.hasPaused
-                  ? () => _send(const ResumeRequested())
-                  : null,
+              ? () => _send(const ResumeRequested())
+              : null,
         ),
         ToolBarIconButton(
           label: _recognizeLabel(s.targets, many: s.targets.length > 1),
@@ -862,14 +910,18 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           ),
           showLabel: false,
           tooltipMessage: l10n.tooltipRetryShortcut,
-          onPressed: s.running || !s.targets.any((j) => !j.imported) ? null : _sendRetry,
+          onPressed: s.running || !s.targets.any((j) => !j.imported)
+              ? null
+              : _sendRetry,
         ),
         // Кнопка повторяет прошлый выбор, стрелка рядом даёт его сменить.
         ToolBarIconButton(
           label: l10n.buttonCopyToolbar,
           icon: _toolIcon(CupertinoIcons.doc_on_clipboard, on: ready),
           showLabel: false,
-          tooltipMessage: l10n.tooltipCopyFormat(copyFormat.label.toLowerCase()),
+          tooltipMessage: l10n.tooltipCopyFormat(
+            copyFormat.label.toLowerCase(),
+          ),
           onPressed: ready ? () => _copy() : null,
         ),
         // Список открыт всегда, даже когда копировать нечего: формат —
@@ -896,7 +948,9 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           label: l10n.buttonSaveToolbar,
           icon: _toolIcon(CupertinoIcons.arrow_down_doc, on: ready),
           showLabel: false,
-          tooltipMessage: l10n.tooltipSaveFormat(saveFormat.label.toLowerCase()),
+          tooltipMessage: l10n.tooltipSaveFormat(
+            saveFormat.label.toLowerCase(),
+          ),
           onPressed: ready ? () => _saveAs(s) : null,
         ),
         AppToolBarPullDownButton(
@@ -960,57 +1014,61 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// Панель поиска приходит сверху и уходит по Esc — как в Safari и Xcode,
   /// а не занимает место в панели инструментов всё время.
   Widget _findBar(QueueState s) => Container(
-        height: 40,
-        padding: const EdgeInsets.fromLTRB(Gap.item, 0, Gap.inner, 0),
-        decoration: BoxDecoration(
-          color: Surface.chrome(context),
-          border: Border(bottom: BorderSide(color: Surface.hairline(context))),
+    height: 40,
+    padding: const EdgeInsets.fromLTRB(Gap.item, 0, Gap.inner, 0),
+    decoration: BoxDecoration(
+      color: Surface.chrome(context),
+      border: Border(bottom: BorderSide(color: Surface.hairline(context))),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Focus(
+            onKeyEvent: (node, event) {
+              if (event is KeyDownEvent &&
+                  event.logicalKey == LogicalKeyboardKey.escape) {
+                _closeFind();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: MacosSearchField(
+              controller: _searchCtrl,
+              focusNode: _searchFocus,
+              placeholder: l10n.placeholderFindInTranscript,
+              placeholderStyle: Surface.placeholder(context),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+          ),
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Focus(
-                onKeyEvent: (node, event) {
-                  if (event is KeyDownEvent &&
-                      event.logicalKey == LogicalKeyboardKey.escape) {
-                    _closeFind();
-                    return KeyEventResult.handled;
-                  }
-                  return KeyEventResult.ignored;
-                },
-                child: MacosSearchField(
-                  controller: _searchCtrl,
-                  focusNode: _searchFocus,
-                  placeholder: l10n.placeholderFindInTranscript,
-                  placeholderStyle: Surface.placeholder(context),
-                  onChanged: (v) => setState(() => _query = v),
-                ),
-              ),
-            ),
-            const SizedBox(width: Gap.control),
-            Text(
-              _findSummary(s),
-              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-            ),
-            const SizedBox(width: Gap.inner),
-            MacosIconButton(
-              icon: const MacosIcon(CupertinoIcons.xmark, size: IconSize.button),
-              onPressed: _closeFind,
-            ),
-          ],
+        const SizedBox(width: Gap.control),
+        Text(
+          _findSummary(s),
+          style: Type.caption.copyWith(color: Surface.secondaryText(context)),
         ),
-      );
+        const SizedBox(width: Gap.inner),
+        MacosIconButton(
+          icon: const MacosIcon(CupertinoIcons.xmark, size: IconSize.button),
+          onPressed: _closeFind,
+        ),
+      ],
+    ),
+  );
 
   String _findSummary(QueueState s) {
     final job = s.lead;
     if (job == null || _query.trim().isEmpty) return l10n.hintEscToClose;
     final hits = _visibleSegments(job).length;
-    return hits == 0 ? l10n.nothingFound : l10n.statusFoundSegments(segmentsLabel(hits));
+    return hits == 0
+        ? l10n.nothingFound
+        : l10n.statusFoundSegments(segmentsLabel(hits));
   }
 
   void _openFind() {
     setState(() => _findOpen = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _searchFocus.requestFocus());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _searchFocus.requestFocus(),
+    );
   }
 
   void _closeFind() {
@@ -1023,34 +1081,41 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   }
 
   /// Галочкой отмечен формат, который повторяет кнопка.
-  MacosPulldownMenuItem _formatItem(ExportFormat f, String current, VoidCallback tap) =>
-      MacosPulldownMenuItem(
-        // Обычное меню рисует галочку в title ниже, а меню многоточия
-        // выбрасывает title и оставляет только label. Значит выбранность
-        // обязана жить и в строке — иначе именно в тесном окне, где всё
-        // ушло под многоточие, нынешний формат узнать было невозможно.
-        label: checkedOverflowLabel(f.label, checked: f.id == current),
-        onTap: tap,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Колонка под галку — одной ширины у всех строк, иначе
-            // подписи разъезжаются. Сама галка была вдвое мельче
-            // системной и стояла вплотную к тексту.
-            SizedBox(
-              width: IconSize.button + Gap.inner,
-              child: f.id == current
-                  ? const MacosIcon(CupertinoIcons.checkmark_alt,
-                      size: IconSize.button)
-                  : null,
-            ),
-            Text(f.label),
-          ],
+  MacosPulldownMenuItem _formatItem(
+    ExportFormat f,
+    String current,
+    VoidCallback tap,
+  ) => MacosPulldownMenuItem(
+    // Обычное меню рисует галочку в title ниже, а меню многоточия
+    // выбрасывает title и оставляет только label. Значит выбранность
+    // обязана жить и в строке — иначе именно в тесном окне, где всё
+    // ушло под многоточие, нынешний формат узнать было невозможно.
+    label: checkedOverflowLabel(f.label, checked: f.id == current),
+    onTap: tap,
+    title: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Колонка под галку — одной ширины у всех строк, иначе
+        // подписи разъезжаются. Сама галка была вдвое мельче
+        // системной и стояла вплотную к тексту.
+        SizedBox(
+          width: IconSize.button + Gap.inner,
+          child: f.id == current
+              ? const MacosIcon(
+                  CupertinoIcons.checkmark_alt,
+                  size: IconSize.button,
+                )
+              : null,
         ),
-      );
+        Text(f.label),
+      ],
+    ),
+  );
 
   String? _subtitle(QueueState s) {
-    if (s.selected.length > 1) return l10n.statusSelectedRecords(recordsLabel(s.selected.length));
+    if (s.selected.length > 1) {
+      return l10n.statusSelectedRecords(recordsLabel(s.selected.length));
+    }
     final job = s.lead;
     if (job != null) return job.name;
     if (s.jobs.isEmpty) return null;
@@ -1065,19 +1130,19 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// аудио», а брошенное мимо середины окна пропадало. Место, которое
   /// зовёт бросить файл, обязано его брать.
   Widget _queue(QueueState s, ScrollController controller) => DropTarget(
-        onDragEntered: (_) => setState(() => _draggingQueue = true),
-        onDragExited: (_) => setState(() => _draggingQueue = false),
-        onDragDone: (details) {
-          setState(() => _draggingQueue = false);
-          _send(FilesAdded(details.files.map((f) => f.path)));
-        },
-        child: Stack(
-          children: [
-            Positioned.fill(child: _queueList(s, controller)),
-            Positioned.fill(child: DropVeil(active: _draggingQueue, compact: true)),
-          ],
-        ),
-      );
+    onDragEntered: (_) => setState(() => _draggingQueue = true),
+    onDragExited: (_) => setState(() => _draggingQueue = false),
+    onDragDone: (details) {
+      setState(() => _draggingQueue = false);
+      _send(FilesAdded(details.files.map((f) => f.path)));
+    },
+    child: Stack(
+      children: [
+        Positioned.fill(child: _queueList(s, controller)),
+        Positioned.fill(child: DropVeil(active: _draggingQueue, compact: true)),
+      ],
+    ),
+  );
 
   Widget _queueList(QueueState s, ScrollController controller) {
     if (s.jobs.isEmpty) {
@@ -1087,7 +1152,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           child: Text(
             l10n.emptyQueueHint(l10n.buttonAdd),
             textAlign: TextAlign.center,
-            style: Type.caption.copyWith(color: Surface.secondaryText(context), height: 1.5),
+            style: Type.caption.copyWith(
+              color: Surface.secondaryText(context),
+              height: 1.5,
+            ),
           ),
         ),
       );
@@ -1130,31 +1198,31 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             key: ValueKey(job.path),
             index: i,
             child: ContextMenuRegion(
-            // Правый щелчок по невыделенной записи сначала выделяет её —
-            // как в Finder. Это действие жеста, а не построения меню:
-            // раньше выделение менялось внутри actions(), то есть setState
-            // случался посреди сборки списка пунктов.
-            onOpen: () {
-              if (!s.selected.contains(job)) _send(JobSelected(job));
-            },
-            actions: () => _rowActions(s, job),
-            child: QueueRow(
-              job: job,
-              selected: s.selected.contains(job),
-              lead: identical(job, s.lead),
-              customised: job.overrides != null,
-              onTap: () {
-                _queueFocus.requestFocus();
-                final keys = HardwareKeyboard.instance;
-                if (keys.isMetaPressed) {
-                  _send(JobToggled(job));
-                } else if (keys.isShiftPressed) {
-                  _send(SelectionExtended(job));
-                } else {
-                  _send(JobSelected(job));
-                }
+              // Правый щелчок по невыделенной записи сначала выделяет её —
+              // как в Finder. Это действие жеста, а не построения меню:
+              // раньше выделение менялось внутри actions(), то есть setState
+              // случался посреди сборки списка пунктов.
+              onOpen: () {
+                if (!s.selected.contains(job)) _send(JobSelected(job));
               },
-            ),
+              actions: () => _rowActions(s, job),
+              child: QueueRow(
+                job: job,
+                selected: s.selected.contains(job),
+                lead: identical(job, s.lead),
+                customised: job.overrides != null,
+                onTap: () {
+                  _queueFocus.requestFocus();
+                  final keys = HardwareKeyboard.instance;
+                  if (keys.isMetaPressed) {
+                    _send(JobToggled(job));
+                  } else if (keys.isShiftPressed) {
+                    _send(SelectionExtended(job));
+                  } else {
+                    _send(JobSelected(job));
+                  }
+                },
+              ),
             ),
           );
         },
@@ -1182,9 +1250,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         onSelected: ready ? () => _copy() : null,
         shortcut: os.menuShortcut(const ['shift', 'cmd'], 'c'),
       ),
-      MenuAction(l10n.menuSaveAs,
-          onSelected: ready ? () => _saveAs(s) : null,
-          shortcut: os.menuShortcut(const ['cmd'], 's')),
+      MenuAction(
+        l10n.menuSaveAs,
+        onSelected: ready ? () => _saveAs(s) : null,
+        shortcut: os.menuShortcut(const ['cmd'], 's'),
+      ),
       // Только у той записи, что не задалась: у остальных пункт был бы
       // всегда серым и только мешал.
       if (job.error != null) ...[
@@ -1208,7 +1278,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       ),
       const MenuAction.separator(),
       if (job.overrides != null)
-        MenuAction(l10n.menuRestoreDefaultSettings, onSelected: _sendResetOverrides),
+        MenuAction(
+          l10n.menuRestoreDefaultSettings,
+          onSelected: _sendResetOverrides,
+        ),
       MenuAction(
         many ? l10n.menuRemoveSelected : l10n.menuRemoveFromQueue,
         onSelected: targets.any((j) => j.active) ? null : _sendRemove,
@@ -1220,35 +1293,40 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// Как назвать повторное распознавание для этих записей.
   String _recognizeLabel(List<Job> targets, {required bool many}) {
     final again = targets.isNotEmpty && targets.every((j) => j.done);
-    if (many) return again ? l10n.menuRetrySelected : l10n.menuRecognizeSelected;
+    if (many) {
+      return again ? l10n.menuRetrySelected : l10n.menuRecognizeSelected;
+    }
     return again ? l10n.menuRetryRecognition : l10n.menuRecognize;
   }
 
   Widget _queueButtons(QueueState s) => Padding(
-        padding: const EdgeInsets.fromLTRB(
-            Gap.control, Gap.inner, Gap.control, Gap.control),
-        child: Row(
-          children: [
-            Expanded(
-              child: PushButton(
-                controlSize: ControlSize.regular,
-                onPressed: _pickFiles,
-                child: Text(l10n.buttonAdd),
-              ),
-            ),
-            const SizedBox(width: Gap.control),
-            PushButton(
-              controlSize: ControlSize.regular,
-              secondary: true,
-              onPressed: s.targets.isEmpty || s.targets.any((j) => j.active)
-                  ? null
-                  : _sendRemove,
-              child: Text(l10n.buttonRemove),
-            ),
-          ],
+    padding: const EdgeInsets.fromLTRB(
+      Gap.control,
+      Gap.inner,
+      Gap.control,
+      Gap.control,
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: PushButton(
+            controlSize: ControlSize.regular,
+            onPressed: _pickFiles,
+            child: Text(l10n.buttonAdd),
+          ),
         ),
-      );
-
+        const SizedBox(width: Gap.control),
+        PushButton(
+          controlSize: ControlSize.regular,
+          secondary: true,
+          onPressed: s.targets.isEmpty || s.targets.any((j) => j.active)
+              ? null
+              : _sendRemove,
+          child: Text(l10n.buttonRemove),
+        ),
+      ],
+    ),
+  );
 
   // ── расшифровка ───────────────────────────────────────────────────────────
 
@@ -1303,7 +1381,9 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         child: MascotPlaceholder(
           mood: _mood(s, job),
           title: job.active ? l10n.titleListening : l10n.titleReadyToRecognize,
-          subtitle: job.active ? l10n.subtitleListening : l10n.subtitleReadyToRecognize,
+          subtitle: job.active
+              ? l10n.subtitleListening
+              : l10n.subtitleReadyToRecognize,
         ),
       );
     } else if (job.transcript == null && job.raw != null) {
@@ -1316,7 +1396,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         // Снизу вчетверо больше — там висит полоса состояния, и последняя
         // строка не должна уезжать под неё.
         padding: const EdgeInsets.fromLTRB(
-            Gap.edge + Gap.inner, Gap.edge, Gap.edge + Gap.inner, Gap.item * 4),
+          Gap.edge + Gap.inner,
+          Gap.edge,
+          Gap.edge + Gap.inner,
+          Gap.item * 4,
+        ),
         child: SelectableText(job.raw!, style: Type.body),
       );
     } else {
@@ -1333,7 +1417,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         content = ListView.builder(
           controller: _transcriptScroll,
           padding: const EdgeInsets.fromLTRB(
-              Gap.edge, Gap.edge, Gap.edge, Gap.item * 4),
+            Gap.edge,
+            Gap.edge,
+            Gap.edge,
+            Gap.item * 4,
+          ),
           itemCount: segments.length,
           // Ключом служит сам сегмент: время начала у двух соседних
           // фрагментов совпадает (VAD режет по паузам и выдаёт их
@@ -1344,6 +1432,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             showTimestamp: s.timestamps,
             highlight: _query.trim(),
             onCopied: () => _send(StatusReported(l10n.statusSegmentCopied)),
+            onReplacementUndo: (index) =>
+                _send(CommandReplacementUndone(job, segments[i], index)),
           ),
         );
       }
@@ -1376,7 +1466,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       if (job.transcript != null) segmentsLabel(segs.length),
       wordsLabel(words),
       humanDuration(segs.last.to),
-      if (job.took != null) l10n.statsTook(humanDuration(job.took!.inMilliseconds)),
+      if (job.took != null)
+        l10n.statsTook(humanDuration(job.took!.inMilliseconds)),
     ];
     return parts.join(' · ');
   }
@@ -1388,62 +1479,68 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     final stats = busy ? null : _stats(s);
 
     final bar = Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.item),
-          decoration: BoxDecoration(
-            color: Surface.chrome(context),
-            border: Border(top: BorderSide(color: Surface.hairline(context))),
-          ),
-          child: Row(
-            children: [
-              if (busy) ...[
-                SizedBox(
-                  width: IconSize.button,
-                  height: IconSize.button,
-                  child: ProgressCircle(value: (job!.progress * 100).clamp(0, 100)),
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: Gap.item),
+      decoration: BoxDecoration(
+        color: Surface.chrome(context),
+        border: Border(top: BorderSide(color: Surface.hairline(context))),
+      ),
+      child: Row(
+        children: [
+          if (busy) ...[
+            SizedBox(
+              width: IconSize.button,
+              height: IconSize.button,
+              child: ProgressCircle(value: (job!.progress * 100).clamp(0, 100)),
+            ),
+            const SizedBox(width: Gap.inner),
+          ],
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: Motion.dur(context, Motion.quick),
+              child: Text(
+                s.status,
+                key: ValueKey(s.status),
+                style: Type.caption.copyWith(
+                  color: Surface.secondaryText(context),
                 ),
-                const SizedBox(width: Gap.inner),
-              ],
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: Motion.dur(context, Motion.quick),
-                  child: Text(
-                    s.status,
-                    key: ValueKey(s.status),
-                    style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          // Длинный ход загрузки обрезается, но не склеивается со
+          // статистикой вроде «141 МБ33 фрагмента».
+          const SizedBox(width: Gap.item),
+          if (eta != null && eta.inSeconds > 3)
+            Padding(
+              padding: const EdgeInsets.only(right: Gap.item),
+              child: Text(
+                l10n.statusRemainingTime(humanDuration(eta.inMilliseconds)),
+                style: Type.caption.copyWith(
+                  color: Surface.secondaryText(context),
                 ),
               ),
-              // Длинный ход загрузки обрезается, но не склеивается со
-              // статистикой вроде «141 МБ33 фрагмента».
-              const SizedBox(width: Gap.item),
-              if (eta != null && eta.inSeconds > 3)
-                Padding(
-                  padding: const EdgeInsets.only(right: Gap.item),
-                  child: Text(
-                    l10n.statusRemainingTime(humanDuration(eta.inMilliseconds)),
-                    style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-                  ),
+            ),
+          if (stats != null)
+            Padding(
+              padding: const EdgeInsets.only(right: Gap.item),
+              child: Text(
+                stats,
+                style: Type.caption.copyWith(
+                  color: Surface.secondaryText(context),
                 ),
-              if (stats != null)
-                Padding(
-                  padding: const EdgeInsets.only(right: Gap.item),
-                  child: Text(
-                    stats,
-                    style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-                  ),
-                ),
-              ModelChip(
-                label: _modelUseLabel(s),
-                detail: _modelUseDetail(s),
-                busy: s.transcribing || s.dictation == DictationStatus.busy,
-                resting: s.dictation == DictationStatus.resting,
-                waiting: s.waitingForModel,
               ),
-            ],
+            ),
+          ModelChip(
+            label: _modelUseLabel(s),
+            detail: _modelUseDetail(s),
+            busy: s.transcribing || s.dictation == DictationStatus.busy,
+            resting: s.dictation == DictationStatus.resting,
+            waiting: s.waitingForModel,
           ),
-        );
+        ],
+      ),
+    );
     if (!os.hasWindowMaterial) return bar;
     return ClipRect(
       child: BackdropFilter(
@@ -1458,11 +1555,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// Кнопка с пустого экрана: сами модели живут на своей вкладке
   /// в настройках, там же их и качают.
   Widget _modelDownload() => PushButton(
-        controlSize: ControlSize.large,
-        onPressed: () => _openSettings('models'),
-        child: Text(l10n.buttonDownloadModelEllipsis),
-      );
-
+    controlSize: ControlSize.large,
+    onPressed: () => _openSettings('models'),
+    child: Text(l10n.buttonDownloadModelEllipsis),
+  );
 
   /// В инспекторе — только то, что осмысленно менять от записи к записи:
   /// чем, на каком языке и как разбирать именно эту запись. Всё, что для
@@ -1479,7 +1575,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       // инструментов, отодвинутая на её высоту. Свои восемь точек
       // поверх этого читались лишней пустотой над первой же строкой.
       padding: const EdgeInsets.fromLTRB(
-          Gap.edgeNarrow, 0, Gap.edgeNarrow, Gap.section),
+        Gap.edgeNarrow,
+        0,
+        Gap.edgeNarrow,
+        Gap.section,
+      ),
       children: [
         ScopeBanner(
           selection: s.selected.length,
@@ -1535,24 +1635,44 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             for (final l in languages)
               MacosPopupMenuItem(value: l, child: Text(languageName(l))),
           ],
-          onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(lang: v ?? 'auto'))),
+          onChanged: (v) =>
+              _send(OptionsEdited((x) => x.copyWith(lang: v ?? 'auto'))),
         ),
         Hint(l10n.hintMixedLanguageManual),
         SectionTitle(l10n.sectionPunctuation),
-        Check(l10n.checkPunctuate, o.punctuate,
-            (v) => _send(OptionsEdited((x) => x.copyWith(punctuate: v)))),
+        Check(
+          l10n.checkPunctuate,
+          o.punctuate,
+          (v) => _send(OptionsEdited((x) => x.copyWith(punctuate: v))),
+        ),
         Hint(l10n.hintPunctuateOff, under: true),
         SectionTitle(l10n.sectionSegmentSplit),
         MacosPopupButton<int>(
           value: o.maxLen,
           items: [
-            MacosPopupMenuItem(value: 0, child: Text(l10n.optionModelDiscretion)),
-            MacosPopupMenuItem(value: 32, child: Text(l10n.optionUpToChars(32))),
-            MacosPopupMenuItem(value: 42, child: Text(l10n.optionUpTo42Subtitles)),
-            MacosPopupMenuItem(value: 64, child: Text(l10n.optionUpToChars(64))),
-            MacosPopupMenuItem(value: 100, child: Text(l10n.optionUpToChars(100))),
+            MacosPopupMenuItem(
+              value: 0,
+              child: Text(l10n.optionModelDiscretion),
+            ),
+            MacosPopupMenuItem(
+              value: 32,
+              child: Text(l10n.optionUpToChars(32)),
+            ),
+            MacosPopupMenuItem(
+              value: 42,
+              child: Text(l10n.optionUpTo42Subtitles),
+            ),
+            MacosPopupMenuItem(
+              value: 64,
+              child: Text(l10n.optionUpToChars(64)),
+            ),
+            MacosPopupMenuItem(
+              value: 100,
+              child: Text(l10n.optionUpToChars(100)),
+            ),
           ],
-          onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(maxLen: v ?? 0))),
+          onChanged: (v) =>
+              _send(OptionsEdited((x) => x.copyWith(maxLen: v ?? 0))),
         ),
         const SizedBox(height: Gap.item),
         Check(l10n.checkSplitByPauses, o.vad, (v) {
@@ -1566,8 +1686,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           Padding(
             padding: const EdgeInsets.only(left: 25, top: Gap.hint),
             child: Text(
-              o.vadModel.isEmpty ? l10n.hintNeedVadFile : os.basename(o.vadModel),
-              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+              o.vadModel.isEmpty
+                  ? l10n.hintNeedVadFile
+                  : os.basename(o.vadModel),
+              style: Type.caption.copyWith(
+                color: Surface.secondaryText(context),
+              ),
             ),
           ),
         SectionTitle(l10n.fieldSpeed),
@@ -1577,7 +1701,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             for (var t = 2; t <= Platform.numberOfProcessors; t += 2)
               MacosPopupMenuItem(value: t, child: Text(l10n.threadsCount(t))),
           ],
-          onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(threads: v ?? o.threads))),
+          onChanged: (v) =>
+              _send(OptionsEdited((x) => x.copyWith(threads: v ?? o.threads))),
         ),
         SectionTitle(l10n.fieldModelPrompt),
         AppTextField(
@@ -1600,8 +1725,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           !s.whisperFound
               ? l10n.statusWhisperNotFound
               : engineIsOurs
-                  ? l10n.statusEngineOurs
-                  : l10n.statusEngineSystem,
+              ? l10n.statusEngineOurs
+              : l10n.statusEngineSystem,
           style: Type.caption.copyWith(color: Surface.secondaryText(context)),
         ),
       ],
@@ -1624,7 +1749,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 /// Лечится в одном месте: распознаватель перетаскивания берёт только
 /// первичную кнопку. Правому щелчку тогда никто не мешает.
 class _QueueDragListener extends ReorderableDragStartListener {
-  const _QueueDragListener({super.key, required super.child, required super.index});
+  const _QueueDragListener({
+    super.key,
+    required super.child,
+    required super.index,
+  });
 
   @override
   MultiDragGestureRecognizer createRecognizer() =>

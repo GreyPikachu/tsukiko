@@ -148,6 +148,18 @@ class JobAdvanced extends QueueEvent {
   List<Object?> get props => [job.path, segment, progress, language];
 }
 
+/// Вернуть одну автоматически заменённую команду к сказанным словам.
+class CommandReplacementUndone extends QueueEvent {
+  const CommandReplacementUndone(this.job, this.segment, this.index);
+
+  final Job job;
+  final Segment segment;
+  final int index;
+
+  @override
+  List<Object?> get props => [job.path, segment, index];
+}
+
 // ── настройки распознавания ─────────────────────────────────────────────────
 
 /// Правка уходит туда, куда смотрит инспектор: в общие настройки или
@@ -244,7 +256,6 @@ class SettingsReloaded extends QueueEvent {
 class TimestampsToggled extends QueueEvent {
   const TimestampsToggled();
 }
-
 
 class RecentCleared extends QueueEvent {
   const RecentCleared();

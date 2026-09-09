@@ -556,6 +556,8 @@
   "placeholderCommandReplacement": "What to insert",
   "tooltipRemoveCommand": "Remove command",
   "buttonAddCommand": "Add command",
+  "tooltipUndoVoiceCommand": "Restore the spoken words",
+  "statusVoiceCommandUndone": "Automatic replacement undone",
   "skillNotFound": "Not found: {names}",
   "@skillNotFound": {
     "placeholders": {
