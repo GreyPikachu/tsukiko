@@ -13,6 +13,7 @@ import '../../core/models.dart';
 import '../../core/whisper.dart';
 import '../../platform/os.dart';
 import '../../core/settings.dart';
+import '../../core/text_commands.dart';
 import '../../core/app_locale.dart';
 import '../../core/labels.dart';
 
@@ -80,6 +81,8 @@ class DictationCubit extends Cubit<DictationState> {
 
   late final WhisperServer _server;
   DictationSettings _settings = DictationSettings.load();
+  List<TextCommand> _textCommands = const [];
+  bool _commandsEnabled = true;
 
   Timer? _ticker;
   Timer? _meter;
@@ -155,7 +158,10 @@ class DictationCubit extends Cubit<DictationState> {
   /// это выходило десять чтений диска в секунду.
   DictationState _withSnapshots(DictationState from) {
     _hasVad = File(vadModelPath).existsSync();
-    final queueModel = (Settings.load()['model'] as String?) ?? '';
+    final app = Settings.load();
+    final queueModel = (app['model'] as String?) ?? '';
+    _textCommands = textCommandsFromJson(app[textCommandsSetting]);
+    _commandsEnabled = (app[dictationCommandsEnabledSetting] as bool?) ?? true;
     return from.copyWith(
       enabled: _settings.enabled,
       holdLabel: _settings.hold.label,
@@ -223,6 +229,9 @@ class DictationCubit extends Cubit<DictationState> {
     }
     await _apply();
   }
+
+  @visibleForTesting
+  Future<void> reloadSettingsForTesting() => _reloadSettings();
 
   /// «Разрешения нет» — вывод не с первой попытки. Сразу после запуска
   /// система отвечает «нет» и тем, кто всё давно разрешил: процесс ещё
@@ -460,8 +469,8 @@ class DictationCubit extends Cubit<DictationState> {
         // Сервер поднимался параллельно записи — дожидаемся, иначе фраза
         // короче подъёма уйдёт в «не удалось» при живой модели.
         await _bringingUp;
-        final text = await _server.transcribe(path);
-        if (text == null) {
+        final recognized = await _server.transcribe(path);
+        if (recognized == null) {
           // Распознать не удалось — или мы сами прервали счёт. Запись
           // в обоих случаях единственный экземпляр сказанного, и удалять
           // её здесь было бы потерей данных.
@@ -476,6 +485,9 @@ class DictationCubit extends Cubit<DictationState> {
               : currentL10n().dictationFailedSaved(saved);
         } else {
           _discard(path);
+          final text = _commandsEnabled
+              ? applyTextCommands(recognized, _textCommands).text
+              : recognized;
           if (text.isNotEmpty) {
             _emit(state.copyWith(last: text));
             // «Только в буфер» — для тех, кто вставит сам и туда, куда решит.

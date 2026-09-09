@@ -2,10 +2,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/platform/bridge.dart';
+import 'package:tsukiko/core/settings.dart';
+import 'package:tsukiko/core/text_commands.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/features/dictation/dictation_cubit.dart';
 import 'package:tsukiko/features/dictation/dictation_state.dart';
 import 'package:tsukiko/core/whisper.dart';
+
+import '../../support/fake_os.dart';
 
 /// Логика диктовки, которую до выноса из виджета проверять было нечем.
 ///
@@ -13,6 +17,8 @@ import 'package:tsukiko/core/whisper.dart';
 /// разговор с macOS сводится к списку вызовов, который можно прочитать.
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
+
+  useTempSupportDir('tsukiko-dictation-commands');
 
   late _FakeNative native;
   late _FakeServer server;
@@ -112,6 +118,41 @@ void main() {
   });
 
   group('вставка текста', () {
+    test('голосовая команда заменяется перед вставкой', () async {
+      await Settings.save({
+        textCommandsSetting: [
+          const TextCommand('сказанное вслух', 'Минск, Немига, 1').toJson(),
+        ],
+        dictationCommandsEnabledSetting: true,
+      });
+      await cubit.reloadSettingsForTesting();
+
+      await cubit.start();
+      await cubit.stop();
+
+      expect(cubit.state.last, 'Минск, Немига, 1');
+      expect(native.pasted, 'Минск, Немига, 1');
+    });
+
+    test(
+      'выключатель диктовки оставляет распознанную фразу как есть',
+      () async {
+        await Settings.save({
+          textCommandsSetting: [
+            const TextCommand('сказанное вслух', 'замена').toJson(),
+          ],
+          dictationCommandsEnabledSetting: false,
+        });
+        await cubit.reloadSettingsForTesting();
+
+        await cubit.start();
+        await cubit.stop();
+
+        expect(cubit.state.last, 'сказанное вслух');
+        expect(native.pasted, 'сказанное вслух');
+      },
+    );
+
     test(
       'не удалась — текст не теряется, а уходит в буфер и в предупреждение',
       () async {
@@ -250,6 +291,7 @@ class _FakeNative {
 
   bool permitted = true;
   bool pasteSucceeds = true;
+  String? pasted;
 
   /// Насколько система тянет с ответом «микрофон готов».
   Duration recordDelay = Duration.zero;
@@ -274,6 +316,7 @@ class _FakeNative {
             case 'permissions':
               return permitted;
             case 'paste':
+              pasted = (call.arguments as Map)['text'] as String?;
               return pasteSucceeds;
             case 'hud':
               hudStates.add((call.arguments as Map)['state'] as String);
