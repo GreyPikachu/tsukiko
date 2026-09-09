@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show Directory, File, Platform;
 import 'dart:ui' show ImageFilter;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -316,7 +316,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       builder: (_) => LibrarySheet(
         root: s.libraryPath,
         onOpenInQueue: (path) => _send(TranscriptOpened(path)),
-        onOpenSource: (path) => _send(FilesAdded([path])),
+        onOpenSource: (audio, transcript) =>
+            _send(SourceOpened(audio, transcript)),
         onPointAtSource: (transcript) => _pointAtSource(s, transcript),
         onReveal: _revealSource,
         onTrash: _trashFiles,
@@ -516,8 +517,13 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   /// Показать исходную запись. Её могли убрать мимо приложения — тогда
   /// говорим об этом, а не открываем пустое место.
+  ///
+  /// Папку библиотеки при этом заводим, если её ещё нет: «открыть папку»
+  /// в пустой библиотеке разумно понимать как «заведи и открой», а вот
+  /// создавать пропавший файл значило бы показать подделку вместо него.
   Future<void> _revealSource(String path) async {
-    if (await revealInFinder(path)) return;
+    final folder = Directory(path).existsSync() || !File(path).existsSync();
+    if (await revealInFinder(path, createIfMissing: folder)) return;
     _send(StatusReported(l10n.statusSourceGone(os.basename(path))));
   }
 
@@ -686,6 +692,17 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         ),
       );
 
+  /// Значок панели инструментов, окрашенный по доступности.
+  ///
+  /// macos_ui красит их одинаково и на доступной кнопке, и на серой:
+  /// половинная прозрачность в обоих случаях. То есть по виду кнопки
+  /// нельзя было понять, нажмётся она или нет — человек жал «Сохранить»
+  /// на пустой очереди и не понимал, отчего ничего не происходит.
+  /// Свой цвет у `MacosIcon` главнее того, что даёт тема, поэтому
+  /// хватает одной строки на кнопку.
+  MacosIcon _toolIcon(IconData icon, {required bool on}) =>
+      MacosIcon(icon, color: Surface.toolbarIcon(context, enabled: on));
+
   AppToolBar _toolbar(QueueState s) {
     final ready = s.readyTargets.isNotEmpty;
     final copyFormat = formatById(s.copyFormat);
@@ -700,7 +717,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       actions: [
         ToolBarIconButton(
           label: l10n.buttonAdd,
-          icon: const MacosIcon(CupertinoIcons.add),
+          icon: _toolIcon(CupertinoIcons.add, on: true),
           showLabel: false,
           tooltipMessage: l10n.tooltipAddAudioShortcut,
           onPressed: _pickFiles,
@@ -709,7 +726,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         // взять в работу новую запись или вернуться к разобранной.
         ToolBarIconButton(
           label: l10n.sheetLibraryTitle,
-          icon: const MacosIcon(CupertinoIcons.clock),
+          icon: _toolIcon(CupertinoIcons.clock, on: true),
           showLabel: false,
           tooltipMessage:
               l10n.tooltipPastTranscripts(os.menuShortcut(const ['cmd'], 'l')),
@@ -717,11 +734,14 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         ),
         ToolBarIconButton(
           label: s.running ? l10n.menuStop : l10n.buttonRecognize,
-          icon: MacosIcon(s.running
-              ? CupertinoIcons.stop_fill
-              : s.dictation == DictationStatus.busy
-                  ? CupertinoIcons.pause_circle
-                  : CupertinoIcons.play_fill),
+          icon: _toolIcon(
+            s.running
+                ? CupertinoIcons.stop_fill
+                : s.dictation == DictationStatus.busy
+                    ? CupertinoIcons.pause_circle
+                    : CupertinoIcons.play_fill,
+            on: s.running || s.hasPending,
+          ),
           showLabel: false,
           tooltipMessage: s.running
               ? (s.waitingForModel
@@ -737,9 +757,12 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         // досчитывают с той же секунды.
         ToolBarIconButton(
           label: s.hasPaused && !s.running ? l10n.buttonResume : l10n.buttonPause,
-          icon: MacosIcon(s.hasPaused && !s.running
-              ? CupertinoIcons.play_circle
-              : CupertinoIcons.pause_fill),
+          icon: _toolIcon(
+            s.hasPaused && !s.running
+                ? CupertinoIcons.play_circle
+                : CupertinoIcons.pause_fill,
+            on: s.running || s.hasPaused,
+          ),
           showLabel: false,
           tooltipMessage: s.hasPaused && !s.running
               ? l10n.tooltipResume
@@ -752,7 +775,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         ),
         ToolBarIconButton(
           label: _recognizeLabel(s.targets, many: s.targets.length > 1),
-          icon: const MacosIcon(CupertinoIcons.arrow_counterclockwise),
+          icon: _toolIcon(
+            CupertinoIcons.arrow_counterclockwise,
+            on: !s.running && s.targets.any((j) => !j.imported),
+          ),
           showLabel: false,
           tooltipMessage: l10n.tooltipRetryShortcut,
           onPressed: s.running || !s.targets.any((j) => !j.imported) ? null : _sendRetry,
@@ -760,7 +786,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         // Кнопка повторяет прошлый выбор, стрелка рядом даёт его сменить.
         ToolBarIconButton(
           label: l10n.buttonCopyToolbar,
-          icon: const MacosIcon(CupertinoIcons.doc_on_clipboard),
+          icon: _toolIcon(CupertinoIcons.doc_on_clipboard, on: ready),
           showLabel: false,
           tooltipMessage: l10n.tooltipCopyFormat(copyFormat.label.toLowerCase()),
           onPressed: ready ? () => _copy() : null,
@@ -787,7 +813,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         ),
         ToolBarIconButton(
           label: l10n.buttonSaveToolbar,
-          icon: const MacosIcon(CupertinoIcons.arrow_down_doc),
+          icon: _toolIcon(CupertinoIcons.arrow_down_doc, on: ready),
           showLabel: false,
           tooltipMessage: l10n.tooltipSaveFormat(saveFormat.label.toLowerCase()),
           onPressed: ready ? () => _saveAs(s) : null,
@@ -813,7 +839,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         ),
         ToolBarIconButton(
           label: l10n.buttonFind,
-          icon: const MacosIcon(CupertinoIcons.search),
+          icon: _toolIcon(CupertinoIcons.search, on: s.lead != null),
           showLabel: false,
           tooltipMessage: l10n.tooltipFindShortcut,
           onPressed: s.lead == null ? null : _openFind,
@@ -830,7 +856,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         if (!os.hasSystemMenuBar)
           ToolBarIconButton(
             label: l10n.sheetShortcutsTitle,
-            icon: const MacosIcon(CupertinoIcons.keyboard),
+            icon: _toolIcon(CupertinoIcons.keyboard, on: true),
             showLabel: false,
             tooltipMessage: '${l10n.sheetShortcutsTitle} · F1',
             onPressed: () => _showShortcuts(s),
@@ -912,10 +938,13 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Колонка под галку — одной ширины у всех строк, иначе
+            // подписи разъезжаются. Сама галка была вдвое мельче
+            // системной и стояла вплотную к тексту.
             SizedBox(
-              width: 16,
+              width: 22,
               child: f.id == current
-                  ? const MacosIcon(CupertinoIcons.checkmark_alt, size: 12)
+                  ? const MacosIcon(CupertinoIcons.checkmark_alt, size: 15)
                   : null,
             ),
             Text(f.label),

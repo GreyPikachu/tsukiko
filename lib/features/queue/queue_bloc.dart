@@ -41,6 +41,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         super(_loaded()) {
     on<FilesAdded>(_onFilesAdded);
     on<TranscriptOpened>(_onTranscriptOpened);
+    on<SourceOpened>(_onSourceOpened);
     on<SelectedRemoved>(_onSelectedRemoved);
     on<FinishedCleared>(_onFinishedCleared);
 
@@ -382,6 +383,47 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       ),
       job,
     );
+  }
+
+  /// Запись плюс её готовая расшифровка.
+  ///
+  /// Уже лежит в очереди — просто выбираем: второй копии одной записи
+  /// в очереди не бывает.
+  Future<void> _onSourceOpened(SourceOpened e, Emitter<QueueState> emit) async {
+    final already = state.jobs.where((j) => j.path == e.audio).firstOrNull;
+    if (already != null) return emit(_select(state, already));
+
+    Transcript? parsed;
+    String? raw;
+    try {
+      final read = readTranscript(
+          e.transcript, await File(e.transcript).readAsString());
+      parsed = read.parsed;
+      raw = read.raw;
+    } catch (err) {
+      // Расшифровку могли убрать между открытием обзора и нажатием.
+      // Запись от этого никуда не делась — берём её как обычную.
+      stderr.writeln('tsukiko: «${e.transcript}» не прочиталась — $err');
+    }
+
+    final job = Job(
+      File(e.audio),
+      state: parsed != null || raw != null ? JobState.done : JobState.queued,
+      transcript: parsed,
+      raw: raw,
+      detail: parsed == null
+          ? null
+          : currentL10n().jobDetailLangSegments(
+              languageName(parsed.lang), segmentsLabel(parsed.segments.length)),
+    );
+    emit(_select(
+      state.copyWith(
+        jobs: [...state.jobs, job],
+        recent: _remember(state.recent, e.audio),
+      ),
+      job,
+    ));
+    _persist();
   }
 
   void _onSelectedRemoved(SelectedRemoved e, Emitter<QueueState> emit) {
@@ -934,8 +976,23 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// отличается «не справился с файлом» от «не поднялся вовсе».
   bool _sawEngineOutput = false;
 
+  /// Когда в последний раз пропустили ход работы в состояние.
+  ///
+  /// Движок с `-pp` говорит о ходе работы куда чаще, чем это можно
+  /// увидеть, а каждое такое слово — это новое состояние блока и полная
+  /// перерисовка окна: очередь, расшифровка и весь инспектор с его
+  /// списками и полями. Отсюда и брались рывки во время счёта — не из
+  /// памяти и не из модели, а из того, что окно перерисовывалось десятки
+  /// раз в секунду ради кружка в четырнадцать точек.
+  ///
+  /// Восьми раз в секунду глазу хватает с запасом; сотня в секунду
+  /// не показывает ничего сверх этого.
+  DateTime? _lastProgressAt;
+  static const _progressEvery = Duration(milliseconds: 120);
+
   Future<int> _runEngine(Job job, String exe, List<String> args) async {
     _sawEngineOutput = false;
+    _lastProgressAt = null;
     void onLine(String line) {
       final seg = parseSegmentLine(line);
       if (seg != null) {
@@ -945,7 +1002,16 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       final p = RegExp(r'progress\s*=\s*(\d+)%').firstMatch(line);
       if (p != null) {
         _sawEngineOutput = true;
-        return add(JobAdvanced(job, progress: double.parse(p.group(1)!) / 100));
+        final value = double.parse(p.group(1)!) / 100;
+        final now = DateTime.now();
+        final was = _lastProgressAt;
+        // Сотый процент пропускаем всегда: на нём ползунок и
+        // останавливается.
+        if (value < 1 && was != null && now.difference(was) < _progressEvery) {
+          return;
+        }
+        _lastProgressAt = now;
+        return add(JobAdvanced(job, progress: value));
       }
       final l = RegExp(r'auto-detected language:\s*(\w+)').firstMatch(line);
       if (l != null) {

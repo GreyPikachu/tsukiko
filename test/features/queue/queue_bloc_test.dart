@@ -464,6 +464,28 @@ void main() {
     );
   });
 
+  group('запись вместе с расшифровкой', () {
+    test('открытая из обзора запись приходит с готовым текстом', () async {
+      final audio = file('вчера.m4a');
+      final transcript = '${tmp.path}/вчера.txt';
+      File(transcript).writeAsStringSync(
+          '[00:00:00.000 --> 00:00:02.000]  Сказанное вслух\n');
+
+      final bloc = make();
+      bloc.add(SourceOpened(audio, transcript));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final job = bloc.state.jobs.single;
+      expect(job.path, audio, reason: 'в очереди сама запись, а не текст');
+      expect(job.done, isTrue, reason: 'расшифровка уже есть, и она видна');
+      expect(job.segments.single.text, 'Сказанное вслух');
+      // Не «открыта из файла»: считать её заново никто не мешает.
+      expect(job.imported, isFalse);
+      expect(bloc.state.canRetry, isTrue);
+      await bloc.close();
+    });
+  });
+
   group('запись настроек на диск', () {
     test('очередь пишет своё и не трогает чужие ключи', () async {
       await Settings.save({'libraryPath': '/чужое/значение'});

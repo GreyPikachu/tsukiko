@@ -622,6 +622,7 @@
       }
     }
   },
+  "buttonOpenLibraryFolder": "Открыть папку",
   "sheetLibraryTitle": "Прошлые расшифровки",
   "sheetLibrarySubtitle": "В библиотеке {files}. Новые сверху.",
   "@sheetLibrarySubtitle": {

@@ -193,6 +193,7 @@
   "buttonOpenSourceInQueue": "Open Recording in Queue",
   "buttonPointAtSource": "Point at Recording…",
   "statusSourceLinked": "Recording linked to the transcript: {name}",
+  "buttonOpenLibraryFolder": "Open Folder",
   "sheetLibraryTitle": "Past Transcripts",
   "sheetLibrarySubtitle": "{files} in the library. Newest first.",
   "sheetLibraryEmpty": "The library is empty",
