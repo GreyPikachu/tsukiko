@@ -662,7 +662,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       ));
         _syncPolling();
       _releaseTemp();
-      _persistNow();
+      unawaited(_persistNow());
       // Доделанное с диска убирается здесь же: файл недосчитанного живёт
       // ровно столько, сколько есть что досчитывать.
       _persistPaused();
@@ -1396,6 +1396,12 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       libraryPath: (s['libraryPath'] as String?) ?? state.libraryPath,
       libraryFormats:
           formats != null && formats.isNotEmpty ? formats : state.libraryFormats,
+      copyFormat: s['copyFormat'] == null
+          ? state.copyFormat
+          : _knownFormat(s['copyFormat']),
+      saveFormat: s['saveFormat'] == null
+          ? state.saveFormat
+          : _knownFormat(s['saveFormat']),
       // Модель могли скачать в окне настроек — список файлов уже другой.
       models: _withOwn(findModels(), state.defaults.model),
     ));
@@ -1409,20 +1415,25 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// иначе каждая буква в подсказке уходила бы на диск.
   void _persist() {
     _saveTimer?.cancel();
-    _saveTimer = Timer(const Duration(milliseconds: 500), _persistNow);
+    _saveTimer = Timer(const Duration(milliseconds: 500),
+        () => unawaited(_persistNow()));
   }
 
   /// Пишем только своё: библиотеку и поведение приложения правит окно
   /// настроек, и его ключи Settings.save оставляет в файле нетронутыми.
-  void _persistNow() {
-    unawaited(Settings.save({
+  Future<void> _persistNow() async {
+    await Settings.save({
       ...state.defaults.toJson(),
       'timestamps': state.timestamps,
       'copyFormat': state.copyFormat,
       'saveFormat': state.saveFormat,
       'recent': state.recent,
-    }));
+    });
     Prompts.write(Prompts.transcriber, state.defaults.prompt);
+    // Форматы правятся и здесь, и в отдельном окне настроек. Сообщаем
+    // соседним Flutter-движкам только после записи на диск, чтобы они
+    // перечитали уже новое значение и оба окна оставались одним целым.
+    await bridge.settingsChanged();
   }
 
   @visibleForTesting
@@ -1440,7 +1451,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     unawaited(api.stop());
     _proc?.kill();
     _releaseTemp();
-    _persistNow();
+    unawaited(_persistNow());
     return super.close();
   }
 }

@@ -147,6 +147,18 @@ void main() {
   });
 
   group('файлы расшифровок', () {
+    test('форматы кнопок пишутся в общий источник настроек', () async {
+      cubit.setCopyFormat('md');
+      cubit.setSaveFormat('srt');
+      await settle();
+
+      expect(cubit.state.copyFormat, 'md');
+      expect(cubit.state.saveFormat, 'srt');
+      expect(Settings.load()['copyFormat'], 'md');
+      expect(Settings.load()['saveFormat'], 'srt');
+      expect(native.calls, contains('settingsChanged'));
+    });
+
     test('последний формат снять нельзя: сохранять было бы нечего', () async {
       cubit.toggleFormat('srt', true);
       await settle();
