@@ -53,8 +53,8 @@ class _ModelRowState extends State<ModelRow> {
       child: AnimatedContainer(
         duration: Motion.dur(context, Motion.press),
         curve: Curves.easeOut,
-        margin: const EdgeInsets.symmetric(vertical: 2),
-        padding: const EdgeInsets.fromLTRB(8, 7, 6, 7),
+        margin: const EdgeInsets.symmetric(vertical: Gap.tight),
+        padding: const EdgeInsets.all(Gap.inner),
         decoration: BoxDecoration(
           color: _hover ? Surface.hover(context) : MacosColors.transparent,
           borderRadius: BorderRadius.circular(7),
@@ -79,7 +79,7 @@ class _ModelRowState extends State<ModelRow> {
                       // может быть несколько, и какая из них в деле —
                       // иначе не видно.
                       if (widget.usedBy != null) ...[
-                        const SizedBox(width: 6),
+                        const SizedBox(width: Gap.inner),
                         Flexible(
                           child: Text('· ${widget.usedBy}',
                               maxLines: 1,
@@ -89,7 +89,7 @@ class _ModelRowState extends State<ModelRow> {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 1),
+                  const SizedBox(height: Gap.tight),
                   // Путь показываем всегда: две модели с одинаковым именем
                   // различает только он.
                   Text(
@@ -109,10 +109,10 @@ class _ModelRowState extends State<ModelRow> {
                       children: [
                         MacosIcon(
                           CupertinoIcons.exclamationmark_triangle_fill,
-                          size: 12,
+                          size: IconSize.inline,
                           color: MacosColors.systemOrangeColor,
                         ),
-                        const SizedBox(width: 5),
+                        const SizedBox(width: Gap.inner),
                         Expanded(
                           child: Text(
                             l10n.modelBrokenMessage(widget.problem!),
@@ -128,9 +128,11 @@ class _ModelRowState extends State<ModelRow> {
                 ],
               ),
             ),
-            const SizedBox(width: 10),
+            // До размера — ступень «между кнопками»: это отдельный
+            // столбец справа, а не хвост пути.
+            const SizedBox(width: Gap.control),
             if (widget.size.isNotEmpty) Text(widget.size, style: grey),
-            const SizedBox(width: 4),
+            const SizedBox(width: Gap.inner),
             // Кнопки видны всегда. Прятать их до наведения значит прятать
             // и сам факт, что моделью можно управлять: человек не станет
             // водить курсором по списку в надежде, что там что-то есть.
@@ -143,7 +145,7 @@ class _ModelRowState extends State<ModelRow> {
                   child: MacosIconButton(
                     icon: MacosIcon(
                       CupertinoIcons.folder,
-                      size: 14,
+                      size: IconSize.button,
                       color: Surface.secondaryText(context)
                           .withValues(alpha: _hover ? 1 : 0.55),
                     ),
@@ -155,7 +157,7 @@ class _ModelRowState extends State<ModelRow> {
                   child: MacosIconButton(
                     icon: MacosIcon(
                       CupertinoIcons.trash,
-                      size: 14,
+                      size: IconSize.button,
                       color: Surface.secondaryText(context)
                           .withValues(alpha: _hover ? 1 : 0.55),
                     ),

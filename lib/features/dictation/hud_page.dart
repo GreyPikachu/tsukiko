@@ -129,7 +129,7 @@ class _HudViewState extends State<HudView> {
       height: 52,
       // Поля шире, чем кажется нужным: содержимое, прижатое к скруглённому
       // краю, читается теснее, чем стоит на самом деле.
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: Gap.edge),
       decoration: BoxDecoration(
         color: Surface.chrome(context),
         borderRadius: BorderRadius.circular(14),
@@ -142,7 +142,7 @@ class _HudViewState extends State<HudView> {
   List<Widget> _content(AppLocalizations l10n) => switch (_state) {
         HudState.transcribing => [
             const ProgressCircle(radius: 7),
-            const SizedBox(width: 12),
+            const SizedBox(width: Gap.control),
             Text(l10n.hudTranscribing, style: _label, maxLines: 1),
             const Spacer(),
             // Часовая запись считается минутами, и выйти из этого иначе
@@ -179,7 +179,7 @@ class _HudViewState extends State<HudView> {
           ),
         _ => [
             _Meter(levels: _levels),
-            const SizedBox(width: 12),
+            const SizedBox(width: Gap.control),
             Text(_time,
                 style: _label.copyWith(
                     fontFeatures: const [FontFeature.tabularFigures()])),
@@ -199,8 +199,8 @@ class _HudViewState extends State<HudView> {
       };
 
   List<Widget> _message(IconData icon, Color color, String text) => [
-        MacosIcon(icon, size: 15, color: color),
-        const SizedBox(width: 12),
+        MacosIcon(icon, size: IconSize.button, color: color),
+        const SizedBox(width: Gap.control),
         Text(text, style: _label, maxLines: 1),
         const Spacer(),
       ];
@@ -229,7 +229,7 @@ class _Meter extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           for (final (i, level) in levels.indexed) ...[
-            if (i > 0) const SizedBox(width: 2),
+            if (i > 0) const SizedBox(width: Gap.tight),
             AnimatedContainer(
               duration: Motion.dur(context, Motion.quick),
               curve: Motion.curve(context, Motion.quickCurve),
@@ -292,7 +292,7 @@ class _HudButtonState extends State<_HudButton> {
           duration: const Duration(milliseconds: 90),
           child: Container(
             height: 26,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: Gap.control),
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: background,
@@ -333,8 +333,10 @@ class _IconButtonState extends State<_IconButton> {
         child: GestureDetector(
           onTap: widget.onPressed,
           child: Container(
-            width: 22,
-            height: 22,
+            // Кружок шире значка на [Gap.inner]: полоса низкая, и
+            // мимо мелкой цели тут промахиваются чаще всего.
+            width: IconSize.button + Gap.inner,
+            height: IconSize.button + Gap.inner,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
@@ -342,7 +344,7 @@ class _IconButtonState extends State<_IconButton> {
             ),
             child: MacosIcon(
               widget.icon,
-              size: 11,
+              size: IconSize.button,
               color: Surface.secondaryText(context)
                   .withValues(alpha: _hover ? 0.9 : 0.4),
             ),
