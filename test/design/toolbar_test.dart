@@ -67,4 +67,9 @@ void main() {
     // нажимали, ожидая свернуть панель, а получали меню экспорта.
     expect(icon(CupertinoIcons.chevron_right_2), findsNothing);
   });
+
+  test('пункт под многоточием не теряет выбранный формат', () {
+    expect(checkedOverflowLabel('Текст', checked: true), '✓ Текст');
+    expect(checkedOverflowLabel('Субтитры SRT', checked: false), '  Субтитры SRT');
+  });
 }
