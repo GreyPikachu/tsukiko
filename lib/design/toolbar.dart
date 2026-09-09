@@ -13,6 +13,7 @@ import 'package:macos_ui/src/layout/toolbar/overflow_handler.dart';
 import 'package:macos_ui/src/layout/wallpaper_tinting_settings/wallpaper_tinting_override.dart';
 
 import '../l10n/gen/app_localizations.dart';
+import 'design.dart';
 
 /// Панель инструментов macos_ui с другим значком у списка спрятанного.
 ///
@@ -99,7 +100,8 @@ class _AppToolBarState extends State<ToolBar> {
             filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
             child: Container(
               alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: Gap.inner, vertical: Gap.hint),
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
@@ -108,7 +110,7 @@ class _AppToolBarState extends State<ToolBar> {
               ),
               child: NavigationToolbar(
                 middle: title,
-                middleSpacing: 8,
+                middleSpacing: Gap.inner,
                 trailing: OverflowHandler(
                   // Заголовок места пунктам не уступает: его ширину
                   // считаем занятой заранее.
