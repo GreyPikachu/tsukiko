@@ -304,6 +304,7 @@
   "hudSilent": "Nothing was recorded",
   "jobDetailSilent": "The recording has no audio",
   "errorSilentRecording": "There was nothing to record: the microphone gave not a single sample",
+  "errorRecordingStart": "The microphone could not be started. Check that it is connected and allowed for tsukiko.",
   "jobDetailWhisperFailed": "whisper-cli couldn't process this file",
   "sectionEngineError": "What the engine said",
   "hintEngineError": "These are the last lines the engine wrote before giving up. If it won't start at all, pass them on in full — that is where the reason shows.",

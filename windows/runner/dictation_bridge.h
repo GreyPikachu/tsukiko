@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -231,6 +232,10 @@ class DictationBridge {
   // Аудио запись
   void* ma_device_ = nullptr;
   void* ma_encoder_ = nullptr;
+  /// Первый блок звука уже записан. Короткое нажатие может отпуститься
+  /// раньше первого вызова WASAPI; тогда перед закрытием устройства ждём
+  /// этот сигнал и не оставляем один пустой WAV-заголовок.
+  std::atomic<HANDLE> audio_ready_event_{nullptr};
   std::string current_record_path_;
 
   /// Готовый уровень индикатора, 0…1, и внутренности его расчёта:
