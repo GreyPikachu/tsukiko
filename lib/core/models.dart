@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 
 import '../platform/os.dart';
 import 'app_locale.dart';
+import 'recognition.dart';
 
 /// Модели распознавания: где их искать, что из них годится, как они
 /// называются для человека, что можно докачать и как это качается.
@@ -11,8 +12,13 @@ import 'app_locale.dart';
 /// Файл модели распознавания. Имя VAD-модели устроено так же
 /// (ggml-silero-….bin), но речь она не распознаёт — в списке моделей ей
 /// не место, иначе её можно выбрать и получить пустую расшифровку.
-bool looksLikeSpeechModel(String name) =>
-    name.startsWith('ggml-') && name.endsWith('.bin') && !name.contains('silero');
+bool looksLikeSpeechModel(String name) {
+  final lower = name.toLowerCase();
+  if (lower.endsWith('.gguf')) return true;
+  return lower.startsWith('ggml-') &&
+      lower.endsWith('.bin') &&
+      !lower.contains('silero');
+}
 
 /// Модель, лежащая на диске, со всем, что о ней надо знать до выбора.
 ///
@@ -45,6 +51,7 @@ class InstalledModel extends Equatable {
   String get name => modelDisplayName(path);
   String get folder => os.dirname(path);
   bool get broken => problem != null;
+  RecognitionEngine get engine => engineForModel(path);
 
   String get sizeLabel =>
       sizeBytes <= 0 ? '' : sizeLabelMb(sizeBytes ~/ (1024 * 1024));
@@ -134,6 +141,9 @@ String modelLabel(String path, List<String> all) {
 // просматривает.
 
 const _modelRepo = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
+const _nemotron35Repo =
+    'https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/resolve/'
+    '1c8deaecc64b91f034d73e08dd8b64625eb3395d';
 
 /// VAD лежит в другом репозитории: в ggerganov/whisper.cpp этого файла нет,
 /// оттуда приходит 404.
@@ -160,6 +170,8 @@ String modelDisplayName(String path) {
   final stem = file
       .replaceFirst(RegExp(r'^ggml-'), '')
       .replaceFirst(RegExp(r'\.bin$'), '')
+      .replaceFirst(RegExp(r'\.gguf$'), '')
+      .replaceFirst(RegExp(r'\.(?:q8_0|q6_k|f16|fp16|bf16)$'), '')
       .trim();
   if (stem.isEmpty) return file;
   return stem
@@ -191,13 +203,18 @@ String? modelFileProblem(String path) {
   try {
     raf = file.openSync();
     final head = raf.readSync(8);
-    if (head.length < 8 || String.fromCharCodes(head.sublist(0, 4)) != 'lmgg') {
+    final magic = head.length < 4
+        ? ''
+        : String.fromCharCodes(head.sublist(0, 4));
+    if (engineForModel(path) == RecognitionEngine.nemoSpeechCpp) {
+      if (magic != 'GGUF') return l10n.modelNotSpeechModel(name);
+    } else if (head.length < 8 || magic != 'lmgg') {
       return l10n.modelNotSpeechModel(name);
-    }
-    // Little-endian uint32 сразу за меткой.
-    final vocab = head[4] | (head[5] << 8) | (head[6] << 16) | (head[7] << 24);
-    if (vocab < 1000) {
-      return l10n.modelIsVad(name, vocab);
+    } else {
+      // Little-endian uint32 сразу за меткой.
+      final vocab =
+          head[4] | (head[5] << 8) | (head[6] << 16) | (head[7] << 24);
+      if (vocab < 1000) return l10n.modelIsVad(name, vocab);
     }
   } catch (_) {
     return l10n.modelUnreadable(name);
@@ -215,13 +232,14 @@ String? modelFileProblem(String path) {
 /// Модель, которую приложение умеет достать само. Размер записан здесь,
 /// а не спрашивается у сервера: выбирать надо до загрузки, а не после.
 class ModelOffer {
-  const ModelOffer(this.file, this.mb, this.about);
+  const ModelOffer(this.file, this.mb, this.about, {this.sourceUrl});
   final String file, about;
   final int mb;
+  final String? sourceUrl;
 
   /// Имя общее со всем приложением: отдельное поле разошлось бы с ним.
   String get title => modelDisplayName(file);
-  String get url => '$_modelRepo/$file';
+  String get url => sourceUrl ?? '$_modelRepo/$file';
   String get path => modelPathFor(file);
   bool get present => File(path).existsSync();
   String get size => sizeLabelMb(mb);
@@ -242,6 +260,13 @@ List<ModelOffer> get modelCatalog {
     ModelOffer('ggml-medium.bin', 1463, l10n.offerMedium),
     ModelOffer('ggml-large-v3-turbo.bin', 1549, l10n.offerLargeV3Turbo),
     ModelOffer('ggml-large-v3.bin', 2952, l10n.offerLargeV3),
+    ModelOffer(
+      'nemotron-3.5-asr-streaming-0.6b.q8_0.gguf',
+      708,
+      l10n.offerNemotron35,
+      sourceUrl:
+          '$_nemotron35Repo/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf',
+    ),
   ];
 }
 

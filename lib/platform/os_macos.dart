@@ -25,7 +25,10 @@ class MacOs implements Os {
   /// Общесистемный кеш whisper.cpp: туда модели кладут его собственные
   /// скрипты, и человек мог скачать модель мимо нас.
   @override
-  List<String> get sharedModelDirs => [join(home, '.cache/whisper')];
+  List<String> get sharedModelDirs => [
+        join(home, '.cache/whisper'),
+        join(home, 'Library/Caches/NeMoSpeech/models'),
+      ];
 
   @override
   String get modelsDir => join(supportDir, 'models');

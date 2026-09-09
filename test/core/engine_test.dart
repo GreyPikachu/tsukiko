@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/core/library.dart';
 import 'package:tsukiko/core/models.dart';
+import 'package:tsukiko/core/recognition.dart';
 import 'package:tsukiko/core/text.dart';
 import 'package:tsukiko/core/transcript.dart';
 import 'package:tsukiko/core/whisper.dart';
@@ -507,18 +508,22 @@ void main() {
     // получил бы пустую расшифровку.
     expect(looksLikeSpeechModel(vadModelFile), isFalse);
     expect(looksLikeSpeechModel('ggml-large-v3-turbo.bin'), isTrue);
+    expect(
+        looksLikeSpeechModel(
+            'nemotron-3.5-asr-streaming-0.6b.q8_0.gguf'),
+        isTrue);
     expect(looksLikeSpeechModel('ggml-tiny.bin.part'), isFalse);
     expect(looksLikeSpeechModel('заметки.txt'), isFalse);
   });
 
   test('каталог моделей: ссылки в один репозиторий, файлы в свою папку', () {
-    expect(modelCatalog.length, 6);
+    expect(modelCatalog.length, 7);
     for (final m in modelCatalog) {
       expect(looksLikeSpeechModel(m.file), isTrue, reason: m.file);
       // Ложится в папку, которую findModels() уже просматривает, — иначе
       // скачанное не появится в списке.
       expect(m.path, os.join(supportDir, 'models', m.file));
-      expect(m.url, 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${m.file}');
+      expect(Uri.parse(m.url).host, 'huggingface.co');
       expect(m.mb, greaterThan(0));
       expect(m.about, isNotEmpty);
     }
@@ -527,12 +532,17 @@ void main() {
     // Размер читается человеком: мегабайты до гигабайта, дальше гигабайты.
     expect(modelCatalog.first.size, '74 МБ');
     expect(sizeLabelMb(1549), '1,5 ГБ');
+    final nemo = modelCatalog.last;
+    expect(nemo.file, 'nemotron-3.5-asr-streaming-0.6b.q8_0.gguf');
+    expect(nemo.url, contains('nvidia/nemotron-3.5-asr-streaming-0.6b'));
+    expect(nemo.url, contains('1c8deaecc64b91f034d73e08dd8b64625eb3395d'));
   });
 
   test('модель везде называется одинаково', () {
     // Каталог, панель и инспектор берут имя из одной функции.
     expect(modelCatalog.map((m) => m.title).toList(),
-        ['Tiny', 'Base', 'Small', 'Medium', 'Large v3 Turbo', 'Large v3']);
+        ['Tiny', 'Base', 'Small', 'Medium', 'Large v3 Turbo', 'Large v3',
+          'Nemotron 3 5 Asr Streaming 0 6b']);
     expect(modelDisplayName('/x/ggml-large-v3-turbo.bin'), 'Large v3 Turbo');
     // Чужой файл: модель из папки соседнего приложения.
     expect(
@@ -540,6 +550,10 @@ void main() {
             '/Users/x/Library/Application Support/com.example.речь/models/ggml-large.bin'),
         'Large');
     expect(modelDisplayName('/x/ggml-small.en.bin'), 'Small En');
+    expect(
+        modelDisplayName(
+            '/x/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf'),
+        'Nemotron 3 5 Asr Streaming 0 6b');
     // Квантование и версии остаются как есть — их не «причёсывают».
     expect(modelDisplayName('/x/ggml-large-v3-q5_0.bin'), 'Large v3 q5_0');
     // Даже совсем не ggml-файл не должен показываться пустотой.
@@ -720,6 +734,21 @@ void main() {
     final good = file('ggml-ok.bin',
         [...head(51865), ...List.filled(30 * 1024 * 1024, 0)]);
     expect(modelFileProblem(good.path), isNull);
+
+    final gguf = file('nemotron.gguf', 'GGUF'.codeUnits);
+    gguf.openSync(mode: FileMode.append)
+      ..truncateSync(30 * 1024 * 1024)
+      ..closeSync();
+    expect(modelFileProblem(gguf.path), isNull);
+
+    final fakeGguf = file('подделка.gguf', 'NOPE'.codeUnits);
+    fakeGguf.openSync(mode: FileMode.append)
+      ..truncateSync(30 * 1024 * 1024)
+      ..closeSync();
+    expect(modelFileProblem(fakeGguf.path), contains('не модель распознавания'));
+
+    expect(engineForModel(good.path), RecognitionEngine.whisperCpp);
+    expect(engineForModel(gguf.path), RecognitionEngine.nemoSpeechCpp);
 
     expect(modelFileProblem('${dir.path}/нет.bin'), contains('больше нет'));
 

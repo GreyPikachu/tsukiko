@@ -148,7 +148,7 @@ class _SettingsBodyState extends State<SettingsBody>
   Future<void> _pickModel() async {
     final f = await openFile(
       acceptedTypeGroups: const [
-        XTypeGroup(label: 'GGML', extensions: ['bin']),
+        XTypeGroup(label: 'GGML / GGUF', extensions: ['bin', 'gguf']),
       ],
     );
     if (f != null) _cubit.pickModel(f.path);

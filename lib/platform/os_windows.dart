@@ -37,6 +37,8 @@ class WindowsOs implements Os {
         join(home, '.cache', 'whisper'),
         if (Platform.environment['LOCALAPPDATA'] != null)
           join(Platform.environment['LOCALAPPDATA']!, 'whisper'),
+        if (Platform.environment['LOCALAPPDATA'] != null)
+          join(Platform.environment['LOCALAPPDATA']!, 'NeMoSpeech', 'models'),
       ];
 
   @override
