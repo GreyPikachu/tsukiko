@@ -247,14 +247,20 @@ class MascotPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(32),
+        // Поле пустого экрана — единственное место, где отступ составной:
+        // [Gap.section] от края мало, а следующей ступени в шкале нет и
+        // заводить её ради одного экрана не за чем.
+        padding: const EdgeInsets.all(Gap.section + Gap.inner),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Mascot(mood: mood, height: height),
-            const SizedBox(height: 16),
+            const SizedBox(height: Gap.item),
             Text(title, style: Type.emptyTitle, textAlign: TextAlign.center),
-            const SizedBox(height: 6),
+            // Подпись принадлежит заголовку и стоит к нему вчетверо ближе,
+            // чем кнопка — к ним обоим: так пустой экран читается как
+            // «сообщение и действие», а не как три отдельные строки.
+            const SizedBox(height: Gap.hint),
             Text(
               subtitle,
               textAlign: TextAlign.center,
@@ -264,7 +270,7 @@ class MascotPlaceholder extends StatelessWidget {
               ),
             ),
             if (action != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: Gap.section),
               SizedBox(width: 260, child: action),
             ],
           ],

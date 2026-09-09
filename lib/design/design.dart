@@ -72,12 +72,34 @@ class Motion {
 /// Смысл шкалы не в числах, а в порядке: пояснение стоит к своей подписи
 /// вчетверо ближе, чем следующий блок к концу предыдущего. Пока это
 /// соотношение держится, глаз сам собирает настройку и её пояснение в одно.
+///
+/// Ступеней намеренно мало. Каждая новая ступень — это ещё одно значение,
+/// между которым и соседним придётся выбирать, а выбирать между 10 и 12
+/// не по чему: разницы не видно, и она уходит в случайность. Поэтому
+/// нынешние значения не переносились одно к одному, а округлялись к
+/// ближайшей ступени: 5 и 6 стали [hint], 7 и 9 — [inner], 10 и 11 —
+/// [control], 14 и 18 — [item] и [edge], 22 и 28 — [section].
 class Gap {
+  /// Строки одного списка: щель, а не расстояние. Нужна затем, чтобы
+  /// подсветка соседних строк не слипалась в одно пятно, — и ни за чем
+  /// больше. Единственная ступень мельче шага 4: расстояния тут уже нет,
+  /// есть зазор.
+  static const tight = 2.0;
+
   /// Подпись и её пояснение — самое тесное расстояние в приложении.
   static const hint = 4.0;
 
   /// Внутри одной настройки: подпись над полем, кнопка под путём.
   static const inner = 8.0;
+
+  /// Между соседними кнопками и значками в одном ряду.
+  ///
+  /// Отдельная ступень от [inner] потому, что у кнопки есть своя рамка и
+  /// своя область нажатия: на восьми точках две соседние кнопки читаются
+  /// как одна широкая, а их зоны нажатия сходятся вплотную. Двенадцать —
+  /// нижняя граница, на которой ряд ещё держится рядом, но уже распадается
+  /// на отдельные цели.
+  static const control = 12.0;
 
   /// Между соседними настройками одного раздела.
   static const item = 16.0;
@@ -88,6 +110,41 @@ class Gap {
   /// Поля слева и справа: в окне настроек одно, в узких панелях другое.
   static const edge = 20.0;
   static const edgeNarrow = 16.0;
+}
+
+/// Размеры значков — та же шкала, только для картинок.
+///
+/// Ступеней ровно четыре, и делит их не число, а работа значка. Значок
+/// внутри строки текста, значок-кнопка, значок в панели окна и значок
+/// вместо картинки — это четыре разных роли, и внутри роли размер обязан
+/// быть один. Раньше их было восемь (10, 12, 13, 14, 15, 20, 40, 56), и
+/// разница между 12 и 13 не значила ничего: тот же значок копирования в
+/// строке расшифровки был мельче соседнего значка ошибки просто потому,
+/// что его писали в другой день.
+///
+/// Числа не круглые, а привязаны к кеглю: значок рядом с текстом обязан
+/// нести тот же оптический вес, что и буквы возле него, — иначе пара
+/// читается как сломанная. Отсюда 13 при основном кегле 12.5–13.5.
+class IconSize {
+  /// Значок внутри строки текста: точка состояния, стрелка раскрытия,
+  /// метка «скачано». Живёт в потоке текста и меряется по нему — примерно
+  /// в один кегль, чтобы не выпирать над строчными и не тонуть под ними.
+  static const inline = 13.0;
+
+  /// Значок-кнопка: у него есть своя область нажатия, и по нему целятся.
+  /// Он обязан быть заметно крупнее строчного, иначе в него не попасть и
+  /// его не найти — ровно эта беда была у копирования фрагмента.
+  static const button = 16.0;
+
+  /// Значок в панели инструментов и в шапке окна. Крупнее кнопочного,
+  /// потому что стоит один в пустом поле, без текста рядом, и опираться
+  /// на соседний кегль ему не на что.
+  static const toolbar = 20.0;
+
+  /// Значок вместо картинки: пустой экран, окно вопроса. Уже не знак,
+  /// а иллюстрация, и меряется не текстом, а той пустотой, которую он
+  /// собой держит.
+  static const hero = 56.0;
 }
 
 /// Размер, насыщенность и межбуквенное — единым набором.
@@ -249,7 +306,10 @@ class SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: Gap.section, bottom: 6),
+        // Снизу вчетверо меньше, чем сверху: заголовок принадлежит тому,
+        // что под ним, и обязан стоять к нему ближе, чем к предыдущему
+        // разделу. Иначе он читается как подпись к чужому концу.
+        padding: const EdgeInsets.only(top: Gap.section, bottom: Gap.inner),
         child: Text(
           text.toUpperCase(),
           style: Type.sectionHeader.copyWith(color: Surface.secondaryText(context)),
@@ -270,7 +330,13 @@ class Hint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.only(top: Gap.hint, left: under ? 25 : 0),
+        // Отступ слева не на глаз: галка macos_ui шириной ровно в
+        // [IconSize.button], между ней и подписью стоит [Gap.inner], —
+        // сумма и есть левый край подписи, под который встаёт пояснение.
+        padding: EdgeInsets.only(
+          top: Gap.hint,
+          left: under ? IconSize.button + Gap.inner : 0,
+        ),
         child: Text(
           text,
           style: Type.caption.copyWith(
@@ -312,10 +378,10 @@ class _DisclosureState extends State<Disclosure> {
                   _open
                       ? CupertinoIcons.chevron_down
                       : CupertinoIcons.chevron_right,
-                  size: 11,
+                  size: IconSize.inline,
                   color: Surface.secondaryText(context),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: Gap.inner),
                 Text(widget.label, style: Type.control),
               ],
             ),
@@ -351,7 +417,7 @@ class _CheckState extends State<Check> {
             // Слева поля нет: подсветка начинается ровно там же, где
             // заголовки разделов и пояснения. Иначе у каждой галки свой
             // левый край, и колонка рассыпается.
-            padding: const EdgeInsets.fromLTRB(0, 5, 6, 5),
+            padding: const EdgeInsets.fromLTRB(0, Gap.hint, Gap.inner, Gap.hint),
             decoration: BoxDecoration(
               color: _hover ? Surface.hover(context) : MacosColors.transparent,
               borderRadius: BorderRadius.circular(6),
@@ -360,7 +426,7 @@ class _CheckState extends State<Check> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 MacosCheckbox(value: widget.value, onChanged: widget.onChanged),
-                const SizedBox(width: 9),
+                const SizedBox(width: Gap.inner),
                 Expanded(child: Text(widget.label, style: Type.control)),
               ],
             ),
@@ -380,7 +446,8 @@ class KeyCap extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedContainer(
         duration: Motion.dur(context, Motion.quick),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(
+            horizontal: Gap.inner, vertical: Gap.tight),
         decoration: BoxDecoration(
           color: lit ? Surface.pressed(context) : Surface.hover(context),
           borderRadius: BorderRadius.circular(5),
@@ -430,7 +497,10 @@ class _HotkeyRowState extends State<HotkeyRow> {
         child: GestureDetector(
           onTap: _waiting ? null : _tap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5),
+            // Строке сочетания дали воздуха: на пяти точках три строки
+            // подряд сливались в одну сетку из плашек, и глазу не за что
+            // было зацепиться, чтобы отделить одно сочетание от другого.
+            padding: const EdgeInsets.symmetric(vertical: Gap.inner),
             child: Row(
               children: [
                 Expanded(child: Text(widget.label, style: Type.control)),
@@ -440,7 +510,10 @@ class _HotkeyRowState extends State<HotkeyRow> {
                 // общим, иначе список читается как сломанный.
                 if (widget.onClear case final clear? when !_waiting)
                   Padding(
-                    padding: const EdgeInsets.only(right: 8),
+                    // Между двумя целями нажатия — [Gap.control]: на
+                    // восьми точках крестик и плашка читались как одна
+                    // широкая кнопка.
+                    padding: const EdgeInsets.only(right: Gap.control),
                     child: _ClearButton(onPressed: clear),
                   ),
                 KeyCap(
@@ -485,16 +558,19 @@ class _ClearButtonState extends State<_ClearButton> {
           child: GestureDetector(
             onTap: widget.onPressed,
             behavior: HitTestBehavior.opaque,
+            // Область нажатия шире самого знака: сам крестик — значок
+            // кнопочной ступени, а вокруг него добавлено по [Gap.hint]
+            // с каждой стороны, чтобы в него попадали, а не целились.
             child: SizedBox(
-              width: 22,
-              height: 22,
+              width: IconSize.button + Gap.inner,
+              height: IconSize.button + Gap.inner,
               child: Center(
                 child: AnimatedOpacity(
                   duration: Motion.dur(context, Motion.press),
                   opacity: _hover ? 1 : 0.55,
                   child: MacosIcon(
                     CupertinoIcons.xmark_circle_fill,
-                    size: 15,
+                    size: IconSize.button,
                     color: Surface.secondaryText(context),
                   ),
                 ),
@@ -547,7 +623,8 @@ class _LibraryPathState extends State<LibraryPath> {
               child: AnimatedContainer(
                 duration: Motion.dur(context, Motion.quick),
                 curve: Motion.curve(context, Motion.quickCurve),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: Gap.inner, vertical: Gap.inner),
                 decoration: BoxDecoration(
                   color: _hover ? Surface.hover(context) : MacosColors.transparent,
                   borderRadius: BorderRadius.circular(7),
@@ -556,8 +633,8 @@ class _LibraryPathState extends State<LibraryPath> {
                 child: Row(
                   children: [
                     MacosIcon(CupertinoIcons.folder,
-                        size: 14, color: Surface.secondaryText(context)),
-                    const SizedBox(width: 8),
+                        size: IconSize.inline, color: Surface.secondaryText(context)),
+                    const SizedBox(width: Gap.inner),
                     Expanded(
                       child: Text(
                         short,
@@ -570,7 +647,8 @@ class _LibraryPathState extends State<LibraryPath> {
                       duration: Motion.dur(context, Motion.quick),
                       opacity: _hover ? 1 : 0,
                       child: MacosIcon(CupertinoIcons.arrow_up_right_square,
-                          size: 13, color: Surface.secondaryText(context)),
+                          size: IconSize.inline,
+                          color: Surface.secondaryText(context)),
                     ),
                   ],
                 ),
@@ -680,7 +758,7 @@ class ModelDownload extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(AppLocalizations.of(context).downloadingTitle(title), style: Type.control),
-          const SizedBox(height: 7),
+          const SizedBox(height: Gap.inner),
           // Во всю ширину: у ProgressBar из macos_ui задана только
           // минимальная ширина в 85 точек, и в столбце он ровно её
           // и занимал — треть панели, будто загрузка чужая.
@@ -688,7 +766,7 @@ class ModelDownload extends StatelessWidget {
             width: double.infinity,
             child: ProgressBar(value: percent.toDouble()),
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: Gap.inner),
           Row(
             children: [
               Expanded(
@@ -788,15 +866,16 @@ class _MenuLayout extends SingleChildLayoutDelegate {
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints c) =>
-      BoxConstraints.loose(Size(c.maxWidth - 16, c.maxHeight - 16));
+      BoxConstraints.loose(
+          Size(c.maxWidth - Gap.item, c.maxHeight - Gap.item));
 
   @override
   Offset getPositionForChild(Size size, Size child) {
-    final x = at.dx + child.width > size.width - 8
-        ? math.max(8.0, at.dx - child.width)
+    final x = at.dx + child.width > size.width - Gap.inner
+        ? math.max(Gap.inner, at.dx - child.width)
         : at.dx;
-    final y = at.dy + child.height > size.height - 8
-        ? math.max(8.0, at.dy - child.height)
+    final y = at.dy + child.height > size.height - Gap.inner
+        ? math.max(Gap.inner, at.dy - child.height)
         : at.dy;
     return Offset(x, y);
   }
@@ -814,7 +893,7 @@ class _ContextMenuPanel extends StatelessWidget {
         child: MacosOverlayFilter(
           borderRadius: BorderRadius.circular(7),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 5),
+            padding: const EdgeInsets.all(Gap.hint),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -822,7 +901,8 @@ class _ContextMenuPanel extends StatelessWidget {
                 for (final a in actions)
                   if (a.isSeparator)
                     Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: Gap.hint, horizontal: Gap.hint),
                       child: Container(height: 1, color: Surface.hairline(context)),
                     )
                   else
@@ -868,7 +948,8 @@ class _ContextMenuRowState extends State<_ContextMenuRow> {
               }
             : null,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          padding: const EdgeInsets.symmetric(
+              horizontal: Gap.inner, vertical: Gap.hint),
           decoration: BoxDecoration(
             color: lit ? accent : MacosColors.transparent,
             borderRadius: BorderRadius.circular(4),
@@ -877,7 +958,10 @@ class _ContextMenuRowState extends State<_ContextMenuRow> {
             children: [
               Text(a.label, style: Type.control.copyWith(color: fg)),
               if (a.shortcut != null) ...[
-                const SizedBox(width: 28),
+                // Между надписью пункта и его сочетанием — ширина
+                // раздела: сочетание отдельный столбец, а не хвост
+                // подписи, и слипаться им нельзя.
+                const SizedBox(width: Gap.section),
                 const Spacer(),
                 Text(
                   a.shortcut!,
