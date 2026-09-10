@@ -7,6 +7,7 @@ import 'package:macos_ui/macos_ui.dart';
 import '../core/app_locale.dart';
 import '../core/library.dart';
 import '../core/models.dart';
+import '../core/recognition.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../platform/os.dart';
 
@@ -686,12 +687,14 @@ class ModelField extends StatelessWidget {
     required this.onChosen,
     required this.onDownload,
     this.fallback,
+    this.downloadEnabled = true,
   });
 
   final List<String> installed;
   final String value;
   final ValueChanged<String> onChosen;
   final ValueChanged<ModelOffer> onDownload;
+  final bool downloadEnabled;
 
   /// Подпись пустого выбора там, где пустой выбор что-то значит: у диктовки
   /// это «как у расшифровщика». Она же становится первым пунктом списка —
@@ -706,6 +709,18 @@ class ModelField extends StatelessWidget {
     return MacosPopupButton<String>(
       value: installed.contains(value) ? value : (f == null ? null : ''),
       hint: Text(f ?? AppLocalizations.of(context).modelNotSelected),
+      // macos_ui измеряет кнопку по самому широкому пункту меню. Размер
+      // загрузки полезен в раскрытом списке, но не должен раздвигать саму
+      // кнопку за край окна. В закрытом виде оставляем только имя модели.
+      selectedItemBuilder: (_) => [
+        if (f != null) Text(f, maxLines: 1, overflow: TextOverflow.ellipsis),
+        for (final m in installed)
+          Text(modelLabel(m, installed),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+        if (offers.isNotEmpty && installed.isNotEmpty) const SizedBox(),
+        for (final m in offers)
+          Text(m.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ],
       items: [
         if (f != null) MacosPopupMenuItem(value: '', child: Text(f)),
         for (final m in installed)
@@ -713,7 +728,10 @@ class ModelField extends StatelessWidget {
             value: m,
             // Не просто имя: две «Large v3 Turbo» из разных папок выглядели
             // в списке одинаково, и какая выбрана — понять было нельзя.
-            child: Text(modelLabel(m, installed)),
+            child: Text(
+              '${modelLabel(m, installed)} · '
+              '${engineTechnicalName(engineForModel(m))}',
+            ),
           ),
         if (offers.isNotEmpty && installed.isNotEmpty)
           MacosPopupMenuItem(
@@ -725,8 +743,11 @@ class ModelField extends StatelessWidget {
           ),
         for (final m in offers)
           MacosPopupMenuItem(
+            enabled: downloadEnabled,
             value: m.path,
-            child: Text('${m.title} · ${m.size}'),
+            child: Text(
+              '${m.title} · ${engineTechnicalName(m.engine)} · ${m.size}',
+            ),
           ),
       ],
       onChanged: (v) {

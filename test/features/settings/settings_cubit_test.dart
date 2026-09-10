@@ -126,6 +126,17 @@ void main() {
     setUp(() => tmp = Directory.systemTemp.createTempSync('tsukiko-set'));
     tearDown(() => tmp.deleteSync(recursive: true));
 
+    test('модель расшифровщика выбирается из общего окна моделей', () async {
+      final path = '${tmp.path}/ggml-small.bin';
+
+      cubit.setQueueModel(path);
+      await settle();
+
+      expect(cubit.state.queueModel, path);
+      expect(Settings.load()['model'], path);
+      expect(native.calls, contains('settingsChanged'));
+    });
+
     test('чужой .bin не становится моделью, а объясняет почему', () async {
       final fake = File('${tmp.path}/ggml-обманка.bin')
         ..writeAsBytesSync(List<int>.filled(64, 7));

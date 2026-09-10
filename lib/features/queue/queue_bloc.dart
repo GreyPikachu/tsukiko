@@ -1583,14 +1583,15 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     Emitter<QueueState> emit,
   ) async {
     if (_download != null) return;
-    final wasEmpty =
-        state.shown.model.isEmpty || !File(state.shown.model).existsSync();
     final path = await _fetch(
       e.offer,
       Download(e.offer.url, e.offer.path, title: e.offer.title),
       emit,
     );
-    if (path != null && wasEmpty) {
+    // Пункт в списке моделей означает «выбрать эту модель», а не просто
+    // положить файл на склад. После загрузки применяем её и тогда, когда
+    // до этого уже была выбрана другая.
+    if (path != null) {
       add(OptionsEdited((o) => o.copyWith(model: path)));
     }
   }
@@ -1721,6 +1722,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// пользуется, но чего больше не правит.
   void _onSettingsReloaded(SettingsReloaded e, Emitter<QueueState> emit) {
     final s = Settings.load();
+    final selectedModel = s['model'] as String?;
+    final models = findModels();
     _textCommands = textCommandsFromJson(s[textCommandsSetting]);
     _commandsEnabled = (s[transcriberCommandsEnabledSetting] as bool?) ?? true;
     final formats = (s['libraryFormats'] as List?)
@@ -1743,8 +1746,13 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         saveFormat: s['saveFormat'] == null
             ? state.saveFormat
             : _knownFormat(s['saveFormat']),
-        // Модель могли скачать в окне настроек — список файлов уже другой.
-        models: _withOwn(findModels(), state.defaults.model),
+        // На вкладке «Модели» теперь можно не только скачать файл, но и
+        // назначить его новым расшифровкам. Открытая запись хранит свой
+        // выбор, поэтому меняем именно defaults.
+        defaults: selectedModel == null
+            ? state.defaults
+            : state.defaults.copyWith(model: selectedModel),
+        models: _withOwn(models, selectedModel ?? state.defaults.model),
       ),
     );
     // Галку API правит окно настроек, а сервер живёт здесь — узнать

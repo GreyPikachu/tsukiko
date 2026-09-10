@@ -10,6 +10,7 @@ import 'package:macos_ui/macos_ui.dart';
 import '../../core/app_locale.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
+import '../../core/recognition.dart';
 import '../../core/skill_install.dart';
 import '../../core/text_commands.dart';
 import '../../core/transcript.dart';
@@ -176,6 +177,10 @@ class _SettingsBodyState extends State<SettingsBody>
               _tabs(context, s),
               Expanded(
                 child: ListView(
+                  // У каждой вкладки своё место прокрутки. Без ключа Flutter
+                  // переносил позицию из длинного каталога моделей в другую
+                  // вкладку, и она открывалась посередине или в пустоте.
+                  key: ValueKey(s.tab),
                   // Поля слева и справа одинаковые и одни на все вкладки.
                   padding: const EdgeInsets.fromLTRB(
                     Gap.edge,
@@ -291,7 +296,8 @@ class _SettingsBodyState extends State<SettingsBody>
         value: s.dictationModel,
         fallback: l10n.fallbackSameAsTranscription,
         onChosen: (v) => _cubit.setDictationModel(v),
-        onDownload: _cubit.download,
+        onDownload: _cubit.downloadForDictation,
+        downloadEnabled: !s.downloading,
       ),
     ),
     Hint(l10n.hintDictationModelFallback),
@@ -406,14 +412,48 @@ class _SettingsBodyState extends State<SettingsBody>
   // ── модели ────────────────────────────────────────────────────────────────
 
   List<Widget> _modelsTab(SettingsState s) {
-    // Предлагать к загрузке то, что уже лежит на диске, — обещать человеку
-    // полтора гигабайта работы впустую. Есть всё — раздела нет вовсе.
-    final offers = modelOffers(s.usable);
     return [
-      // Первое, что спрашивают об этом списке: чьи это модели. Файлы —
-      // общие, а выбор у расшифровщика и у диктовки свой, и сказать об
-      // этом надо прежде, чем показывать сам список.
+      SectionTitle(l10n.sectionActiveModels),
       Hint(l10n.hintModelsOwnership),
+      const SizedBox(height: Gap.item),
+      _Field(
+        l10n.fieldTranscriptionModel,
+        ModelField(
+          installed: s.usable,
+          value: s.queueModel,
+          onChosen: _cubit.setQueueModel,
+          onDownload: _cubit.downloadForTranscription,
+          downloadEnabled: !s.downloading,
+        ),
+      ),
+      const SizedBox(height: Gap.item),
+      _Field(
+        l10n.fieldDictationModel,
+        ModelField(
+          installed: s.usable,
+          value: s.dictationModel,
+          fallback: l10n.fallbackSameAsTranscription,
+          onChosen: _cubit.setDictationModel,
+          onDownload: _cubit.downloadForDictation,
+          downloadEnabled: !s.downloading,
+        ),
+      ),
+      SectionTitle(l10n.sectionModelCatalog),
+      Hint(l10n.hintModelCatalog),
+      if (s.downloading) ...[
+        const SizedBox(height: Gap.item),
+        ModelDownload(
+          title: s.downloadTitle ?? l10n.genericModelTitle,
+          progress: s.downloadProgress!,
+          percent: s.downloadPercent,
+          onCancel: _cubit.cancelDownload,
+        ),
+      ],
+      for (final engine in RecognitionEngine.values) ...[
+        _modelEngineHeading(engine),
+        for (final m in modelCatalog.where((m) => m.engine == engine))
+          _modelOfferRow(m, installed: haveModel(s.usable, m)),
+      ],
       SectionTitle(l10n.sectionInstalled),
       if (s.models.isEmpty)
         Hint(l10n.hintNoModels)
@@ -428,46 +468,6 @@ class _SettingsBodyState extends State<SettingsBody>
             onReveal: () => _cubit.revealModel(m.path),
             onDelete: () => _confirmDelete(s, m),
           ),
-      if (s.downloading) ...[
-        SectionTitle(l10n.sectionCanDownload),
-        ModelDownload(
-          title: s.downloadTitle ?? l10n.genericModelTitle,
-          progress: s.downloadProgress!,
-          percent: s.downloadPercent,
-          onCancel: _cubit.cancelDownload,
-        ),
-      ] else if (offers.isNotEmpty) ...[
-        SectionTitle(l10n.sectionCanDownload),
-        for (final m in offers)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: Gap.inner),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${m.title} · ${m.size}', style: Type.fileName),
-                      Text(
-                        m.about,
-                        style: Type.caption.copyWith(
-                          color: Surface.secondaryText(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: Gap.item),
-                PushButton(
-                  controlSize: ControlSize.regular,
-                  secondary: true,
-                  onPressed: () => _cubit.download(m),
-                  child: Text(l10n.buttonDownload),
-                ),
-              ],
-            ),
-          ),
-      ],
       // Модель тишины лежит в той же папке, и не сказать о ней — значит
       // оставить человека с файлом, которого нет ни в одном списке.
       if (s.vad != null) ...[
@@ -507,6 +507,128 @@ class _SettingsBodyState extends State<SettingsBody>
       ),
     ];
   }
+
+  /// Каталог делится по исполняющему движку: размер модели не объясняет,
+  /// почему один файл `.bin`, другой `.gguf` и какие функции у них разные.
+  Widget _modelEngineHeading(RecognitionEngine engine) => Padding(
+    padding: const EdgeInsets.only(top: Gap.item, bottom: Gap.hint),
+    child: Text(
+      engineTechnicalName(engine).toUpperCase(),
+      style: Type.sectionHeader.copyWith(
+        color: Surface.secondaryText(context),
+      ),
+    ),
+  );
+
+  Widget _modelOfferRow(ModelOffer model, {required bool installed}) {
+    final muted = Surface.secondaryText(context);
+    final capabilities = <({String label, bool warning})>[
+      (
+        label: switch (model.languages) {
+          ModelLanguageScope.multilingual => l10n.modelCapabilityMultilingual,
+          ModelLanguageScope.fortyPlus => l10n.modelCapabilityLanguages40Plus,
+          ModelLanguageScope.european25 => l10n.modelCapabilityEuropean25,
+        },
+        warning: false,
+      ),
+      (
+        label: switch (model.focus) {
+          ModelFocus.compact => l10n.modelCapabilityCompact,
+          ModelFocus.balanced => l10n.modelCapabilityBalanced,
+          ModelFocus.fast => l10n.modelCapabilityFast,
+          ModelFocus.accurate => l10n.modelCapabilityAccurate,
+          ModelFocus.live => l10n.modelCapabilityLive,
+        },
+        warning: false,
+      ),
+      (
+        label: model.supportsPrompt
+            ? l10n.modelCapabilityPrompt
+            : l10n.modelCapabilityNoPrompt,
+        warning: !model.supportsPrompt,
+      ),
+    ];
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: Gap.control),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Surface.hairline(context))),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${model.title} · ${model.size}', style: Type.fileName),
+                const SizedBox(height: Gap.hint),
+                Text(
+                  model.about,
+                  style: Type.caption.copyWith(color: muted, height: 1.35),
+                ),
+                const SizedBox(height: Gap.inner),
+                Wrap(
+                  spacing: Gap.hint,
+                  runSpacing: Gap.hint,
+                  children: [
+                    for (final capability in capabilities)
+                      _modelCapability(
+                        capability.label,
+                        warning: capability.warning,
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: Gap.item),
+          if (installed)
+            Padding(
+              padding: const EdgeInsets.only(top: Gap.hint),
+              child: Row(
+                children: [
+                  const MacosIcon(
+                    CupertinoIcons.check_mark_circled_solid,
+                    size: IconSize.inline,
+                    color: MacosColors.systemGreenColor,
+                  ),
+                  const SizedBox(width: Gap.hint),
+                  Text(l10n.modelAlreadyInstalled, style: Type.caption),
+                ],
+              ),
+            )
+          else
+            PushButton(
+              controlSize: ControlSize.regular,
+              secondary: true,
+              onPressed: _cubit.state.downloading
+                  ? null
+                  : () => _cubit.download(model),
+              child: Text(l10n.buttonDownload),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modelCapability(String label, {required bool warning}) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(
+      color: warning
+          ? MacosColors.systemOrangeColor.withValues(alpha: 0.11)
+          : Surface.hover(context),
+      borderRadius: BorderRadius.circular(5),
+    ),
+    child: Text(
+      label,
+      style: Type.caption.copyWith(
+        fontSize: 10.5,
+        color: warning
+            ? MacosColors.systemOrangeColor
+            : Surface.secondaryText(context),
+      ),
+    ),
+  );
 
   /// Сколько памяти держит модель, которой работает диктовка. Пока она
   /// не выбрана или файла нет, числа не выдумываем.
