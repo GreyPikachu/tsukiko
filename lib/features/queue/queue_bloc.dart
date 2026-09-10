@@ -144,6 +144,9 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
     final s = Settings.load();
     final models = findModels();
+    final commands = textCommandsFromJson(s[textCommandsSetting]);
+    final commandsEnabled =
+        (s[transcriberCommandsEnabledSetting] as bool?) ?? true;
     var defaults = RunOptions.fromJson(
       s,
       RunOptions(
@@ -179,6 +182,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
           : const ['txt'],
       copyFormat: _knownFormat(s['copyFormat']),
       saveFormat: _knownFormat(s['saveFormat']),
+      commandPhrases: textCommandPhrases(commands),
+      commandsEnabled: commandsEnabled,
       recent: ((s['recent'] as List?)?.cast<String>() ?? const [])
           .where((p) => File(p).existsSync())
           .toList(),
@@ -784,7 +789,15 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// Одна запись от начала до конца. false — очередь надо остановить
   /// целиком; неудача самой записи это true: соседние файлы ни при чём.
   Future<bool> _runOne(Job job, Emitter<QueueState> emit) async {
-    final opts = state.optionsFor(job);
+    final selected = state.optionsFor(job);
+    final opts = _commandsEnabled
+        ? selected.copyWith(
+            prompt: promptWithTextCommands(
+              selected.effectivePrompt,
+              _textCommands,
+            ),
+          )
+        : selected;
     var it = job;
     if (opts.model.isEmpty) {
       emit(
@@ -889,11 +902,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         final args = engine == RecognitionEngine.whisperCpp
             ? buildArgs(opts, wav, base, from: it.resumeFrom)
             : buildNemoArgs(opts, wav, jsonFile.path);
-        code = await _runRecognizer(
-          it,
-          engine,
-          args,
-        );
+        code = await _runRecognizer(it, engine, args);
         it = _find(it) ?? it;
         if (!_pausing || _stopRequested) break;
 
@@ -923,8 +932,9 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
             it.copyWith(
               state: JobState.failed,
               detail: _lastEngineError.isEmpty
-                  ? currentL10n()
-                      .jobDetailEngineFailed(engineTechnicalName(engine))
+                  ? currentL10n().jobDetailEngineFailed(
+                      engineTechnicalName(engine),
+                    )
                   : '${currentL10n().jobDetailEngineFailed(engineTechnicalName(engine))} · $_lastEngineError',
               // В подпись влезает начало одной строки, и выделить её
               // оттуда нельзя. Целиком вывод живёт здесь — его показывают
@@ -1214,10 +1224,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
     // Под своим именем: иначе в «Мониторинге системы» память числится
     // за безымянным whisper-cli, и чей он — не понять.
-    final proc = await Process.start(
-      runnableEngine(exe, processName)!,
-      args,
-    );
+    final proc = await Process.start(runnableEngine(exe, processName)!, args);
     _proc = proc;
     // Номер на диск: обычное «Завершить» до Dart не доходит, и погасить
     // движок вместе с приложением может только родная сторона — а найти
@@ -1746,6 +1753,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         saveFormat: s['saveFormat'] == null
             ? state.saveFormat
             : _knownFormat(s['saveFormat']),
+        commandPhrases: textCommandPhrases(_textCommands),
+        commandsEnabled: _commandsEnabled,
         // На вкладке «Модели» теперь можно не только скачать файл, но и
         // назначить его новым расшифровкам. Открытая запись хранит свой
         // выбор, поэтому меняем именно defaults.

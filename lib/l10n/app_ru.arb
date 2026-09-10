@@ -41,6 +41,14 @@
   "fieldModelPrompt": "Подсказка модели",
   "placeholderPromptExample": "Имена, термины, названия",
   "hintPromptHelps": "Слова из подсказки модель пишет правильнее.",
+  "hintCommandPhrasesInPrompt": "Автоматически добавлено в подсказку модели: {phrases}.",
+  "@hintCommandPhrasesInPrompt": {
+    "placeholders": {
+      "phrases": {
+        "type": "String"
+      }
+    }
+  },
   "sectionModelInMemory": "Модель диктовки в памяти",
   "fieldKeepModel": "Держать модель",
   "duration30s": "30 секунд",
