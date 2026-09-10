@@ -45,25 +45,11 @@ class InspectorHeader extends StatelessWidget {
 /// Обвязка окна: заголовок в панели инструментов, значок занятости
 /// модели в строке состояния и заглушка пустого экрана.
 class ToolbarTitle extends StatelessWidget {
-  const ToolbarTitle({super.key, this.subtitle});
-  final String? subtitle;
+  const ToolbarTitle({super.key});
 
   @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    mainAxisAlignment: MainAxisAlignment.center,
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const Text(appName, style: Type.navTitle),
-      if (subtitle != null)
-        Text(
-          subtitle!,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-        ),
-    ],
-  );
+  Widget build(BuildContext context) =>
+      const Text(appName, style: Type.navTitle);
 }
 
 /// Шапка инспектора: к чему относится то, что ниже. Без неё правка настроек
