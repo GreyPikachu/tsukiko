@@ -37,7 +37,18 @@ mkdir -p "$APP/Contents/Helpers"
 cp "$ENGINE/tsukiko-recognizer" "$ENGINE/tsukiko-dictation" "$APP/Contents/Helpers/"
 cp "$ENGINE/whisper.cpp-LICENSE.txt" "$APP/Contents/Resources/"
 rm -rf "$APP/Contents/Helpers/nemo"
-cp -R "$ENGINE/nemo" "$APP/Contents/Helpers/"
+# В Helpers macOS разрешает только вложенный код. Официальный архив NeMo
+# кроме бинарника и dylib содержит CMake-файлы, индекс и лицензии; если
+# скопировать его целиком, codesign принимает первый Markdown за неподписанный
+# subcomponent и отказывается запечатывать всё приложение. Runtime оставляем
+# рядом с исполняемым файлом (его rpath — ../lib), а данные и лицензии кладём
+# в положенное им Contents/Resources.
+mkdir -p "$APP/Contents/Helpers/nemo"
+cp -R "$ENGINE/nemo/bin" "$ENGINE/nemo/lib" "$APP/Contents/Helpers/nemo/"
+rm -rf "$APP/Contents/Helpers/nemo/lib/cmake"
+rm -rf "$APP/Contents/Resources/nemo-speech"
+mkdir -p "$APP/Contents/Resources/nemo-speech"
+cp -R "$ENGINE/nemo/share/." "$APP/Contents/Resources/nemo-speech/"
 
 # Расшифровщик из командной строки. Едет рядом с движком, потому что
 # он такая же вложенная программа: скрипту и нейросетевому агенту нужен
