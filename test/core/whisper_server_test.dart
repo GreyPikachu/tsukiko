@@ -12,4 +12,16 @@ void main() {
     expect(args, containsAllInOrder(['-bs', '5']));
     expect(args, containsAllInOrder(['-bo', '5']));
   });
+
+  test('сервер NeMo поднимается только с ASR и остаётся узнаваемым', () {
+    final args = nemoServerArgs(
+      RunOptions(model: '/m.gguf', lang: 'auto', threads: 4),
+      1234,
+    );
+    expect(args.take(3), ['serve', '--asr-model', '/m.gguf']);
+    expect(args, containsAllInOrder(['--host', '127.0.0.1']));
+    expect(args, containsAllInOrder(['--port', '1234']));
+    expect(args, containsAllInOrder(['--cors-origin', serverMark]));
+    expect(args, contains('--no-ui'));
+  });
 }

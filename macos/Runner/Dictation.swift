@@ -1085,7 +1085,8 @@ final class DictationBridge: NSObject {
 
     for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
       let text = String(line)
-      guard text.contains("whisper-server"), marks.contains(where: text.contains),
+      guard (text.contains("whisper-server") || text.contains("nemo-speech")),
+        marks.contains(where: text.contains),
         let first = text.trimmingCharacters(in: .whitespaces).split(separator: " ").first,
         let pid = pid_t(first)
       else { continue }

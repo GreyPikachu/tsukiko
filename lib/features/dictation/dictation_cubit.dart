@@ -469,7 +469,7 @@ class DictationCubit extends Cubit<DictationState> {
         // Сервер поднимался параллельно записи — дожидаемся, иначе фраза
         // короче подъёма уйдёт в «не удалось» при живой модели.
         await _bringingUp;
-        final recognized = await _server.transcribe(path);
+        final recognized = await _server.transcribe(path, lang: _options.lang);
         if (recognized == null) {
           // Распознать не удалось — или мы сами прервали счёт. Запись
           // в обоих случаях единственный экземпляр сказанного, и удалять

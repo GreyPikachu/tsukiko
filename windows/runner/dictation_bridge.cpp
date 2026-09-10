@@ -302,6 +302,33 @@ void DictationBridge::KillRecognizer() {
 /// сами и дали. По нему и узнаём; настоящий `whisper-server` не трогаем
 /// вовсе, чтобы не погасить чужую работу.
 void DictationBridge::KillDictationServer() {
+  // Нынешний сервер известен точно по pid. Это покрывает и whisper-server,
+  // и nemo-speech, имя которого нельзя безопасно угадать по снимку процессов.
+  wchar_t* appdata = nullptr;
+  size_t appdata_len = 0;
+  if (_wdupenv_s(&appdata, &appdata_len, L"APPDATA") == 0 && appdata) {
+    const std::wstring pid_path =
+        std::wstring(appdata) + L"\\app.yuko.tsukiko\\whisper-server.pid";
+    free(appdata);
+    DWORD recorded_pid = 0;
+    FILE* pid_file = nullptr;
+    if (_wfopen_s(&pid_file, pid_path.c_str(), L"r") == 0 && pid_file) {
+      unsigned long value = 0;
+      if (fwscanf_s(pid_file, L"%lu", &value) == 1) {
+        recorded_pid = static_cast<DWORD>(value);
+      }
+      fclose(pid_file);
+    }
+    _wremove(pid_path.c_str());
+    if (recorded_pid != 0) {
+      HANDLE recorded = OpenProcess(PROCESS_TERMINATE, FALSE, recorded_pid);
+      if (recorded) {
+        TerminateProcess(recorded, 0);
+        CloseHandle(recorded);
+      }
+    }
+  }
+
   HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (snapshot == INVALID_HANDLE_VALUE) return;
   PROCESSENTRY32W entry = {};
