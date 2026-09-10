@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -69,7 +70,7 @@ void main() {
     final add = tester.widget<PushButton>(
       find.widgetWithText(PushButton, 'Добавить команду'),
     );
-    expect(add.controlSize, ControlSize.regular);
+    expect(add.controlSize, ControlSize.small);
     expect(find.text('Что сказать'), findsOneWidget);
     expect(find.text('Что вставить'), findsOneWidget);
     expect(find.textContaining('Автоматически добавлено'), findsNothing);
@@ -81,10 +82,15 @@ void main() {
           )
           .first,
     );
-    expect(
-      card.padding,
-      const EdgeInsets.fromLTRB(Gap.item, Gap.control, Gap.inner, Gap.control),
+    expect(card.padding, const EdgeInsets.all(Gap.item));
+    final phrase = tester.getRect(find.text('Что сказать'));
+    final replacement = tester.getRect(find.text('Что вставить'));
+    expect((phrase.top - replacement.top).abs(), lessThan(1));
+    final trash = find.byWidgetPredicate(
+      (widget) => widget is MacosIcon && widget.icon == CupertinoIcons.trash,
     );
+    expect(trash, findsOneWidget);
+    expect(tester.getSize(trash).width, IconSize.toolbar);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
