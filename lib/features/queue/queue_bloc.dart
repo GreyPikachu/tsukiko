@@ -144,9 +144,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
     final s = Settings.load();
     final models = findModels();
-    final commands = textCommandsFromJson(s[textCommandsSetting]);
-    final commandsEnabled =
-        (s[transcriberCommandsEnabledSetting] as bool?) ?? true;
     var defaults = RunOptions.fromJson(
       s,
       RunOptions(
@@ -182,8 +179,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
           : const ['txt'],
       copyFormat: _knownFormat(s['copyFormat']),
       saveFormat: _knownFormat(s['saveFormat']),
-      commandPhrases: textCommandPhrases(commands),
-      commandsEnabled: commandsEnabled,
       recent: ((s['recent'] as List?)?.cast<String>() ?? const [])
           .where((p) => File(p).existsSync())
           .toList(),
@@ -1753,8 +1748,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         saveFormat: s['saveFormat'] == null
             ? state.saveFormat
             : _knownFormat(s['saveFormat']),
-        commandPhrases: textCommandPhrases(_textCommands),
-        commandsEnabled: _commandsEnabled,
         // На вкладке «Модели» теперь можно не только скачать файл, но и
         // назначить его новым расшифровкам. Открытая запись хранит свой
         // выбор, поэтому меняем именно defaults.
