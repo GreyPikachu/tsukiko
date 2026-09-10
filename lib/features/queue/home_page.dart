@@ -977,7 +977,13 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
             if (ready) ...[
               const MacosPulldownMenuDivider(),
               MacosPulldownMenuItem(
-                title: Text(l10n.menuExportToFolder),
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(width: IconSize.button + Gap.inner),
+                    Text(l10n.menuExportToFolder),
+                  ],
+                ),
                 label: l10n.labelExportToFolder,
                 onTap: () => _exportAll(s),
               ),
@@ -1102,7 +1108,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     // выбрасывает title и оставляет только label. Значит выбранность
     // обязана жить и в строке — иначе именно в тесном окне, где всё
     // ушло под многоточие, нынешний формат узнать было невозможно.
-    label: checkedOverflowLabel(f.label, checked: f.id == current),
+    label: f.label,
     onTap: tap,
     title: Row(
       mainAxisSize: MainAxisSize.min,

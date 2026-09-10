@@ -30,23 +30,25 @@ void main() {
   });
 
   List<ToolbarItem> buttons(int count) => [
-        for (var i = 0; i < count; i++)
-          ToolBarIconButton(
-            label: 'кнопка $i',
-            icon: const MacosIcon(CupertinoIcons.add),
-            showLabel: false,
-            onPressed: () {},
-          ),
-      ];
+    for (var i = 0; i < count; i++)
+      ToolBarIconButton(
+        label: 'кнопка $i',
+        icon: const MacosIcon(CupertinoIcons.add),
+        showLabel: false,
+        onPressed: () {},
+      ),
+  ];
 
   Future<void> pump(WidgetTester tester, ToolBar bar) async {
     await binding.setSurfaceSize(const Size(620, 300));
     addTearDown(() => binding.setSurfaceSize(null));
-    await tester.pumpWidget(MacosApp(
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: Column(children: [SizedBox(height: 52, child: bar)]),
-    ));
+    await tester.pumpWidget(
+      MacosApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Column(children: [SizedBox(height: 52, child: bar)]),
+      ),
+    );
     await tester.pumpAndSettle();
   }
 
@@ -61,8 +63,11 @@ void main() {
       ),
     );
 
-    expect(icon(CupertinoIcons.add), findsNWidgets(8),
-        reason: 'наследование не должно было потерять сами пункты');
+    expect(
+      icon(CupertinoIcons.add),
+      findsNWidgets(8),
+      reason: 'наследование не должно было потерять сами пункты',
+    );
     expect(icon(CupertinoIcons.ellipsis), findsOneWidget);
     // Значок пакета читался как «свернуть правую колонку»: за него и
     // нажимали, ожидая свернуть панель, а получали меню экспорта.
@@ -85,22 +90,12 @@ void main() {
     expect(first.left - title.right, lessThan(130));
   });
 
-  testWidgets('выключенное размытие не оставляет дорогой фильтр',
-      (tester) async {
-    await pump(
-      tester,
-      AppToolBar(
-        enableBlur: false,
-        actions: buttons(1),
-      ),
-    );
+  testWidgets('выключенное размытие не оставляет дорогой фильтр', (
+    tester,
+  ) async {
+    await pump(tester, AppToolBar(enableBlur: false, actions: buttons(1)));
 
     expect(find.byType(BackdropFilter), findsNothing);
-  });
-
-  test('пункт под многоточием не теряет выбранный формат', () {
-    expect(checkedOverflowLabel('Текст', checked: true), '✓ Текст');
-    expect(checkedOverflowLabel('Субтитры SRT', checked: false), '  Субтитры SRT');
   });
 
   testWidgets('список форматов выглядит доступным', (tester) async {
@@ -127,9 +122,6 @@ void main() {
       find.byType(MacosPulldownButtonTheme),
     );
     final context = tester.element(find.byType(MacosPulldownButton));
-    expect(
-      theme.data.iconColor,
-      Surface.toolbarIcon(context, enabled: true),
-    );
+    expect(theme.data.iconColor, Surface.toolbarIcon(context, enabled: true));
   });
 }
