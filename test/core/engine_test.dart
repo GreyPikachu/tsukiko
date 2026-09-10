@@ -91,6 +91,14 @@ void main() {
     expect(automatic, isNot(contains('--language')));
     expect(automatic, isNot(contains('--speech-context')),
         reason: 'затравка Whisper не является словарём NeMo');
+
+    final parakeet = buildNemoArgs(
+      options.copyWith(model: '/models/parakeet-tdt-0.6b-v3.q8_0.gguf'),
+      '/audio.wav',
+      '/result.json',
+    );
+    expect(parakeet, isNot(contains('--speech-context')),
+        reason: 'Parakeet TDT принимает флаг, но подсказку игнорирует');
   });
 
   test('затравка на пунктуацию', () {
@@ -583,7 +591,7 @@ void main() {
   });
 
   test('каталог моделей: ссылки в один репозиторий, файлы в свою папку', () {
-    expect(modelCatalog.length, 7);
+    expect(modelCatalog.length, 8);
     for (final m in modelCatalog) {
       expect(looksLikeSpeechModel(m.file), isTrue, reason: m.file);
       // Ложится в папку, которую findModels() уже просматривает, — иначе
@@ -592,23 +600,36 @@ void main() {
       expect(Uri.parse(m.url).host, 'huggingface.co');
       expect(m.mb, greaterThan(0));
       expect(m.about, isNotEmpty);
+      expect(m.engine, engineForModel(m.file));
     }
     // Имена не повторяются: иначе две строки каталога боролись бы за один файл.
     expect(modelCatalog.map((m) => m.file).toSet().length, modelCatalog.length);
     // Размер читается человеком: мегабайты до гигабайта, дальше гигабайты.
     expect(modelCatalog.first.size, '74 МБ');
     expect(sizeLabelMb(1549), '1,5 ГБ');
-    final nemo = modelCatalog.last;
+    final nemo = modelCatalog[6];
     expect(nemo.file, 'nemotron-3.5-asr-streaming-0.6b.q8_0.gguf');
+    expect(nemo.engine, RecognitionEngine.nemoSpeechCpp);
+    expect(nemo.languages, ModelLanguageScope.fortyPlus);
+    expect(nemo.focus, ModelFocus.live);
+    expect(nemo.supportsPrompt, isTrue);
     expect(nemo.url, contains('nvidia/nemotron-3.5-asr-streaming-0.6b'));
     expect(nemo.url, contains('1c8deaecc64b91f034d73e08dd8b64625eb3395d'));
+    final parakeet = modelCatalog.last;
+    expect(parakeet.file, 'parakeet-tdt-0.6b-v3.q8_0.gguf');
+    expect(parakeet.engine, RecognitionEngine.nemoSpeechCpp);
+    expect(parakeet.languages, ModelLanguageScope.european25);
+    expect(parakeet.focus, ModelFocus.fast);
+    expect(parakeet.supportsPrompt, isFalse);
+    expect(parakeet.url, contains('nvidia/parakeet-tdt-0.6b-v3'));
+    expect(parakeet.url, contains('541d1f99c6b0c3cd0b11a95167540bb8edefd82b'));
   });
 
   test('модель везде называется одинаково', () {
     // Каталог, панель и инспектор берут имя из одной функции.
     expect(modelCatalog.map((m) => m.title).toList(),
         ['Tiny', 'Base', 'Small', 'Medium', 'Large v3 Turbo', 'Large v3',
-          'Nemotron 3 5 Asr Streaming 0 6b']);
+          'Nemotron 3.5 ASR Streaming 0.6b', 'Parakeet TDT 0.6b v3']);
     expect(modelDisplayName('/x/ggml-large-v3-turbo.bin'), 'Large v3 Turbo');
     // Чужой файл: модель из папки соседнего приложения.
     expect(
@@ -619,7 +640,9 @@ void main() {
     expect(
         modelDisplayName(
             '/x/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf'),
-        'Nemotron 3 5 Asr Streaming 0 6b');
+        'Nemotron 3.5 ASR Streaming 0.6b');
+    expect(modelDisplayName('/x/parakeet-tdt-0.6b-v3.q8_0.gguf'),
+        'Parakeet TDT 0.6b v3');
     // Квантование и версии остаются как есть — их не «причёсывают».
     expect(modelDisplayName('/x/ggml-large-v3-q5_0.bin'), 'Large v3 q5_0');
     // Даже совсем не ggml-файл не должен показываться пустотой.
@@ -671,43 +694,51 @@ void main() {
     final wav = '${Directory.systemTemp.path}/tsukiko_dictation.wav';
     await os.toWav('/System/Library/Sounds/Ping.aiff', wav);
 
-    final server = WhisperServer(idleTimeout: const Duration(seconds: 30));
-    try {
-      await server.ensureUp(RunOptions(
-          model: models.first, lang: 'ru', threads: 4, punctuate: false));
-      expect(server.up, isTrue);
-      expect(await server.waitReady(timeout: const Duration(seconds: 60)), isTrue);
+    await withTempSupportDir('tsukiko-real-server', () async {
+      // И путь модели тоже должен носить временную метку. Старые сборки
+      // приложения узнавали свой сервер по папке данных целиком; если
+      // оставить здесь настоящий путь модели, соседний тест уборки увидит
+      // его в аргументах и всё равно примет процесс за своего сироту.
+      final isolatedModel = os.join(os.modelsDir, os.basename(models.first));
+      Link(isolatedModel).createSync(models.first);
+      final server = WhisperServer(idleTimeout: const Duration(seconds: 30));
+      try {
+        await server.ensureUp(RunOptions(
+            model: isolatedModel, lang: 'ru', threads: 4, punctuate: false));
+        expect(server.up, isTrue);
+        expect(await server.waitReady(timeout: const Duration(seconds: 60)), isTrue);
 
-      // Модель в памяти — значит процесс весит как она сама, а не как заглушка.
-      expect(await server.footprintMb(), greaterThan(200));
+        // Модель в памяти — значит процесс весит как она сама, а не как заглушка.
+        expect(await server.footprintMb(), greaterThan(200));
 
-      // Первая фраза уже на прогретой модели: секунда с запасом.
-      final started = DateTime.now();
-      await server.transcribe(wav, lang: 'ru');
-      expect(DateTime.now().difference(started).inSeconds, lessThan(10));
+        // Первая фраза уже на прогретой модели: секунда с запасом.
+        final started = DateTime.now();
+        await server.transcribe(wav, lang: 'ru');
+        expect(DateTime.now().difference(started).inSeconds, lessThan(10));
 
-      // Таймер простоя сдвигается каждым обращением.
-      expect(server.untilUnload!.inSeconds, greaterThan(25));
+        // Таймер простоя сдвигается каждым обращением.
+        expect(server.untilUnload!.inSeconds, greaterThan(25));
 
-      // Главное: пока идёт запись, простой не считается вовсе. Иначе модель
-      // выгружалась посреди длинной фразы, и надиктованное пропадало.
-      server.idleTimeout = const Duration(milliseconds: 300);
-      server.hold();
-      await Future<void>.delayed(const Duration(seconds: 1));
-      expect(server.up, isTrue, reason: 'аренда обязана пережить таймаут');
-      expect(server.untilUnload, isNull);
+        // Главное: пока идёт запись, простой не считается вовсе. Иначе модель
+        // выгружалась посреди длинной фразы, и надиктованное пропадало.
+        server.idleTimeout = const Duration(milliseconds: 300);
+        server.hold();
+        await Future<void>.delayed(const Duration(seconds: 1));
+        expect(server.up, isTrue, reason: 'аренда обязана пережить таймаут');
+        expect(server.untilUnload, isNull);
 
-      // Отпущенная аренда возвращает всё как было: память не наша.
-      server.release();
-      expect(server.untilUnload!.inMilliseconds, lessThan(400));
-      await Future<void>.delayed(const Duration(seconds: 1));
+        // Отпущенная аренда возвращает всё как было: память не наша.
+        server.release();
+        expect(server.untilUnload!.inMilliseconds, lessThan(400));
+        await Future<void>.delayed(const Duration(seconds: 1));
+        expect(server.up, isFalse);
+      } finally {
+        await server.shutdown();
+        File(wav).deleteSync();
+      }
       expect(server.up, isFalse);
-    } finally {
-      await server.shutdown();
-      File(wav).deleteSync();
-    }
-    expect(server.up, isFalse);
-    expect(server.untilUnload, isNull);
+      expect(server.untilUnload, isNull);
+    });
   }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('сирота узнаётся по метке в аргументах, а чужой сервер — нет', () {

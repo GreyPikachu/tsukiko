@@ -144,6 +144,9 @@ const _modelRepo = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
 const _nemotron35Repo =
     'https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/resolve/'
     '1c8deaecc64b91f034d73e08dd8b64625eb3395d';
+const _parakeetTdtRepo =
+    'https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3/resolve/'
+    '541d1f99c6b0c3cd0b11a95167540bb8edefd82b';
 
 /// VAD лежит в другом репозитории: в ggerganov/whisper.cpp этого файла нет,
 /// оттуда приходит 404.
@@ -172,15 +175,26 @@ String modelDisplayName(String path) {
       .replaceFirst(RegExp(r'\.bin$'), '')
       .replaceFirst(RegExp(r'\.gguf$'), '')
       .replaceFirst(RegExp(r'\.(?:q8_0|q6_k|f16|fp16|bf16)$'), '')
+      // Whisper пишет языковую разновидность через точку (`small.en`),
+      // тогда как в версиях NeMo точка — часть числа (`3.5`, `0.6b`).
+      .replaceFirstMapped(RegExp(r'\.([a-z]{2})$'), (m) => '-${m[1]}')
       .trim();
   if (stem.isEmpty) return file;
-  return stem
-      .split(RegExp(r'[-\s.]+'))
+  final words = stem
+      .split(RegExp(r'[-\s]+'))
       .where((w) => w.isNotEmpty)
-      .map((w) => RegExp(r'^[a-zA-Zа-яА-Я]+$').hasMatch(w)
-          ? w[0].toUpperCase() + w.substring(1).toLowerCase()
-          : w)
-      .join(' ');
+      .toList();
+  String wordAt(int index) {
+    final word = words[index];
+    final lower = word.toLowerCase();
+    if (lower == 'asr') return 'ASR';
+    if (lower == 'tdt') return 'TDT';
+    return RegExp(r'^[a-zA-Zа-яА-Я]+$').hasMatch(word)
+        ? word[0].toUpperCase() + word.substring(1).toLowerCase()
+        : word;
+  }
+
+  return [for (var i = 0; i < words.length; i++) wordAt(i)].join(' ');
 }
 
 /// Годится ли выбранный файл в модель распознавания. Возвращает null,
@@ -231,10 +245,30 @@ String? modelFileProblem(String path) {
 
 /// Модель, которую приложение умеет достать само. Размер записан здесь,
 /// а не спрашивается у сервера: выбирать надо до загрузки, а не после.
+enum ModelLanguageScope { multilingual, fortyPlus, european25 }
+
+/// Не рейтинг «вообще», а главный практический смысл варианта в каталоге.
+/// Он нужен интерфейсу сравнения: одно название `Large` или `0.6B` ничего
+/// не говорит человеку о том, зачем брать именно этот файл.
+enum ModelFocus { compact, balanced, fast, accurate, live }
+
 class ModelOffer {
-  const ModelOffer(this.file, this.mb, this.about, {this.sourceUrl});
+  const ModelOffer(
+    this.file,
+    this.mb,
+    this.about, {
+    required this.engine,
+    required this.languages,
+    required this.focus,
+    this.supportsPrompt = true,
+    this.sourceUrl,
+  });
   final String file, about;
   final int mb;
+  final RecognitionEngine engine;
+  final ModelLanguageScope languages;
+  final ModelFocus focus;
+  final bool supportsPrompt;
   final String? sourceUrl;
 
   /// Имя общее со всем приложением: отдельное поле разошлось бы с ним.
@@ -254,18 +288,61 @@ class ModelOffer {
 List<ModelOffer> get modelCatalog {
   final l10n = currentL10n();
   return [
-    ModelOffer('ggml-tiny.bin', 74, l10n.offerTiny),
-    ModelOffer('ggml-base.bin', 141, l10n.offerBase),
-    ModelOffer('ggml-small.bin', 465, l10n.offerSmall),
-    ModelOffer('ggml-medium.bin', 1463, l10n.offerMedium),
-    ModelOffer('ggml-large-v3-turbo.bin', 1549, l10n.offerLargeV3Turbo),
-    ModelOffer('ggml-large-v3.bin', 2952, l10n.offerLargeV3),
+    ModelOffer(
+      'ggml-tiny.bin', 74, l10n.offerTiny,
+      engine: RecognitionEngine.whisperCpp,
+      languages: ModelLanguageScope.multilingual,
+      focus: ModelFocus.compact,
+    ),
+    ModelOffer(
+      'ggml-base.bin', 141, l10n.offerBase,
+      engine: RecognitionEngine.whisperCpp,
+      languages: ModelLanguageScope.multilingual,
+      focus: ModelFocus.compact,
+    ),
+    ModelOffer(
+      'ggml-small.bin', 465, l10n.offerSmall,
+      engine: RecognitionEngine.whisperCpp,
+      languages: ModelLanguageScope.multilingual,
+      focus: ModelFocus.balanced,
+    ),
+    ModelOffer(
+      'ggml-medium.bin', 1463, l10n.offerMedium,
+      engine: RecognitionEngine.whisperCpp,
+      languages: ModelLanguageScope.multilingual,
+      focus: ModelFocus.accurate,
+    ),
+    ModelOffer(
+      'ggml-large-v3-turbo.bin', 1549, l10n.offerLargeV3Turbo,
+      engine: RecognitionEngine.whisperCpp,
+      languages: ModelLanguageScope.multilingual,
+      focus: ModelFocus.fast,
+    ),
+    ModelOffer(
+      'ggml-large-v3.bin', 2952, l10n.offerLargeV3,
+      engine: RecognitionEngine.whisperCpp,
+      languages: ModelLanguageScope.multilingual,
+      focus: ModelFocus.accurate,
+    ),
     ModelOffer(
       'nemotron-3.5-asr-streaming-0.6b.q8_0.gguf',
       708,
       l10n.offerNemotron35,
+      engine: RecognitionEngine.nemoSpeechCpp,
+      languages: ModelLanguageScope.fortyPlus,
+      focus: ModelFocus.live,
       sourceUrl:
           '$_nemotron35Repo/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf',
+    ),
+    ModelOffer(
+      'parakeet-tdt-0.6b-v3.q8_0.gguf',
+      681,
+      l10n.offerParakeetTdt,
+      engine: RecognitionEngine.nemoSpeechCpp,
+      languages: ModelLanguageScope.european25,
+      focus: ModelFocus.fast,
+      supportsPrompt: false,
+      sourceUrl: '$_parakeetTdtRepo/parakeet-tdt-0.6b-v3.q8_0.gguf',
     ),
   ];
 }
