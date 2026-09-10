@@ -27,10 +27,10 @@ class InspectorHeader extends StatelessWidget {
           padding: const EdgeInsets.only(right: Gap.inner),
           child: ToolBarIconButton(
             label: label,
-            icon: const MacosIcon(
+            icon: MacosIcon(
               CupertinoIcons.gear,
               size: IconSize.toolbar,
-              color: MacosColors.systemBlueColor,
+              color: Surface.toolbarIcon(context, enabled: true),
             ),
             showLabel: false,
             tooltipMessage: label,
