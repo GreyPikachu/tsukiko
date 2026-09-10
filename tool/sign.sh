@@ -54,9 +54,48 @@ cp -R "$ENGINE/nemo/share/." "$APP/Contents/Resources/nemo-speech/"
 # он такая же вложенная программа: скрипту и нейросетевому агенту нужен
 # текст, а не окно, и запускать ради одного голосового сообщения весь
 # интерфейс с котом — нелепо. Flutter в него не входит вовсе, поэтому
-# `dart compile exe` собирает его за секунды и без движка Flutter.
-dart compile exe bin/tsukiko_transcribe.dart \
-  -o "$APP/Contents/Helpers/tsukiko-transcribe"
+# `dart compile exe` собирает его за секунды и без движка Flutter. По
+# умолчанию результат имеет архитектуру машины сборщика; приложение же
+# universal, поэтому оба среза собираем явно и объединяем.
+CLI_WORK=$(mktemp -d "${TMPDIR:-/tmp}/tsukiko-cli.XXXXXX")
+trap 'rm -rf "$CLI_WORK"' EXIT
+DART_VERSION=$(dart --version 2>&1 | sed -E 's/Dart SDK version: ([^ ]+).*/\1/')
+DART_PLATFORM=$(dart --version 2>&1 | sed -E 's/.*on "([^"]+)".*/\1/')
+
+# AOT-компилятор Dart умеет выдавать только архитектуру своего SDK. На
+# Apple Silicon второй срез собираем x64-SDK той же версии под Rosetta.
+# Архив берём из официального Dart Archive и сверяем его официальной суммой.
+if [ "$DART_PLATFORM" != "macos_arm64" ]; then
+  echo "Для universal CLI запускайте сборку на Apple Silicon (сейчас $DART_PLATFORM)." >&2
+  exit 1
+fi
+X64_ROOT="build/dart-sdk-macos-x64-$DART_VERSION"
+X64_ARCHIVE="$X64_ROOT.zip"
+X64_URL="https://storage.googleapis.com/dart-archive/channels/stable/release/$DART_VERSION/sdk/dartsdk-macos-x64-release.zip"
+if [ ! -x "$X64_ROOT/dart-sdk/bin/dart" ]; then
+  mkdir -p "$X64_ROOT"
+  X64_SHA=$(curl --http1.1 -fsSL "$X64_URL.sha256sum" | awk '{print $1}')
+  if [ -f "$X64_ARCHIVE" ] &&
+    ! echo "$X64_SHA  $X64_ARCHIVE" | shasum -a 256 -c - >/dev/null 2>&1; then
+    rm "$X64_ARCHIVE"
+  fi
+  if [ ! -f "$X64_ARCHIVE" ]; then
+    curl --http1.1 -fsSL -o "$X64_ARCHIVE" "$X64_URL"
+  fi
+  echo "$X64_SHA  $X64_ARCHIVE" | shasum -a 256 -c - >/dev/null
+  ditto -x -k "$X64_ARCHIVE" "$X64_ROOT"
+fi
+
+dart compile exe --target-os macos --target-arch arm64 \
+  bin/tsukiko_transcribe.dart -o "$CLI_WORK/tsukiko-transcribe-arm64"
+arch -x86_64 "$X64_ROOT/dart-sdk/bin/dart" compile exe \
+  --target-os macos --target-arch x64 \
+  bin/tsukiko_transcribe.dart -o "$CLI_WORK/tsukiko-transcribe-x64"
+lipo -create \
+  "$CLI_WORK/tsukiko-transcribe-arm64" \
+  "$CLI_WORK/tsukiko-transcribe-x64" \
+  -output "$APP/Contents/Helpers/tsukiko-transcribe"
+chmod +x "$APP/Contents/Helpers/tsukiko-transcribe"
 
 # Метка времени от службы Apple, а не `--timestamp=none`.
 #
