@@ -546,6 +546,18 @@ void main() {
       await bloc.close();
     });
 
+    test('модель для новых записей перечитывается из окна настроек', () async {
+      final bloc = make();
+      final path = file('ggml-new.bin');
+      await Settings.save({'model': path});
+      bloc.add(const SettingsReloaded());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(bloc.state.defaults.model, path);
+      expect(bloc.state.models, contains(path));
+      await bloc.close();
+    });
+
     blocTest<QueueBloc, QueueState>(
       'метки времени переключаются и переживают перечитывание',
       build: make,

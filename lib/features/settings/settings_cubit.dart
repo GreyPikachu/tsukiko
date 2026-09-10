@@ -25,8 +25,8 @@ import 'settings_state.dart';
 /// Вкладки разложены по хозяину настройки, и кубит повторяет ту же
 /// раскладку: одна половина его значений принадлежит диктовке и лежит
 /// в `dictation.json`, другая — расшифровщику и приложению и лежит
-/// в `settings.json`. Модель расшифровщика кубит только читает: правит
-/// её главное окно, и вторая рука на том же ключе стирала бы правки.
+/// в `settings.json`. Модель расшифровщика меняется и здесь, и в главном
+/// окне через один ключ и после записи рассылается всем окнам.
 ///
 /// Cubit, а не Bloc: каждое действие здесь — «поставить галку» или
 /// «выбрать значение», отбрасывать и переупорядочивать нечего.
@@ -78,8 +78,6 @@ class SettingsCubit extends Cubit<SettingsState> {
         models: scanModels(),
         vad: findVadModel(),
         clearVadModel: findVadModel() == null,
-        // Модель расшифровщика окно только показывает: правит её главное
-        // окно, и переписать её здесь значило бы драться с ним за один ключ.
         queueModel: (s['model'] as String?) ?? '',
         toLibrary: (s['toLibrary'] as bool?) ?? true,
         saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
@@ -227,6 +225,14 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   void setDictationModel(String path) => _saveDictation((d) => d.model = path);
 
+  /// Модель для всех новых расшифровок. Открытая запись по-прежнему хранит
+  /// собственный выбор, но главное окно перечитает это значение как новое
+  /// умолчание через тот же канал настроек.
+  void setQueueModel(String path) {
+    _emit(state.copyWith(queueModel: path));
+    unawaited(_saveApp({'model': path}));
+  }
+
   void setThreads(int n) => _saveDictation((d) => d.threads = n);
 
   void setPunctuate(bool v) => _saveDictation((d) => d.punctuate = v);
@@ -284,8 +290,8 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   /// Одна загрузка на окно: два полуторагиговых файла разом только мешают
   /// друг другу.
-  Future<void> download(ModelOffer m) async {
-    if (_download != null) return;
+  Future<String?> download(ModelOffer m) async {
+    if (_download != null) return null;
     final d = Download(m.url, m.path, title: m.title);
     _download = d;
     _emit(
@@ -316,6 +322,20 @@ class SettingsCubit extends Cubit<SettingsState> {
     );
     // Список моделей стал другим — соседним окнам надо его перечитать.
     if (path != null) unawaited(bridge.settingsChanged());
+    return path;
+  }
+
+  /// Выбор пункта из выпадающего списка — одно действие: недостающий файл
+  /// сначала приезжает, затем именно он становится активным. Раньше после
+  /// загрузки список обновлялся, но продолжала работать прежняя модель.
+  Future<void> downloadForTranscription(ModelOffer m) async {
+    final path = await download(m);
+    if (path != null) setQueueModel(path);
+  }
+
+  Future<void> downloadForDictation(ModelOffer m) async {
+    final path = await download(m);
+    if (path != null) setDictationModel(path);
   }
 
   void cancelDownload() => _download?.cancel();
@@ -474,6 +494,10 @@ class SettingsCubit extends Cubit<SettingsState> {
     // Выбранной эта модель быть больше не может.
     if (_dictation.model == path) {
       _saveDictation((d) => d.model = '');
+    }
+    if (state.queueModel == path) {
+      _emit(state.copyWith(queueModel: ''));
+      await _saveApp({'model': ''});
     }
     _emit(
       state.copyWith(

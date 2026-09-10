@@ -24,7 +24,7 @@ void main() {
     for (final (label, marker) in [
       ('Расшифровщик', 'Сохранять готовый текст на диск'),
       ('Диктовка', 'Держать и говорить'),
-      ('Модели', 'УСТАНОВЛЕНЫ'),
+      ('Модели', 'АКТИВНЫЕ МОДЕЛИ'),
       ('Приложение', 'Показывать значок в ${os.appIconAreaName}'),
     ]) {
       await tester.tap(find.text(label));
@@ -32,6 +32,19 @@ void main() {
       expect(find.text(marker), findsOneWidget, reason: 'вкладка «$label»');
       expect(tester.takeException(), isNull, reason: 'вкладка «$label»');
     }
+
+    // Каталог длиннее окна, но все движки и ограничения доступны после
+    // прокрутки, а не спрятаны в одном непрозрачном выпадающем списке.
+    await tester.tap(find.text('Модели'));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.textContaining('Parakeet TDT 0.6b v3'),
+      160,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('25 языков Европы'), findsOneWidget);
+    expect(find.text('Без словарных подсказок'), findsOneWidget);
+    expect(tester.takeException(), isNull, reason: 'каталог моделей');
 
     // Скилл живёт на вкладке «Приложение», ниже сгиба: список длинный,
     // и до раздела надо доехать. Проверяем, что он там вообще есть, —
