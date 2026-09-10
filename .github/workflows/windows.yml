@@ -45,8 +45,8 @@ jobs:
           channel: stable
           cache: true
 
-      # Движок whisper.cpp не меняется от правки к правке приложения,
-      # а собирается минут двадцать (две конфигурации, долгие шейдеры).
+      # Нативные движки не меняются от правки к правке приложения.
+      # Whisper собирается минут двадцать, NeMo скачивается готовым.
       # Ключ — по скрипту сборки и патчу: в них лежит и версия движка,
       # и всё, что на неё влияет.
       #
@@ -60,7 +60,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: windows/Engine
-          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
+          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/nemo-engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
 
       # Ставится только когда движок собирается заново: две минуты
       # на установку ради восстановления из кэша — работа впустую.
@@ -73,7 +73,7 @@ jobs:
           Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\${env:VULKAN_VERSION}"
           Add-Content $env:GITHUB_PATH "C:\VulkanSDK\${env:VULKAN_VERSION}\bin"
 
-      - name: Движок whisper.cpp
+      - name: Движки Whisper и NeMo
         if: steps.engine-cache.outputs.cache-hit != 'true'
         run: .\tool\engine-win.ps1
 
@@ -83,7 +83,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: windows/Engine
-          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
+          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/nemo-engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
 
       # Аудиодекодер: whisper читает сам только wav, mp3, flac и ogg
       # с Vorbis, а в разговор приходят голосовые (Opus), записи

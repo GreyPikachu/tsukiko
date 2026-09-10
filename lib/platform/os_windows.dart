@@ -159,12 +159,22 @@ class WindowsOs implements Os {
   /// Имя без суффикса — последнее в списке: так подхватится и сборка,
   /// сделанная руками, и та, что осталась от прежних версий.
   @override
-  List<String> engineNames(String base) => [
-        if (_vulkanUsable) '$base-vulkan.exe',
-        '$base-cpu.exe',
+  List<String> engineNames(String base) {
+    if (base == 'nemo-speech') {
+      return [
+        if (_vulkanUsable) join('nemo-vulkan', 'bin', '$base.exe'),
+        join('nemo-cpu', 'bin', '$base.exe'),
         '$base.exe',
         base,
       ];
+    }
+    return [
+      if (_vulkanUsable) '$base-vulkan.exe',
+      '$base-cpu.exe',
+      '$base.exe',
+      base,
+    ];
+  }
 
   // ── путь для чужой программы ──────────────────────────────────────────────
 

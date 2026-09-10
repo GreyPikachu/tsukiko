@@ -24,6 +24,10 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# NeMo поставляется готовыми официальными архивами. Готовим его отдельно,
+# а здесь оставляем сборку пропатченного whisper.cpp из исходников.
+./tool/nemo-engine.sh "$@"
+
 VERSION=v1.9.3
 MEMORY_PATCH=tool/recognizer-pcm.patch
 PROMPT_PATCH=tool/prompt-context.patch

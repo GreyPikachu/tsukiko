@@ -26,7 +26,8 @@ fi
 # что стоит у человека в системе, и не пропадает, если он снесёт Homebrew.
 # Собирается отдельно — tool/engine.sh.
 ENGINE=macos/Engine
-if [ ! -x "$ENGINE/tsukiko-recognizer" ] || [ ! -x "$ENGINE/tsukiko-dictation" ]; then
+if [ ! -x "$ENGINE/tsukiko-recognizer" ] || [ ! -x "$ENGINE/tsukiko-dictation" ] ||
+  [ ! -x "$ENGINE/nemo/bin/nemo-speech" ]; then
   echo "Нет движка в $ENGINE. Соберите: ./tool/engine.sh" >&2
   exit 1
 fi
@@ -35,6 +36,8 @@ fi
 mkdir -p "$APP/Contents/Helpers"
 cp "$ENGINE/tsukiko-recognizer" "$ENGINE/tsukiko-dictation" "$APP/Contents/Helpers/"
 cp "$ENGINE/whisper.cpp-LICENSE.txt" "$APP/Contents/Resources/"
+rm -rf "$APP/Contents/Helpers/nemo"
+cp -R "$ENGINE/nemo" "$APP/Contents/Helpers/"
 
 # Расшифровщик из командной строки. Едет рядом с движком, потому что
 # он такая же вложенная программа: скрипту и нейросетевому агенту нужен
@@ -60,7 +63,9 @@ STAMP=--timestamp
 [ -n "$TSUKIKO_NO_TIMESTAMP" ] && STAMP=--timestamp=none
 
 # Вложенное подписывается первым: подпись бандла запечатывает то, что внутри.
-find "$APP/Contents/Frameworks" "$APP/Contents/Helpers" -depth 1 -print0 |
+find "$APP/Contents/Frameworks" -depth 1 -print0 |
+  xargs -0 -I{} codesign --force --sign "$ID" "$STAMP" {}
+find "$APP/Contents/Helpers" -type f \( -perm -111 -o -name '*.dylib' \) -print0 |
   xargs -0 -I{} codesign --force --sign "$ID" "$STAMP" {}
 codesign --force --sign "$ID" "$STAMP" \
   --entitlements macos/Runner/Release.entitlements "$APP"
