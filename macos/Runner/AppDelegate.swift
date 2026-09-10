@@ -68,11 +68,11 @@ class AppDelegate: FlutterAppDelegate {
     DictationBridge.openSettings(tab: "dictation")
   }
 
-  // Щелчок по значку в Dock, когда все окна закрыты.
+  // Щелчок по значку в Dock.
   override func applicationShouldHandleReopen(
     _ sender: NSApplication, hasVisibleWindows flag: Bool
   ) -> Bool {
-    if !flag { DictationBridge.showMainWindow() }
+    DictationBridge.showMainWindow()
     return true
   }
 }

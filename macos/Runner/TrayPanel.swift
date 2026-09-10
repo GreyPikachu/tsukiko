@@ -24,6 +24,10 @@ final class PanelController: NSObject, NSWindowDelegate {
   /// и спрашивать память сервера не для кого.
   private var onHidden: (() -> Void)?
 
+  private var localClickMonitor: Any?
+  private var outsideClickMonitor: Any?
+  private var activationObserver: NSObjectProtocol?
+
   // Ширина поповера постоянна, высота — нет: её сообщает Flutter, померив
   // содержимое. Здесь только первое значение, до первого замера.
   private var size = NSSize(width: 320, height: 430)
@@ -100,6 +104,9 @@ final class PanelController: NSObject, NSWindowDelegate {
       backing: .buffered, defer: false)
     panel.isFloatingPanel = true
     panel.level = .popUpMenu
+    panel.collectionBehavior = [
+      .canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary,
+    ]
     panel.hidesOnDeactivate = false
     panel.isOpaque = false
     panel.backgroundColor = .clear
@@ -188,6 +195,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     panel.alphaValue = 0
     panel.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
+    installDismissMonitors()
     NSAnimationContext.runAnimationGroup { context in
       context.duration = 0.16
       context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -201,6 +209,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
   func hide() {
     guard let panel, panel.isVisible else { return }
+    removeDismissMonitors()
     // Говорим сразу, а не в конце анимации: за эти 120 мс считать уже
     // нечего, а лишний кадр уровня стоит целого замера.
     onHidden?()
@@ -214,6 +223,69 @@ final class PanelController: NSObject, NSWindowDelegate {
       })
   }
 
+  private func installDismissMonitors() {
+    removeDismissMonitors()
+    guard let panel else { return }
+    let mouseEvents: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
+
+    localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseEvents) { [weak self, weak panel] event in
+      guard let self, let panel, panel.isVisible else { return event }
+      if event.window !== panel, !self.mouseIsInside(panel) {
+        if self.isClickOnStatusItem() {
+          return event
+        }
+        self.hide()
+      }
+      return event
+    }
+
+    outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseEvents) { [weak self, weak panel] event in
+      guard let self, let panel, panel.isVisible else { return }
+      if event.windowNumber != panel.windowNumber, !self.mouseIsInside(panel) {
+        if self.isClickOnStatusItem() {
+          return
+        }
+        self.hide()
+      }
+    }
+
+    activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didActivateApplicationNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] notification in
+      guard let self,
+        let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+        app.bundleIdentifier != Bundle.main.bundleIdentifier
+      else { return }
+      self.hide()
+    }
+  }
+
+  private func removeDismissMonitors() {
+    if let monitor = localClickMonitor {
+      NSEvent.removeMonitor(monitor)
+      localClickMonitor = nil
+    }
+    if let monitor = outsideClickMonitor {
+      NSEvent.removeMonitor(monitor)
+      outsideClickMonitor = nil
+    }
+    if let observer = activationObserver {
+      NotificationCenter.default.removeObserver(observer)
+      activationObserver = nil
+    }
+  }
+
+  private func mouseIsInside(_ panel: NSPanel) -> Bool {
+    panel.frame.insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation)
+  }
+
+  private func isClickOnStatusItem() -> Bool {
+    guard let button = statusItem?.button, let window = button.window else { return false }
+    return window.frame.contains(NSEvent.mouseLocation)
+  }
+
   func windowDidBecomeKey(_ notification: Notification) {
     // Панель — nonactivating: приложение от неё «активным» не становится,
     // и Flutter считает вид невидимым, останавливая кадры. Внешне это
@@ -222,6 +294,8 @@ final class PanelController: NSObject, NSWindowDelegate {
   }
 
   func windowDidResignKey(_ notification: Notification) {
-    hide()
+    // Не гасим панель по resignKey: в полноэкранном режиме и при открытии
+    // меню системный фокус прыгает между вспомогательными окнами, из-за чего
+    // панель моментально схлопывалась. Закрытием управляют click-мониторы.
   }
 }
