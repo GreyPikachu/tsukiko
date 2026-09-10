@@ -735,12 +735,18 @@ void main() {
         args: '/opt/homebrew/bin/whisper-server -m /Users/x/m.bin '
             '--tmp-dir $legacyServerMark'
       ),
+      (
+        pid: 506,
+        rssKb: 900000,
+        args: '/opt/homebrew/bin/nemo-speech serve --asr-model /Users/x/m.gguf '
+            '--cors-origin $serverMark'
+      ),
       (pid: 505, rssKb: 9000, args: '/Applications/Чужое.app/Contents/MacOS/Чужое'),
     ];
     final ours = ourServersIn(processes);
     // Свои — по нынешней метке, по папке приложения и по метке прежних
     // сборок. Чужой whisper-server и чужое приложение остаются нетронутыми.
-    expect(ours.map((s) => s.pid), [501, 503, 504]);
+    expect(ours.map((s) => s.pid), [501, 503, 504, 506]);
     expect(ours.first.rssKb, 1657392);
   });
 

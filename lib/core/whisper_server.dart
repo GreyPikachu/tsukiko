@@ -5,6 +5,7 @@ import 'dart:typed_data' show BytesBuilder;
 
 import '../core/app_locale.dart';
 import '../core/library.dart';
+import '../core/recognition.dart';
 import '../core/transcript.dart';
 import '../core/whisper.dart';
 import '../platform/os.dart';
@@ -120,7 +121,9 @@ List<ProcListing> ourServersIn(List<ProcListing> processes) => [
         // Имя может быть и своим, и родным: под своим сервер работает
         // с этой сборки, а пережить обновление приложения может и тот,
         // что поднят прежней.
-        if ((p.args.contains('whisper-server') || p.args.contains(dictationExeName)) &&
+        if ((p.args.contains('whisper-server') ||
+                p.args.contains(dictationExeName) ||
+                p.args.contains(nemoSpeechExeName)) &&
             ourServerMarks.any(p.args.contains))
           p,
     ];
@@ -320,6 +323,25 @@ List<String> serverArgs(RunOptions o, int port) => [
   if (o.effectivePrompt.isNotEmpty) ...['--prompt', o.effectivePrompt],
 ];
 
+/// Аргументы постоянного HTTP-сервера NeMo. Модель загружается один раз,
+/// а язык, пунктуация и словарь меняются на каждом запросе.
+List<String> nemoServerArgs(RunOptions o, int port) => [
+      'serve',
+      '--asr-model',
+      os.processPath(o.model),
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '$port',
+      '--max-upload-mb',
+      '4096',
+      '--no-ui',
+      // Безопасное неиспользуемое значение, которое остаётся в командной
+      // строке и позволяет отличить наш nemo-speech от чужого.
+      '--cors-origin',
+      serverMark,
+    ];
+
 class WhisperServer {
   WhisperServer({this.idleTimeout = const Duration(minutes: 3), this.onChanged});
 
@@ -376,7 +398,7 @@ class WhisperServer {
   /// модель, которую у неё попросили.
   Future<void> ensureUp(RunOptions o) async {
     await _starting;
-    if (_proc != null && _model == o.model) {
+    if (_proc != null && _sameOptions(_startedWith, o)) {
       _touch();
       return;
     }
@@ -388,19 +410,39 @@ class WhisperServer {
   /// сервер выглядит выключенным, хотя он как раз поднимается.
   Future<void> get ready => _starting ?? Future<void>.value();
 
+  bool _sameOptions(RunOptions? before, RunOptions after) =>
+      before != null && jsonEncode(before.toJson()) == jsonEncode(after.toJson());
+
   Future<void> _start(RunOptions o) async {
     // Ждём, пока прежний действительно умрёт: два сервера разом — это
     // три гигабайта в памяти и драка за процессор.
     await shutdown();
-    final exe = findWhisperServer();
+    final engine = engineForModel(o.model);
+    final exe = engine == RecognitionEngine.whisperCpp
+        ? findWhisperServer()
+        : findNemoSpeech();
     if (exe == null || o.model.isEmpty) return;
 
     _port = await freePort();
     _model = o.model;
-    final proc = await Process.start(
-        runnableWhisper(exe, dictationExeName)!, serverArgs(o, _port));
     _startedExe = exe;
     _startedWith = o;
+    _startedEngineName = engine == RecognitionEngine.whisperCpp
+        ? dictationExeName
+        : nemoSpeechExeName;
+    _engine = engine;
+    final Process proc;
+    try {
+      proc = await Process.start(
+        runnableEngine(exe, _startedEngineName!)!,
+        engine == RecognitionEngine.whisperCpp
+            ? serverArgs(o, _port)
+            : nemoServerArgs(o, _port),
+      );
+    } catch (_) {
+      // waitReady увидит пустой процесс и попробует следующую сборку.
+      return;
+    }
     _proc = proc;
     // Вывод сервера никому не нужен, но не читать его нельзя: труба
     // заполнится, и процесс встанет.
@@ -425,7 +467,9 @@ class WhisperServer {
   /// движка вовсе не запускается: тогда её вычёркивают на весь сеанс,
   /// а сервер поднимают заново — с теми же настройками, а не с чем попало.
   String? _startedExe;
+  String? _startedEngineName;
   RunOptions? _startedWith;
+  RecognitionEngine? _engine;
 
   /// Порт открывается только после того, как модель прочитана целиком —
   /// проверено: 0,75 с на прогретом кеше, до 2 с на холодном. Поэтому
@@ -439,11 +483,13 @@ class WhisperServer {
       // бы на каждой фразе до конца жизни установки.
       if (_proc == null) {
         final dead = _startedExe;
+        final engineName = _startedEngineName;
         final options = _startedWith;
         _startedExe = null;
         if (dead == null ||
+            engineName == null ||
             options == null ||
-            !engineFailedToStart(dead, dictationExeName)) {
+            !engineFailedToStart(dead, engineName)) {
           return false;
         }
         await ensureUp(options);
@@ -492,7 +538,16 @@ class WhisperServer {
     void field(String name, String value) => head.add(utf8.encode(
         '--$boundary\r\nContent-Disposition: form-data; name="$name"\r\n\r\n$value\r\n'));
     field('response_format', 'json');
-    field('language', lang);
+    final engine = _engine ?? RecognitionEngine.whisperCpp;
+    if (engine == RecognitionEngine.whisperCpp || lang != 'auto') {
+      field('language', lang);
+    }
+    if (engine == RecognitionEngine.nemoSpeechCpp) {
+      final options = _startedWith;
+      field('automatic_punctuation', '${options?.punctuate ?? true}');
+      final prompt = options?.prompt.trim() ?? '';
+      if (prompt.isNotEmpty) field('prompt', prompt);
+    }
     head.add(utf8.encode('--$boundary\r\n'
         'Content-Disposition: form-data; name="file"; filename="a.wav"\r\n'
         'Content-Type: audio/wav\r\n\r\n'));
@@ -508,7 +563,10 @@ class WhisperServer {
 
     final client = HttpClient();
     try {
-      final req = await client.post('127.0.0.1', _port, '/inference');
+      final path = engine == RecognitionEngine.whisperCpp
+          ? '/inference'
+          : '/v1/audio/transcriptions';
+      final req = await client.post('127.0.0.1', _port, path);
       req.headers.set(HttpHeaders.contentTypeHeader,
           'multipart/form-data; boundary=$boundary');
       // Без явной длины Dart перешёл бы на chunked, а сервер её ждёт.
@@ -567,6 +625,9 @@ class WhisperServer {
     // строчки память о запущенном пережила бы выключение по простою,
     // и следующий [waitReady] вычеркнул бы совершенно исправную сборку.
     _startedExe = null;
+    _startedEngineName = null;
+    _startedWith = null;
+    _engine = null;
     if (p == null) return;
     onChanged?.call();
     if (await killForSure(p.pid)) {

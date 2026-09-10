@@ -80,6 +80,17 @@ void main() {
       // забытый сервер с полутора гигабайтами больше не нашёлся бы.
       expect(args[args.indexOf('--tmp-dir') + 1], serverMark);
     });
+
+    test('nemoServerArgs преобразует модель, но сохраняет метку', () {
+      const o = RunOptions(
+        model: r'C:\Users\Роман\models\nemotron.gguf',
+        lang: 'auto',
+        threads: 4,
+      );
+      final args = nemoServerArgs(o, 1234);
+      expect(args[args.indexOf('--asr-model') + 1], '<${o.model}>');
+      expect(args[args.indexOf('--cors-origin') + 1], serverMark);
+    });
   });
 
   test('путь без коротких имён виден заранее', () {
