@@ -99,6 +99,7 @@ class _SettingsBodyState extends State<SettingsBody>
     with WidgetsBindingObserver {
   /// Единственное, что остаётся окну: поле ввода подсказки.
   final _promptCtrl = TextEditingController();
+  final _modelsScroll = ScrollController();
   String _promptShown = '';
 
   /// Ключ API только что скопировали. Живёт до следующей перерисовки
@@ -132,6 +133,7 @@ class _SettingsBodyState extends State<SettingsBody>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _promptCtrl.dispose();
+    _modelsScroll.dispose();
     super.dispose();
   }
 
@@ -144,6 +146,24 @@ class _SettingsBodyState extends State<SettingsBody>
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
     );
+  }
+
+  /// Каталог моделей длиннее окна, а ход загрузки стоит над ним. После
+  /// нажатия «Скачать» возле нижней модели кнопки блокировались на месте,
+  /// и начавшаяся выше загрузка оставалась за краем экрана. Дожидаемся,
+  /// пока список переложится, и мягко возвращаем его к верхнему блоку,
+  /// где индикатор уже виден. Искать сам виджет по ключу нельзя: ленивый
+  /// список не строит его, пока пользователь далеко внизу. [Motion]
+  /// учитывает системное «уменьшение движения».
+  void _revealModelDownload() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_modelsScroll.hasClients) return;
+      _modelsScroll.animateTo(
+        _modelsScroll.position.minScrollExtent,
+        duration: Motion.dur(context, Motion.settle),
+        curve: Motion.curve(context, Motion.settleCurve),
+      );
+    });
   }
 
   Future<void> _pickModel() async {
@@ -168,8 +188,12 @@ class _SettingsBodyState extends State<SettingsBody>
   @override
   Widget build(BuildContext context) =>
       BlocConsumer<SettingsCubit, SettingsState>(
-        listenWhen: (was, now) => was.prompt != now.prompt,
-        listener: (context, s) => _syncPromptField(s.prompt),
+        listenWhen: (was, now) =>
+            was.prompt != now.prompt || (!was.downloading && now.downloading),
+        listener: (context, s) {
+          _syncPromptField(s.prompt);
+          if (s.downloading) _revealModelDownload();
+        },
         builder: (context, s) => Container(
           color: MacosTheme.of(context).canvasColor,
           child: Column(
@@ -177,6 +201,7 @@ class _SettingsBodyState extends State<SettingsBody>
               _tabs(context, s),
               Expanded(
                 child: ListView(
+                  controller: s.tab == 'models' ? _modelsScroll : null,
                   // У каждой вкладки своё место прокрутки. Без ключа Flutter
                   // переносил позицию из длинного каталога моделей в другую
                   // вкладку, и она открывалась посередине или в пустоте.
@@ -514,9 +539,7 @@ class _SettingsBodyState extends State<SettingsBody>
     padding: const EdgeInsets.only(top: Gap.item, bottom: Gap.hint),
     child: Text(
       engineTechnicalName(engine).toUpperCase(),
-      style: Type.sectionHeader.copyWith(
-        color: Surface.secondaryText(context),
-      ),
+      style: Type.sectionHeader.copyWith(color: Surface.secondaryText(context)),
     ),
   );
 

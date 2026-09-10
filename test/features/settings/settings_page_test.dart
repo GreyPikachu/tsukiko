@@ -1,14 +1,81 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:macos_ui/macos_ui.dart';
+import 'package:tsukiko/features/settings/settings_cubit.dart';
 import 'package:tsukiko/platform/bridge.dart';
 import 'package:tsukiko/platform/os.dart';
 import 'package:tsukiko/features/settings/settings_page.dart';
+import 'package:tsukiko/features/settings/settings_state.dart';
+import 'package:tsukiko/l10n/gen/app_localizations.dart';
+
+class _FakeSettingsCubit extends Cubit<SettingsState> implements SettingsCubit {
+  _FakeSettingsCubit() : super(SettingsState(tab: 'models'));
+
+  void beginDownload() => emit(
+    state.copyWith(
+      downloadTitle: 'Parakeet',
+      downloadProgress: '0 МБ из 640 МБ',
+      downloadPercent: 0,
+    ),
+  );
+
+  @override
+  void setVisible(bool visible) {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 /// Окно настроек живёт отдельным файлом теста намеренно: рисующий тест
 /// заводит TestWidgetsFlutterBinding, а та подменяет HttpClient — рядом
 /// с ней тесты загрузки моделей перестают видеть сеть.
 void main() {
-  testWidgets('окно настроек рисуется на всех четырёх вкладках', (tester) async {
+  testWidgets('начало загрузки возвращает список к индикатору', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(580, 560));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+    final cubit = _FakeSettingsCubit();
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(
+      MacosApp(
+        locale: const Locale('ru'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: BlocProvider<SettingsCubit>.value(
+          value: cubit,
+          child: const SettingsBody(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final list = find.byType(ListView).first;
+    await tester.drag(list, const Offset(0, -1200));
+    await tester.pumpAndSettle();
+    final scrollable = find.descendant(
+      of: list,
+      matching: find.byType(Scrollable),
+    );
+    final position = tester.state<ScrollableState>(scrollable).position;
+    final before = position.pixels;
+    expect(before, greaterThan(500));
+
+    cubit.beginDownload();
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Загрузка: Parakeet'), findsOneWidget);
+    expect(position.pixels, lessThan(before));
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('окно настроек рисуется на всех четырёх вкладках', (
+    tester,
+  ) async {
     // Размер настоящего окна: раскладка обязана сходиться именно в нём.
     await tester.binding.setSurfaceSize(const Size(580, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
