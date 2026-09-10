@@ -21,7 +21,9 @@ $ENGINE_DIR = "windows/Engine"
 if (-not $SkipEngine) {
     # Сборок движка две — с Vulkan и без; какую запускать, приложение
     # решает на месте (см. os.engineNames). Имени без суффикса нет.
-    if (-not (Test-Path "$ENGINE_DIR/tsukiko-recognizer-cpu.exe")) {
+    if (-not (Test-Path "$ENGINE_DIR/tsukiko-recognizer-cpu.exe") -or
+        -not (Test-Path "$ENGINE_DIR/nemo-cpu/bin/nemo-speech.exe") -or
+        -not (Test-Path "$ENGINE_DIR/nemo-vulkan/bin/nemo-speech.exe")) {
         Write-Host "Движок не собран, запускаем tool/engine-win.ps1..."
         & "$ScriptDir/engine-win.ps1"
     }

@@ -87,7 +87,8 @@ class MacOs implements Os {
   /// Сборка одна на все машины: Metal есть на каждом Mac, а универсальный
   /// бинарник покрывает и Apple Silicon, и Intel. Выбирать не из чего.
   @override
-  List<String> engineNames(String base) => [base];
+  List<String> engineNames(String base) =>
+      base == 'nemo-speech' ? [join('nemo', 'bin', base)] : [base];
 
   /// Ничего не делаем: `execve` берёт байты довода как есть, и UTF-8
   /// доезжает до чужой программы целым. Преобразовывать здесь нечего.

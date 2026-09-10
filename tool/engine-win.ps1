@@ -22,6 +22,9 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = Split-Path -Parent $ScriptDir
 Set-Location $RootDir
 
+# Готовые официальные NeMo-бинарники не требуют ни CMake, ни Python.
+& "$ScriptDir/nemo-engine-win.ps1" -Force:$Force
+
 $VERSION = "v1.9.3"
 $PATCHES = @("tool/recognizer-pcm.patch", "tool/prompt-context.patch")
 $SHA256 = "1650f884effba487025143bd8facd2f9fb40a83b3737a732803c67a8d659d9c0"

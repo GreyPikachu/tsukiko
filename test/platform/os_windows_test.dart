@@ -71,6 +71,15 @@ void main() {
       expect(names, contains('tsukiko-recognizer-cpu.exe'));
       // Имя без суффикса остаётся запасным: подхватится и собранное руками.
       expect(names, contains('tsukiko-recognizer.exe'));
+
+      final nemo = win.engineNames('nemo-speech');
+      expect(nemo, contains(r'nemo-cpu\bin\nemo-speech.exe'));
+      expect(
+        nemo.first,
+        vulkan
+            ? r'nemo-vulkan\bin\nemo-speech.exe'
+            : r'nemo-cpu\bin\nemo-speech.exe',
+      );
     });
 
     test('проводник зовётся так, чтобы кавычки Dart ничего не сломали', () {
