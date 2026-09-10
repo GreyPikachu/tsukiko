@@ -27,7 +27,7 @@
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
 #endif
-#define MyAppPublisher "Yuko"
+#define MyAppPublisher "Yukovsky"
 #define MyAppExeName "tsukiko.exe"
 #define BuildDir "..\build\windows\x64\runner\Release"
 ; Обратный домен приложения. Обязан совпадать с bundleId из

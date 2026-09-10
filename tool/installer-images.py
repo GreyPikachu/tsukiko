@@ -86,6 +86,10 @@ BANNER_SVG = """<svg xmlns="http://www.w3.org/2000/svg"
   <text x="82" y="64" text-anchor="middle"
         font-family="Segoe UI, Helvetica, sans-serif"
         font-size="10" fill="#ffffff" fill-opacity="0.72">расшифровка и диктовка</text>
+  <text x="154" y="303" text-anchor="end"
+        font-family="Segoe UI, Helvetica, sans-serif"
+        font-size="7" font-weight="600" fill="#ffffff"
+        fill-opacity="0.82" letter-spacing="0.35">Yukovsky</text>
 </svg>
 """
 
