@@ -42,8 +42,6 @@ class QueueState extends Equatable {
     this.libraryFormats = const ['txt'],
     this.copyFormat = 'txt',
     this.saveFormat = 'txt',
-    this.commandPhrases = const [],
-    this.commandsEnabled = true,
     this.recent = const [],
     this.ask,
   });
@@ -85,12 +83,6 @@ class QueueState extends Equatable {
 
   /// Приложение помнит, чем пользуются: кнопка повторяет прошлый выбор.
   final String copyFormat, saveFormat;
-
-  /// Произносимые части голосовых команд показываются возле подсказки
-  /// модели. Это не редактируемый текст подсказки: список остаётся одним
-  /// и тем же для диктовки и расшифровщика и меняется в настройках.
-  final List<String> commandPhrases;
-  final bool commandsEnabled;
 
   final List<String> recent;
 
@@ -150,8 +142,6 @@ class QueueState extends Equatable {
     List<String>? libraryFormats,
     String? copyFormat,
     String? saveFormat,
-    List<String>? commandPhrases,
-    bool? commandsEnabled,
     List<String>? recent,
     Ask? ask,
     bool clearLead = false,
@@ -181,8 +171,6 @@ class QueueState extends Equatable {
     libraryFormats: libraryFormats ?? this.libraryFormats,
     copyFormat: copyFormat ?? this.copyFormat,
     saveFormat: saveFormat ?? this.saveFormat,
-    commandPhrases: commandPhrases ?? this.commandPhrases,
-    commandsEnabled: commandsEnabled ?? this.commandsEnabled,
     recent: recent ?? this.recent,
     ask: clearAsk ? null : (ask ?? this.ask),
   );
@@ -208,8 +196,6 @@ class QueueState extends Equatable {
     libraryFormats,
     copyFormat,
     saveFormat,
-    commandPhrases,
-    commandsEnabled,
     recent,
     ask,
   ];

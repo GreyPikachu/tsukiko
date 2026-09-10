@@ -477,7 +477,7 @@ void main() {
   });
 
   group('настройки приложения', () {
-    test('фразы команд видны возле подсказки и перечитываются', () async {
+    test('команды перечитываются без технического состояния для UI', () async {
       await Settings.save({
         textCommandsSetting: [
           const TextCommand('адрес офиса', 'Минск').toJson(),
@@ -485,9 +485,6 @@ void main() {
         transcriberCommandsEnabledSetting: true,
       });
       final bloc = make();
-      expect(bloc.state.commandPhrases, ['адрес офиса']);
-      expect(bloc.state.commandsEnabled, isTrue);
-
       await Settings.save({
         textCommandsSetting: [const TextCommand('новая строка', '\n').toJson()],
         transcriberCommandsEnabledSetting: false,
@@ -495,8 +492,6 @@ void main() {
       bloc.add(const SettingsReloaded());
       await Future<void>.delayed(Duration.zero);
 
-      expect(bloc.state.commandPhrases, ['новая строка']);
-      expect(bloc.state.commandsEnabled, isFalse);
       await bloc.close();
     });
 

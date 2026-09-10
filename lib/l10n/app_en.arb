@@ -34,14 +34,6 @@
   "fieldModelPrompt": "Model prompt",
   "placeholderPromptExample": "Names, terms, titles",
   "hintPromptHelps": "Words from the prompt are transcribed more accurately.",
-  "hintCommandPhrasesInPrompt": "Automatically added to the model prompt: {phrases}.",
-  "@hintCommandPhrasesInPrompt": {
-    "placeholders": {
-      "phrases": {
-        "type": "String"
-      }
-    }
-  },
   "sectionModelInMemory": "Dictation model in memory",
   "fieldKeepModel": "Keep the model loaded",
   "duration30s": "30 seconds",
