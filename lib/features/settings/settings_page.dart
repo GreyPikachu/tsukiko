@@ -817,7 +817,7 @@ class _SettingsBodyState extends State<SettingsBody>
       const SizedBox(height: Gap.item),
       for (final (index, command) in s.textCommands.indexed)
         Padding(
-          padding: const EdgeInsets.only(bottom: Gap.inner),
+          padding: const EdgeInsets.only(bottom: Gap.item),
           child: _TextCommandRow(
             key: ValueKey(index),
             command: command,
@@ -829,7 +829,7 @@ class _SettingsBodyState extends State<SettingsBody>
           ),
         ),
       PushButton(
-        controlSize: ControlSize.small,
+        controlSize: ControlSize.regular,
         secondary: true,
         onPressed: _cubit.addTextCommand,
         child: Text(l10n.buttonAddCommand),
@@ -1120,41 +1120,73 @@ class _TextCommandRowState extends State<_TextCommandRow> {
       widget.onChanged(TextCommand(_phrase.text, _replacement.text));
 
   @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Expanded(
-        child: AppTextField(
-          controller: _phrase,
-          placeholder: widget.phraseHint,
-          onChanged: (_) => _changed(),
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(
+      Gap.item,
+      Gap.control,
+      Gap.inner,
+      Gap.control,
+    ),
+    decoration: BoxDecoration(
+      color: Surface.hover(context),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: _commandField(label: widget.phraseHint, controller: _phrase),
         ),
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: Gap.inner),
-        child: MacosIcon(
-          CupertinoIcons.arrow_right,
-          size: IconSize.button,
-          color: Surface.secondaryText(context),
-        ),
-      ),
-      Expanded(
-        child: AppTextField(
-          controller: _replacement,
-          placeholder: widget.replacementHint,
-          onChanged: (_) => _changed(),
-        ),
-      ),
-      const SizedBox(width: Gap.inner),
-      MacosTooltip(
-        message: widget.removeHint,
-        child: MacosIconButton(
-          icon: const MacosIcon(
-            CupertinoIcons.minus_circle,
-            size: IconSize.button,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            Gap.control,
+            0,
+            Gap.control,
+            Gap.inner,
           ),
-          onPressed: widget.onRemove,
+          child: MacosIcon(
+            CupertinoIcons.arrow_right,
+            size: IconSize.button,
+            color: Surface.secondaryText(context),
+          ),
         ),
-      ),
+        Expanded(
+          child: _commandField(
+            label: widget.replacementHint,
+            controller: _replacement,
+          ),
+        ),
+        const SizedBox(width: Gap.inner),
+        Padding(
+          padding: const EdgeInsets.only(bottom: Gap.hint),
+          child: MacosTooltip(
+            message: widget.removeHint,
+            child: MacosIconButton(
+              icon: const MacosIcon(
+                CupertinoIcons.minus_circle,
+                size: IconSize.button,
+              ),
+              boxConstraints: const BoxConstraints.tightFor(
+                width: IconSize.button + Gap.control,
+                height: IconSize.button + Gap.control,
+              ),
+              onPressed: widget.onRemove,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _commandField({
+    required String label,
+    required TextEditingController controller,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: Type.caption),
+      const SizedBox(height: Gap.inner),
+      AppTextField(controller: controller, onChanged: (_) => _changed()),
     ],
   );
 }

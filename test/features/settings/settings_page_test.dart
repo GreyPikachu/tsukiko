@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:macos_ui/macos_ui.dart';
+import 'package:tsukiko/core/text_commands.dart';
+import 'package:tsukiko/design/design.dart';
 import 'package:tsukiko/features/settings/settings_cubit.dart';
 import 'package:tsukiko/platform/bridge.dart';
 import 'package:tsukiko/platform/os.dart';
@@ -10,7 +12,8 @@ import 'package:tsukiko/features/settings/settings_state.dart';
 import 'package:tsukiko/l10n/gen/app_localizations.dart';
 
 class _FakeSettingsCubit extends Cubit<SettingsState> implements SettingsCubit {
-  _FakeSettingsCubit() : super(SettingsState(tab: 'models'));
+  _FakeSettingsCubit([SettingsState? initial])
+    : super(initial ?? SettingsState(tab: 'models'));
 
   void beginDownload() => emit(
     state.copyWith(
@@ -31,6 +34,60 @@ class _FakeSettingsCubit extends Cubit<SettingsState> implements SettingsCubit {
 /// заводит TestWidgetsFlutterBinding, а та подменяет HttpClient — рядом
 /// с ней тесты загрузки моделей перестают видеть сеть.
 void main() {
+  testWidgets('редактор команды использует обычную кнопку и ровные поля', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(580, 560));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+    final cubit = _FakeSettingsCubit(
+      SettingsState(
+        tab: 'dictation',
+        textCommands: const [TextCommand('адрес офиса', 'Минск')],
+      ),
+    );
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(
+      MacosApp(
+        locale: const Locale('ru'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: BlocProvider<SettingsCubit>.value(
+          value: cubit,
+          child: const SettingsBody(),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.dragUntilVisible(
+      find.text('Добавить команду'),
+      find.byType(ListView).first,
+      const Offset(0, -180),
+    );
+
+    final add = tester.widget<PushButton>(
+      find.widgetWithText(PushButton, 'Добавить команду'),
+    );
+    expect(add.controlSize, ControlSize.regular);
+    expect(find.text('Что сказать'), findsOneWidget);
+    expect(find.text('Что вставить'), findsOneWidget);
+    final card = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey(0)),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect(
+      card.padding,
+      const EdgeInsets.fromLTRB(Gap.item, Gap.control, Gap.inner, Gap.control),
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('начало загрузки возвращает список к индикатору', (tester) async {
     await tester.binding.setSurfaceSize(const Size(580, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
