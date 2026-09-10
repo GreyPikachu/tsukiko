@@ -835,10 +835,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     final saveFormat = formatById(s.saveFormat);
 
     return AppToolBar(
-      title: ToolbarTitle(subtitle: _subtitle(s)),
-      // Имя окна остаётся читаемым, но не забирает ширину трёх
-      // кнопок. Полное имя записи всё равно видно в очереди.
-      titleWidth: 152,
+      title: const ToolbarTitle(),
+      // Полное имя записи уже есть в очереди. Здесь остаётся только
+      // название приложения и ровно столько места, сколько оно занимает.
+      titleWidth: 72,
       enableBlur: os.hasWindowMaterial,
       // Кромка появляется только когда под панель что-то уехало.
       dividerColor: _scrolled
@@ -1123,16 +1123,6 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       ],
     ),
   );
-
-  String? _subtitle(QueueState s) {
-    if (s.selected.length > 1) {
-      return l10n.statusSelectedRecords(recordsLabel(s.selected.length));
-    }
-    final job = s.lead;
-    if (job != null) return job.name;
-    if (s.jobs.isEmpty) return null;
-    return l10n.statusInQueueRecords(recordsLabel(s.jobs.length));
-  }
 
   // ── очередь ───────────────────────────────────────────────────────────────
 
