@@ -359,7 +359,7 @@
   "statusStopped": "Stopped",
   "statusIdle": "Done",
   "buttonContinue": "Continue",
-  "aboutBody": "Speech recognition on this computer.\nEngine: whisper.cpp · nothing leaves the network.",
+  "aboutBody": "Local transcription and dictation.\nWhisper.cpp and NeMo-Speech.cpp process recordings and text on this computer.",
   "buttonClose": "Close",
   "fileTypeAudioVideo": "Audio and Video",
   "fileTypeTranscripts": "Transcripts",

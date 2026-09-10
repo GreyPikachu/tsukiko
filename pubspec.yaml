@@ -79,6 +79,7 @@ flutter:
 
   assets:
     - assets/mascot/
+    - macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_128.png
     # Скилл едет внутри приложения, а не качается из репозитория: так
     # поставленный скилл всегда той же версии, что и программа, которую
     # он зовёт. Источник один — тот же файл, что лежит в skills/.
