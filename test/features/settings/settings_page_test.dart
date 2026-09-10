@@ -72,6 +72,12 @@ void main() {
     expect(add.controlSize, ControlSize.regular);
     expect(find.text('Что сказать'), findsOneWidget);
     expect(find.text('Что вставить'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Автоматически добавлено в подсказку модели: “адрес офиса”',
+      ),
+      findsOneWidget,
+    );
     final card = tester.widget<Container>(
       find
           .descendant(

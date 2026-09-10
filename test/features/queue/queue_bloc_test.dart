@@ -477,6 +477,29 @@ void main() {
   });
 
   group('настройки приложения', () {
+    test('фразы команд видны возле подсказки и перечитываются', () async {
+      await Settings.save({
+        textCommandsSetting: [
+          const TextCommand('адрес офиса', 'Минск').toJson(),
+        ],
+        transcriberCommandsEnabledSetting: true,
+      });
+      final bloc = make();
+      expect(bloc.state.commandPhrases, ['адрес офиса']);
+      expect(bloc.state.commandsEnabled, isTrue);
+
+      await Settings.save({
+        textCommandsSetting: [const TextCommand('новая строка', '\n').toJson()],
+        transcriberCommandsEnabledSetting: false,
+      });
+      bloc.add(const SettingsReloaded());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(bloc.state.commandPhrases, ['новая строка']);
+      expect(bloc.state.commandsEnabled, isFalse);
+      await bloc.close();
+    });
+
     test('живой фрагмент сразу выполняет включённую команду', () async {
       await Settings.save({
         textCommandsSetting: [

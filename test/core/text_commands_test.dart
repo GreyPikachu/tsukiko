@@ -28,6 +28,25 @@ void main() {
     expect(result.text, 'адресат; B; A');
   });
 
+  test('произносимые команды дополняют подсказку модели без повторов', () {
+    const commands = [
+      TextCommand(' адрес офиса ', 'Минск'),
+      TextCommand('Адрес офиса', 'повтор'),
+      TextCommand('новая строка', '\n'),
+      TextCommand('', 'пусто'),
+    ];
+
+    expect(textCommandPhrases(commands), ['адрес офиса', 'новая строка']);
+    expect(
+      promptWithTextCommands('Имена и термины', commands),
+      'Имена и термины, адрес офиса, новая строка',
+    );
+    expect(
+      promptWithTextCommands('Адрес офиса.', commands),
+      'Адрес офиса. новая строка',
+    );
+  });
+
   test('отмена одной замены сдвигает координаты следующих', () {
     final applied = applyTextCommands('икс и икс', const [
       TextCommand('икс', 'длинная замена'),

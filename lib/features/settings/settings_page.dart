@@ -813,6 +813,14 @@ class _SettingsBodyState extends State<SettingsBody>
     SectionTitle(l10n.sectionVoiceCommands),
     Check(l10n.checkVoiceCommands, enabled, onEnabled),
     Hint(l10n.hintVoiceCommandsShared, under: true),
+    if (enabled && textCommandPhrases(s.textCommands).isNotEmpty)
+      Hint(
+        l10n.hintCommandPhrasesInPrompt(
+          textCommandPhrases(
+            s.textCommands,
+          ).map((phrase) => '“$phrase”').join(', '),
+        ),
+      ),
     if (enabled) ...[
       const SizedBox(height: Gap.item),
       for (final (index, command) in s.textCommands.indexed)

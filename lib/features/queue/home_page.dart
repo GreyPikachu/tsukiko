@@ -1726,10 +1726,16 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(prompt: v))),
         ),
         Hint(l10n.hintPromptHelps),
+        if (s.commandsEnabled && s.commandPhrases.isNotEmpty)
+          Hint(
+            l10n.hintCommandPhrasesInPrompt(
+              s.commandPhrases.map((phrase) => '“$phrase”').join(', '),
+            ),
+          ),
 
         // Остальное — куда сохранять текст, диктовка, склад моделей,
         // поведение приложения — живёт в своём окне. Дорога туда теперь
-        // закреплена в правом верхнем углу первой плашки: до неё не нужно
+        // закреплена в правом верхнем углу шапки панели: до неё не нужно
         // прокручивать весь инспектор.
         const SizedBox(height: Gap.section),
         Text(

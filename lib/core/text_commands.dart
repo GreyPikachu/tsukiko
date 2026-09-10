@@ -30,6 +30,38 @@ class TextCommand {
   }
 }
 
+/// Непустые фразы команд в том порядке, в котором их задал человек.
+/// Повторы с другим регистром не нужны ни модели, ни подписи в интерфейсе.
+List<String> textCommandPhrases(Iterable<TextCommand> commands) {
+  final seen = <String>{};
+  final phrases = <String>[];
+  for (final command in commands) {
+    final phrase = command.phrase.trim();
+    if (phrase.isNotEmpty && seen.add(phrase.toLowerCase())) {
+      phrases.add(phrase);
+    }
+  }
+  return phrases;
+}
+
+/// Добавить произносимые команды в затравку распознавания.
+///
+/// Замена после распознавания знает фразу только тогда, когда модель её
+/// правильно написала. Поэтому сами фразы идут и в initial prompt — как
+/// имена и термины. Уже написанное человеком не дублируем: длинная
+/// подсказка съедает ограниченный контекст Whisper без всякой пользы.
+String promptWithTextCommands(String prompt, Iterable<TextCommand> commands) {
+  final base = prompt.trim();
+  final lower = base.toLowerCase();
+  final additions = textCommandPhrases(
+    commands,
+  ).where((phrase) => !lower.contains(phrase.toLowerCase())).toList();
+  if (additions.isEmpty) return base;
+  if (base.isEmpty) return additions.join(', ');
+  final separator = RegExp(r'[.!?…,:;]$').hasMatch(base) ? ' ' : ', ';
+  return '$base$separator${additions.join(', ')}';
+}
+
 /// Одна состоявшаяся замена и её положение уже в преобразованном тексте.
 /// [original] хранится буквально — с тем регистром, который распознала
 /// модель, — поэтому отмена возвращает ровно сказанное, а не шаблон.

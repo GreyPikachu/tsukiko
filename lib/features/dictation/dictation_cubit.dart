@@ -139,15 +139,25 @@ class DictationCubit extends Cubit<DictationState> {
   /// его руками каждый раз некому. VAD включён всегда, независимо от галки
   /// в очереди: фразы короткие, и на секундах тишины whisper сочиняет
   /// «Продолжение следует…».
-  RunOptions get _options => RunOptions(
-    model: state.chosenModel,
-    lang: 'auto',
-    threads: _settings.threads,
-    prompt: _settings.prompt,
-    punctuate: _settings.punctuate,
-    vad: _hasVad,
-    vadModel: _hasVad ? vadModelPath : '',
-  );
+  RunOptions get _options {
+    final options = RunOptions(
+      model: state.chosenModel,
+      lang: 'auto',
+      threads: _settings.threads,
+      prompt: _settings.prompt,
+      punctuate: _settings.punctuate,
+      vad: _hasVad,
+      vadModel: _hasVad ? vadModelPath : '',
+    );
+    return _commandsEnabled
+        ? options.copyWith(
+            prompt: promptWithTextCommands(
+              options.effectivePrompt,
+              _textCommands,
+            ),
+          )
+        : options;
+  }
 
   bool _hasVad = false;
 
@@ -232,6 +242,9 @@ class DictationCubit extends Cubit<DictationState> {
 
   @visibleForTesting
   Future<void> reloadSettingsForTesting() => _reloadSettings();
+
+  @visibleForTesting
+  RunOptions get optionsForTesting => _options;
 
   /// «Разрешения нет» — вывод не с первой попытки. Сразу после запуска
   /// система отвечает «нет» и тем, кто всё давно разрешил: процесс ещё

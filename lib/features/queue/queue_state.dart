@@ -42,6 +42,8 @@ class QueueState extends Equatable {
     this.libraryFormats = const ['txt'],
     this.copyFormat = 'txt',
     this.saveFormat = 'txt',
+    this.commandPhrases = const [],
+    this.commandsEnabled = true,
     this.recent = const [],
     this.ask,
   });
@@ -83,6 +85,13 @@ class QueueState extends Equatable {
 
   /// Приложение помнит, чем пользуются: кнопка повторяет прошлый выбор.
   final String copyFormat, saveFormat;
+
+  /// Произносимые части голосовых команд показываются возле подсказки
+  /// модели. Это не редактируемый текст подсказки: список остаётся одним
+  /// и тем же для диктовки и расшифровщика и меняется в настройках.
+  final List<String> commandPhrases;
+  final bool commandsEnabled;
+
   final List<String> recent;
 
   /// Вопрос к человеку, если очередь на него наткнулась.
@@ -141,59 +150,67 @@ class QueueState extends Equatable {
     List<String>? libraryFormats,
     String? copyFormat,
     String? saveFormat,
+    List<String>? commandPhrases,
+    bool? commandsEnabled,
     List<String>? recent,
     Ask? ask,
     bool clearLead = false,
     bool clearDownload = false,
     bool clearAsk = false,
-  }) =>
-      QueueState(
-        jobs: jobs ?? this.jobs,
-        selected: selected ?? this.selected,
-        lead: clearLead ? null : (lead ?? this.lead),
-        running: running ?? this.running,
-        status: status ?? this.status,
-        defaults: defaults ?? this.defaults,
-        models: models ?? this.models,
-        whisperFound: whisperFound ?? this.whisperFound,
-        dictation: dictation ?? this.dictation,
-        download: clearDownload ? null : (download ?? this.download),
-        downloadProgress:
-            clearDownload ? null : (downloadProgress ?? this.downloadProgress),
-        downloadPercent: clearDownload ? 0 : (downloadPercent ?? this.downloadPercent),
-        timestamps: timestamps ?? this.timestamps,
-        saveNextToSource: saveNextToSource ?? this.saveNextToSource,
-        toLibrary: toLibrary ?? this.toLibrary,
-        libraryPath: libraryPath ?? this.libraryPath,
-        libraryFormats: libraryFormats ?? this.libraryFormats,
-        copyFormat: copyFormat ?? this.copyFormat,
-        saveFormat: saveFormat ?? this.saveFormat,
-        recent: recent ?? this.recent,
-        ask: clearAsk ? null : (ask ?? this.ask),
-      );
+  }) => QueueState(
+    jobs: jobs ?? this.jobs,
+    selected: selected ?? this.selected,
+    lead: clearLead ? null : (lead ?? this.lead),
+    running: running ?? this.running,
+    status: status ?? this.status,
+    defaults: defaults ?? this.defaults,
+    models: models ?? this.models,
+    whisperFound: whisperFound ?? this.whisperFound,
+    dictation: dictation ?? this.dictation,
+    download: clearDownload ? null : (download ?? this.download),
+    downloadProgress: clearDownload
+        ? null
+        : (downloadProgress ?? this.downloadProgress),
+    downloadPercent: clearDownload
+        ? 0
+        : (downloadPercent ?? this.downloadPercent),
+    timestamps: timestamps ?? this.timestamps,
+    saveNextToSource: saveNextToSource ?? this.saveNextToSource,
+    toLibrary: toLibrary ?? this.toLibrary,
+    libraryPath: libraryPath ?? this.libraryPath,
+    libraryFormats: libraryFormats ?? this.libraryFormats,
+    copyFormat: copyFormat ?? this.copyFormat,
+    saveFormat: saveFormat ?? this.saveFormat,
+    commandPhrases: commandPhrases ?? this.commandPhrases,
+    commandsEnabled: commandsEnabled ?? this.commandsEnabled,
+    recent: recent ?? this.recent,
+    ask: clearAsk ? null : (ask ?? this.ask),
+  );
 
   @override
   List<Object?> get props => [
-        jobs,
-        selected,
-        lead,
-        running,
-        status,
-        defaults,
-        models,
-        whisperFound,
-        dictation,
-        download,
-        downloadProgress,
-        downloadPercent,
-        timestamps,
-        saveNextToSource,
-        toLibrary,
-        libraryPath,
-        libraryFormats,
-        copyFormat,
-        saveFormat,
-        recent,
-        ask,
-      ];
+    jobs,
+    selected,
+    lead,
+    running,
+    status,
+    defaults,
+    models,
+    whisperFound,
+    dictation,
+    download,
+    downloadProgress,
+    downloadPercent,
+    timestamps,
+    saveNextToSource,
+    toLibrary,
+    libraryPath,
+    libraryFormats,
+    copyFormat,
+    saveFormat,
+    commandPhrases,
+    commandsEnabled,
+    recent,
+    ask,
+  ];
 }
