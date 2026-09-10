@@ -32,6 +32,28 @@ void useTempSupportDir([String prefix = 'tsukiko-test']) {
   });
 }
 
+/// Выполнить один интеграционный участок со своей меткой процессов.
+///
+/// В отличие от [useTempSupportDir], это не хук на каждый тест файла, а
+/// узкая область внутри одного теста. Нужна настоящему серверу: соседний
+/// тест, запущенный Flutter параллельно, не должен принять его за сироту
+/// установленного приложения и погасить посреди проверки.
+Future<T> withTempSupportDir<T>(
+    String prefix, Future<T> Function() body) async {
+  final real = os;
+  final root = Directory.systemTemp.createTempSync(prefix);
+  os = _TempOs(real, root.path);
+  Directory(os.modelsDir).createSync(recursive: true);
+  try {
+    return await body();
+  } finally {
+    os = real;
+    try {
+      root.deleteSync(recursive: true);
+    } catch (_) {}
+  }
+}
+
 /// Всё как в настоящей системе, но папки — во временной.
 class _TempOs implements Os {
   _TempOs(this._real, this._root);

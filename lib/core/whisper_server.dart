@@ -546,7 +546,9 @@ class WhisperServer {
       final options = _startedWith;
       field('automatic_punctuation', '${options?.punctuate ?? true}');
       final prompt = options?.prompt.trim() ?? '';
-      if (prompt.isNotEmpty) field('prompt', prompt);
+      if (prompt.isNotEmpty && recognitionModelSupportsPrompt(_model)) {
+        field('prompt', prompt);
+      }
     }
     head.add(utf8.encode('--$boundary\r\n'
         'Content-Disposition: form-data; name="file"; filename="a.wav"\r\n'

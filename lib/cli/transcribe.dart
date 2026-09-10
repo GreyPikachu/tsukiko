@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../core/library.dart';
+import '../core/recognition.dart';
 import '../core/transcript.dart';
 import '../core/whisper.dart';
 import '../platform/os.dart';
@@ -136,7 +137,11 @@ String? _anyModel() {
         .listSync()
         .whereType<File>()
         .map((f) => f.path)
-        .where((p) => p.endsWith('.bin') && !p.contains('silero'))
+        .where((p) {
+          final lower = p.toLowerCase();
+          return lower.endsWith('.gguf') ||
+              (lower.endsWith('.bin') && !lower.contains('silero'));
+        })
         .toList()
       ..sort();
     return found.firstOrNull;
@@ -167,13 +172,15 @@ RunOptions optionsFrom(Args a) {
 /// программу впервые и должен понять, чего не хватает.
 Future<Map<String, Object?>> status() async {
   final o = optionsFrom(Args());
-  final engine = findWhisper();
+  final engineKind = engineForModel(o.model);
+  final engine = findRecognitionEngine(engineKind);
   final s = readSettings();
   final port = (s['apiPort'] as int?) ?? 8756;
   return {
     'app': appName,
     'version': appVersion,
     'engine': engine,
+    'engineKind': engineTechnicalName(engineKind),
     'model': o.model,
     'modelExists': o.model.isNotEmpty && File(o.model).existsSync(),
     'language': o.lang,
@@ -198,7 +205,8 @@ Future<List<int>> busyEngines({int? mine}) async {
         if (p.pid != mine &&
             p.pid != pid &&
             (p.args.contains(recognizerExeName) ||
-                p.args.contains(dictationExeName)))
+                p.args.contains(dictationExeName) ||
+                p.args.contains(nemoSpeechExeName)))
           p.pid,
     ];
   } catch (_) {
@@ -282,8 +290,11 @@ Future<String?> _viaApp(String key, int port, String file, String format,
 /// Расшифровать самим. [say] — куда рассказывать о ходе работы.
 Future<Transcript> transcribeHere(
     String file, RunOptions o, void Function(String) say) async {
-  final exe = runnableWhisper(findWhisper(), recognizerExeName);
-  if (exe == null) throw Exception('движок whisper.cpp не найден');
+  final engine = engineForModel(o.model);
+  final exe = runnableEngine(findRecognitionEngine(engine), recognizerExeName);
+  if (exe == null) {
+    throw Exception('движок ${engineTechnicalName(engine)} не найден');
+  }
 
   final tmp = await Directory.systemTemp.createTemp(appName);
   final base = os.join(tmp.path, 'run');
@@ -299,12 +310,17 @@ Future<Transcript> transcribeHere(
     final live = <Segment>[];
     var from = 0;
     while (true) {
-      final proc = await Process.start(exe, buildArgs(o, wav, base, from: from));
+      final args = engine == RecognitionEngine.whisperCpp
+          ? buildArgs(o, wav, base, from: from)
+          : buildNemoArgs(o, wav, '$base.json');
+      final proc = await Process.start(exe, args);
       var yielded = false;
 
       void onLine(String line) {
-        final seg = parseSegmentLine(line);
-        if (seg != null) return live.add(seg);
+        if (engine == RecognitionEngine.whisperCpp) {
+          final seg = parseSegmentLine(line);
+          if (seg != null) return live.add(seg);
+        }
         final p = RegExp(r'progress\s*=\s*(\d+)%').firstMatch(line);
         if (p != null) say('идёт: ${p.group(1)}%');
       }
@@ -347,9 +363,15 @@ Future<Transcript> transcribeHere(
       }
 
       if (yielded) {
-        // Место берём по последнему выданному фрагменту, а не по проценту:
-        // процент — оценка, метка фрагмента — факт.
-        from = live.isEmpty ? from : live.last.to;
+        if (engine == RecognitionEngine.whisperCpp) {
+          // Место берём по последнему выданному фрагменту, а не по проценту:
+          // процент — оценка, метка фрагмента — факт.
+          from = live.isEmpty ? from : live.last.to;
+        } else {
+          // NeMo пишет единый JSON лишь в конце и не умеет продолжать с
+          // миллисекунды. После уступки модели безопасно считает заново.
+          from = 0;
+        }
         await waitForFreeModel(say);
         continue;
       }
@@ -357,10 +379,13 @@ Future<Transcript> transcribeHere(
       if (code != 0 || !out.existsSync()) {
         throw Exception('движок не справился с записью (код $code)');
       }
-      final t = parseWhisperJson(await out.readAsString());
+      final json = await out.readAsString();
+      final t = engine == RecognitionEngine.whisperCpp
+          ? parseWhisperJson(json)
+          : parseNemoJson(json);
       // Заход после уступки знает только свою половину записи. Начало
       // осталось в собранном по ходу — оттуда и берём.
-      return from == 0
+      return engine != RecognitionEngine.whisperCpp || from == 0
           ? t
           : Transcript(t.lang, [
               ...live.where((s) => s.from < from),

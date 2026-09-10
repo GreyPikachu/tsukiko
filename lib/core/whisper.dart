@@ -3,6 +3,7 @@
 library;
 
 import '../platform/os.dart';
+import 'recognition.dart';
 
 /// С таймкодами модель на разговорной речи скатывается в сплошной нижний
 /// регистр без знаков препинания. Затравка задаёт стиль — знаки возвращаются,
@@ -181,7 +182,7 @@ List<String> buildNemoArgs(RunOptions o, String wav, String jsonPath) => [
       '--force',
       if (o.lang != 'auto' && o.lang.isNotEmpty) ...['--language', o.lang],
       if (!o.punctuate) '--no-punctuation',
-      if (o.prompt.trim().isNotEmpty) ...[
+      if (o.prompt.trim().isNotEmpty && recognitionModelSupportsPrompt(o.model)) ...[
         '--speech-context',
         o.prompt.trim(),
         '--speech-context-boost',

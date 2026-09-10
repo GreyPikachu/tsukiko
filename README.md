@@ -1,12 +1,12 @@
 # tsukiko
 
-Расшифровка аудио и диктовка на macOS. Всё считается локально, whisper.cpp.
+Локальная расшифровка аудио и диктовка на macOS и Windows. Поддерживаются
+Whisper.cpp и NeMo-Speech.cpp; звук и текст не покидают компьютер.
 
-Движок whisper.cpp едет внутри приложения — ставить отдельно ничего не
-нужно. Расшифровка очереди идёт через `whisper-cli`, диктовка — через
-`whisper-server`; оба лежат в `Contents/Helpers` под своими именами,
-`tsukiko-recognizer` и `tsukiko-dictation`, — под ними их и видно
-в «Мониторинге системы».
+Оба движка едут внутри приложения — ставить отдельно ничего не нужно.
+Для Whisper очередь использует `whisper-cli`, а диктовка —
+`whisper-server`; NeMo работает через `nemo-speech`. Готовые GGUF-модели
+Nemotron и Parakeet запускаются нативно, без Python и NeMo Framework.
 
 Почему свой, а не системный: мы передаём модели флаги, которых в старых
 сборках нет вовсе (`--vad`, `-mc`, `--carry-initial-prompt`), а какая
@@ -115,8 +115,9 @@ xattr -d com.apple.quarantine /Applications/tsukiko.app
 ## Расшифровка снаружи
 
 Внутри приложения едет `tsukiko-transcribe` — программа командной строки
-без интерфейса. Запускать приложение для неё не нужно: она берёт тот же
-движок и те же настройки и печатает текст в stdout.
+без интерфейса. Запускать приложение для неё не нужно: она выбирает
+Whisper.cpp или NeMo-Speech.cpp по файлу модели, берёт те же настройки
+и печатает текст в stdout.
 
 ```sh
 /Applications/tsukiko.app/Contents/Helpers/tsukiko-transcribe запись.ogg

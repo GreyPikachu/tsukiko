@@ -27,6 +27,7 @@ void main() {
       'lib/core/whisper.dart',
       'lib/core/transcript.dart',
       'lib/core/library.dart',
+      'lib/core/recognition.dart',
       'lib/cli/transcribe.dart',
       'lib/platform/os.dart',
       'lib/platform/os_macos.dart',
@@ -98,6 +99,15 @@ void main() {
       expect(optionsFrom(parseArgs(['а.m4a'])).model,
           os.join(os.modelsDir, 'ggml-base.bin'));
     });
+
+    test('GGUF-модель NeMo тоже берётся из папки приложения', () {
+      final model = File(os.join(os.modelsDir, 'parakeet.gguf'))
+        ..writeAsStringSync('GGUF');
+      File(os.join(os.supportDir, 'settings.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('{"model":"/которой/нет.bin"}');
+      expect(optionsFrom(parseArgs(['а.m4a'])).model, model.path);
+    });
   });
 
   test('«что установлено» отвечает и без модели, и без приложения', () async {
@@ -106,6 +116,7 @@ void main() {
     // объясняет человеку, чего не хватает.
     expect(s['app'], appName);
     expect(s.containsKey('ready'), isTrue);
+    expect(s.containsKey('engineKind'), isTrue);
     expect(s['modelExists'], isFalse);
     expect(s['appApi'], isFalse);
   });
