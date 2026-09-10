@@ -412,38 +412,50 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     return out.entries.toList();
   }
 
-  void _about() => showMacosAlertDialog<void>(
-    context: context,
-    builder: (dialogContext) => MacosAlertDialog(
-      appIcon: const MacosIcon(
-        CupertinoIcons.waveform_circle_fill,
-        size: IconSize.hero,
+  Future<void> _about() async {
+    // Команда меню доступна и пока впереди отдельное окно настроек.
+    // Сначала поднимаем главное окно, иначе диалог появлялся под ним.
+    await _bloc.bridge.openMainWindow();
+    if (!mounted) return;
+    await showMacosAlertDialog<void>(
+      context: context,
+      builder: (dialogContext) => MacosAlertDialog(
+        appIcon: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Image.asset(
+            'macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_128.png',
+            width: 64,
+            height: 64,
+            semanticLabel: appName,
+            filterQuality: FilterQuality.high,
+          ),
+        ),
+        title: const Text(appName, style: Type.emptyTitle),
+        message: Text(
+          l10n.aboutBody,
+          textAlign: TextAlign.center,
+          style: Type.control,
+        ),
+        primaryButton: PushButton(
+          controlSize: ControlSize.large,
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(l10n.buttonClose),
+        ),
+        // Своего самообновления нет намеренно — см. lib/core/update.dart.
+        // Приложение только смотрит, не вышло ли новее, и отводит
+        // на страницу выпуска.
+        secondaryButton: PushButton(
+          controlSize: ControlSize.large,
+          secondary: true,
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            _checkUpdates();
+          },
+          child: Text(l10n.buttonCheckUpdates),
+        ),
       ),
-      title: const Text(appName, style: Type.emptyTitle),
-      message: Text(
-        l10n.aboutBody,
-        textAlign: TextAlign.center,
-        style: Type.control,
-      ),
-      primaryButton: PushButton(
-        controlSize: ControlSize.large,
-        onPressed: () => Navigator.pop(dialogContext),
-        child: Text(l10n.buttonClose),
-      ),
-      // Своего самообновления нет намеренно — см. lib/core/update.dart.
-      // Приложение только смотрит, не вышло ли новее, и отводит
-      // на страницу выпуска.
-      secondaryButton: PushButton(
-        controlSize: ControlSize.large,
-        secondary: true,
-        onPressed: () {
-          Navigator.pop(dialogContext);
-          _checkUpdates();
-        },
-        child: Text(l10n.buttonCheckUpdates),
-      ),
-    ),
-  );
+    );
+  }
 
   Future<void> _pickFiles() async {
     final files = await openFiles(
