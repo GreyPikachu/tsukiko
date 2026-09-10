@@ -146,6 +146,24 @@ void main() {
       expect(native.pasted, 'Минск, Немига, 1');
     });
 
+    test('удалённая во время записи команда уже не применяется', () async {
+      await Settings.save({
+        textCommandsSetting: [
+          const TextCommand('сказанное вслух', 'старая замена').toJson(),
+        ],
+        dictationCommandsEnabledSetting: true,
+      });
+      await cubit.reloadSettingsForTesting();
+      await cubit.start();
+
+      await Settings.save({textCommandsSetting: const []});
+      await cubit.reloadSettingsForTesting();
+      await cubit.stop();
+
+      expect(cubit.state.last, 'сказанное вслух');
+      expect(native.pasted, 'сказанное вслух');
+    });
+
     test(
       'выключатель диктовки оставляет распознанную фразу как есть',
       () async {
