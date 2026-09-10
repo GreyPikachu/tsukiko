@@ -309,8 +309,6 @@ class _SettingsBodyState extends State<SettingsBody>
       ),
     Hint(l10n.hintHotkeyCancel),
     Hint(l10n.hintHotkeyCapture),
-    Hint(l10n.hintHotkeyDoubleTap, under: false),
-    Hint(l10n.hintHotkeyExclusive, under: false),
     SectionTitle(l10n.sectionDictationRecognition),
     Hint(l10n.hintDictationOwnSettings),
     const SizedBox(height: Gap.item),
@@ -348,6 +346,7 @@ class _SettingsBodyState extends State<SettingsBody>
         onChanged: (v) => _cubit.setThreads(v ?? s.threads),
       ),
     ),
+    Hint(l10n.hintThreads),
     const SizedBox(height: Gap.item),
     Check(l10n.checkPunctuate, s.punctuate, _cubit.setPunctuate),
     const SizedBox(height: Gap.item),
@@ -725,8 +724,6 @@ class _SettingsBodyState extends State<SettingsBody>
   List<Widget> _transcriberTab(SettingsState s) => [
     SectionTitle(l10n.sectionHowToRecognize),
     Hint(l10n.hintPerRecordingSettings),
-    const SizedBox(height: Gap.item),
-    Hint(l10n.hintWaitBusyModel, under: true),
     ..._textCommands(
       s,
       enabled: s.transcriberCommandsEnabled,
