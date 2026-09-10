@@ -137,6 +137,37 @@ void main() {
       expect(native.calls, contains('settingsChanged'));
     });
 
+    test('направление связи моделей меняется без цикла', () async {
+      const path = '/модели/общая.bin';
+      await cubit.setQueueModel(path);
+
+      // Обе стороны сначала смотрят на расшифровщик. Переключение
+      // материализует тот же путь у диктовки и разворачивает связь.
+      await cubit.setQueueModel('');
+      expect(cubit.state.transcriberUsesDictationModel, isTrue);
+      expect(cubit.state.dictationModel, path);
+      expect(cubit.state.queueModel, path);
+      expect(Settings.load()[transcriberUsesDictationModelSetting], isTrue);
+
+      // Теперь разворачиваем связь обратно. Конкретный путь остаётся
+      // у расшифровщика, а пустая модель диктовки означает ссылку на него.
+      await cubit.setDictationModel('');
+      expect(cubit.state.transcriberUsesDictationModel, isFalse);
+      expect(cubit.state.dictationModel, isEmpty);
+      expect(cubit.state.queueModel, path);
+      expect(Settings.load()[transcriberUsesDictationModelSetting], isFalse);
+    });
+
+    test('связанная модель расшифровщика следует за диктовкой', () async {
+      await cubit.setQueueModel('/модели/первая.bin');
+      await cubit.setQueueModel('');
+      await cubit.setDictationModel('/модели/вторая.bin');
+
+      expect(cubit.state.queueModel, '/модели/вторая.bin');
+      expect(Settings.load()['model'], '/модели/вторая.bin');
+      expect(Settings.load()[transcriberUsesDictationModelSetting], isTrue);
+    });
+
     test('чужой .bin не становится моделью, а объясняет почему', () async {
       final fake = File('${tmp.path}/ggml-обманка.bin')
         ..writeAsBytesSync(List<int>.filled(64, 7));

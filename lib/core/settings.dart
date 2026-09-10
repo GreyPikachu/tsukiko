@@ -8,6 +8,11 @@ import '../platform/os.dart' show os;
 import 'library.dart'
     show defaultLibraryPath, promptsFileName, supportDir, writeJsonAtomically;
 
+/// Расшифровщик берёт конкретную модель диктовки. Сам путь по-прежнему
+/// дублируется в `model`, чтобы очередь и старые версии приложения всегда
+/// получали готовое значение без разрешения ссылок.
+const transcriberUsesDictationModelSetting = 'transcriberUsesDictationModel';
+
 /// Хранение настроек на диске.
 ///
 /// Файл настроек правят три изолята: главное окно, панель у строки меню и
@@ -156,11 +161,15 @@ class Prompts {
       if (!dir.existsSync()) dir.createSync(recursive: true);
       final was = <String, dynamic>{};
       try {
-        was.addAll(jsonDecode(_file.readAsStringSync()) as Map<String, dynamic>);
+        was.addAll(
+          jsonDecode(_file.readAsStringSync()) as Map<String, dynamic>,
+        );
       } catch (_) {}
       writeJsonAtomically(_file, {...was, which: text});
     } catch (e) {
-      stderr.writeln('tsukiko: подсказка не сохранилась рядом с расшифровками — $e');
+      stderr.writeln(
+        'tsukiko: подсказка не сохранилась рядом с расшифровками — $e',
+      );
     }
   }
 }

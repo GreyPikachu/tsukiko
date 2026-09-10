@@ -24,6 +24,7 @@
   "hintDictationOwnSettings": "Language is detected automatically and pauses are always trimmed. The other settings apply only to dictation.",
   "fieldDictationModel": "Dictation model",
   "fallbackSameAsTranscription": "Same as transcription",
+  "fallbackSameAsDictation": "Same as dictation",
   "hintDictationModelFallback": "A linked choice follows the transcription model. A specific model is used only for dictation.",
   "buttonPickModelFile": "Choose a model file…",
   "fieldSpeed": "Speed",

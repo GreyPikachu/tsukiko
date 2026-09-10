@@ -576,6 +576,24 @@ void main() {
       await bloc.close();
     });
 
+    test('явный выбор модели в инспекторе снимает связь с диктовкой', () async {
+      final old = file('ggml-old.bin');
+      final next = file('ggml-next.bin');
+      await Settings.save({
+        'model': old,
+        transcriberUsesDictationModelSetting: true,
+      });
+      final bloc = make();
+
+      bloc.add(OptionsEdited((options) => options.copyWith(model: next)));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await bloc.flushSettings();
+
+      expect(Settings.load()['model'], next);
+      expect(Settings.load()[transcriberUsesDictationModelSetting], isFalse);
+      await bloc.close();
+    });
+
     blocTest<QueueBloc, QueueState>(
       'метки времени переключаются и переживают перечитывание',
       build: make,
