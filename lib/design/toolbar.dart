@@ -15,15 +15,6 @@ import 'package:macos_ui/src/layout/wallpaper_tinting_settings/wallpaper_tinting
 import '../l10n/gen/app_localizations.dart';
 import 'design.dart';
 
-/// Подпись пункта, которую не потеряет меню переполнения панели.
-///
-/// В обычном выпадающем меню можно нарисовать галочку отдельным виджетом,
-/// а при переносе под многоточие macos_ui оставляет от пункта только [String]
-/// из поля `label`. Поэтому выбранность дублируется системным знаком прямо
-/// в этой строке. Пробел у остальных держит подписи на одной вертикали.
-String checkedOverflowLabel(String label, {required bool checked}) =>
-    '${checked ? '✓' : ' '} $label';
-
 /// Выпадающая кнопка с цветом доступного действия.
 ///
 /// Пакетная [ToolBarPullDownButton] всегда красит значок в 50%
@@ -46,27 +37,152 @@ class AppToolBarPullDownButton extends ToolbarItem {
 
   @override
   Widget build(BuildContext context, ToolbarItemDisplayMode displayMode) {
-    final original = ToolBarPullDownButton(
-      label: label,
-      icon: icon,
-      items: items,
-      tooltipMessage: tooltipMessage,
-    );
     if (displayMode == ToolbarItemDisplayMode.overflowed) {
-      return original.build(context, displayMode);
+      return _OverflowPulldownButton(label: label, items: items);
     }
     return CustomToolbarItem(
       tooltipMessage: tooltipMessage,
       inToolbarBuilder: (context) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: MacosPulldownButtonTheme(
-          data: MacosPulldownButtonTheme.of(context).copyWith(
-            iconColor: Surface.toolbarIcon(context, enabled: true),
-          ),
+          data: MacosPulldownButtonTheme.of(
+            context,
+          ).copyWith(iconColor: Surface.toolbarIcon(context, enabled: true)),
           child: MacosPulldownButton(icon: icon, items: items),
         ),
       ),
     ).build(context, displayMode);
+  }
+}
+
+/// Подменяет только подменю, которое пакет строит для спрятанной кнопки.
+/// Обычный `ToolBarPullDownButton` оставляет от каждого пункта одну строку
+/// `label` и теряет виджет `title`. Из-за этого галочка выбранного формата
+/// и отступы отличались в зависимости от ширины окна. Здесь обе версии
+/// используют один и тот же `title`.
+class _OverflowPulldownButton extends StatefulWidget {
+  const _OverflowPulldownButton({required this.label, required this.items});
+
+  final String label;
+  final List<MacosPulldownMenuEntry> items;
+
+  @override
+  State<_OverflowPulldownButton> createState() =>
+      _OverflowPulldownButtonState();
+}
+
+class _OverflowPulldownButtonState extends State<_OverflowPulldownButton> {
+  final _popup = GlobalKey<ToolbarPopupState>();
+  bool _selected = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final children = <Widget>[
+      for (final item in widget.items)
+        if (item is MacosPulldownMenuDivider)
+          item
+        else if (item is MacosPulldownMenuItem)
+          _RichOverflowMenuItem(
+            title: item.title,
+            enabled: item.enabled,
+            onPressed: () {
+              item.onTap?.call();
+              Navigator.of(context).pop();
+            },
+          ),
+    ];
+    return ToolbarPopup(
+      key: _popup,
+      content: (context) => MouseRegion(
+        onExit: (_) {
+          _popup.currentState?.removeToolbarPopupRoute();
+          setState(() => _selected = false);
+        },
+        child: ToolbarOverflowMenu(children: children),
+      ),
+      position: ToolbarPopupPosition.side,
+      placement: ToolbarPopupPlacement.start,
+      child: MouseRegion(
+        onHover: (_) {
+          if (_selected) return;
+          setState(() => _selected = true);
+          _popup.currentState?.openPopup().whenComplete(() {
+            if (mounted) setState(() => _selected = false);
+          });
+        },
+        child: ToolbarOverflowMenuItem(
+          label: widget.label,
+          // Непустой список нужен системному пункту только для стрелки.
+          subMenuItems: const [ToolbarOverflowMenuItem(label: '')],
+          isSelected: _selected,
+          onPressed: () {},
+        ),
+      ),
+    );
+  }
+}
+
+class _RichOverflowMenuItem extends StatefulWidget {
+  const _RichOverflowMenuItem({
+    required this.title,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final Widget title;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  @override
+  State<_RichOverflowMenuItem> createState() => _RichOverflowMenuItemState();
+}
+
+class _RichOverflowMenuItemState extends State<_RichOverflowMenuItem> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = MacosTheme.brightnessOf(context);
+    final normal = brightness.resolve(MacosColors.black, MacosColors.white);
+    final disabled = brightness.resolve(
+      MacosColors.disabledControlTextColor,
+      MacosColors.disabledControlTextColor.darkColor,
+    );
+    return MouseRegion(
+      onEnter: widget.enabled ? (_) => setState(() => _hovered = true) : null,
+      onExit: widget.enabled ? (_) => setState(() => _hovered = false) : null,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.enabled
+            ? () {
+                Navigator.of(context).pop();
+                widget.onPressed();
+              }
+            : null,
+        child: Container(
+          height: 20,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          alignment: Alignment.centerLeft,
+          decoration: BoxDecoration(
+            color: _hovered
+                ? MacosPulldownButtonTheme.of(context).highlightColor
+                : MacosColors.transparent,
+            borderRadius: BorderRadius.circular(5),
+          ),
+          child: DefaultTextStyle(
+            style: TextStyle(
+              fontSize: 13,
+              color: !widget.enabled
+                  ? disabled
+                  : _hovered
+                  ? MacosColors.white
+                  : normal,
+            ),
+            child: widget.title,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -124,16 +240,19 @@ class _AppToolBarState extends State<ToolBar> {
     final theme = MacosTheme.of(context);
     final scope = MacosWindowScope.maybeOf(context);
     final actions = widget.actions ?? const <ToolbarItem>[];
-    final overflowed =
-        _hidden == 0 ? const <ToolbarItem>[] : actions.sublist(actions.length - _hidden);
+    final overflowed = _hidden == 0
+        ? const <ToolbarItem>[]
+        : actions.sublist(actions.length - _hidden);
 
     Widget? title = widget.title;
     if (title != null) {
       title = SizedBox(
         width: widget.titleWidth,
         child: DefaultTextStyle(
-          style: theme.typography.title3
-              .copyWith(fontSize: 15, fontWeight: MacosFontWeight.w590),
+          style: theme.typography.title3.copyWith(
+            fontSize: 15,
+            fontWeight: MacosFontWeight.w590,
+          ),
           child: title,
         ),
       );
@@ -145,7 +264,8 @@ class _AppToolBarState extends State<ToolBar> {
       // там нет вовсе, и тот же отступ был бы просто дырой слева.
       data: MediaQuery.of(context).copyWith(
         padding: EdgeInsets.only(
-          left: defaultTargetPlatform == TargetPlatform.macOS &&
+          left:
+              defaultTargetPlatform == TargetPlatform.macOS &&
                   !(scope?.isSidebarShown ?? false)
               ? 70
               : 0,
@@ -158,11 +278,14 @@ class _AppToolBarState extends State<ToolBar> {
             final band = Container(
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(
-                  horizontal: Gap.inner, vertical: Gap.hint),
+                horizontal: Gap.inner,
+                vertical: Gap.hint,
+              ),
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                      color: widget.dividerColor ?? theme.dividerColor),
+                    color: widget.dividerColor ?? theme.dividerColor,
+                  ),
                 ),
               ),
               // Заголовок и кнопки идут одним рядом от левого края.
@@ -186,7 +309,10 @@ class _AppToolBarState extends State<ToolBar> {
                         overflowWidget: _MoreButton(
                           items: [
                             for (final a in overflowed)
-                              a.build(context, ToolbarItemDisplayMode.overflowed),
+                              a.build(
+                                context,
+                                ToolbarItemDisplayMode.overflowed,
+                              ),
                           ],
                         ),
                         overflowChangedCallback: (hidden) =>
@@ -220,12 +346,12 @@ class _AppToolBarState extends State<ToolBar> {
   /// размываться.
   Widget _ground(MacosThemeData theme, {required Widget child}) =>
       widget.enableBlur
-          ? WallpaperTintingOverride(child: child)
-          : WallpaperTintedArea(
-              backgroundColor: theme.canvasColor,
-              insertRepaintBoundary: true,
-              child: child,
-            );
+      ? WallpaperTintingOverride(child: child)
+      : WallpaperTintedArea(
+          backgroundColor: theme.canvasColor,
+          insertRepaintBoundary: true,
+          child: child,
+        );
 }
 
 /// Кнопка «остальное»: та же, что в macos_ui, с многоточием вместо «»»
@@ -243,18 +369,18 @@ class _MoreButtonState extends State<_MoreButton> {
 
   @override
   Widget build(BuildContext context) => ToolbarPopup(
-        key: _popup,
-        content: (context) => ToolbarOverflowMenu(children: widget.items),
-        verticalOffset: 8,
-        horizontalOffset: 10,
-        position: ToolbarPopupPosition.below,
-        placement: ToolbarPopupPlacement.end,
-        child: ToolBarIconButton(
-          label: AppLocalizations.of(context).toolbarMore,
-          tooltipMessage: AppLocalizations.of(context).tooltipToolbarMore,
-          icon: const MacosIcon(CupertinoIcons.ellipsis),
-          showLabel: false,
-          onPressed: () => _popup.currentState?.openPopup(),
-        ).build(context, ToolbarItemDisplayMode.inToolbar),
-      );
+    key: _popup,
+    content: (context) => ToolbarOverflowMenu(children: widget.items),
+    verticalOffset: 8,
+    horizontalOffset: 10,
+    position: ToolbarPopupPosition.below,
+    placement: ToolbarPopupPlacement.end,
+    child: ToolBarIconButton(
+      label: AppLocalizations.of(context).toolbarMore,
+      tooltipMessage: AppLocalizations.of(context).tooltipToolbarMore,
+      icon: const MacosIcon(CupertinoIcons.ellipsis),
+      showLabel: false,
+      onPressed: () => _popup.currentState?.openPopup(),
+    ).build(context, ToolbarItemDisplayMode.inToolbar),
+  );
 }
