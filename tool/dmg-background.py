@@ -19,11 +19,10 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "design" / "dmg-background.tiff"
-# Не happy.webp: у того кадра рисунок доходит до самого левого края
-# кадра (непрозрачная область начинается с нуля), и кот у края окна
-# выглядел обрубленным. У idle вокруг кота есть поля, и он встаёт
-# к краю целиком.
-MASCOT = ROOT / "assets" / "mascot" / "idle.webp"
+# Лежащий кот был частью первоначального образа установщика и лучше
+# работает внизу широкого окна, чем высокий idle. Положение задаём после
+# обрезки прозрачных полей, поэтому рисунок больше не режется краем.
+MASCOT = ROOT / "assets" / "mascot" / "happy.webp"
 
 # Картинка нарочно больше окна образа.
 #
@@ -55,8 +54,8 @@ LEFT_X, RIGHT_X = 150, 450
 SVG = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
-      <stop offset="0" stop-color="#8f8fa9"/>
-      <stop offset="1" stop-color="#6d6d88"/>
+      <stop offset="0" stop-color="#9295bd"/>
+      <stop offset="1" stop-color="#666b98"/>
     </linearGradient>
     <radialGradient id="glow" cx="0.5" cy="0.42" r="0.6">
       <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
@@ -96,6 +95,13 @@ SVG = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}">
         font-family="SF Pro Display, Helvetica Neue, Helvetica, sans-serif"
         font-size="28" font-weight="600" fill="#ffffff" fill-opacity="0.9"
         letter-spacing="0.5">tsukiko</text>
+
+  <!-- Подпись разработчика остаётся внутри основной области окна:
+       строка пути Finder может занять нижние 28 точек. -->
+  <text x="{WIN_W - 24}" y="354" text-anchor="end"
+        font-family="SF Pro Text, Helvetica Neue, Helvetica, sans-serif"
+        font-size="12" font-weight="500" fill="#ffffff" fill-opacity="0.72"
+        letter-spacing="0.25">Yukovsky</text>
 </svg>
 """
 
@@ -107,22 +113,20 @@ def render(scale: int) -> Image.Image:
         input=SVG.encode(), capture_output=True, check=True).stdout
     canvas = Image.open(io.BytesIO(png)).convert("RGBA")
 
-    # Кот в нижнем левом углу — водяным знаком, а не героем: он даёт
-    # лицо, но не спорит со значками, поверх которых человек работает.
+    # Кот в нижнем левом углу заметен с первого взгляда, но остаётся ниже
+    # рабочих значков и не спорит с жестом перетаскивания.
     cat = Image.open(MASCOT).convert("RGBA")
     # По самому рисунку, а не по кадру: у кадра вокруг кота пустые поля,
     # и «вплотную к краю» с ними означало бы отступ непонятной ширины.
     cat = cat.crop(cat.getchannel("A").getbbox())
-    height = int(120 * scale)
+    height = int(112 * scale)
     width = int(cat.width * height / cat.height)
     cat = cat.resize((width, height), Image.LANCZOS)
-    faded = cat.copy()
-    faded.putalpha(cat.getchannel("A").point(lambda a: int(a * 0.30)))
-    # Вплотную к левому краю и целиком в пределах окна: срезанный кот
-    # читается пятном, а отступ слева на большой картинке смотрелся бы
-    # случайным. Снизу оставлено на строку пути: она включена у многих,
-    # съедает нижние тридцать точек окна, и кот уходил под неё лапами.
-    canvas.alpha_composite(faded, (0, (WIN_H - 165) * scale))
+    visible = cat.copy()
+    visible.putalpha(cat.getchannel("A").point(lambda a: int(a * 0.78)))
+    # Ровное поле от левого края не даёт рисунку выглядеть случайно
+    # обрезанным. Снизу оставлено место системной строке пути Finder.
+    canvas.alpha_composite(visible, (18 * scale, (WIN_H - 142) * scale))
     return canvas.convert("RGB")
 
 
