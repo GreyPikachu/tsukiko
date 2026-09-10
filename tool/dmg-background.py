@@ -96,9 +96,9 @@ SVG = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}">
         font-size="28" font-weight="600" fill="#ffffff" fill-opacity="0.9"
         letter-spacing="0.5">tsukiko</text>
 
-  <!-- Подпись разработчика остаётся внутри основной области окна:
-       строка пути Finder может занять нижние 28 точек. -->
-  <text x="{WIN_W - 24}" y="354" text-anchor="end"
+  <!-- Подпись разработчика остаётся выше системных строк Finder:
+       строка пути и строка состояния вместе могут занять низ окна. -->
+  <text x="{WIN_W - 24}" y="326" text-anchor="end"
         font-family="SF Pro Text, Helvetica Neue, Helvetica, sans-serif"
         font-size="12" font-weight="500" fill="#ffffff" fill-opacity="0.72"
         letter-spacing="0.25">Yukovsky</text>
@@ -125,8 +125,9 @@ def render(scale: int) -> Image.Image:
     visible = cat.copy()
     visible.putalpha(cat.getchannel("A").point(lambda a: int(a * 0.78)))
     # Ровное поле от левого края не даёт рисунку выглядеть случайно
-    # обрезанным. Снизу оставлено место системной строке пути Finder.
-    canvas.alpha_composite(visible, (18 * scale, (WIN_H - 142) * scale))
+    # обрезанным. Снизу оставлено место сразу двум системным строкам
+    # Finder: их видимость хранится в пользовательских настройках.
+    canvas.alpha_composite(visible, (18 * scale, (WIN_H - 166) * scale))
     return canvas.convert("RGB")
 
 
