@@ -1776,8 +1776,13 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   /// Пишем только своё: библиотеку и поведение приложения правит окно
   /// настроек, и его ключи Settings.save оставляет в файле нетронутыми.
   Future<void> _persistNow() async {
+    final savedModel = Settings.load()['model'] as String?;
     await Settings.save({
       ...state.defaults.toJson(),
+      // Выбор другой модели в инспекторе делает расшифровщик опорной
+      // стороной. Правки языка, подсказки и других полей связь не рвут.
+      if (savedModel != state.defaults.model)
+        transcriberUsesDictationModelSetting: false,
       'timestamps': state.timestamps,
       'copyFormat': state.copyFormat,
       'saveFormat': state.saveFormat,

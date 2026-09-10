@@ -67,6 +67,18 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   void _readApp() {
     final s = Settings.load();
+    var queueModel = (s['model'] as String?) ?? '';
+    final linked = (s[transcriberUsesDictationModelSetting] as bool?) ?? false;
+    if (linked) {
+      // Старое или вручную исправленное состояние могло оставить обе
+      // стороны без собственного выбора. Материализуем уже сохранённый
+      // путь у диктовки, чтобы ссылка никогда не стала циклом.
+      if (_dictation.model.isEmpty && queueModel.isNotEmpty) {
+        _dictation.model = queueModel;
+        _dictation.save();
+      }
+      if (_dictation.model.isNotEmpty) queueModel = _dictation.model;
+    }
     // Раньше форматы хранились расширениями («.txt») — переводим в имена.
     final formats = (s['libraryFormats'] as List?)
         ?.cast<String>()
@@ -78,7 +90,8 @@ class SettingsCubit extends Cubit<SettingsState> {
         models: scanModels(),
         vad: findVadModel(),
         clearVadModel: findVadModel() == null,
-        queueModel: (s['model'] as String?) ?? '',
+        queueModel: queueModel,
+        transcriberUsesDictationModel: linked,
         toLibrary: (s['toLibrary'] as bool?) ?? true,
         saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
         timestamps: (s['timestamps'] as bool?) ?? true,
@@ -223,14 +236,50 @@ class SettingsCubit extends Cubit<SettingsState> {
   /// и мышью — по крестику на плавающей панели.
   void clearCancelHotkey() => _saveDictation((d) => d.cancel = Hotkey.none);
 
-  void setDictationModel(String path) => _saveDictation((d) => d.model = path);
+  Future<void> setDictationModel(String path) async {
+    if (path.isEmpty && state.transcriberUsesDictationModel) {
+      // Меняем направление связи: нынешняя общая модель становится
+      // конкретной у расшифровщика, а диктовка начинает следовать ей.
+      _emit(state.copyWith(transcriberUsesDictationModel: false));
+      await _saveApp({
+        'model': state.queueModel,
+        transcriberUsesDictationModelSetting: false,
+      });
+    }
+    _saveDictation((d) => d.model = path);
+    if (path.isNotEmpty && state.transcriberUsesDictationModel) {
+      _emit(state.copyWith(queueModel: path));
+      await _saveApp({'model': path});
+    }
+  }
 
   /// Модель для всех новых расшифровок. Открытая запись по-прежнему хранит
   /// собственный выбор, но главное окно перечитает это значение как новое
   /// умолчание через тот же канал настроек.
-  void setQueueModel(String path) {
-    _emit(state.copyWith(queueModel: path));
-    unawaited(_saveApp({'model': path}));
+  Future<void> setQueueModel(String path) async {
+    if (path.isEmpty) {
+      var anchor = _dictation.model;
+      if (anchor.isEmpty) {
+        anchor = state.queueModel;
+        if (anchor.isEmpty) return;
+        _saveDictation((d) => d.model = anchor);
+      }
+      _emit(
+        state.copyWith(queueModel: anchor, transcriberUsesDictationModel: true),
+      );
+      await _saveApp({
+        'model': anchor,
+        transcriberUsesDictationModelSetting: true,
+      });
+      return;
+    }
+    _emit(
+      state.copyWith(queueModel: path, transcriberUsesDictationModel: false),
+    );
+    await _saveApp({
+      'model': path,
+      transcriberUsesDictationModelSetting: false,
+    });
   }
 
   void setThreads(int n) => _saveDictation((d) => d.threads = n);
@@ -491,18 +540,42 @@ class SettingsCubit extends Cubit<SettingsState> {
         state.copyWith(problem: currentL10n().modelTrashFailed(path)),
       );
     }
+    final models = scanModels();
+    final usable = [
+      for (final model in models)
+        if (!model.broken) model.path,
+    ];
     // Выбранной эта модель быть больше не может.
-    if (_dictation.model == path) {
+    if (state.transcriberUsesDictationModel &&
+        (_dictation.model == path || state.queueModel == path)) {
+      final replacement = usable.isEmpty ? '' : usable.first;
+      _saveDictation((d) => d.model = replacement);
+      _emit(
+        state.copyWith(
+          queueModel: replacement,
+          transcriberUsesDictationModel: replacement.isNotEmpty,
+        ),
+      );
+      await _saveApp({
+        'model': replacement,
+        transcriberUsesDictationModelSetting: replacement.isNotEmpty,
+      });
+    } else if (_dictation.model == path) {
       _saveDictation((d) => d.model = '');
     }
-    if (state.queueModel == path) {
-      _emit(state.copyWith(queueModel: ''));
-      await _saveApp({'model': ''});
+    if (!state.transcriberUsesDictationModel && state.queueModel == path) {
+      _emit(
+        state.copyWith(queueModel: '', transcriberUsesDictationModel: false),
+      );
+      await _saveApp({
+        'model': '',
+        transcriberUsesDictationModelSetting: false,
+      });
     }
     _emit(
       state.copyWith(
         clearProblem: true,
-        models: scanModels(),
+        models: models,
         vad: findVadModel(),
         clearVadModel: findVadModel() == null,
       ),

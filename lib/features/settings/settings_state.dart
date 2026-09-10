@@ -49,6 +49,7 @@ class SettingsState extends Equatable {
     Hotkey? cancel,
     this.dictationModel = '',
     this.queueModel = '',
+    this.transcriberUsesDictationModel = false,
     this.threads = 4,
     this.punctuate = true,
     this.prompt = '',
@@ -97,6 +98,12 @@ class SettingsState extends Equatable {
   /// Модель по умолчанию для новых расшифровок. Открытая запись может
   /// иметь собственную, поэтому выбор здесь не переписывает её задним числом.
   final String queueModel;
+
+  /// В поле расшифровщика пустое значение означает ссылку на диктовку,
+  /// но [queueModel] всегда содержит уже разрешённый конкретный путь.
+  final bool transcriberUsesDictationModel;
+  String get transcriberModelSelection =>
+      transcriberUsesDictationModel ? '' : queueModel;
 
   /// Какой моделью распознаётся диктовка на самом деле — с учётом того,
   /// что пустой выбор означает «взять у расшифровщика».
@@ -234,6 +241,7 @@ class SettingsState extends Equatable {
     Hotkey? cancel,
     String? dictationModel,
     String? queueModel,
+    bool? transcriberUsesDictationModel,
     int? threads,
     bool? punctuate,
     String? prompt,
@@ -279,6 +287,8 @@ class SettingsState extends Equatable {
     cancel: cancel ?? this.cancel,
     dictationModel: dictationModel ?? this.dictationModel,
     queueModel: queueModel ?? this.queueModel,
+    transcriberUsesDictationModel:
+        transcriberUsesDictationModel ?? this.transcriberUsesDictationModel,
     threads: threads ?? this.threads,
     punctuate: punctuate ?? this.punctuate,
     prompt: prompt ?? this.prompt,
@@ -322,6 +332,7 @@ class SettingsState extends Equatable {
     cancel.label,
     dictationModel,
     queueModel,
+    transcriberUsesDictationModel,
     threads,
     punctuate,
     prompt,

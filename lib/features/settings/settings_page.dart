@@ -444,7 +444,8 @@ class _SettingsBodyState extends State<SettingsBody>
         l10n.fieldTranscriptionModel,
         ModelField(
           installed: s.usable,
-          value: s.queueModel,
+          value: s.transcriberModelSelection,
+          fallback: l10n.fallbackSameAsDictation,
           onChosen: _cubit.setQueueModel,
           onDownload: _cubit.downloadForTranscription,
           downloadEnabled: !s.downloading,

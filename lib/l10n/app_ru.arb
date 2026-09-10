@@ -24,6 +24,7 @@
   "hintDictationOwnSettings": "Язык определяется автоматически, паузы удаляются всегда. Остальные параметры относятся только к диктовке.",
   "fieldDictationModel": "Модель диктовки",
   "fallbackSameAsTranscription": "Та же, что у расшифровщика",
+  "fallbackSameAsDictation": "Та же, что у диктовки",
   "hintDictationModelFallback": "Связанный выбор меняется вместе с моделью расшифровщика. Конкретная модель используется только для диктовки.",
   "buttonPickModelFile": "Выбрать свой файл модели…",
   "fieldSpeed": "Скорость",
