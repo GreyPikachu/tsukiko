@@ -15,14 +15,12 @@ class ScopeBanner extends StatelessWidget {
     required this.changed,
     required this.onReset,
     required this.onMakeDefault,
-    required this.onOpenSettings,
   });
 
   final int selection;
   final String? name;
   final List<String> changed;
   final VoidCallback? onReset, onMakeDefault;
-  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -33,15 +31,12 @@ class ScopeBanner extends StatelessWidget {
     final (title, hint) = switch (selection) {
       0 => (l10n.scopeAllTitle, l10n.scopeAllHint),
       1 => (
-          l10n.scopeOneTitle,
-          changed.isEmpty
-              ? l10n.scopeOneHintDefault(name)
-              : l10n.scopeOneHintCustom(name, changed.join(', '))
-        ),
-      _ => (
-          l10n.scopeManyTitle(recordsLabel(selection)),
-          l10n.scopeManyHint
-        ),
+        l10n.scopeOneTitle,
+        changed.isEmpty
+            ? l10n.scopeOneHintDefault(name)
+            : l10n.scopeOneHintCustom(name, changed.join(', ')),
+      ),
+      _ => (l10n.scopeManyTitle(recordsLabel(selection)), l10n.scopeManyHint),
     };
 
     return Container(
@@ -59,28 +54,19 @@ class ScopeBanner extends StatelessWidget {
           Row(
             children: [
               MacosIcon(
-                selection == 0 ? CupertinoIcons.slider_horizontal_3 : CupertinoIcons.doc_text,
+                selection == 0
+                    ? CupertinoIcons.slider_horizontal_3
+                    : CupertinoIcons.doc_text,
                 size: IconSize.inline,
                 color: Surface.secondaryText(context),
               ),
               const SizedBox(width: Gap.inner),
               Expanded(
-                child: Text(title,
-                    maxLines: 1, overflow: TextOverflow.ellipsis, style: Type.fileName),
-              ),
-              const SizedBox(width: Gap.inner),
-              MacosTooltip(
-                message: l10n.buttonTranscriptionSettingsEllipsis('').trim(),
-                child: MacosIconButton(
-                  icon: const MacosIcon(
-                    CupertinoIcons.gear,
-                    size: IconSize.button,
-                  ),
-                  boxConstraints: const BoxConstraints.tightFor(
-                    width: IconSize.button + Gap.control,
-                    height: IconSize.button + Gap.control,
-                  ),
-                  onPressed: onOpenSettings,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Type.fileName,
                 ),
               ),
             ],

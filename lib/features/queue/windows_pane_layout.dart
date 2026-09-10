@@ -22,6 +22,7 @@ class WindowsPaneLayout extends StatefulWidget {
     required this.leftBottom,
     required this.center,
     this.rightBuilder,
+    this.rightTop,
     this.leftWidth = 276,
     this.leftMinWidth = 248,
     this.leftMaxWidth = 400,
@@ -35,6 +36,7 @@ class WindowsPaneLayout extends StatefulWidget {
   final Widget leftBottom;
   final Widget center;
   final PaneBuilder? rightBuilder;
+  final Widget? rightTop;
   final double leftWidth, leftMinWidth, leftMaxWidth;
   final double rightWidth, rightMinWidth, rightMaxWidth;
   final double topOffset;
@@ -105,6 +107,7 @@ class _WindowsPaneLayoutState extends State<WindowsPaneLayout> {
                   context,
                   controller: _rightScroll,
                   builder: widget.rightBuilder!,
+                  top: widget.rightTop,
                 ),
               ),
             ],
@@ -119,11 +122,12 @@ class _WindowsPaneLayoutState extends State<WindowsPaneLayout> {
     required ScrollController controller,
     required PaneBuilder builder,
     Widget? bottom,
+    Widget? top,
   }) => ColoredBox(
     color: Surface.sidebar(context) ?? MacosTheme.of(context).canvasColor,
     child: Column(
       children: [
-        SizedBox(height: widget.topOffset),
+        SizedBox(height: widget.topOffset, child: top),
         Expanded(
           child: MacosScrollbar(
             controller: controller,

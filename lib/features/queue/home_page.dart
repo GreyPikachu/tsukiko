@@ -749,6 +749,9 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       rightBuilder: s.downloadProgress == null
           ? (context, controller) => _inspector(s, controller)
           : null,
+      rightTop: s.downloadProgress == null
+          ? InspectorHeader(onOpenSettings: () => _openSettings('transcriber'))
+          : null,
     );
   }
 
@@ -780,7 +783,15 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
               maxWidth: 380,
               shownByDefault: true,
               decoration: Surface.sidebarDecoration(context),
-              builder: (context, controller) => _inspector(s, controller),
+              topOffset: 0,
+              builder: (context, controller) => Column(
+                children: [
+                  InspectorHeader(
+                    onOpenSettings: () => _openSettings('transcriber'),
+                  ),
+                  Expanded(child: _inspector(s, controller)),
+                ],
+              ),
             ),
       child: _contentScaffold(s),
     ),
@@ -1590,7 +1601,6 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           changed: own == null ? const [] : own.diffAgainst(s.defaults),
           onReset: own == null ? null : _sendResetOverrides,
           onMakeDefault: own == null ? null : _sendMakeDefault,
-          onOpenSettings: () => _openSettings('transcriber'),
         ),
         // Беда важнее настроек: она стоит первой, до модели и языка.
         // Здесь же единственное место, где длинную ошибку видно целиком —
@@ -1728,8 +1738,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           findRecognitionEngine(selectedEngine) == null
               ? l10n.statusRecognizerNotFound(selectedEngineName)
               : recognitionEngineIsOurs(selectedEngine)
-                  ? l10n.statusRecognizerOurs(selectedEngineName)
-                  : l10n.statusRecognizerSystem(selectedEngineName),
+              ? l10n.statusRecognizerOurs(selectedEngineName)
+              : l10n.statusRecognizerSystem(selectedEngineName),
           style: Type.caption.copyWith(color: Surface.secondaryText(context)),
         ),
       ],
