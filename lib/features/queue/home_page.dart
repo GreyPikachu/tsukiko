@@ -1713,6 +1713,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           onChanged: (v) =>
               _send(OptionsEdited((x) => x.copyWith(threads: v ?? o.threads))),
         ),
+        Hint(l10n.hintThreads),
         SectionTitle(l10n.fieldModelPrompt),
         AppTextField(
           controller: _promptCtrl,
