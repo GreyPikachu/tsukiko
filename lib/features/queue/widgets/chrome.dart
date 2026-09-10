@@ -3,30 +3,67 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../../core/text.dart';
 import '../../../design/design.dart';
+import '../../../l10n/gen/app_localizations.dart';
+
+/// Служебная кнопка правой панели занимает собственное место в полосе
+/// окна, а не теснит заголовок первой карточки. Рисуется тем же системным
+/// контролом, что и кнопки основной панели, поэтому размер и зона нажатия
+/// у них совпадают.
+class InspectorHeader extends StatelessWidget {
+  const InspectorHeader({super.key, required this.onOpenSettings});
+
+  final VoidCallback onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = AppLocalizations.of(
+      context,
+    ).buttonTranscriptionSettingsEllipsis('').trim();
+    return SizedBox(
+      height: 51,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Padding(
+          padding: const EdgeInsets.only(right: Gap.inner),
+          child: ToolBarIconButton(
+            label: label,
+            icon: const MacosIcon(
+              CupertinoIcons.gear,
+              size: IconSize.toolbar,
+              color: MacosColors.systemBlueColor,
+            ),
+            showLabel: false,
+            tooltipMessage: label,
+            onPressed: onOpenSettings,
+          ).build(context, ToolbarItemDisplayMode.inToolbar),
+        ),
+      ),
+    );
+  }
+}
 
 /// Обвязка окна: заголовок в панели инструментов, значок занятости
 /// модели в строке состояния и заглушка пустого экрана.
 class ToolbarTitle extends StatelessWidget {
-  const ToolbarTitle({
-    super.key,this.subtitle});
+  const ToolbarTitle({super.key, this.subtitle});
   final String? subtitle;
 
   @override
   Widget build(BuildContext context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(appName, style: Type.navTitle),
-          if (subtitle != null)
-            Text(
-              subtitle!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
-            ),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    mainAxisAlignment: MainAxisAlignment.center,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(appName, style: Type.navTitle),
+      if (subtitle != null)
+        Text(
+          subtitle!,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+        ),
+    ],
+  );
 }
 
 /// Шапка инспектора: к чему относится то, что ниже. Без неё правка настроек
@@ -66,13 +103,15 @@ class ModelChipState extends State<ModelChip> {
     final color = widget.busy
         ? MacosColors.systemOrangeColor
         : widget.resting
-            ? MacosColors.systemYellowColor
-            : MacosColors.systemGreenColor;
+        ? MacosColors.systemYellowColor
+        : MacosColors.systemGreenColor;
     return MacosTooltip(
       message: widget.detail,
       child: Padding(
         padding: const EdgeInsets.symmetric(
-            horizontal: Gap.inner, vertical: Gap.hint),
+          horizontal: Gap.inner,
+          vertical: Gap.hint,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -82,8 +121,9 @@ class ModelChipState extends State<ModelChip> {
             const SizedBox(width: Gap.inner),
             Text(
               widget.label,
-              style: Type.caption
-                  .copyWith(color: Surface.secondaryText(context)),
+              style: Type.caption.copyWith(
+                color: Surface.secondaryText(context),
+              ),
             ),
           ],
         ),
@@ -93,8 +133,7 @@ class ModelChipState extends State<ModelChip> {
 }
 
 class Dot extends StatefulWidget {
-  const Dot({
-    super.key,required this.color, required this.pulsing});
+  const Dot({super.key, required this.color, required this.pulsing});
   final Color color;
   final bool pulsing;
 
@@ -164,54 +203,62 @@ class EngineErrorBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(Gap.inner),
-        decoration: BoxDecoration(
-          // Красным намекаем, а не кричим: коробка и так стоит первой.
-          color: MacosColors.systemRedColor.withValues(alpha: 0.09),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-              color: MacosColors.systemRedColor.withValues(alpha: 0.25)),
-        ),
-        child: Text(
-          text,
-          // Без maxLines и обрезания: тут её и читают целиком.
-          style: Type.caption.copyWith(height: 1.45),
-        ),
-      );
+    width: double.infinity,
+    padding: const EdgeInsets.all(Gap.inner),
+    decoration: BoxDecoration(
+      // Красным намекаем, а не кричим: коробка и так стоит первой.
+      color: MacosColors.systemRedColor.withValues(alpha: 0.09),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(
+        color: MacosColors.systemRedColor.withValues(alpha: 0.25),
+      ),
+    ),
+    child: Text(
+      text,
+      // Без maxLines и обрезания: тут её и читают целиком.
+      style: Type.caption.copyWith(height: 1.45),
+    ),
+  );
 }
 
 class EmptyNotice extends StatelessWidget {
   const EmptyNotice({
-    super.key,required this.icon, required this.title, required this.subtitle});
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
   final IconData icon;
   final String title, subtitle;
 
   @override
   Widget build(BuildContext context) => Padding(
-        // Ровно то же поле и та же лесенка, что у пустого экрана с котом
-        // (MascotEmpty): это два вида одного состояния, и разойтись видом
-        // они не должны.
-        padding: const EdgeInsets.all(Gap.section + Gap.inner),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            MacosIcon(icon,
-                size: IconSize.hero, color: Surface.secondaryText(context)),
-            const SizedBox(height: Gap.item),
-            Text(title, style: Type.emptyTitle, textAlign: TextAlign.center),
-            const SizedBox(height: Gap.hint),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: Type.control.copyWith(
-                color: Surface.secondaryText(context),
-                height: 1.5,
-              ),
-            ),
-          ],
+    // Ровно то же поле и та же лесенка, что у пустого экрана с котом
+    // (MascotEmpty): это два вида одного состояния, и разойтись видом
+    // они не должны.
+    padding: const EdgeInsets.all(Gap.section + Gap.inner),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MacosIcon(
+          icon,
+          size: IconSize.hero,
+          color: Surface.secondaryText(context),
         ),
-      );
+        const SizedBox(height: Gap.item),
+        Text(title, style: Type.emptyTitle, textAlign: TextAlign.center),
+        const SizedBox(height: Gap.hint),
+        Text(
+          subtitle,
+          textAlign: TextAlign.center,
+          style: Type.control.copyWith(
+            color: Surface.secondaryText(context),
+            height: 1.5,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Путь как объект, а не как строка настройки: по нему можно щёлкнуть
