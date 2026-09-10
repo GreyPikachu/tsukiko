@@ -829,7 +829,7 @@ class _SettingsBodyState extends State<SettingsBody>
           ),
         ),
       PushButton(
-        controlSize: ControlSize.regular,
+        controlSize: ControlSize.small,
         secondary: true,
         onPressed: _cubit.addTextCommand,
         child: Text(l10n.buttonAddCommand),
@@ -1119,34 +1119,26 @@ class _TextCommandRowState extends State<_TextCommandRow> {
   void _changed() =>
       widget.onChanged(TextCommand(_phrase.text, _replacement.text));
 
+  bool _removeHovered = false;
+
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.fromLTRB(
-      Gap.item,
-      Gap.control,
-      Gap.inner,
-      Gap.control,
-    ),
+    padding: const EdgeInsets.all(Gap.item),
     decoration: BoxDecoration(
       color: Surface.hover(context),
       borderRadius: BorderRadius.circular(8),
     ),
     child: Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: _commandField(label: widget.phraseHint, controller: _phrase),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(
-            Gap.control,
-            0,
-            Gap.control,
-            Gap.inner,
-          ),
+          padding: const EdgeInsets.fromLTRB(Gap.control, 28, Gap.control, 0),
           child: MacosIcon(
             CupertinoIcons.arrow_right,
-            size: IconSize.button,
+            size: IconSize.toolbar,
             color: Surface.secondaryText(context),
           ),
         ),
@@ -1156,21 +1148,28 @@ class _TextCommandRowState extends State<_TextCommandRow> {
             controller: _replacement,
           ),
         ),
-        const SizedBox(width: Gap.inner),
+        const SizedBox(width: Gap.control),
         Padding(
-          padding: const EdgeInsets.only(bottom: Gap.hint),
-          child: MacosTooltip(
-            message: widget.removeHint,
-            child: MacosIconButton(
-              icon: const MacosIcon(
-                CupertinoIcons.minus_circle,
-                size: IconSize.button,
+          padding: const EdgeInsets.only(top: 22),
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _removeHovered = true),
+            onExit: (_) => setState(() => _removeHovered = false),
+            child: MacosTooltip(
+              message: widget.removeHint,
+              child: MacosIconButton(
+                icon: MacosIcon(
+                  CupertinoIcons.trash,
+                  size: IconSize.toolbar,
+                  color: _removeHovered
+                      ? MacosColors.systemRedColor
+                      : Surface.secondaryText(context),
+                ),
+                boxConstraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 32,
+                ),
+                onPressed: widget.onRemove,
               ),
-              boxConstraints: const BoxConstraints.tightFor(
-                width: IconSize.button + Gap.control,
-                height: IconSize.button + Gap.control,
-              ),
-              onPressed: widget.onRemove,
             ),
           ),
         ),
