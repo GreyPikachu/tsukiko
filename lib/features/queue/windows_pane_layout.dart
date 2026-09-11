@@ -1,7 +1,10 @@
 import 'package:flutter/widgets.dart';
 import 'package:macos_ui/macos_ui.dart';
+// ignore: implementation_imports
+import 'package:macos_ui/src/layout/wallpaper_tinting_settings/global_wallpaper_tinting_settings.dart';
 
 import '../../design/design.dart';
+import '../../platform/os.dart';
 
 typedef PaneBuilder =
     Widget Function(BuildContext context, ScrollController controller);
@@ -55,6 +58,14 @@ class _WindowsPaneLayoutState extends State<WindowsPaneLayout> {
   static const _minimumCenter = 320.0;
 
   @override
+  void initState() {
+    super.initState();
+    if (!os.hasWindowMaterial) {
+      GlobalWallpaperTintingSettings.disableWallpaperTinting();
+    }
+  }
+
+  @override
   void dispose() {
     _leftScroll.dispose();
     _rightScroll.dispose();
@@ -98,7 +109,12 @@ class _WindowsPaneLayoutState extends State<WindowsPaneLayout> {
               ),
             ),
             _PaneDivider(onDrag: (dx) => setState(() => _left = left + dx)),
-            Expanded(child: widget.center),
+            Expanded(
+              child: ColoredBox(
+                color: MacosTheme.of(context).canvasColor,
+                child: widget.center,
+              ),
+            ),
             if (hasRight) ...[
               _PaneDivider(onDrag: (dx) => setState(() => _right = right - dx)),
               SizedBox(

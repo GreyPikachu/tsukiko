@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
+// ignore: implementation_imports
+import 'package:macos_ui/src/layout/wallpaper_tinting_settings/global_wallpaper_tinting_settings.dart';
 import 'core/app_locale.dart';
 import 'l10n/gen/app_localizations.dart';
 import 'legacy_migration.dart';
@@ -41,6 +43,8 @@ Future<void> main(List<String> args) async {
   // плагин, который это делает, на такой системе и не поднимется.
   if (os.hasWindowMaterial) {
     await const MacosWindowUtilsConfig(toolbarStyle: NSWindowToolbarStyle.unified).apply();
+  } else {
+    GlobalWallpaperTintingSettings.disableWallpaperTinting();
   }
   // До первого findModels(): список моделей должен собираться уже
   // из своей папки. Когда переезжать нечего, это одна проверка папки.
