@@ -4,6 +4,8 @@ import 'package:macos_ui/macos_ui.dart';
 import 'package:tsukiko/design/toolbar.dart';
 import 'package:tsukiko/design/design.dart';
 import 'package:tsukiko/l10n/gen/app_localizations.dart';
+import 'package:tsukiko/platform/os.dart';
+import 'package:tsukiko/platform/os_windows.dart';
 
 /// Панель инструментов: список спрятанного открывается многоточием,
 /// а не «»».
@@ -124,4 +126,17 @@ void main() {
     final context = tester.element(find.byType(MacosPulldownButton));
     expect(theme.data.iconColor, Surface.toolbarIcon(context, enabled: true));
   });
+
+  testWidgets(
+    'на Windows подложка панели инструментов непрозрачна и не использует WallpaperTintedArea',
+    (tester) async {
+      final prev = os;
+      os = WindowsOs();
+      addTearDown(() => os = prev);
+
+      await pump(tester, AppToolBar(enableBlur: false, actions: buttons(1)));
+
+      expect(find.byType(WallpaperTintedArea), findsNothing);
+    },
+  );
 }

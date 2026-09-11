@@ -758,25 +758,15 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       leftBuilder: (context, controller) => _queue(s, controller),
       leftBottom: _queueButtons(s),
       center: _contentScaffold(s),
-      rightBuilder: s.downloadProgress == null
-          ? (context, controller) => _inspector(s, controller)
-          : null,
-      rightTop: s.downloadProgress == null
-          ? InspectorHeader(onOpenSettings: () => _openSettings('transcriber'))
-          : null,
+      rightBuilder: (context, controller) => _inspector(s, controller),
+      rightTop: InspectorHeader(
+        onOpenSettings: () => _openSettings('transcriber'),
+      ),
     );
   }
 
   Widget _macosWindow(QueueState s) => Builder(
     builder: (context) => MacosWindow(
-      // При загрузке модели инспектор нечего настраивать: освобождаем
-      // его ширину для длинного хода загрузки. Ключ нужен пакетному
-      // MacosWindow: он не умеет возвращать endSidebar после null.
-      key: ValueKey(s.downloadProgress != null),
-      // «Подкраска обоями» на macOS показывает сквозь окно рабочий
-      // стол — и делает это родным плагином, которого на Windows
-      // нет вовсе. Оставить включённой значит получить там
-      // MissingPluginException на каждой перерисовке.
       disableWallpaperTinting: !os.hasWindowMaterial,
       sidebar: Sidebar(
         minWidth: 248,
@@ -787,29 +777,28 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         builder: (context, controller) => _queue(s, controller),
         bottom: _queueButtons(s),
       ),
-      endSidebar: s.downloadProgress != null
-          ? null
-          : Sidebar(
-              minWidth: 290,
-              startWidth: 312,
-              maxWidth: 380,
-              shownByDefault: true,
-              decoration: Surface.sidebarDecoration(context),
-              topOffset: 0,
-              builder: (context, controller) => Column(
-                children: [
-                  InspectorHeader(
-                    onOpenSettings: () => _openSettings('transcriber'),
-                  ),
-                  Expanded(child: _inspector(s, controller)),
-                ],
-              ),
+      endSidebar: Sidebar(
+        minWidth: 290,
+        startWidth: 312,
+        maxWidth: 380,
+        shownByDefault: true,
+        decoration: Surface.sidebarDecoration(context),
+        topOffset: 0,
+        builder: (context, controller) => Column(
+          children: [
+            InspectorHeader(
+              onOpenSettings: () => _openSettings('transcriber'),
             ),
+            Expanded(child: _inspector(s, controller)),
+          ],
+        ),
+      ),
       child: _contentScaffold(s),
     ),
   );
 
   Widget _contentScaffold(QueueState s) => MacosScaffold(
+    backgroundColor: MacosTheme.of(context).canvasColor,
     toolBar: _toolbar(s),
     children: [
       ContentArea(

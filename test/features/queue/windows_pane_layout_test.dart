@@ -52,4 +52,42 @@ void main() {
     final after = tester.getSize(find.byType(ListView).first).width;
     expect(after, greaterThan(before));
   });
+
+  testWidgets(
+    'раскладка отключает подкраску обоями на Windows и красит центр в canvasColor',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MacosApp(
+          home: SizedBox(
+            width: 1100,
+            height: 700,
+            child: WindowsPaneLayout(
+              leftBuilder: (_, controller) => ListView(controller: controller),
+              leftBottom: const SizedBox.shrink(),
+              center: const Text('Центр'),
+              rightBuilder: (_, controller) => ListView(controller: controller),
+            ),
+          ),
+        ),
+      );
+
+      final coloredBoxes = tester.widgetList<ColoredBox>(
+        find.byType(ColoredBox),
+      );
+      // Центр имеет фон canvasColor
+      expect(
+        coloredBoxes.any(
+          (b) =>
+              b.color == const Color.fromRGBO(40, 40, 40, 1.0) ||
+              b.color == const Color.fromRGBO(246, 246, 246, 1.0),
+        ),
+        isTrue,
+      );
+      // Правая колонка присутствует
+      expect(find.byType(ListView), findsNWidgets(2));
+    },
+  );
 }

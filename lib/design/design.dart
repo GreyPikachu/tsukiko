@@ -211,9 +211,16 @@ class Surface {
   static bool isDark(BuildContext context) =>
       MacosTheme.of(context).brightness == Brightness.dark;
 
-  static Color chrome(BuildContext context) => isDark(context)
-      ? const Color(0xE6202023)
-      : const Color(0xE6F7F7F9);
+  static Color chrome(BuildContext context) {
+    if (!os.hasWindowMaterial) {
+      return isDark(context)
+          ? const Color(0xFF202023)
+          : const Color(0xFFF7F7F9);
+    }
+    return isDark(context)
+        ? const Color(0xE6202023)
+        : const Color(0xE6F7F7F9);
+  }
 
   static Color hairline(BuildContext context) => isDark(context)
       ? const Color(0x2BFFFFFF)

@@ -13,6 +13,7 @@ import 'package:macos_ui/src/layout/toolbar/overflow_handler.dart';
 import 'package:macos_ui/src/layout/wallpaper_tinting_settings/wallpaper_tinting_override.dart';
 
 import '../l10n/gen/app_localizations.dart';
+import '../platform/os.dart';
 import 'design.dart';
 
 /// Выпадающая кнопка с цветом доступного действия.
@@ -344,14 +345,21 @@ class _AppToolBarState extends State<ToolBar> {
   /// обоями. То же разделение, что и в пакете, и та же причина: подкраска
   /// умеет только цвет, а размытие — только там, где под окном есть чему
   /// размываться.
-  Widget _ground(MacosThemeData theme, {required Widget child}) =>
-      widget.enableBlur
-      ? WallpaperTintingOverride(child: child)
-      : WallpaperTintedArea(
-          backgroundColor: theme.canvasColor,
-          insertRepaintBoundary: true,
-          child: child,
-        );
+  Widget _ground(MacosThemeData theme, {required Widget child}) {
+    if (!os.hasWindowMaterial) {
+      return Container(
+        decoration: BoxDecoration(color: theme.canvasColor),
+        child: child,
+      );
+    }
+    return widget.enableBlur
+        ? WallpaperTintingOverride(child: child)
+        : WallpaperTintedArea(
+            backgroundColor: theme.canvasColor,
+            insertRepaintBoundary: true,
+            child: child,
+          );
+  }
 }
 
 /// Кнопка «остальное»: та же, что в macos_ui, с многоточием вместо «»»
