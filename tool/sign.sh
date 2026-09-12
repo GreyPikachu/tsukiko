@@ -16,7 +16,10 @@ set -e
 cd "$(dirname "$0")/.."
 
 APP=build/macos/Build/Products/Release/tsukiko.app
-ID=$(security find-identity -v -p codesigning | awk 'NR==1 {print $2}')
+# Строка «0 valid identities found» — итог, а не сертификат. Прежний awk
+# принимал слово `valid` за его идентификатор, и codesign закономерно падал.
+ID=$(security find-identity -v -p codesigning |
+  awk '/^[[:space:]]*[0-9]+\)/ {print $2; exit}')
 if [ -z "$ID" ]; then
   if [ -n "$CI" ] || [ -n "$TSUKIKO_ADHOC_SIGN" ]; then
     echo "Нет сертификата разработчика в связке ключей. Используется ad-hoc подпись (-)."

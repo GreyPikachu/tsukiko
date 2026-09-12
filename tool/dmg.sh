@@ -118,7 +118,10 @@ hdiutil convert build/tsukiko-rw.dmg -format UDZO -imagekey zlib-level=9 \
 rm -f build/tsukiko-rw.dmg
 rm -rf "$STAGE"
 
-codesign --force --sign "$(security find-identity -v -p codesigning | awk 'NR==1 {print $2}')" \
-  --timestamp=none "$OUT" 2>/dev/null || true
+DMG_ID=$(security find-identity -v -p codesigning |
+  awk '/^[[:space:]]*[0-9]+\)/ {print $2; exit}')
+if [ -n "$DMG_ID" ]; then
+  codesign --force --sign "$DMG_ID" --timestamp=none "$OUT" 2>/dev/null || true
+fi
 
 echo "готово: $OUT ($(du -h "$OUT" | cut -f1))"
