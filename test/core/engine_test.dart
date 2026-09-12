@@ -76,6 +76,7 @@ void main() {
     expect(args[args.indexOf('--model') + 1], options.model);
     expect(args[args.indexOf('--output') + 1], '/result.json');
     expect(args[args.indexOf('--format') + 1], 'json');
+    expect(args, contains('--no-warmup'));
     expect(args[args.indexOf('--language') + 1], 'ru');
     expect(args, contains('--no-punctuation'));
     expect(args[args.indexOf('--speech-context') + 1], options.prompt);
