@@ -93,6 +93,18 @@ void main() {
       expect(cubit.state.dictationModel, isEmpty);
     });
 
+    test('выбор модели в панели диктовки обновляет окно настроек', () async {
+      final changedElsewhere = DictationSettings.load()
+        ..model = '/модели/large-v3-turbo.bin';
+      changedElsewhere.save();
+
+      await native.sendReload();
+      await settle();
+
+      expect(cubit.state.dictationModel, changedElsewhere.model);
+      expect(cubit.state.dictationModelInUse, changedElsewhere.model);
+    });
+
     test('одна клавиша сохраняется только после явного согласия', () async {
       final before = cubit.state.hold;
       var asked = '';
@@ -392,6 +404,15 @@ class _FakeNative {
           const StandardMethodCodec().encodeMethodCall(
             MethodCall('captured', hotkey.toJson()),
           ),
+          (_) {},
+        );
+  }
+
+  Future<void> sendReload() async {
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          'tsukiko/dictation',
+          const StandardMethodCodec().encodeMethodCall(MethodCall('reload')),
           (_) {},
         );
   }
