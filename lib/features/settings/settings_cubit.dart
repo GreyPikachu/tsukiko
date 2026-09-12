@@ -39,10 +39,9 @@ import 'settings_state.dart';
 class SettingsCubit extends Cubit<SettingsState> {
   SettingsCubit(this.bridge) : super(SettingsState()) {
     _dictation = DictationSettings.load();
-    _subs.add(bridge.settingsReloaded.listen((_) => _readApp()));
+    _subs.add(bridge.settingsReloaded.listen((_) => _reloadSettings()));
     _subs.add(bridge.settingsTab.listen((t) => _emit(state.copyWith(tab: t))));
-    _readApp();
-    _readDictation();
+    _reloadSettings();
     // Вкладку окно спрашивает само: сообщение об открытии приходит раньше,
     // чем этот изолят успевает подписаться на канал.
     unawaited(bridge.initialTab().then((t) => _emit(state.copyWith(tab: t))));
@@ -64,6 +63,14 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   // ── чтение с диска ────────────────────────────────────────────────────────
+
+  void _reloadSettings() {
+    _dictation = DictationSettings.load();
+    // _readApp разрешает связь «расшифровщик как у диктовки» через
+    // свежую модель диктовки и при необходимости чинит старое состояние.
+    _readApp();
+    _readDictation();
+  }
 
   void _readApp() {
     final s = Settings.load();
