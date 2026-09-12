@@ -173,6 +173,11 @@ List<String> buildArgs(RunOptions o, String wav, String outBase, {int from = 0})
 List<String> buildNemoArgs(RunOptions o, String wav, String jsonPath) => [
       'transcribe',
       os.processPath(wav),
+      // Команда живёт ровно один файл. Штатный warm-up заранее прогоняет
+      // четыре секунды тишины, а затем процесс всё равно сразу завершается.
+      // На старых Vulkan-картах эта подготовка может быть дольше самой
+      // записи; первый настоящий проход и без неё построит нужные графы.
+      '--no-warmup',
       '--model',
       os.processPath(o.model),
       '--format',

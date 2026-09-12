@@ -21,6 +21,7 @@ void main() {
     expect(args.take(3), ['serve', '--asr-model', '/m.gguf']);
     expect(args, containsAllInOrder(['--host', '127.0.0.1']));
     expect(args, containsAllInOrder(['--port', '1234']));
+    expect(args, containsAllInOrder(['--asr.batching.enabled', 'false']));
     expect(args, containsAllInOrder(['--cors-origin', serverMark]));
     expect(args, contains('--no-ui'));
   });
