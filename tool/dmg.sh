@@ -78,8 +78,8 @@ fi
 # Раскладка окна: приложение слева, «Программы» справа, между ними —
 # то расстояние, которое читается как жест перетаскивания.
 # Без `|| true`: молча пропущенная раскладка и есть тот самый образ
-# без фона, который потом никто не может объяснить.
-osascript <<APPLESCRIPT >/dev/null
+# без фона, который потом никто не может объяснить. В CI делаем предупреждение.
+if ! osascript <<APPLESCRIPT >/dev/null
 tell application "Finder"
   tell disk "$VOLUME"
     open
@@ -105,6 +105,10 @@ tell application "Finder"
   end tell
 end tell
 APPLESCRIPT
+then
+  echo "::warning::Не удалось применить раскладку окна через AppleScript в Finder" >&2
+  [ -n "$CI" ] || exit 1
+fi
 
 sync
 hdiutil detach "$DEV" >/dev/null
