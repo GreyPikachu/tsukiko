@@ -18,8 +18,13 @@ cd "$(dirname "$0")/.."
 APP=build/macos/Build/Products/Release/tsukiko.app
 ID=$(security find-identity -v -p codesigning | awk 'NR==1 {print $2}')
 if [ -z "$ID" ]; then
-  echo "Нет сертификата для подписи кода. Xcode → Settings → Accounts." >&2
-  exit 1
+  if [ -n "$CI" ] || [ -n "$TSUKIKO_ADHOC_SIGN" ]; then
+    echo "Нет сертификата разработчика в связке ключей. Используется ad-hoc подпись (-)."
+    ID="-"
+  else
+    echo "Нет сертификата для подписи кода. Xcode → Settings → Accounts." >&2
+    exit 1
+  fi
 fi
 
 # Движок едет внутри приложения: у всех один и тот же, не зависит от того,
@@ -110,7 +115,9 @@ chmod +x "$APP/Contents/Helpers/tsukiko-transcribe"
 # по-прежнему можно — TSUKIKO_NO_TIMESTAMP=1, — но раздавать такое
 # нельзя.
 STAMP=--timestamp
-[ -n "$TSUKIKO_NO_TIMESTAMP" ] && STAMP=--timestamp=none
+if [ -n "$TSUKIKO_NO_TIMESTAMP" ] || [ "$ID" = "-" ]; then
+  STAMP=--timestamp=none
+fi
 
 # Вложенное подписывается первым: подпись бандла запечатывает то, что внутри.
 find "$APP/Contents/Frameworks" -depth 1 -print0 |
@@ -119,4 +126,4 @@ find "$APP/Contents/Helpers" -type f \( -perm -111 -o -name '*.dylib' \) -print0
   xargs -0 -I{} codesign --force --sign "$ID" "$STAMP" {}
 codesign --force --sign "$ID" "$STAMP" \
   --entitlements macos/Runner/Release.entitlements "$APP"
-codesign -dv "$APP" 2>&1 | grep -E 'Authority|TeamIdentifier' || true
+codesign -dv "$APP" 2>&1 | grep -E 'Authority|TeamIdentifier|Signature' || true

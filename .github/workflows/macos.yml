@@ -1,0 +1,103 @@
+# Сборка под macOS.
+#
+# Заведена для проверки сборки под macOS на каждый пуш и для формирования
+# готового дистрибутива: универсальный CLI tsukiko-transcribe, приложение
+# tsukiko.app и образ tsukiko.dmg с установкой перетаскиванием в «Программы».
+
+name: macOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Rosetta (для x86_64 среза CLI)
+        run: |
+          /usr/bin/pgrep -q oahd || softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Кэш движка
+        id: engine-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: macos/Engine
+          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine.sh', 'tool/nemo-engine.sh', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
+
+      - name: Установка CMake
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        run: |
+          command -v cmake >/dev/null || brew install cmake
+
+      - name: Движки Whisper и NeMo
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        run: ./tool/engine.sh
+
+      - name: Движок в кэш
+        if: always() && steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: macos/Engine
+          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine.sh', 'tool/nemo-engine.sh', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
+
+      - name: Папка журналов
+        run: mkdir -p logs
+
+      - run: flutter pub get
+
+      - name: Разбор
+        run: flutter analyze 2>&1 | tee logs/analyze.txt
+
+      - name: Тесты
+        run: flutter test --reporter expanded 2>&1 | tee logs/test.txt
+
+      - name: Приложение
+        id: app
+        run: flutter build macos --release 2>&1 | tee logs/build.txt
+
+      - name: Подпись и вложенные программы
+        id: sign
+        run: ./tool/sign.sh 2>&1 | tee logs/sign.txt
+
+      - name: Образ DMG
+        id: dmg
+        run: ./tool/dmg.sh 2>&1 | tee logs/dmg.txt
+
+      - name: Приложение в артефакты
+        if: always() && steps.sign.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: tsukiko-macos-app
+          path: build/macos/Build/Products/Release/tsukiko.app
+          if-no-files-found: error
+
+      - name: Образ DMG в артефакты
+        if: steps.dmg.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: tsukiko-macos-dmg
+          path: build/tsukiko.dmg
+          if-no-files-found: error
+
+      - name: Журналы
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tsukiko-macos-logs
+          path: logs/
+          if-no-files-found: ignore
