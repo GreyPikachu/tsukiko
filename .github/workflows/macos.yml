@@ -61,22 +61,22 @@ jobs:
       - run: flutter pub get
 
       - name: Разбор
-        run: flutter analyze 2>&1 | tee logs/analyze.txt
+        run: set -o pipefail; flutter analyze 2>&1 | tee logs/analyze.txt
 
       - name: Тесты
-        run: flutter test --reporter expanded 2>&1 | tee logs/test.txt
+        run: set -o pipefail; flutter test --reporter expanded 2>&1 | tee logs/test.txt
 
       - name: Приложение
         id: app
-        run: flutter build macos --release 2>&1 | tee logs/build.txt
+        run: set -o pipefail; flutter build macos --release 2>&1 | tee logs/build.txt
 
       - name: Подпись и вложенные программы
         id: sign
-        run: ./tool/sign.sh 2>&1 | tee logs/sign.txt
+        run: set -o pipefail; ./tool/sign.sh 2>&1 | tee logs/sign.txt
 
       - name: Образ DMG
         id: dmg
-        run: ./tool/dmg.sh 2>&1 | tee logs/dmg.txt
+        run: set -o pipefail; ./tool/dmg.sh 2>&1 | tee logs/dmg.txt
 
       - name: Приложение в артефакты
         if: always() && steps.sign.outcome == 'success'
