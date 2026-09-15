@@ -18,6 +18,11 @@
 ;
 ; 3. Папку для моделей при установке не спрашиваем. Разбор — в
 ;    docs/задача-установка-и-удаление.md.
+;
+; 4. Проверка уже установленного приложения — если tsukiko уже есть на
+;    компьютере, мастер сразу сообщает об этом (с указанием версий)
+;    и предлагает выбор: переустановить (обновить) поверх или запустить
+;    мастер удаления.
 
 #define MyAppName "tsukiko"
 ; Версию передаёт tool\package-win.ps1 ключом /DMyAppVersion — он читает
@@ -111,6 +116,33 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 russian.WelcomeLabel2=Программа установит {#MyAppName} {#MyAppVersion} на этот компьютер.%n%nРасшифровка аудио и диктовка. Всё считается на этой машине: ни записи, ни текст никуда не уходят.
 english.WelcomeLabel2=Setup will install {#MyAppName} {#MyAppVersion} on your computer.%n%nAudio transcription and dictation. Everything is computed locally: neither recordings nor text ever leave this machine.
 
+[CustomMessages]
+russian.AlreadyInstalledTitle=Обнаружена установленная версия
+russian.AlreadyInstalledHeading=tsukiko уже присутствует на этом компьютере
+russian.AlreadyInstalledPrompt=На этом компьютере уже установлена tsukiko (версия %1).%nВерсия в мастере установки: %2.%n%nВыберите, что вы хотите сделать:
+russian.AlreadyInstalledPath=Папка: %1
+russian.AlreadyInstalledReinstall=Переустановить или обновить tsukiko (обновит файлы программы)
+russian.AlreadyInstalledUninstall=Удалить tsukiko (запустит мастер удаления)
+russian.UninstallConfirm=Запустить мастер удаления tsukiko с этого компьютера?
+russian.UninstallSuccess=tsukiko успешно удалена с этого компьютера.
+russian.UninstallIncomplete=Удаление tsukiko не было завершено.
+russian.UninstallFailed=Не удалось запустить мастер удаления tsukiko.
+russian.UninstallNotFound=Файл деинсталлятора (unins000.exe) не найден.
+russian.AppStillRunning=tsukiko сейчас запущена. Пожалуйста, закройте приложение (включая значок в области уведомлений) перед продолжением.
+
+english.AlreadyInstalledTitle=Existing Installation Detected
+english.AlreadyInstalledHeading=tsukiko is already installed on this computer
+english.AlreadyInstalledPrompt=tsukiko is already installed on this computer (version %1).%nVersion in this setup: %2.%n%nChoose what you want to do:
+english.AlreadyInstalledPath=Folder: %1
+english.AlreadyInstalledReinstall=Reinstall or update tsukiko (updates program files)
+english.AlreadyInstalledUninstall=Uninstall tsukiko (launches the uninstaller)
+english.UninstallConfirm=Launch the uninstaller to remove tsukiko from this computer?
+english.UninstallSuccess=tsukiko was successfully uninstalled from this computer.
+english.UninstallIncomplete=Uninstallation was not completed.
+english.UninstallFailed=Failed to launch the tsukiko uninstaller.
+english.UninstallNotFound=Uninstaller file (unins000.exe) not found.
+english.AppStillRunning=tsukiko is currently running. Please close the application (including from the notification area) before proceeding.
+
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "startup"; Description: "{cm:AutoStartProgram,{#MyAppName}}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -169,6 +201,182 @@ Type: filesandordirs; Name: "{app}"
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+const
+  AppUninstallSubKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{E5D48316-2F10-4A59-B817-5735160E21D0}_is1';
+  AppUninstallSubKeyWow64 = 'Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{E5D48316-2F10-4A59-B817-5735160E21D0}_is1';
+
+var
+  AlreadyInstalledPage: TInputOptionWizardPage;
+  UninstallCompleted: Boolean;
+
+{ ── проверка уже установленной копии ──────────────────────────────────
+  Если tsukiko уже установлена на компьютере, мастер установки сообщает
+  об этом сразу после приветствия и предлагает выбор: обновить/переустановить
+  или запустить мастер удаления. }
+
+function GetInstalledUninstallString(): string;
+var
+  UninstStr: string;
+begin
+  Result := '';
+  if RegQueryStringValue(HKEY_CURRENT_USER, AppUninstallSubKey, 'UninstallString', UninstStr) then
+    Result := UninstStr
+  else if RegQueryStringValue(HKEY_LOCAL_MACHINE, AppUninstallSubKey, 'UninstallString', UninstStr) then
+    Result := UninstStr
+  else if RegQueryStringValue(HKEY_LOCAL_MACHINE, AppUninstallSubKeyWow64, 'UninstallString', UninstStr) then
+    Result := UninstStr;
+end;
+
+function GetInstalledVersion(): string;
+var
+  VerStr: string;
+begin
+  Result := '';
+  if RegQueryStringValue(HKEY_CURRENT_USER, AppUninstallSubKey, 'DisplayVersion', VerStr) then
+    Result := VerStr
+  else if RegQueryStringValue(HKEY_LOCAL_MACHINE, AppUninstallSubKey, 'DisplayVersion', VerStr) then
+    Result := VerStr
+  else if RegQueryStringValue(HKEY_LOCAL_MACHINE, AppUninstallSubKeyWow64, 'DisplayVersion', VerStr) then
+    Result := VerStr;
+end;
+
+function GetInstalledPath(): string;
+var
+  PathStr: string;
+begin
+  Result := '';
+  if RegQueryStringValue(HKEY_CURRENT_USER, AppUninstallSubKey, 'Inno Setup: App Path', PathStr) or
+     RegQueryStringValue(HKEY_CURRENT_USER, AppUninstallSubKey, 'InstallLocation', PathStr) then
+    Result := PathStr
+  else if RegQueryStringValue(HKEY_LOCAL_MACHINE, AppUninstallSubKey, 'Inno Setup: App Path', PathStr) or
+          RegQueryStringValue(HKEY_LOCAL_MACHINE, AppUninstallSubKey, 'InstallLocation', PathStr) then
+    Result := PathStr
+  else if RegQueryStringValue(HKEY_LOCAL_MACHINE, AppUninstallSubKeyWow64, 'Inno Setup: App Path', PathStr) or
+          RegQueryStringValue(HKEY_LOCAL_MACHINE, AppUninstallSubKeyWow64, 'InstallLocation', PathStr) then
+    Result := PathStr;
+end;
+
+function IsAppAlreadyInstalled(): Boolean;
+var
+  UninstStr: string;
+  ExePath: string;
+begin
+  Result := False;
+  UninstStr := GetInstalledUninstallString();
+  if UninstStr <> '' then
+  begin
+    ExePath := RemoveQuotes(UninstStr);
+    if FileExists(ExePath) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+  ExePath := GetInstalledPath();
+  if (ExePath <> '') and FileExists(ExePath + '\{#MyAppExeName}') then
+    Result := True;
+end;
+
+procedure InitializeWizard();
+var
+  PromptText: string;
+  VerStr: string;
+  PathStr: string;
+begin
+  UninstallCompleted := False;
+
+  VerStr := GetInstalledVersion();
+  if VerStr = '' then
+    VerStr := '0.0.0';
+  PathStr := GetInstalledPath();
+
+  PromptText := ExpandConstant(FmtMessage(CustomMessage('AlreadyInstalledPrompt'), [VerStr, '{#MyAppVersion}']));
+  if PathStr <> '' then
+    PromptText := PromptText + #13#10 + ExpandConstant(FmtMessage(CustomMessage('AlreadyInstalledPath'), [PathStr]));
+
+  AlreadyInstalledPage := CreateInputOptionPage(
+    wpWelcome,
+    CustomMessage('AlreadyInstalledTitle'),
+    CustomMessage('AlreadyInstalledHeading'),
+    PromptText,
+    True,
+    False
+  );
+  AlreadyInstalledPage.Add(CustomMessage('AlreadyInstalledReinstall'));
+  AlreadyInstalledPage.Add(CustomMessage('AlreadyInstalledUninstall'));
+  AlreadyInstalledPage.SelectedValueIndex := 0;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if (AlreadyInstalledPage <> nil) and (PageID = AlreadyInstalledPage.ID) then
+  begin
+    if not IsAppAlreadyInstalled() or WizardSilent() then
+      Result := True;
+  end;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  UninstPath: string;
+  ResultCode: Integer;
+begin
+  Result := True;
+
+  if (AlreadyInstalledPage <> nil) and (CurPageID = AlreadyInstalledPage.ID) then
+  begin
+    if AlreadyInstalledPage.SelectedValueIndex = 1 then
+    begin
+      { Выбрано «Удалить» — дальше по мастеру установки не идём }
+      Result := False;
+
+      if SuppressibleMsgBox(CustomMessage('UninstallConfirm'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) <> IDYES then
+        Exit;
+
+      UninstPath := RemoveQuotes(GetInstalledUninstallString());
+      if (UninstPath = '') or not FileExists(UninstPath) then
+      begin
+        SuppressibleMsgBox(CustomMessage('UninstallNotFound'), mbError, MB_OK, IDOK);
+        Exit;
+      end;
+
+      if CheckForMutexes('TsukikoAppSingleInstanceMutex') then
+      begin
+        SuppressibleMsgBox(CustomMessage('AppStillRunning'), mbError, MB_OK, IDOK);
+        Exit;
+      end;
+
+      if Exec(UninstPath, '', ExtractFilePath(UninstPath), SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+      begin
+        if not IsAppAlreadyInstalled() then
+        begin
+          SuppressibleMsgBox(CustomMessage('UninstallSuccess'), mbInformation, MB_OK, IDOK);
+          UninstallCompleted := True;
+          WizardForm.Close;
+        end
+        else
+        begin
+          SuppressibleMsgBox(CustomMessage('UninstallIncomplete'), mbInformation, MB_OK, IDOK);
+        end;
+      end
+      else
+      begin
+        SuppressibleMsgBox(CustomMessage('UninstallFailed'), mbError, MB_OK, IDOK);
+      end;
+    end;
+  end;
+end;
+
+procedure CancelButtonClick(CurPageID: Integer; var Cancel, Confirm: Boolean);
+begin
+  if UninstallCompleted then
+  begin
+    Confirm := False;
+    Cancel := True;
+  end;
+end;
+
 { ── что спросить при удалении ───────────────────────────────────────────
   Своё — файлы программы, ярлыки, запись в автозапуске — убираем всегда
   и молча: это наш мусор. Чужое — скачанные модели и папка с расшифровками
