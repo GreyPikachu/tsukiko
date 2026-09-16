@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
@@ -8,6 +9,7 @@ import 'package:macos_ui/macos_ui.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import '../../design/design.dart';
+import '../../core/logger.dart';
 import '../../core/whisper_server.dart' show sweepRecordings;
 import 'dictation_cubit.dart';
 import 'dictation_state.dart';
@@ -17,6 +19,8 @@ import '../../core/text.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../legacy_migration.dart';
 import '../../core/labels.dart';
+import '../../core/library.dart' show revealInFinder;
+import '../../core/settings.dart';
 
 /// Панель у строки меню и вся диктовка. Живёт на отдельном движке Flutter,
 /// который работает и со спрятанной панелью, — поэтому диктовка не зависит
@@ -24,6 +28,10 @@ import '../../core/labels.dart';
 ///
 /// Состоянием владеет [DictationCubit]; здесь только то, что рисуется.
 Future<void> runPanel() async {
+  Log.info(
+    'App',
+    'runPanel started on ${os.platformId} (${Platform.operatingSystemVersion}), Tsukiko $appVersion',
+  );
   refreshLocale();
   WidgetsFlutterBinding.ensureInitialized();
   sweepRecordings();
@@ -645,6 +653,25 @@ class _Footer extends StatelessWidget {
               l10n.menuDictationSettingsEllipsis,
               () => context.read<DictationCubit>().openSettings('dictation'),
               shortcut: os.settingsShortcut,
+            ),
+            _MenuRow(
+              l10n.menuOpenRecordingsFolder,
+              () {
+                final settings = Settings.load();
+                final path =
+                    (settings['libraryPath'] as String?)?.isNotEmpty == true
+                        ? settings['libraryPath'] as String
+                        : os.defaultLibraryPath;
+                revealInFinder(path, createIfMissing: true);
+              },
+            ),
+            _MenuRow(
+              l10n.menuOpenModelsFolder,
+              () => revealInFinder(os.modelsDir, createIfMissing: true),
+            ),
+            _MenuRow(
+              l10n.openLogsFolder,
+              () => Log.openLogsFolder(),
             ),
             _MenuRow(l10n.menuOpenApp(appName),
                 context.read<DictationCubit>().openMainWindow),

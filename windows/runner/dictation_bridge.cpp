@@ -26,6 +26,8 @@
 #define WM_TRAYICON (WM_USER + 101)
 #define ID_TRAY_OPEN 1001
 #define ID_TRAY_SETTINGS 1002
+#define ID_TRAY_OPEN_RECORDINGS 1004
+#define ID_TRAY_OPEN_MODELS 1005
 #define ID_TRAY_QUIT 1003
 // Ожидание второго стука при назначении сочетания.
 #define ID_CAPTURE_TIMER 2001
@@ -561,6 +563,8 @@ void DictationBridge::RegisterHandler(
         }
       }
       result->Success();
+    } else if (method == "getHudState") {
+      result->Success(flutter::EncodableValue(current_hud_state_));
     } else if (method == "hudAction") {
       // Нажали кнопку на плавающей панели. Рисует её свой изолят, а
       // делает дело — диктовка: переправляем ей.
@@ -642,6 +646,86 @@ void DictationBridge::RemoveTrayIcon() {
   tray_installed_ = false;
 }
 
+namespace {
+
+std::wstring GetModelsDirectoryPath() {
+  wchar_t* appdata = nullptr;
+  size_t len = 0;
+  std::wstring path;
+  if (_wdupenv_s(&appdata, &len, L"APPDATA") == 0 && appdata) {
+    path = std::wstring(appdata) + L"\\app.yuko.tsukiko\\models";
+    free(appdata);
+  }
+  return path;
+}
+
+std::wstring GetRecordingsDirectoryPath() {
+  wchar_t* appdata = nullptr;
+  size_t len = 0;
+  if (_wdupenv_s(&appdata, &len, L"APPDATA") == 0 && appdata) {
+    std::wstring settings_path =
+        std::wstring(appdata) + L"\\app.yuko.tsukiko\\settings.json";
+    free(appdata);
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, settings_path.c_str(), L"rb") == 0 && f) {
+      fseek(f, 0, SEEK_END);
+      long size = ftell(f);
+      fseek(f, 0, SEEK_SET);
+      if (size > 0 && size < 1024 * 1024) {
+        std::string content(size, '\0');
+        fread(&content[0], 1, size, f);
+        fclose(f);
+        auto pos = content.find("\"libraryPath\"");
+        if (pos != std::string::npos) {
+          auto colon = content.find(':', pos);
+          if (colon != std::string::npos) {
+            auto q1 = content.find('"', colon);
+            if (q1 != std::string::npos) {
+              auto q2 = content.find('"', q1 + 1);
+              if (q2 != std::string::npos) {
+                std::string path_str = content.substr(q1 + 1, q2 - q1 - 1);
+                std::string unescaped;
+                for (size_t i = 0; i < path_str.size(); ++i) {
+                  if (path_str[i] == '\\' && i + 1 < path_str.size() &&
+                      path_str[i + 1] == '\\') {
+                    unescaped += '\\';
+                    ++i;
+                  } else {
+                    unescaped += path_str[i];
+                  }
+                }
+                if (!unescaped.empty()) {
+                  int wlen = MultiByteToWideChar(CP_UTF8, 0, unescaped.c_str(),
+                                                 -1, nullptr, 0);
+                  if (wlen > 0) {
+                    std::wstring wpath(wlen - 1, L'\0');
+                    MultiByteToWideChar(CP_UTF8, 0, unescaped.c_str(), -1,
+                                       &wpath[0], wlen);
+                    return wpath;
+                  }
+                }
+              }
+            }
+          }
+        }
+      } else {
+        fclose(f);
+      }
+    }
+  }
+
+  wchar_t* userprofile = nullptr;
+  size_t ulen = 0;
+  if (_wdupenv_s(&userprofile, &ulen, L"USERPROFILE") == 0 && userprofile) {
+    std::wstring path = std::wstring(userprofile) + L"\\Documents\\tsukiko";
+    free(userprofile);
+    return path;
+  }
+  return L"";
+}
+
+}  // namespace
+
 void DictationBridge::ShowContextMenu() {
   POINT pt;
   GetCursorPos(&pt);
@@ -649,7 +733,10 @@ void DictationBridge::ShowContextMenu() {
   InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_OPEN, L"Открыть tsukiko");
   InsertMenuW(hMenu, 1, MF_BYPOSITION | MF_STRING, ID_TRAY_SETTINGS, L"Настройки…");
   InsertMenuW(hMenu, 2, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
-  InsertMenuW(hMenu, 3, MF_BYPOSITION | MF_STRING, ID_TRAY_QUIT, L"Выход");
+  InsertMenuW(hMenu, 3, MF_BYPOSITION | MF_STRING, ID_TRAY_OPEN_RECORDINGS, L"Открыть папку записей");
+  InsertMenuW(hMenu, 4, MF_BYPOSITION | MF_STRING, ID_TRAY_OPEN_MODELS, L"Открыть папку моделей");
+  InsertMenuW(hMenu, 5, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
+  InsertMenuW(hMenu, 6, MF_BYPOSITION | MF_STRING, ID_TRAY_QUIT, L"Выход");
 
   SetForegroundWindow(main_window_);
   int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, main_window_, nullptr);
@@ -659,6 +746,18 @@ void DictationBridge::ShowContextMenu() {
     ShowMainWindow();
   } else if (cmd == ID_TRAY_SETTINGS) {
     ShowSettings("dictation");
+  } else if (cmd == ID_TRAY_OPEN_RECORDINGS) {
+    std::wstring path = GetRecordingsDirectoryPath();
+    if (!path.empty()) {
+      SHCreateDirectoryExW(nullptr, path.c_str(), nullptr);
+      ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOW);
+    }
+  } else if (cmd == ID_TRAY_OPEN_MODELS) {
+    std::wstring path = GetModelsDirectoryPath();
+    if (!path.empty()) {
+      SHCreateDirectoryExW(nullptr, path.c_str(), nullptr);
+      ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOW);
+    }
   } else if (cmd == ID_TRAY_QUIT) {
     PostQuitMessage(0);
   }
@@ -1079,10 +1178,16 @@ void DictationBridge::PrewarmHud() {
             messenger, "tsukiko/dictation",
             &flutter::StandardMethodCodec::GetInstance());
     RegisterHandler(hud_channel_.get());
+    if (current_hud_state_ != "hidden") {
+      hud_channel_->InvokeMethod(
+          "hudState",
+          std::make_unique<flutter::EncodableValue>(current_hud_state_));
+    }
   });
 }
 
 void DictationBridge::SetHudState(const std::string& state) {
+  current_hud_state_ = state;
   if (state == "hidden") {
     if (hud_) hud_->Hide();
     return;
@@ -1095,6 +1200,11 @@ void DictationBridge::SetHudState(const std::string& state) {
             messenger, "tsukiko/dictation",
             &flutter::StandardMethodCodec::GetInstance());
     RegisterHandler(hud_channel_.get());
+    if (current_hud_state_ != "hidden") {
+      hud_channel_->InvokeMethod(
+          "hudState",
+          std::make_unique<flutter::EncodableValue>(current_hud_state_));
+    }
   });
   if (hud_channel_) {
     hud_channel_->InvokeMethod(

@@ -5,6 +5,7 @@ import 'dart:typed_data' show BytesBuilder;
 
 import '../core/app_locale.dart';
 import '../core/library.dart';
+import '../core/logger.dart';
 import '../core/recognition.dart';
 import '../core/transcript.dart';
 import '../core/whisper.dart';
@@ -336,12 +337,12 @@ List<String> nemoServerArgs(RunOptions o, int port) => [
       '--max-upload-mb',
       '4096',
       '--no-ui',
+      '--no-warmup',
       // У Tsukiko один поток диктовки. NeMo-сервер по умолчанию готовит
       // пакетные GPU-графы для 16 одновременных потоков; на RX 570 такая
       // подготовка может занять больше времени, чем загрузка самой модели.
       // Отключение batching заодно убирает ненужное ожидание его очереди.
-      '--asr.batching.enabled',
-      'false',
+      '--asr.batching.enabled=false',
       // Безопасное неиспользуемое значение, которое остаётся в командной
       // строке и позволяет отличить наш nemo-speech от чужого.
       '--cors-origin',
@@ -363,6 +364,9 @@ class WhisperServer {
   Timer? _idle;
   DateTime? _deadline;
   Future<void>? _starting;
+  String _lastEngineError = '';
+  String get lastEngineError => _lastEngineError;
+  final List<String> _startupLog = [];
 
   /// Незакрытые аренды. Сервер поднимается в начале записи, а работы у него
   /// до конца фразы никакой — таймер простоя успевал догореть и выгружал
@@ -429,6 +433,8 @@ class WhisperServer {
         : findNemoSpeech();
     if (exe == null || o.model.isEmpty) return;
 
+    _lastEngineError = '';
+    _startupLog.clear();
     _port = await freePort();
     _model = o.model;
     _startedExe = exe;
@@ -437,6 +443,10 @@ class WhisperServer {
         ? dictationExeName
         : nemoSpeechExeName;
     _engine = engine;
+    Log.info(
+      'Engine',
+      'Starting server: engine=${engineTechnicalName(engine)}, model=${o.model}, port=$_port, exe=$exe',
+    );
     final Process proc;
     try {
       proc = await Process.start(
@@ -445,19 +455,53 @@ class WhisperServer {
             ? serverArgs(o, _port)
             : nemoServerArgs(o, _port),
       );
-    } catch (_) {
+    } catch (e, st) {
+      _lastEngineError = '$e';
+      Log.error('Engine', 'Failed to launch server ($exe)', e, st);
+      stderr.writeln('tsukiko: не удалось запустить сервер диктовки ($exe) — $e');
       // waitReady увидит пустой процесс и попробует следующую сборку.
       return;
     }
     _proc = proc;
-    // Вывод сервера никому не нужен, но не читать его нельзя: труба
-    // заполнится, и процесс встанет.
-    proc.stdout.drain<void>();
-    proc.stderr.drain<void>();
-    proc.exitCode.then((_) {
+    Log.info('Engine', 'Server process launched: PID=${proc.pid}');
+    // Сохраняем начальный вывод сервера: если процесс завершится со сбоем
+    // на старте или во время waitReady, в диагностических логах и
+    // _lastEngineError останется причина ошибки.
+    void onStartupLine(String line) {
+      final trimmed = line.trim();
+      if (trimmed.isNotEmpty && _startupLog.length < 50) {
+        _startupLog.add(trimmed);
+      }
+    }
+
+    proc.stderr
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .transform(const LineSplitter())
+        .listen(onStartupLine, onError: (_) {});
+    proc.stdout
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .transform(const LineSplitter())
+        .listen(onStartupLine, onError: (_) {});
+    proc.exitCode.then((code) {
       if (identical(_proc, proc)) {
         _proc = null;
         _deadline = null;
+        if (_startupLog.isNotEmpty) {
+          _lastEngineError = _startupLog.join('\n');
+        }
+        if (code != 0) {
+          Log.error(
+            'Engine',
+            'Server process ($exe) exited with code $code'
+            '${_lastEngineError.isNotEmpty ? ': $_lastEngineError' : ''}',
+          );
+          stderr.writeln(
+            'tsukiko: сервер диктовки ($exe) завершился с кодом $code'
+            '${_lastEngineError.isNotEmpty ? ':\n$_lastEngineError' : ''}',
+          );
+        } else {
+          Log.info('Engine', 'Server process ($exe) exited cleanly with code 0');
+        }
         onChanged?.call();
       }
     });
@@ -481,6 +525,7 @@ class WhisperServer {
   /// проверено: 0,75 с на прогретом кеше, до 2 с на холодном. Поэтому
   /// «порт отвечает» и есть «модель готова».
   Future<bool> waitReady({Duration timeout = const Duration(seconds: 30)}) async {
+    final sw = Stopwatch()..start();
     final until = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(until)) {
       // Процесс умер, не открыв порта. На Windows это чаще всего значит,
@@ -492,6 +537,18 @@ class WhisperServer {
         final engineName = _startedEngineName;
         final options = _startedWith;
         _startedExe = null;
+        if (_lastEngineError.isEmpty && _startupLog.isNotEmpty) {
+          _lastEngineError = _startupLog.join('\n');
+          if (dead != null) {
+            stderr.writeln(
+              'tsukiko: сервер диктовки ($dead) завершился до открытия порта:\n$_lastEngineError',
+            );
+          }
+        }
+        Log.warn(
+          'Engine',
+          'Server process died before port opened (elapsed: ${sw.elapsedMilliseconds} ms)',
+        );
         if (dead == null ||
             engineName == null ||
             options == null ||
@@ -505,11 +562,25 @@ class WhisperServer {
         final s = await Socket.connect(InternetAddress.loopbackIPv4, _port,
             timeout: const Duration(milliseconds: 300));
         s.destroy();
+        Log.info(
+          'Engine',
+          'Server ready on port $_port with PID ${_proc?.pid} (took ${sw.elapsedMilliseconds} ms)',
+        );
         return true;
       } catch (_) {
         await Future<void>.delayed(const Duration(milliseconds: 40));
       }
     }
+    if (_proc != null && _startupLog.isNotEmpty) {
+      _lastEngineError = _startupLog.join('\n');
+      stderr.writeln(
+        'tsukiko: сервер диктовки не ответил за ${timeout.inSeconds} с:\n$_lastEngineError',
+      );
+    }
+    Log.warn(
+      'Engine',
+      'Server did not respond within ${timeout.inSeconds} s (PID ${_proc?.pid}, port $_port)',
+    );
     return false;
   }
 
@@ -545,6 +616,10 @@ class WhisperServer {
         '--$boundary\r\nContent-Disposition: form-data; name="$name"\r\n\r\n$value\r\n'));
     field('response_format', 'json');
     final engine = _engine ?? RecognitionEngine.whisperCpp;
+    Log.info(
+      'Engine',
+      'Inference request: wav=$wav, lang=$lang, engine=${engineTechnicalName(engine)}',
+    );
     if (engine == RecognitionEngine.whisperCpp || lang != 'auto') {
       field('language', lang);
     }
@@ -565,11 +640,13 @@ class WhisperServer {
     final int audioLength;
     try {
       audioLength = await file.length();
-    } catch (_) {
+    } catch (e) {
+      Log.error('Engine', 'Failed to read audio file length ($wav)', e);
       return null;
     }
 
     final client = HttpClient();
+    final sw = Stopwatch()..start();
     try {
       final path = engine == RecognitionEngine.whisperCpp
           ? '/inference'
@@ -584,10 +661,23 @@ class WhisperServer {
       req.add(tailBytes);
       final res = await req.close();
       final text = await res.transform(utf8.decoder).join();
-      if (res.statusCode != 200) return null;
+      final durationMs = sw.elapsedMilliseconds;
+      if (res.statusCode != 200) {
+        Log.error(
+          'Engine',
+          'Inference failed with HTTP ${res.statusCode} in ${durationMs}ms',
+        );
+        return null;
+      }
       final data = jsonDecode(text);
-      return tidyDictated((data is Map ? data['text'] : null)?.toString() ?? '');
-    } catch (_) {
+      final result = tidyDictated((data is Map ? data['text'] : null)?.toString() ?? '');
+      Log.info(
+        'Engine',
+        'Inference completed in ${durationMs}ms (length: ${result.length} chars)',
+      );
+      return result;
+    } catch (e, st) {
+      Log.error('Engine', 'Inference failed after ${sw.elapsedMilliseconds}ms', e, st);
       return null;
     } finally {
       client.close(force: true);
@@ -613,7 +703,10 @@ class WhisperServer {
     _deadline = null;
     if (_proc == null || _holds > 0) return;
     _deadline = DateTime.now().add(idleTimeout);
-    _idle = Timer(idleTimeout, () => unawaited(shutdown()));
+    _idle = Timer(idleTimeout, () {
+      Log.info('Engine', 'Idle unload timer expired (${idleTimeout.inSeconds}s), shutting down server');
+      unawaited(shutdown());
+    });
   }
 
   /// Выгрузить модель. `p.kill()` здесь недостаточно: он шлёт SIGTERM,
@@ -636,9 +729,12 @@ class WhisperServer {
     _startedEngineName = null;
     _startedWith = null;
     _engine = null;
+    _startupLog.clear();
     if (p == null) return;
+    Log.info('Engine', 'Server shutdown requested (PID ${p.pid})');
     onChanged?.call();
     if (await killForSure(p.pid)) {
+      Log.info('Engine', 'Server PID ${p.pid} terminated');
       try {
         _pidFile.deleteSync();
       } catch (_) {}

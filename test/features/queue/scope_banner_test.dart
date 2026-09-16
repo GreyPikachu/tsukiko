@@ -10,11 +10,17 @@ void main() {
     tester,
   ) async {
     var opened = false;
+    var openedRecordings = false;
+    var openedModels = false;
     await tester.pumpWidget(
       MacosApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: InspectorHeader(onOpenSettings: () => opened = true),
+        home: InspectorHeader(
+          onOpenSettings: () => opened = true,
+          onOpenRecordings: () => openedRecordings = true,
+          onOpenModels: () => openedModels = true,
+        ),
       ),
     );
 
@@ -22,11 +28,24 @@ void main() {
       (widget) => widget is MacosIcon && widget.icon == CupertinoIcons.gear,
     );
     expect(gear, findsOneWidget);
+    final folder = find.byWidgetPredicate(
+      (widget) => widget is MacosIcon && widget.icon == CupertinoIcons.folder,
+    );
+    expect(folder, findsOneWidget);
+    final box = find.byWidgetPredicate(
+      (widget) => widget is MacosIcon && widget.icon == CupertinoIcons.cube_box,
+    );
+    expect(box, findsOneWidget);
+
     final icon = tester.widget<MacosIcon>(gear);
     final context = tester.element(gear);
     expect(icon.color, Surface.toolbarIcon(context, enabled: true));
     expect(icon.color, isNot(MacosColors.systemBlueColor));
     await tester.tap(gear);
     expect(opened, isTrue);
+    await tester.tap(folder);
+    expect(openedRecordings, isTrue);
+    await tester.tap(box);
+    expect(openedModels, isTrue);
   });
 }

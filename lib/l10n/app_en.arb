@@ -586,5 +586,11 @@
         "type": "String"
       }
     }
-  }
+  },
+  "menuOpenRecordingsFolder": "Open Recordings Folder",
+  "menuOpenModelsFolder": "Open Models Folder",
+  "tooltipOpenRecordingsFolder": "Recordings Folder",
+  "tooltipOpenModelsFolder": "Models Folder",
+  "openLogsFolder": "Logs Folder",
+  "tooltipOpenLogsFolder": "Open logs folder"
 }

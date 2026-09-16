@@ -176,7 +176,7 @@ void main() {
       ],
     });
     final transcript = parseNemoJson(json);
-    expect(transcript.lang, 'ru-RU');
+    expect(transcript.lang, 'ru');
     expect(transcript.segments, hasLength(2));
     expect(transcript.segments.first.text, 'Первое предложение.');
     expect(transcript.segments.first.from, 100);
@@ -196,6 +196,67 @@ void main() {
     expect(transcript.lang, 'ru');
     expect(transcript.segments.single.text, 'Короткая фраза');
     expect(transcript.segments.single.to, 1250);
+  });
+
+  test('разбор json от NeMo определяет язык по тексту при ? или auto или unknown', () {
+    final ruTranscript = parseNemoJson(jsonEncode({
+      'text': 'Проверка кириллицы',
+      'language': '?',
+      'words': [],
+    }));
+    expect(ruTranscript.lang, 'ru');
+
+    final ruFromWords = parseNemoJson(jsonEncode({
+      'text': '',
+      'language': '?',
+      'words': [
+        {'word': 'Привет', 'start': 0, 'end': 500},
+        {'word': 'мир', 'start': 500, 'end': 1000},
+      ],
+    }));
+    expect(ruFromWords.lang, 'ru');
+
+    final ruUnknown = parseNemoJson(jsonEncode({
+      'text': 'Распознанный текст на русском',
+      'language': 'unknown',
+      'words': [],
+    }));
+    expect(ruUnknown.lang, 'ru');
+
+    final ruNormalized = parseNemoJson(jsonEncode({
+      'text': 'Текст',
+      'language': 'ru-RU',
+      'words': [],
+    }));
+    expect(ruNormalized.lang, 'ru');
+
+    final ruFromLanguagesList = parseNemoJson(jsonEncode({
+      'text': 'Текст',
+      'languages': ['ru-ru'],
+      'words': [],
+    }));
+    expect(ruFromLanguagesList.lang, 'ru');
+
+    final enTranscript = parseNemoJson(jsonEncode({
+      'text': 'Hello world testing english',
+      'language': 'auto',
+      'words': [],
+    }));
+    expect(enTranscript.lang, 'en');
+
+    final enUnknown = parseNemoJson(jsonEncode({
+      'text': 'Some english words spoken',
+      'language': 'unknown',
+      'words': [],
+    }));
+    expect(enUnknown.lang, 'en');
+
+    final noLetters = parseNemoJson(jsonEncode({
+      'text': '123 456 ... !!!',
+      'language': '?',
+      'words': [],
+    }));
+    expect(noLetters.lang, '?');
   });
 
   test('форматы экспорта различимы и не зависят от настроек вида', () {
@@ -445,6 +506,35 @@ void main() {
     expect(languageName('be'), 'Беларуская');
     expect(languageName('auto'), 'Определять автоматически');
     // неизвестный код не должен ронять интерфейс
+    expect(languageName('xx'), 'XX');
+  });
+
+  test('коды языков нормализуются', () {
+    expect(normalizeLanguageCode('ru-ru'), 'ru');
+    expect(normalizeLanguageCode('ru-RU'), 'ru');
+    expect(normalizeLanguageCode('ru_RU'), 'ru');
+    expect(normalizeLanguageCode('RU-RU'), 'ru');
+    expect(normalizeLanguageCode('  ru-ru  '), 'ru');
+    expect(normalizeLanguageCode('en-US'), 'en');
+    expect(normalizeLanguageCode('en_gb'), 'en');
+    expect(normalizeLanguageCode('de-DE'), 'de');
+    expect(normalizeLanguageCode('ja-JP'), 'ja');
+    expect(normalizeLanguageCode('auto'), 'auto');
+    expect(normalizeLanguageCode('AUTO'), 'auto');
+    expect(normalizeLanguageCode(''), 'auto');
+    expect(normalizeLanguageCode('   '), 'auto');
+    expect(normalizeLanguageCode('unknown'), 'unknown');
+    expect(normalizeLanguageCode('xyz-ABC'), 'xyz');
+
+    expect(languageName('ru'), 'Русский');
+    expect(languageName('ru-ru'), 'Русский');
+    expect(languageName('ru-RU'), 'Русский');
+    expect(languageName('ru_RU'), 'Русский');
+    expect(languageName('RU-RU'), 'Русский');
+    expect(languageName('en'), 'English');
+    expect(languageName('en-US'), 'English');
+    expect(languageName('en_gb'), 'English');
+    expect(languageName('unknown'), 'UNKNOWN');
     expect(languageName('xx'), 'XX');
   });
 

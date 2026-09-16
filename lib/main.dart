@@ -5,6 +5,7 @@ import 'package:macos_ui/macos_ui.dart';
 // ignore: implementation_imports
 import 'package:macos_ui/src/layout/wallpaper_tinting_settings/global_wallpaper_tinting_settings.dart';
 import 'core/app_locale.dart';
+import 'core/logger.dart';
 import 'l10n/gen/app_localizations.dart';
 import 'legacy_migration.dart';
 import 'features/dictation/hud_page.dart' show runHud;
@@ -17,24 +18,38 @@ import 'platform/os.dart';
 /// меню и ведёт диктовку. Она обязана лежать именно здесь: FlutterEngine
 /// на macOS ищет точку входа только в корневой библиотеке приложения.
 @pragma('vm:entry-point')
-void panelMain() => runPanel();
+void panelMain() {
+  Log.info('App', 'Starting entrypoint: panelMain');
+  runPanel();
+}
 
 /// Точка входа третьего движка — окна настроек. Оно открывается по ⌘,
 /// и из поповера, а в режиме без значка в Dock только из поповера:
 /// строки меню там нет вовсе.
 @pragma('vm:entry-point')
-void settingsMain() => runSettings();
+void settingsMain() {
+  Log.info('App', 'Starting entrypoint: settingsMain');
+  runSettings();
+}
 
 /// Точка входа движка плавающей панели записи. Только Windows: на macOS
 /// эта панель написана на SwiftUI и остаётся там — почему, разобрано
 /// в `docs/задача-панель-записи.md`.
 @pragma('vm:entry-point')
-void hudMain() => runHud();
+void hudMain() {
+  Log.info('App', 'Starting entrypoint: hudMain');
+  runHud();
+}
 
 /// Второй копии здесь не бывает: её ловит и завершает сторона macOS ещё
 /// до запуска движка (AppDelegate.applicationWillFinishLaunching), подняв
 /// окно уже работающей. Проверять это в Dart больше нечем и незачем.
 Future<void> main(List<String> args) async {
+  Log.info(
+    'App',
+    'Starting Tsukiko $appVersion (${os.platformId}, ${Platform.operatingSystemVersion}), '
+    'entrypoint: main, args: $args',
+  );
   refreshLocale();
   WidgetsFlutterBinding.ensureInitialized();
   // Настоящий материал окна: содержимое во всю высоту, титульная полоса

@@ -341,6 +341,15 @@ LRESULT CALLBACK HudWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
   // Ни щелчком, ни клавишей фокус этой панели не достаётся: она нужна
   // поверх чужого окна, в которое сейчас диктуют.
   if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+  if (message == WM_ERASEBKGND) {
+    HDC hdc = reinterpret_cast<HDC>(wparam);
+    RECT rect;
+    GetClientRect(hwnd, &rect);
+    HBRUSH brush = CreateSolidBrush(RGB(32, 32, 32));
+    FillRect(hdc, &rect, brush);
+    DeleteObject(brush);
+    return 1;
+  }
   if (self && self->controller_) {
     std::optional<LRESULT> result =
         self->controller_->HandleTopLevelWindowProc(hwnd, message, wparam,

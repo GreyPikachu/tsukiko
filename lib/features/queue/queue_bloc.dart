@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data' show BytesBuilder;
 
 import 'package:bloc/bloc.dart';
 import 'package:bloc_concurrency/bloc_concurrency.dart';
@@ -9,6 +10,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../core/app_locale.dart';
 import '../../core/library.dart';
+import '../../core/logger.dart';
 import '../../core/models.dart';
 import '../../core/recognition.dart';
 import '../../core/settings.dart';
@@ -359,6 +361,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
           continue;
         }
         last = Job(File(p));
+        Log.info('Queue', 'Job queued: $p');
         next = next.copyWith(
           jobs: [...next.jobs, last!],
           recent: _remember(next.recent, p),
@@ -812,6 +815,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     it = _find(it) ?? it;
 
     it = it.copyWith(state: JobState.converting, startedAt: DateTime.now());
+    Log.info('Queue', 'Converting audio: ${it.path}');
     emit(
       _replace(
         state,
@@ -897,6 +901,11 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         final args = engine == RecognitionEngine.whisperCpp
             ? buildArgs(opts, wav, base, from: it.resumeFrom)
             : buildNemoArgs(opts, wav, jsonFile.path);
+        Log.info(
+          'Queue',
+          'Transcribing started: engine=${engineTechnicalName(engine)}, '
+          'model=${opts.model}, threads=${opts.threads}, args=${args.join(" ")}',
+        );
         code = await _runRecognizer(it, engine, args);
         it = _find(it) ?? it;
         if (!_pausing || _stopRequested) break;
@@ -917,6 +926,11 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         return false;
       }
       if (code != 0 || !jsonFile.existsSync()) {
+        Log.error(
+          'Queue',
+          'Job failed: ${it.name}, exitCode=$code'
+          '${_engineErrorText.isNotEmpty ? ', error: $_engineErrorText' : ''}',
+        );
         // Со словами движка, а не без них: «не справился с этим файлом»
         // не говорит человеку ничего, а строка от whisper — «failed to
         // load model», «unsupported sample rate» — говорит всё.
@@ -962,6 +976,14 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
           : (path: null, problem: null);
       final placed = state.toLibrary ? await _fileToLibrary(it, t) : null;
 
+      final took = it.startedAt == null
+          ? null
+          : DateTime.now().difference(it.startedAt!);
+      Log.info(
+        'Queue',
+        'Job completed: ${it.name}, duration: ${took?.inMilliseconds}ms, '
+        'language: ${t.lang}, segments: ${t.segments.length}',
+      );
       emit(
         _replace(
           state,
@@ -971,9 +993,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
             progress: 1,
             state: JobState.done,
             besideSource: beside.path,
-            took: it.startedAt == null
-                ? null
-                : DateTime.now().difference(it.startedAt!),
+            took: took,
             detail: currentL10n().jobDetailLangSegments(
               languageName(t.lang),
               segmentsLabel(t.segments.length),
@@ -982,8 +1002,9 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         ).copyWith(status: beside.problem ?? placed ?? state.status),
       );
       return true;
-    } catch (err) {
+    } catch (err, st) {
       // Битый JSON от whisper, файл исчез из-под рук, кончилось место.
+      Log.error('Queue', 'Job failed with exception: ${it.name}', err, st);
       stderr.writeln('tsukiko: «${it.name}» не распозналась — $err');
       emit(
         _replace(
@@ -1221,6 +1242,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     // за безымянным whisper-cli, и чей он — не понять.
     final proc = await Process.start(runnableEngine(exe, processName)!, args);
     _proc = proc;
+    Log.info('Queue', 'Recognizer process launched: PID=${proc.pid} ($processName)');
     // Номер на диск: обычное «Завершить» до Dart не доходит, и погасить
     // движок вместе с приложением может только родная сторона — а найти
     // его она может лишь по этой записи.
@@ -1243,24 +1265,21 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         asking = false;
       }
     });
-    // systemEncoding, а не UTF-8: движок — программа на C, и в трубу она
-    // пишет байтами однобайтовой кодировки системы, а не UTF-8. Разбор
-    // как UTF-8 (пусть и с allowMalformed) превращал каждую такую букву
-    // в знак-заглушку — ровно поэтому путь к модели в присланной хозяином
-    // ошибке выглядел как «C:\Users\?????\…» и понять, что дело в пути,
-    // было нельзя. На macOS systemEncoding — это тот же UTF-8, так что
-    // разницы систем здесь не появилось.
-    final decoder = systemEncoding.decoder;
+    // whisper-cli и nemo-speech всегда отдают распознанный текст в stdout
+    // в UTF-8. На русской Windows systemEncoding (CP1251) превращал этот
+    // текст в «РџСЂРёРІРµС‚». При этом ошибки CRT могут приходить в stderr
+    // в CP1251. [resilientLineDecoder] декодирует UTF-8, а при невалидных
+    // байтах откатывается к systemEncoding.
     final out = proc.stdout
-        .transform(decoder)
-        .transform(const LineSplitter())
+        .transform(resilientLineDecoder())
         .listen(onLine);
     final err = proc.stderr
-        .transform(decoder)
-        .transform(const LineSplitter())
+        .transform(resilientLineDecoder())
         .listen(onLine);
     try {
-      return await proc.exitCode;
+      final exitCode = await proc.exitCode;
+      Log.info('Queue', 'Recognizer process PID=${proc.pid} exited with code $exitCode');
+      return exitCode;
     } finally {
       watch.cancel();
       await out.cancel();
@@ -1279,9 +1298,11 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       );
     }
     if (e.progress != null) {
+      Log.debug('Queue', 'Progress for ${job.name}: ${(e.progress! * 100).toStringAsFixed(1)}%');
       return emit(_replace(state, job, job.copyWith(progress: e.progress)));
     }
     if (e.language != null) {
+      Log.info('Queue', 'Detected language for ${job.name}: ${e.language}');
       emit(
         state.copyWith(status: '${job.name} · ${languageName(e.language!)}'),
       );
@@ -1812,5 +1833,72 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     _releaseTemp();
     unawaited(_persistNow());
     return super.close();
+  }
+}
+
+/// Построчный декодер с защитой от mojibake на Windows.
+///
+/// whisper-cli и nemo-speech всегда пишут текстовые сегменты распознавания
+/// в stdout в кодировке UTF-8 независимо от региональных настроек Windows.
+/// Если на русской Windows декодировать этот вывод системной кодировкой (CP1251),
+/// двухбайтовая кириллица UTF-8 превращается в нечитаемый «РџСЂРёРІРµС‚».
+///
+/// В то же время сообщения об ошибках от CRT (например, при сбое запуска
+/// с кириллическими путями C:\Users\...) могут попадать в stderr в системной
+/// кодировке (Windows-1251).
+///
+/// Этот трансформер разбивает поток байтов на строки по \n или \r и декодирует
+/// каждую строку как UTF-8. Если байты строки не являются валидным UTF-8,
+/// выполняется откат к systemEncoding, а при редких сбоях — к UTF-8 с
+/// заменой повреждённых байтов.
+@visibleForTesting
+StreamTransformer<T, String> resilientLineDecoder<T extends List<int>>() {
+  final buffer = BytesBuilder(copy: false);
+  var crLast = false;
+
+  void emitLine(EventSink<String> sink) {
+    final bytes = buffer.takeBytes();
+    sink.add(_decodeResilientBytes(bytes));
+  }
+
+  return StreamTransformer<T, String>.fromHandlers(
+    handleData: (T chunk, EventSink<String> sink) {
+      for (var i = 0; i < chunk.length; i++) {
+        final b = chunk[i];
+        if (crLast) {
+          crLast = false;
+          if (b == 10) {
+            continue;
+          }
+        }
+        if (b == 10) {
+          emitLine(sink);
+        } else if (b == 13) {
+          crLast = true;
+          emitLine(sink);
+        } else {
+          buffer.addByte(b);
+        }
+      }
+    },
+    handleDone: (EventSink<String> sink) {
+      if (buffer.isNotEmpty || crLast) {
+        emitLine(sink);
+      }
+      sink.close();
+    },
+  );
+}
+
+String _decodeResilientBytes(List<int> bytes) {
+  if (bytes.isEmpty) return '';
+  try {
+    return utf8.decode(bytes);
+  } on FormatException {
+    try {
+      return systemEncoding.decode(bytes);
+    } catch (_) {
+      return utf8.decode(bytes, allowMalformed: true);
+    }
   }
 }
