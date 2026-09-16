@@ -296,4 +296,17 @@ class NativeBridge {
 
   /// Окно настроек уже открыто, и попросили другую вкладку.
   Stream<String> get settingsTab => _tab.stream;
+
+  MethodChannel get channel => _channel;
+
+  /// Спросить текущее состояние плавающей панели записи.
+  /// Нужно на старте hudMain, чтобы не пропустить начальное состояние.
+  Future<HudState?> currentHudState() async {
+    final state = await _channel.invokeMethod<String>('getHudState');
+    if (state == null) return null;
+    return HudState.values.firstWhere(
+      (s) => s.name == state,
+      orElse: () => HudState.hidden,
+    );
+  }
 }

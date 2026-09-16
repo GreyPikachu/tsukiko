@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
 
 import '../../core/app_locale.dart';
+import '../../core/logger.dart';
 import '../../design/design.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../platform/bridge.dart';
+import '../../platform/os.dart';
 
 /// Плавающая панель записи — та, что приходит сама, пока человек диктует.
 ///
@@ -22,6 +25,10 @@ import '../../platform/bridge.dart';
 /// когда модель занимает полтора гигабайта. Здесь это оправдано: своей
 /// панели на Windows не было вовсе.
 Future<void> runHud() async {
+  Log.info(
+    'App',
+    'runHud started on ${os.platformId} (${Platform.operatingSystemVersion}), Tsukiko $appVersion',
+  );
   refreshLocale();
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const HudApp());
@@ -73,6 +80,18 @@ class _HudViewState extends State<HudView> {
   void initState() {
     super.initState();
     _states = _bridge.hudStates.listen(_onState);
+    _queryInitialState();
+  }
+
+  Future<void> _queryInitialState() async {
+    try {
+      final state = await _bridge.currentHudState();
+      if (state != null && mounted) {
+        _onState(state);
+      }
+    } catch (_) {
+      // Игнорируем ошибку опроса начального состояния
+    }
   }
 
   @override

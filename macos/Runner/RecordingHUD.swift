@@ -320,14 +320,7 @@ final class RecordingHUD {
       styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
       backing: .buffered, defer: false)
     panel.isFloatingPanel = true
-    // Не .floating. Чужое полноэкранное окно живёт в своём пространстве,
-    // и `canJoinAllSpaces` пускает нас туда, но по уровню плавающая панель
-    // оказывается вровень с ним — кто выше, решает случай. Отсюда и брался
-    // самый частый вид пропажи: под полноэкранным окном панели нет,
-    // а свайп на рабочий стол её показывает. Уровень заставки выше любого
-    // обычного окна, и панель видно всегда. Фокус она при этом всё равно
-    // не забирает — canBecomeKey у неё false.
-    panel.level = .screenSaver
+    panel.level = .statusBar
     panel.hidesOnDeactivate = false
     panel.isOpaque = false
     panel.backgroundColor = .clear
@@ -338,7 +331,7 @@ final class RecordingHUD {
     // Панель принадлежит не окну, а моменту: она нужна на любом рабочем
     // столе, в том числе поверх чужого полноэкранного окна.
     panel.collectionBehavior = [
-      .canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary,
+      .canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle,
     ]
 
     let effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
@@ -368,10 +361,9 @@ final class RecordingHUD {
   /// на соседний, то есть «не появлялась» и там, где на неё смотрят.
   private var restingOrigin: NSPoint {
     let mouse = NSEvent.mouseLocation
-    let screen =
-      (NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main)?.visibleFrame
-      ?? .zero
-    return NSPoint(x: screen.midX - size.width / 2, y: screen.minY + 92)
+    let screen = (NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens.first)
+    let work = screen.map { $0.visibleFrame.height > 0 ? $0.visibleFrame : $0.frame } ?? .zero
+    return NSPoint(x: work.midX - size.width / 2, y: work.minY + 92)
   }
 
   private var reduceMotion: Bool {
@@ -382,6 +374,8 @@ final class RecordingHUD {
     let panel = build()
     hideAfterDone?.invalidate()
     hideAfterDone = nil
+    ticker?.invalidate()
+    ticker = nil
     showNumber += 1
     model.state = .recording
     model.levels = Array(repeating: 0, count: model.levels.count)
@@ -400,6 +394,9 @@ final class RecordingHUD {
       panel.setFrameOrigin(
         NSPoint(x: rest.x, y: reduceMotion ? rest.y : rest.y - 18))
       panel.alphaValue = 0
+    } else {
+      panel.setFrameOrigin(rest)
+      panel.alphaValue = 1
     }
     panel.orderFrontRegardless()
     NSAnimationContext.runAnimationGroup { context in
@@ -410,7 +407,6 @@ final class RecordingHUD {
       panel.animator().setFrameOrigin(rest)
     }
 
-    ticker?.invalidate()
     let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
       guard let self else { return }
       self.model.push(level: self.levelSource())

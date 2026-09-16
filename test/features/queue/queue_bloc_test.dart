@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -621,7 +622,8 @@ void main() {
 
       final bloc = make();
       bloc.add(SourceOpened(audio, transcript));
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
 
       final job = bloc.state.jobs.single;
       expect(job.path, audio, reason: 'в очереди сама запись, а не текст');
@@ -673,6 +675,50 @@ void main() {
         );
       },
     );
+  });
+
+  group('resilientLineDecoder', () {
+    test('декодирует строки UTF-8 с кириллицей и английским текстом', () async {
+      final stream = Stream.fromIterable([
+        utf8.encode('Первая строка\nВторая строка: Hello!\n'),
+      ]);
+      final lines = await stream.transform(resilientLineDecoder()).toList();
+      expect(lines, ['Первая строка', 'Вторая строка: Hello!']);
+    });
+
+    test('собирает многобайтовые символы UTF-8, разбитые между чанками', () async {
+      // Буква 'П' в UTF-8: 0xD0, 0x9F
+      final stream = Stream.fromIterable([
+        [0xD0],
+        [0x9F, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x82, 10],
+      ]);
+      final lines = await stream.transform(resilientLineDecoder()).toList();
+      expect(lines, ['Привет']);
+    });
+
+    test('корректно обрабатывает CRLF, LF и одиночный CR', () async {
+      final stream = Stream.fromIterable([
+        utf8.encode('line1\r\nprogress 10%\rprogress 20%\nline3'),
+      ]);
+      final lines = await stream.transform(resilientLineDecoder()).toList();
+      expect(lines, ['line1', 'progress 10%', 'progress 20%', 'line3']);
+    });
+
+    test('откатывается к декодированию при невалидных байтах UTF-8', () async {
+      final bytes = [0xCF, 0xF0, 0xE8, 0xE2, 0xE5, 0xF2, 10];
+      final stream = Stream.fromIterable([bytes]);
+      final lines = await stream.transform(resilientLineDecoder()).toList();
+      expect(lines, hasLength(1));
+      expect(lines.single.isNotEmpty, isTrue);
+    });
+
+    test('декодирует последнюю строку без завершающего перевода строки', () async {
+      final stream = Stream.fromIterable([
+        utf8.encode('строка без переноса'),
+      ]);
+      final lines = await stream.transform(resilientLineDecoder()).toList();
+      expect(lines, ['строка без переноса']);
+    });
   });
 }
 

@@ -1428,5 +1428,11 @@
         "type": "String"
       }
     }
-  }
+  },
+  "menuOpenRecordingsFolder": "Открыть папку записей",
+  "menuOpenModelsFolder": "Открыть папку моделей",
+  "tooltipOpenRecordingsFolder": "Папка записей",
+  "tooltipOpenModelsFolder": "Папка моделей",
+  "openLogsFolder": "Папка журналов",
+  "tooltipOpenLogsFolder": "Открыть папку с журналами работы"
 }

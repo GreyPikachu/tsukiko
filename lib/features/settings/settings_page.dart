@@ -9,6 +9,7 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../core/app_locale.dart';
 import '../../core/library.dart';
+import '../../core/logger.dart';
 import '../../core/models.dart';
 import '../../core/recognition.dart';
 import '../../core/skill_install.dart';
@@ -35,6 +36,10 @@ import '../../core/labels.dart';
 ///
 /// Состоянием владеет [SettingsCubit]; здесь только то, что рисуется.
 void runSettings() {
+  Log.info(
+    'App',
+    'runSettings started on ${os.platformId} (${Platform.operatingSystemVersion}), Tsukiko $appVersion',
+  );
   refreshLocale();
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const SettingsApp());
@@ -1064,6 +1069,32 @@ class _SettingsBodyState extends State<SettingsBody>
           child: Text(l10n.buttonOpenSystemSettings),
         ),
     ],
+    SectionTitle(l10n.openLogsFolder),
+    Row(
+      children: [
+        Expanded(
+          child: Text(
+            Log.logsDir.replaceFirst(home, '~'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Type.caption.copyWith(
+              color: Surface.secondaryText(context),
+            ),
+          ),
+        ),
+        const SizedBox(width: Gap.inner),
+        MacosTooltip(
+          message: l10n.tooltipOpenLogsFolder,
+          child: PushButton(
+            controlSize: ControlSize.regular,
+            secondary: true,
+            onPressed: () => Log.openLogsFolder(),
+            child: Text(l10n.openLogsFolder),
+          ),
+        ),
+      ],
+    ),
+    Hint(l10n.tooltipOpenLogsFolder),
   ];
 }
 

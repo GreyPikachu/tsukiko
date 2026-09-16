@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'languages.dart';
 import 'text_commands.dart';
 
 /// Что whisper сочиняет на тишине.
@@ -198,15 +199,16 @@ Transcript parseWhisperJson(String jsonText) {
 /// пауза, либо достаточно длинная строка. Таймкоды при этом не теряются.
 Transcript parseNemoJson(String jsonText) {
   final data = jsonDecode(jsonText) as Map<String, dynamic>;
-  final languages = (data['languages'] as List? ?? const [])
+  final detectedLanguages = (data['languages'] as List? ?? const [])
       .whereType<String>()
       .where((value) => value.isNotEmpty)
       .toList();
-  final lang = languages.isNotEmpty
-      ? languages.first
+  var rawLang = detectedLanguages.isNotEmpty
+      ? detectedLanguages.first
       : (data['language']?.toString().isNotEmpty == true
           ? data['language'].toString()
           : '?');
+  var lang = normalizeLanguageCode(rawLang);
   final words = (data['words'] as List? ?? const [])
       .whereType<Map>()
       .map((raw) {
@@ -217,6 +219,22 @@ Transcript parseNemoJson(String jsonText) {
       })
       .where((word) => word.text.isNotEmpty)
       .toList();
+
+  if (lang == '?' || lang == 'auto' || lang == 'unknown') {
+    final wordsText = words.map((w) => w.text).join(' ');
+    final rootText = data['text']?.toString() ?? '';
+    final combinedText = '$wordsText $rootText'.trim();
+    if (RegExp(r'[\u0400-\u04FF]').hasMatch(combinedText)) {
+      lang = 'ru';
+    } else {
+      final latinCount = RegExp(r'[a-zA-Z]').allMatches(combinedText).length;
+      final cyrillicCount =
+          RegExp(r'[\u0400-\u04FF]').allMatches(combinedText).length;
+      if (latinCount > cyrillicCount && latinCount > 0) {
+        lang = 'en';
+      }
+    }
+  }
 
   if (words.isEmpty) {
     final text = data['text']?.toString().trim() ?? '';

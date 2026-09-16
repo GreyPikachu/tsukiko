@@ -761,6 +761,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       rightBuilder: (context, controller) => _inspector(s, controller),
       rightTop: InspectorHeader(
         onOpenSettings: () => _openSettings('transcriber'),
+        onOpenRecordings: () =>
+            revealInFinder(s.libraryPath, createIfMissing: true),
+        onOpenModels: () =>
+            revealInFinder(os.modelsDir, createIfMissing: true),
       ),
     );
   }
@@ -788,6 +792,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           children: [
             InspectorHeader(
               onOpenSettings: () => _openSettings('transcriber'),
+              onOpenRecordings: () =>
+                  revealInFinder(s.libraryPath, createIfMissing: true),
+              onOpenModels: () =>
+                  revealInFinder(os.modelsDir, createIfMissing: true),
             ),
             Expanded(child: _inspector(s, controller)),
           ],

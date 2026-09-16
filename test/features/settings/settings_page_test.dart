@@ -11,6 +11,8 @@ import 'package:tsukiko/features/settings/settings_page.dart';
 import 'package:tsukiko/features/settings/settings_state.dart';
 import 'package:tsukiko/l10n/gen/app_localizations.dart';
 
+import '../../support/fake_os.dart';
+
 class _FakeSettingsCubit extends Cubit<SettingsState> implements SettingsCubit {
   _FakeSettingsCubit([SettingsState? initial])
     : super(initial ?? SettingsState(tab: 'models'));
@@ -215,5 +217,49 @@ void main() {
 
     // Таймер опроса разрешений должен уйти вместе с окном.
     await tester.pumpWidget(const SizedBox());
+  });
+
+  group('папка журналов', () {
+    useTempSupportDir('tsukiko-settings-logs');
+
+    testWidgets('кнопка открытия папки журналов доступна во вкладке приложения', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(580, 600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+      final cubit = _FakeSettingsCubit(
+        SettingsState(tab: 'app'),
+      );
+      addTearDown(cubit.close);
+
+      await tester.pumpWidget(
+        MacosApp(
+          locale: const Locale('ru'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BlocProvider<SettingsCubit>.value(
+            value: cubit,
+            child: const SettingsBody(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.dragUntilVisible(
+        find.text('ПАПКА ЖУРНАЛОВ'),
+        find.byType(ListView).first,
+        const Offset(0, -150),
+      );
+      expect(find.text('ПАПКА ЖУРНАЛОВ'), findsOneWidget);
+      final openLogsBtn = find.widgetWithText(PushButton, 'Папка журналов');
+      expect(openLogsBtn, findsOneWidget);
+
+      await tester.tap(openLogsBtn);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 }

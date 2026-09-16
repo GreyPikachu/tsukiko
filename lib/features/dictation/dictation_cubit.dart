@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../platform/bridge.dart';
+import '../../core/logger.dart';
 import '../../core/whisper_server.dart';
 import 'dictation_state.dart';
 import '../../core/library.dart';
@@ -409,6 +410,7 @@ class DictationCubit extends Cubit<DictationState> {
     // молчала и казалось, что хоткей не сработал. Запуск микрофона всё ещё
     // ждём ниже, но состояние и HUD показываем сразу.
     _startedAt = DateTime.now();
+    Log.info('Dictation', 'Recording started (model: ${_options.model})');
     _emit(
       state.copyWith(
         phase: Phase.recording,
@@ -438,6 +440,7 @@ class DictationCubit extends Cubit<DictationState> {
 
     final path = await bridge.startRecording();
     if (path == null || path.isEmpty) {
+      Log.error('Dictation', 'Recording failed to start');
       _stopMeter();
       _server.release();
       if (_settings.hud) unawaited(bridge.hud(HudState.failed));
@@ -460,11 +463,18 @@ class DictationCubit extends Cubit<DictationState> {
       return;
     }
     if (!state.recording) return;
+    final duration = _startedAt != null
+        ? DateTime.now().difference(_startedAt!)
+        : Duration.zero;
     _stopMeter();
     _emit(state.copyWith(phase: Phase.transcribing));
     if (_settings.hud) unawaited(bridge.hud(HudState.transcribing));
 
     final path = await bridge.stopRecording() ?? _wav;
+    Log.info(
+      'Dictation',
+      'Recording stopped, duration: ${duration.inMilliseconds}ms (path: $path)',
+    );
     _wav = null;
     var ok = false, silent = false;
     String? failure;
@@ -482,8 +492,13 @@ class DictationCubit extends Cubit<DictationState> {
         // Сервер поднимался параллельно записи — дожидаемся, иначе фраза
         // короче подъёма уйдёт в «не удалось» при живой модели.
         await _bringingUp;
+        Log.info(
+          'Dictation',
+          'Transcribing dictation audio ($path) with model: ${_options.model}, lang: ${_options.lang}',
+        );
         final recognized = await _server.transcribe(path, lang: _options.lang);
         if (recognized == null) {
+          Log.warn('Dictation', 'Dictation transcribe returned null');
           // Распознать не удалось — или мы сами прервали счёт. Запись
           // в обоих случаях единственный экземпляр сказанного, и удалять
           // её здесь было бы потерей данных.
@@ -501,6 +516,7 @@ class DictationCubit extends Cubit<DictationState> {
           final text = _commandsEnabled
               ? applyTextCommands(recognized, _textCommands).text
               : recognized;
+          Log.info('Dictation', 'Dictation transcribed: ${text.length} chars');
           if (text.isNotEmpty) {
             _emit(state.copyWith(last: text));
             // «Только в буфер» — для тех, кто вставит сам и туда, куда решит.
@@ -562,6 +578,7 @@ class DictationCubit extends Cubit<DictationState> {
       return;
     }
     if (!state.recording) return;
+    Log.info('Dictation', 'Recording cancelled');
     _stopMeter();
     _emit(state.copyWith(phase: Phase.idle));
     unawaited(bridge.hud(HudState.hidden));

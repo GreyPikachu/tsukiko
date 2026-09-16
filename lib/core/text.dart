@@ -6,6 +6,9 @@
 library;
 
 import 'app_locale.dart';
+import 'languages.dart';
+
+export 'languages.dart';
 
 /// `appName` объявлен рядом с границей ОС (там он нужен для путей),
 /// но пользуются им повсюду — отдаём дальше отсюда.
@@ -19,12 +22,6 @@ const audioExt = {
   '.caf', '.flac', '.mp4', '.mov', '.m4b', '.wma',
 };
 
-
-const languages = [
-  'auto', 'ru', 'be', 'uk', 'en', 'pl', 'de', 'fr', 'es', 'it', 'pt', 'tr',
-  'kk', 'he', 'ar', 'zh', 'ja',
-];
-
 /// Языки называются так, как их называют их носители, — как в системных
 /// настройках macOS. Код в интерфейсе не показываем никогда.
 // 'auto' — единственный пункт этого списка, который не имя языка,
@@ -32,28 +29,12 @@ const languages = [
 // подписи остальных языков идут как есть, языком интерфейса не тронуты.
 String get _languageAuto => currentL10n().languageAuto;
 
-const _languageNames = {
-  'ru': 'Русский',
-  'be': 'Беларуская',
-  'uk': 'Українська',
-  'en': 'English',
-  'pl': 'Polski',
-  'de': 'Deutsch',
-  'fr': 'Français',
-  'es': 'Español',
-  'it': 'Italiano',
-  'pt': 'Português',
-  'tr': 'Türkçe',
-  'kk': 'Қазақша',
-  'he': 'עברית',
-  'ar': 'العربية',
-  'zh': '中文',
-  'ja': '日本語',
-};
+String languageName(String code) {
+  final norm = normalizeLanguageCode(code);
+  if (norm == 'auto') return _languageAuto;
+  return languageNativeNames[norm] ?? code.toUpperCase();
+}
 
-String languageName(String code) => code.toLowerCase() == 'auto'
-    ? _languageAuto
-    : _languageNames[code.toLowerCase()] ?? code.toUpperCase();
 
 // ── маленькие правила языка и чисел ─────────────────────────────────────────
 

@@ -10,32 +10,65 @@ import '../../../l10n/gen/app_localizations.dart';
 /// контролом, что и кнопки основной панели, поэтому размер и зона нажатия
 /// у них совпадают.
 class InspectorHeader extends StatelessWidget {
-  const InspectorHeader({super.key, required this.onOpenSettings});
+  const InspectorHeader({
+    super.key,
+    required this.onOpenSettings,
+    required this.onOpenRecordings,
+    required this.onOpenModels,
+  });
 
   final VoidCallback onOpenSettings;
+  final VoidCallback onOpenRecordings;
+  final VoidCallback onOpenModels;
 
   @override
   Widget build(BuildContext context) {
-    final label = AppLocalizations.of(
-      context,
-    ).buttonTranscriptionSettingsEllipsis('').trim();
+    final l10n = AppLocalizations.of(context);
+    final label = l10n.buttonTranscriptionSettingsEllipsis('').trim();
     return SizedBox(
       height: 51,
       child: Align(
         alignment: Alignment.centerRight,
         child: Padding(
           padding: const EdgeInsets.only(right: Gap.inner),
-          child: ToolBarIconButton(
-            label: label,
-            icon: MacosIcon(
-              CupertinoIcons.gear,
-              size: IconSize.toolbar,
-              color: Surface.toolbarIcon(context, enabled: true),
-            ),
-            showLabel: false,
-            tooltipMessage: label,
-            onPressed: onOpenSettings,
-          ).build(context, ToolbarItemDisplayMode.inToolbar),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ToolBarIconButton(
+                label: l10n.tooltipOpenRecordingsFolder,
+                icon: MacosIcon(
+                  CupertinoIcons.folder,
+                  size: IconSize.toolbar,
+                  color: Surface.toolbarIcon(context, enabled: true),
+                ),
+                showLabel: false,
+                tooltipMessage: l10n.tooltipOpenRecordingsFolder,
+                onPressed: onOpenRecordings,
+              ).build(context, ToolbarItemDisplayMode.inToolbar),
+              ToolBarIconButton(
+                label: l10n.tooltipOpenModelsFolder,
+                icon: MacosIcon(
+                  CupertinoIcons.cube_box,
+                  size: IconSize.toolbar,
+                  color: Surface.toolbarIcon(context, enabled: true),
+                ),
+                showLabel: false,
+                tooltipMessage: l10n.tooltipOpenModelsFolder,
+                onPressed: onOpenModels,
+              ).build(context, ToolbarItemDisplayMode.inToolbar),
+              ToolBarIconButton(
+                label: label,
+                icon: MacosIcon(
+                  CupertinoIcons.gear,
+                  size: IconSize.toolbar,
+                  color: Surface.toolbarIcon(context, enabled: true),
+                ),
+                showLabel: false,
+                tooltipMessage: label,
+                onPressed: onOpenSettings,
+              ).build(context, ToolbarItemDisplayMode.inToolbar),
+            ],
+          ),
         ),
       ),
     );

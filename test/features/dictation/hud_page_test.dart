@@ -119,4 +119,19 @@ void main() {
     await send(tester, HudState.hidden);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('подхватывает начальное состояние при открытии', (tester) async {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('tsukiko/dictation'),
+      (call) async {
+        calls.add(call);
+        if (call.method == 'getHudState') return 'recording';
+        if (call.method == 'level') return 0.5;
+        return null;
+      },
+    );
+    await show(tester);
+    expect(find.text('Отменить'), findsOneWidget);
+    expect(find.text('Остановить'), findsOneWidget);
+  });
 }

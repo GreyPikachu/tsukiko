@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 
 import '../platform/os.dart';
 import 'app_locale.dart';
+import 'logger.dart';
 import 'recognition.dart';
 
 /// Модели распознавания: где их искать, что из них годится, как они
@@ -86,6 +87,13 @@ List<InstalledModel> scanModels() {
     }
   }
   out.sort((a, b) => a.path.compareTo(b.path));
+  Log.info(
+    'Model',
+    'Discovered ${out.length} models in directories: [${[os.modelsDir, ...os.sharedModelDirs].join(', ')}]',
+  );
+  for (final m in out) {
+    Log.debug('Model', 'Discovered model: ${m.path} (${m.sizeLabel}, broken: ${m.broken})');
+  }
   return out;
 }
 
