@@ -609,10 +609,47 @@ void main() {
     expect(tidyDictated('Продолжение следует...'), '');
     expect(tidyDictated('Спасибо за просмотр!'), '');
     expect(tidyDictated('  субтитры сделал DimaTorzok '), '');
-    // Но только когда совпал весь кусок: сказанное всерьёз остаётся.
+    expect(tidyDictated('Субтитры: DimaTorzok'), '');
+    expect(tidyDictated('DimaTorzok'), '');
+    expect(tidyDictated('To be continued...'), '');
+    expect(tidyDictated('Конец фильма.'), '');
+    expect(tidyDictated('Thanks for watching!'), '');
+    expect(tidyDictated('Like and subscribe!'), '');
+
+    // Прилипшие в хвосте галлюцинации срезаются (кейс пользователя):
+    expect(
+      tidyDictated('...бери какой-нибудь другой цвет. Субтитры сделал DimaTorzok'),
+      '...бери какой-нибудь другой цвет.',
+    );
+    expect(
+      tidyDictated('бери какой-нибудь другой цвет, субтитры сделал DimaTorzok'),
+      'бери какой-нибудь другой цвет',
+    );
+    expect(
+      tidyDictated('бери какой-нибудь другой цвет — продолжение следует'),
+      'бери какой-нибудь другой цвет',
+    );
+    expect(
+      tidyDictated('Привет! Продолжение следует...'),
+      'Привет!',
+    );
+    expect(
+      tidyDictated('бери какой-нибудь другой цвет. Спасибо за просмотр, ставьте лайки!'),
+      'бери какой-нибудь другой цвет.',
+    );
+
+    // Но когда фраза сказана всерьёз — она полностью остаётся:
     expect(
       tidyDictated('здесь продолжение следует из предыдущего'),
       'здесь продолжение следует из предыдущего',
+    );
+    expect(
+      tidyDictated('Фильм интересный, продолжение следует ждать осенью'),
+      'Фильм интересный, продолжение следует ждать осенью',
+    );
+    expect(
+      tidyDictated('спасибо за внимание к деталям'),
+      'спасибо за внимание к деталям',
     );
 
     // Ведущее тире модель ставит, приняв надиктованное за прямую речь.
@@ -620,6 +657,194 @@ void main() {
     expect(tidyDictated('-- ну вот'), 'ну вот');
     // А тире внутри фразы — обычный знак.
     expect(tidyDictated('привет — это я'), 'привет — это я');
+  });
+
+  test('детекция и удаление всех видов галлюцинаций субтитров и тишины', () {
+    // 1. Субтитры и авторство (standalone)
+    expect(looksLikeSilenceHallucination('Субтитры сделал DimaTorzok'), isTrue);
+    expect(looksLikeSilenceHallucination('субтитры делал DimaTorzok'), isTrue);
+    expect(looksLikeSilenceHallucination('Субтитры добавил Alex'), isTrue);
+    expect(looksLikeSilenceHallucination('Субтитры подготовил Иван'), isTrue);
+    expect(looksLikeSilenceHallucination('Субтитры перевел Пётр'), isTrue);
+    expect(looksLikeSilenceHallucination('Субтитры перевёл Пётр'), isTrue);
+    expect(looksLikeSilenceHallucination('Субтитры создал Alex'), isTrue);
+    expect(looksLikeSilenceHallucination('Субтитры оформил Alex'), isTrue);
+    expect(looksLikeSilenceHallucination('Субтитры: DimaTorzok'), isTrue);
+    expect(looksLikeSilenceHallucination('субтитры - DimaTorzok'), isTrue);
+    expect(looksLikeSilenceHallucination('dimatorzok'), isTrue);
+    expect(looksLikeSilenceHallucination('DimaTorzok'), isTrue);
+    expect(looksLikeSilenceHallucination('Редактор субтитров А.Синецкая корректор А.Егорова'), isTrue);
+    expect(looksLikeSilenceHallucination('Редактор субтитров: А.Синецкая'), isTrue);
+    expect(looksLikeSilenceHallucination('Автор субтитров: Alex'), isTrue);
+    expect(looksLikeSilenceHallucination('Русские субтитры'), isTrue);
+    expect(looksLikeSilenceHallucination('Перевод и субтитры: Студия'), isTrue);
+    expect(looksLikeSilenceHallucination('Перевод на русский язык: Studio'), isTrue);
+    expect(looksLikeSilenceHallucination('Перевод текста'), isTrue);
+    expect(looksLikeSilenceHallucination('Subtitles by John Doe'), isTrue);
+    expect(looksLikeSilenceHallucination('Translated by Jane Doe'), isTrue);
+
+    // 2. Окончания и титры фильмов (standalone)
+    expect(looksLikeSilenceHallucination('Продолжение следует'), isTrue);
+    expect(looksLikeSilenceHallucination('Продолжение следует...'), isTrue);
+    expect(looksLikeSilenceHallucination('«Продолжение следует»'), isTrue);
+    expect(looksLikeSilenceHallucination('To be continued...'), isTrue);
+    expect(looksLikeSilenceHallucination('[To be continued]'), isTrue);
+    expect(looksLikeSilenceHallucination('Конец фильма.'), isTrue);
+    expect(looksLikeSilenceHallucination('Конец серии.'), isTrue);
+    expect(looksLikeSilenceHallucination('Конец связи.'), isTrue);
+    expect(looksLikeSilenceHallucination('The end'), isTrue);
+
+    // 3. Концовки видео и призывы к подписке (standalone)
+    expect(looksLikeSilenceHallucination('Спасибо за просмотр!'), isTrue);
+    expect(looksLikeSilenceHallucination('Спасибо всем за просмотр!'), isTrue);
+    expect(looksLikeSilenceHallucination('Спасибо за внимание!'), isTrue);
+    expect(looksLikeSilenceHallucination('Большое спасибо за внимание.'), isTrue);
+    expect(looksLikeSilenceHallucination('Подписывайтесь на канал!'), isTrue);
+    expect(looksLikeSilenceHallucination('Не забудьте подписаться!'), isTrue);
+    expect(looksLikeSilenceHallucination('Не забудьте подписаться на канал и поставить лайк!'), isTrue);
+    expect(looksLikeSilenceHallucination('Ставьте лайки!'), isTrue);
+    expect(looksLikeSilenceHallucination('Thanks for watching!'), isTrue);
+    expect(looksLikeSilenceHallucination('Thank you for watching!'), isTrue);
+    expect(looksLikeSilenceHallucination('Subscribe to my channel!'), isTrue);
+    expect(looksLikeSilenceHallucination('Please subscribe!'), isTrue);
+    expect(looksLikeSilenceHallucination('Like and subscribe!'), isTrue);
+    expect(looksLikeSilenceHallucination('Please like and subscribe!'), isTrue);
+    expect(looksLikeSilenceHallucination("Don't forget to subscribe!"), isTrue);
+
+    // 4. Осмысленная речь НЕ считается галлюцинацией
+    expect(looksLikeSilenceHallucination('здесь продолжение следует из предыдущего'), isFalse);
+    expect(looksLikeSilenceHallucination('Фильм интересный, продолжение следует ждать осенью'), isFalse);
+    expect(looksLikeSilenceHallucination('в конце фильма герои встречаются'), isFalse);
+    expect(looksLikeSilenceHallucination('спасибо за внимание к деталям'), isFalse);
+    expect(looksLikeSilenceHallucination('подписывайтесь на канал поставки'), isFalse);
+    expect(looksLikeSilenceHallucination('редактор субтитров в этой программе работает отлично'), isFalse);
+    expect(looksLikeSilenceHallucination('я поставил лайки всем постам'), isFalse);
+    expect(looksLikeSilenceHallucination('thanks for watching out for me'), isFalse);
+
+    // 5. Очистка прилипших галлюцинаций (stripSilenceHallucinations)
+    // Хвостовые:
+    expect(
+      stripSilenceHallucinations('...бери какой-нибудь другой цвет. Субтитры сделал DimaTorzok'),
+      '...бери какой-нибудь другой цвет.',
+    );
+    expect(
+      stripSilenceHallucinations('бери какой-нибудь другой цвет, субтитры сделал DimaTorzok'),
+      'бери какой-нибудь другой цвет',
+    );
+    expect(
+      stripSilenceHallucinations('бери какой-нибудь другой цвет. Редактор субтитров А.Синецкая'),
+      'бери какой-нибудь другой цвет.',
+    );
+    expect(
+      stripSilenceHallucinations('бери какой-нибудь другой цвет. Subtitles by John'),
+      'бери какой-нибудь другой цвет.',
+    );
+    expect(
+      stripSilenceHallucinations('бери какой-нибудь другой цвет. Translated by Jane'),
+      'бери какой-нибудь другой цвет.',
+    );
+    expect(
+      stripSilenceHallucinations('бери какой-нибудь другой цвет. Конец фильма'),
+      'бери какой-нибудь другой цвет.',
+    );
+    expect(
+      stripSilenceHallucinations('Привет! Спасибо за просмотр, ставьте лайки!'),
+      'Привет!',
+    );
+    expect(
+      stripSilenceHallucinations('Take another color. Like and subscribe!'),
+      'Take another color.',
+    );
+    expect(
+      stripSilenceHallucinations('бери другой цвет. Спасибо за просмотр! Подписывайтесь на канал.'),
+      'бери другой цвет.',
+    );
+
+    // Начальные:
+    expect(
+      stripSilenceHallucinations('Субтитры сделал DimaTorzok. Привет мир!'),
+      'Привет мир!',
+    );
+    expect(
+      stripSilenceHallucinations('Продолжение следует... Привет мир!'),
+      'Привет мир!',
+    );
+    expect(
+      stripSilenceHallucinations('Спасибо за просмотр! Начнем урок.'),
+      'Начнем урок.',
+    );
+
+    // Полная галлюцинация сводится к пустой строке:
+    expect(stripSilenceHallucinations('Субтитры сделал DimaTorzok'), '');
+    expect(stripSilenceHallucinations('Продолжение следует...'), '');
+    expect(stripSilenceHallucinations('Спасибо за просмотр!'), '');
+
+    // Осмысленная речь остаётся нетронутой:
+    expect(
+      stripSilenceHallucinations('Фильм интересный, продолжение следует ждать осенью'),
+      'Фильм интересный, продолжение следует ждать осенью',
+    );
+    expect(
+      stripSilenceHallucinations('здесь продолжение следует из предыдущего'),
+      'здесь продолжение следует из предыдущего',
+    );
+  });
+
+  test('разбор сегментов очищает прилипшие галлюцинации и отбрасывает чистые выдумки', () {
+    // whisper parseSegmentLine
+    expect(
+      parseSegmentLine('[00:00:01.000 --> 00:00:05.000]   Субтитры сделал DimaTorzok'),
+      isNull,
+    );
+    expect(
+      parseSegmentLine('[00:00:01.000 --> 00:00:05.000]   Продолжение следует...'),
+      isNull,
+    );
+    final cleanedSeg = parseSegmentLine(
+      '[00:00:01.000 --> 00:00:05.000]   ...бери какой-нибудь другой цвет. Субтитры сделал DimaTorzok',
+    );
+    expect(cleanedSeg, isNotNull);
+    expect(cleanedSeg!.text, '...бери какой-нибудь другой цвет.');
+
+    // whisper parseWhisperJson
+    final whisperJson = jsonEncode({
+      'result': {'language': 'ru'},
+      'transcription': [
+        {
+          'offsets': {'from': 0, 'to': 2000},
+          'text': 'Первое предложение.',
+        },
+        {
+          'offsets': {'from': 2000, 'to': 4000},
+          'text': 'Субтитры сделал DimaTorzok',
+        },
+        {
+          'offsets': {'from': 4000, 'to': 6000},
+          'text': 'Второе предложение. Спасибо за просмотр!',
+        },
+      ],
+    });
+    final whisperTranscript = parseWhisperJson(whisperJson);
+    expect(whisperTranscript.segments, hasLength(2));
+    expect(whisperTranscript.segments[0].text, 'Первое предложение.');
+    expect(whisperTranscript.segments[1].text, 'Второе предложение.');
+
+    // nemo parseNemoJson
+    final nemoJson = jsonEncode({
+      'text': 'Первое предложение. Субтитры сделал DimaTorzok',
+      'duration': 4.0,
+      'languages': ['ru-RU'],
+      'words': [
+        {'word': 'Первое', 'start': 0.1, 'end': 0.5},
+        {'word': 'предложение.', 'start': 0.5, 'end': 1.0},
+        {'word': 'Субтитры', 'start': 2.0, 'end': 2.5},
+        {'word': 'сделал', 'start': 2.5, 'end': 3.0},
+        {'word': 'DimaTorzok', 'start': 3.0, 'end': 3.5},
+      ],
+    });
+    final nemoTranscript = parseNemoJson(nemoJson);
+    expect(nemoTranscript.segments, hasLength(1));
+    expect(nemoTranscript.segments.single.text, 'Первое предложение.');
   });
 
   test('подписи сочетаний читаются как в системе', () {
