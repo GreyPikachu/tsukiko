@@ -14,26 +14,242 @@ import 'text_commands.dart';
 /// фраза останется как есть. Выбрасывается лишь то, что целиком совпало
 /// с известной выдумкой.
 const _silenceHallucinations = {
+  // Continuation & endings
   'продолжение следует',
+  'to be continued',
+  'конец фильма',
+  'конец серии',
+  'конец связи',
+  'the end',
+
+  // Subtitle credits & ripper tags
   'субтитры сделал dimatorzok',
   'субтитры делал dimatorzok',
-  'редактор субтитров а.синецкая корректор а.егорова',
+  'субтитры dimatorzok',
+  'dimatorzok',
+  'редактор субтитров асинецкая корректор аегорова',
+  'редактор субтитров а синецкая корректор а егорова',
+  'редактор субтитров',
+  'автор субтитров',
+  'русские субтитры',
+  'subtitles by',
+  'translated by',
+
+  // Outros & channel plugs
   'спасибо за просмотр',
   'спасибо за внимание',
   'подписывайтесь на канал',
+  'не забудьте подписаться',
+  'ставьте лайки',
+  'ставьте лайк',
   'thanks for watching',
-  'subscribe to my channel',
   'thank you for watching',
+  'subscribe to my channel',
+  'please subscribe',
+  'like and subscribe',
 };
+
+final _outerDecorations = RegExp(
+  r'''^[\s"«»“”„'\[\]\(\)\{\}\*\-—–#]+|[\s"«»“”„'\[\]\(\)\{\}\*\-—–#]+$''',
+);
+
+final _standaloneCreditRegex = RegExp(
+  r'^(?:'
+  r'субтитры\s*(?:[:\-—–]\s*)?(?:сделал|делал|добавил|подготовил|перев[её]л|писал|создал|оформил)[аи]?(?![а-яёА-ЯЁ])[^.!?…\n]*|'
+  r'субтитры\s*(?:[:\-—–]\s*|\s+(?:от|для)\s+)[а-яёa-z0-9_\-]+[^.!?…\n]*|'
+  r'(?:субтитры\s*[:\-—–]?\s*)?dima\s*torzok|'
+  r'русские\s+субтитры(?:\s*[:\-—–]\s*.+|\s+(?:от|для)\s+.+|\s*)|'
+  r'автор\s+субтитров(?:\s*[:\-—–]\s*.+|\s+[а-яёa-z]\s*\..*|\s+(?:от|для)\s+.+|\s*)|'
+  r'редактор\s+субтитров(?:\s*[:\-—–]|\s+[а-яёa-z]\s*\.|\s+корректор|\s*$).*|'
+  r'корректор\s+[а-яёa-z]\s*\..*|'
+  r'перевод\s+(?:и\s+субтитры|на\s+русский(?:\s+язык)?|текста|и\s+озвучк[аеиу])(?:\s*[:\-—–]\s*.+|\s+(?:от|для)\s+.+|\s*)|'
+  r'subtitles\s+(?:by|created\s+by|made\s+by)(?:\s+[^.!?…\n]+)?|'
+  r'translated\s+by(?:\s+[^.!?…\n]+)?|'
+  r'translation\s+by(?:\s+[^.!?…\n]+)?'
+  r')$',
+  caseSensitive: false,
+);
+
+final _standaloneEndingRegex = RegExp(
+  r'^(?:продолжение\s+следует|to\s+be\s+continued|конец\s+фильма|конец\s+серии|конец\s+связи|the\s+end)$',
+  caseSensitive: false,
+);
+
+final _standaloneOutroRegex = RegExp(
+  r'^(?:'
+  r'(?:большое\s+)?спасибо(?:\s+всем|\s+большое)?\s+за\s+просмотр(?:\s+(?:этого\s+видео|этого\s+ролика|видео|ролика|друзья|ставьте|подписывайтесь|не\s+забудьте).*)?|'
+  r'(?:большое\s+)?спасибо(?:\s+большое)?\s+за\s+внимание|'
+  r'(?:подписывайтесь|подпишитесь)\s+на\s+(?:наш\s+)?канал(?:\s+(?:и|жмит[её]|ставь).*|\s*$)|'
+  r'не\s+забудьте\s+подписаться(?:\s+(?:на\s+канал|и|постави).*|\s*$)|'
+  r'(?:ставьте|не\s+забудьте\s+поставить)\s+лайк[иа]?(?:\s+(?:и|подписыва).*|\s*$)|'
+  r'(?:thanks|thank\s+you)(?:\s+so\s+much)?\s+for\s+watching(?:\s+(?:this\s+video|guys|everyone|and|please).*|\s*$)|'
+  r'(?:please\s+)?subscribe\s+to\s+(?:my|our|the)\s+channel(?:\s+.*)?|'
+  r'(?:please\s+)?like\s+and\s+subscribe(?:\s+.*)?|'
+  r'please\s+subscribe(?:\s+.*)?|'
+  r"""don(?:'|\s+)?t\s+forget\s+to\s+(?:like\s+and\s+)?subscribe(?:\s+.*)?"""
+  r')$',
+  caseSensitive: false,
+);
+
+final _trailingHallucinationPattern = RegExp(
+  r'(?:(?<=[.!?…])\s*|(?:\s*[,;\-—–:]\s*|\s+))'
+  r'(?:'
+  // 1. Subtitle credits (longer credit phrases first, cannot span across sentences)
+  r'субтитры\s*(?:[:\-—–]\s*)?(?:сделал|делал|добавил|подготовил|перев[её]л|писал|создал|оформил)[аи]?(?![а-яёА-ЯЁ])[^.!?…\n]*[.!?…\s]*|'
+  r'субтитры\s*(?:[:\-—–]\s*|\s+(?:от|для)\s+)[^.!?…\n]+[.!?…\s]*|'
+  r'(?:(?:субтитры|subtitles|автор|перевод|by|от)\s*[:\-—–]?\s*)?dima\s*torzok\b[^.!?…\n]*[.!?…\s]*|'
+  r'редактор\s+субтитров(?:\s*[:\-—–]|\s+[а-яёa-z]\s*\.|\s+корректор|\s*$).*?|'
+  r'(?:редактор\s+субтитров.*?)?корректор\s+[а-яёa-z]\s*\..*?|'
+  r'перевод\s+(?:и\s+субтитры|на\s+русский(?:\s+язык)?|текста|и\s+озвучк[аеиу])(?![а-яёА-ЯЁ])[^.!?…\n]*[.!?…\s]*|'
+  r'автор\s+субтитров(?![а-яёА-ЯЁ])[^.!?…\n]*[.!?…\s]*|'
+  r'русские\s+субтитры(?![а-яёА-ЯЁ])[^.!?…\n]*[.!?…\s]*|'
+  r'subtitles\s+by\b[^.!?…\n]*[.!?…\s]*|'
+  r'translated\s+by\b[^.!?…\n]*[.!?…\s]*|'
+  r'translation\s+by\b[^.!?…\n]*[.!?…\s]*|'
+  // 2. Continuation & endings
+  r'продолжение\s+следует[.!?…\s]*|'
+  r'to\s+be\s+continued[.!?…\s]*|'
+  r'конец\s+фильма[.!?…\s]*|'
+  r'конец\s+серии[.!?…\s]*|'
+  r'конец\s+связи[.!?…\s]*|'
+  r'the\s+end[.!?…\s]*|'
+  // 3. Outros & channel plugs
+  r'спасибо(?:\s+всем|\s+большое)?\s+за\s+просмотр(?:\s*[,–—\-]?\s*(?:этого\s+видео|этого\s+ролика|видео|ролика|друзья|ставьте\s+лайки|подписывайтесь))?[.!?…\s]*|'
+  r'(?:большое\s+)?спасибо(?:\s+большое)?\s+за\s+внимание[.!?…\s]*|'
+  r'(?:подписывайтесь|подпишитесь)\s+на\s+(?:наш\s+)?канал(?:\s*[,–—\-]?\s*(?:и\s+жмите\s+колокольчик|и\s+ставьте\s+лайки|ставьте\s+лайки|ставьте\s+лайк))?[.!?…\s]*|'
+  r'не\s+забудьте\s+подписаться(?:\s+на\s+(?:наш\s+)?канал)?(?:\s*[,–—\-]?\s*(?:и\s+поставить\s+лайк|и\s+поставьте\s+лайк))?[.!?…\s]*|'
+  r'(?:ставьте|не\s+забудьте\s+поставить)\s+лайк[иа]?(?:\s*[,–—\-]?\s*(?:и\s+подписывайтесь|и\s+подпишитесь))?[.!?…\s]*|'
+  r'(?:thanks|thank\s+you)(?:\s+so\s+much)?\s+for\s+watching(?:\s+(?:this\s+video|guys|everyone))?[.!?…\s]*|'
+  r'(?:please\s+)?subscribe\s+to\s+(?:my|our|the)\s+channel[.!?…\s]*|'
+  r'(?:please\s+)?like\s+and\s+subscribe[.!?…\s]*|'
+  r'please\s+subscribe[.!?…\s]*|'
+  r"""don(?:'|\s+)?t\s+forget\s+to\s+(?:like\s+and\s+)?subscribe[.!?…\s]*"""
+  r')\s*$',
+  caseSensitive: false,
+);
+
+final _leadingHallucinationPattern = RegExp(
+  r'^\s*(?:'
+  // 1. Subtitle credits
+  r'субтитры\s*(?:[:\-—–]\s*)?(?:сделал|делал|добавил|подготовил|перев[её]л|писал|создал|оформил)[аи]?(?![а-яёА-ЯЁ])[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*|\s+(?=[А-ЯЁA-Z]))|'
+  r'субтитры\s*(?:[:\-—–]\s*|\s+(?:от|для)\s+)[^\n]+?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*|\s+(?=[А-ЯЁA-Z]))|'
+  r'(?:(?:субтитры|subtitles|автор|перевод|by|от)\s*[:\-—–]?\s*)?dima\s*torzok\b[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*|\s+(?=[А-ЯЁA-Z]))|'
+  r'редактор\s+субтитров(?:\s*[:\-—–]|\s+[а-яёa-z]\s*\.|\s+корректор)[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*|\s+(?=[А-ЯЁA-Z]))|'
+  r'перевод\s+(?:и\s+субтитры|на\s+русский(?:\s+язык)?|текста|и\s+озвучк[аеиу])(?![а-яёА-ЯЁ])(?:\s*[:\-—–]\s*|\s+(?:от|для)\s+)[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*|\s+(?=[А-ЯЁA-Z]))|'
+  r'автор\s+субтитров(?![а-яёА-ЯЁ])(?:\s*[:\-—–]\s*|\s+[а-яёa-z]\s*\.|\s+(?:от|для)\s+)[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*|\s+(?=[А-ЯЁA-Z]))|'
+  r'русские\s+субтитры(?![а-яёА-ЯЁ])(?:\s*[:\-—–]\s*|\s+(?:от|для)\s+)[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*|\s+(?=[А-ЯЁA-Z]))|'
+  r'subtitles\s+by\b[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*|\s+(?=[А-ЯЁA-Z]))|'
+  r'translated\s+by\b[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*|\s+(?=[А-ЯЁA-Z]))|'
+  r'translation\s+by\b[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*|\s+(?=[А-ЯЁA-Z]))|'
+  // 2. Continuation & endings
+  r'(?:продолжение\s+следует|to\s+be\s+continued|конец\s+фильма|конец\s+серии|конец\s+связи|the\s+end)(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)|'
+  // 3. Outros & channel plugs
+  r'спасибо(?:\s+всем|\s+большое)?\s+за\s+просмотр\b[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)|'
+  r'(?:большое\s+)?спасибо(?:\s+большое)?\s+за\s+внимание(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)|'
+  r'(?:подписывайтесь|подпишитесь)\s+на\s+(?:наш\s+)?канал(?:\s*(?:[,.!?…\-]|и\s+.*)|\s*$).*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)|'
+  r'не\s+забудьте\s+подписаться(?:\s*[,.!?…\-]|\s+на\s+канал|\s*$).*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)|'
+  r'(?:ставьте|не\s+забудьте\s+поставить)\s+лайк[иа]?(?:\s*[,.!?…\-]|и\s+.*|\s*$).*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)|'
+  r'(?:thanks|thank\s+you)(?:\s+so\s+much)?\s+for\s+watching(?:\s*[,.!?…\-]|\s+(?:this\s+video|guys|everyone|and|please)|\s*$).*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)|'
+  r'(?:please\s+)?subscribe\s+to\s+(?:my|our|the)\s+channel\b[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)|'
+  r'(?:please\s+)?like\s+and\s+subscribe\b[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)|'
+  r'please\s+subscribe\b[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)|'
+  r"""don(?:'|\s+)?t\s+forget\s+to\s+(?:like\s+and\s+)?subscribe\b[^\n]*?(?:[.!?…]+[\s\n]*|[,;\-—–:]+[\s\n]*|\n+[\s]*)"""
+  r')',
+  caseSensitive: false,
+);
 
 /// Похоже ли это на выдумку модели, а не на сказанное вслух.
 bool looksLikeSilenceHallucination(String text) {
-  final bare = text
+  var s = text.trim();
+  if (s.isEmpty) return false;
+
+  // Убираем внешние кавычки, скобки, тире, звёздочки
+  s = s.replaceAll(_outerDecorations, '').trim();
+  if (s.isEmpty) return false;
+
+  // Если текст состоит из нескольких предложений:
+  // он является чистой галлюцинацией ТОЛЬКО если каждое предложение — галлюцинация.
+  if (s.contains(RegExp(r'(?<=[a-zа-яё0-9]{2,}[.!?…])\s+(?=[А-ЯЁA-Z])|\n+'))) {
+    final sentences = s
+        .split(RegExp(r'(?<=[a-zа-яё0-9]{2,}[.!?…])\s+(?=[А-ЯЁA-Z])|\n+'))
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (sentences.length > 1) {
+      return sentences.every(looksLikeSilenceHallucination);
+    }
+  }
+
+  final bare = s
       .toLowerCase()
-      .replaceAll(RegExp(r'[!?.…,"«»\-—–]'), '')
+      .replaceAll(RegExp(r'''[!?.…,"«»“”„'\[\]\(\)\{\}\*\:;\-—–/\\_#]'''), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
-  return bare.isNotEmpty && _silenceHallucinations.contains(bare);
+  if (bare.isEmpty) return false;
+
+  // 1. Точное совпадение со списком
+  if (_silenceHallucinations.contains(bare)) return true;
+
+  // 2. Титры и авторство (проверяем и по s с пунктуацией, и по bare)
+  if (_standaloneCreditRegex.hasMatch(s) || _standaloneCreditRegex.hasMatch(bare)) {
+    return true;
+  }
+
+  // 3. Заставки окончания (строго по границам)
+  if (_standaloneEndingRegex.hasMatch(bare)) return true;
+
+  // 4. Концовки и подписки блогеров
+  if (_standaloneOutroRegex.hasMatch(bare) || _standaloneOutroRegex.hasMatch(s)) {
+    return true;
+  }
+
+  return false;
+}
+
+/// Удалить галлюцинации модели (титры, концовки видео, подписки),
+/// прилипшие в начале или в конце сказанного пользователем.
+///
+/// Если весь текст состоит только из галлюцинации, возвращается пустая строка.
+/// Осмысленная речь («продолжение следует ожидать осенью») не трогается.
+String stripSilenceHallucinations(String text) {
+  var s = text.trim();
+  if (s.isEmpty || looksLikeSilenceHallucination(s)) return '';
+  if (!RegExp(r'[\p{L}\p{N}]', unicode: true).hasMatch(s)) return '';
+
+  // 1. Повторно срезаем галлюцинации в хвосте
+  while (true) {
+    final m = _trailingHallucinationPattern.firstMatch(s);
+    if (m == null) break;
+    s = s.substring(0, m.start).trim();
+    if (s.isEmpty || looksLikeSilenceHallucination(s)) return '';
+  }
+
+  // 2. Повторно срезаем галлюцинации в начале
+  while (true) {
+    final m = _leadingHallucinationPattern.firstMatch(s);
+    if (m == null) break;
+    s = s.substring(m.end).trim();
+    if (s.isEmpty || looksLikeSilenceHallucination(s)) return '';
+  }
+
+  // 3. Проверяем предложения внутри текста: если одно из них — чистая галлюцинация
+  if (s.contains(RegExp(r'[.!?…]\s+[А-ЯЁA-Z]'))) {
+    final parts = s.split(RegExp(r'(?<=[.!?…])\s+(?=[А-ЯЁA-Z])'));
+    if (parts.length > 1) {
+      final filtered = parts
+          .where((p) => !looksLikeSilenceHallucination(p.trim()))
+          .toList();
+      if (filtered.isNotEmpty && filtered.length < parts.length) {
+        s = filtered.join(' ');
+      }
+    }
+  }
+
+  // 4. Очищаем висящие запятые, тире, двоеточия на конце
+  s = s.replaceFirst(RegExp(r'[,;:\-—–\s]+$'), '').trim();
+
+  if (s.isEmpty || looksLikeSilenceHallucination(s) || !RegExp(r'[\p{L}\p{N}]', unicode: true).hasMatch(s)) return '';
+  return s;
 }
 
 /// Расшифровка как данные: сегменты, разбор чужих форматов и обратная
@@ -75,8 +291,12 @@ Segment? parseSegmentLine(String line) {
   int at(int i) => int.parse(m.group(i)!);
   final from = at(1) * 3600000 + at(2) * 60000 + at(3) * 1000 + at(4);
   final to = at(5) * 3600000 + at(6) * 60000 + at(7) * 1000 + at(8);
-  final text = m.group(9)!.trim();
-  return text.isEmpty ? null : Segment(from, to, text);
+  final rawText = m.group(9)!.trim();
+  if (rawText.isEmpty || looksLikeSilenceHallucination(rawText)) return null;
+  final text = stripSilenceHallucinations(rawText).trim();
+  return (text.isEmpty || looksLikeSilenceHallucination(text))
+      ? null
+      : Segment(from, to, text);
 }
 
 final _cue = RegExp(
@@ -177,10 +397,12 @@ Transcript parseWhisperJson(String jsonText) {
   final lang = (data['result']?['language'] ?? '?').toString();
   final segs = <Segment>[];
   for (final t in (data['transcription'] as List? ?? [])) {
-    final text = (t['text'] as String).trim();
-    // Фрагмент, целиком совпавший с известной выдумкой, — это тишина,
-    // которую модель договорила за себя. В расшифровке ему не место.
-    if (looksLikeSilenceHallucination(text)) continue;
+    final rawText = (t['text'] as String).trim();
+    if (rawText.isEmpty || looksLikeSilenceHallucination(rawText)) continue;
+    final text = stripSilenceHallucinations(rawText).trim();
+    // Фрагмент, совпавший с известной выдумкой или очищенный до пустоты, —
+    // это тишина, которую модель договорила за себя.
+    if (text.isEmpty || looksLikeSilenceHallucination(text)) continue;
     segs.add(
       Segment(
         (t['offsets']['from'] as num).toInt(),
@@ -237,7 +459,11 @@ Transcript parseNemoJson(String jsonText) {
   }
 
   if (words.isEmpty) {
-    final text = data['text']?.toString().trim() ?? '';
+    final rawText = data['text']?.toString().trim() ?? '';
+    if (rawText.isEmpty || looksLikeSilenceHallucination(rawText)) {
+      return Transcript(lang, const []);
+    }
+    final text = stripSilenceHallucinations(rawText).trim();
     if (text.isEmpty || looksLikeSilenceHallucination(text)) {
       return Transcript(lang, const []);
     }
@@ -257,9 +483,12 @@ Transcript parseNemoJson(String jsonText) {
     final pause = next != null && next.from - current.to >= 700;
     final tooLong = chars >= 90 || current.to - words[start].from >= 12000;
     if (next == null || sentenceEnd || pause || tooLong) {
-      final text = words.sublist(start, i + 1).map((word) => word.text).join(' ');
-      if (!looksLikeSilenceHallucination(text)) {
-        segments.add(Segment(words[start].from, current.to, text));
+      final rawText = words.sublist(start, i + 1).map((word) => word.text).join(' ').trim();
+      if (rawText.isNotEmpty && !looksLikeSilenceHallucination(rawText)) {
+        final text = stripSilenceHallucinations(rawText).trim();
+        if (text.isNotEmpty && !looksLikeSilenceHallucination(text)) {
+          segments.add(Segment(words[start].from, current.to, text));
+        }
       }
       start = i + 1;
     }

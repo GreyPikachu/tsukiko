@@ -254,7 +254,7 @@ final _bracketed = RegExp(r'^[\[\(\*][^\]\)\*]*[\]\)\*]$');
 /// прямую речь. Диктуют не диалог, и тире в начале не нужно никогда —
 /// корень беды в подсказке (см. `punctuationPrimer`), но подсказка
 /// направляет модель, а не приказывает ей, и подстраховка нужна.
-final _leadingDash = RegExp(r'^[-—–]+\s*');
+final _leadingDash = RegExp(r'^(?:[-—–]\s*)+');
 
 /// Сервер отдаёт текст сегментами, разделёнными переводом строки. В поле
 /// ввода это выглядит рваным — диктовка должна вставлять одну фразу.
@@ -266,7 +266,9 @@ String tidyDictated(String raw) {
       .trim();
   if (_bracketed.hasMatch(text)) return '';
   if (looksLikeSilenceHallucination(text)) return '';
-  return text;
+  final cleaned = stripSilenceHallucinations(text).trim();
+  if (cleaned.isEmpty || looksLikeSilenceHallucination(cleaned)) return '';
+  return cleaned;
 }
 
 /// Свободный порт: занимаем его на мгновение и сразу отпускаем. Между
