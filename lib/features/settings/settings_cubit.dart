@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../../core/app_locale.dart';
 import '../../core/library.dart';
+import '../../core/logger.dart';
 import '../../core/models.dart';
 import '../../core/settings.dart';
 import '../../core/text_commands.dart';
@@ -92,6 +93,8 @@ class SettingsCubit extends Cubit<SettingsState> {
         .map((v) => v.startsWith('.') ? v.substring(1) : v)
         .where((v) => exportFormats.any((f) => f.id == v))
         .toList();
+    final loggingEnabled = (s['loggingEnabled'] as bool?) ?? true;
+    Log.enabled = loggingEnabled;
     _emit(
       state.copyWith(
         models: scanModels(),
@@ -103,6 +106,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         saveNextToSource: (s['saveNextToSource'] as bool?) ?? false,
         timestamps: (s['timestamps'] as bool?) ?? true,
         dockIcon: (s['dockIcon'] as bool?) ?? true,
+        loggingEnabled: loggingEnabled,
         libraryPath: (s['libraryPath'] as String?) ?? defaultLibraryPath,
         locale: (s[localeSetting] as String?) ?? '',
         apiEnabled: (s[apiEnabledSetting] as bool?) ?? false,
@@ -152,6 +156,9 @@ class SettingsCubit extends Cubit<SettingsState> {
     await Settings.save(data);
     await bridge.settingsChanged();
   }
+
+  Future<void> _saveAppSetting(String key, dynamic value) =>
+      _saveApp({key: value});
 
   void _saveDictation(void Function(DictationSettings) change) {
     change(_dictation);
@@ -493,6 +500,12 @@ class SettingsCubit extends Cubit<SettingsState> {
     _emit(state.copyWith(dockIcon: v));
     unawaited(_saveApp({'dockIcon': v}));
     unawaited(bridge.setDockIcon(v));
+  }
+
+  void setLoggingEnabled(bool v) {
+    Log.enabled = v;
+    _emit(state.copyWith(loggingEnabled: v));
+    unawaited(_saveAppSetting('loggingEnabled', v));
   }
 
   /// Ответ берём у системы, а не у себя: она могла и отказать.

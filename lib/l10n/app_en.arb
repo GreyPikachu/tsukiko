@@ -592,5 +592,9 @@
   "tooltipOpenRecordingsFolder": "Recordings Folder",
   "tooltipOpenModelsFolder": "Models Folder",
   "openLogsFolder": "Logs Folder",
-  "tooltipOpenLogsFolder": "Open logs folder"
+  "tooltipOpenLogsFolder": "Open logs folder",
+  "menuOpenLogsFolder": "Open Logs Folder",
+  "sectionLogging": "Logging",
+  "checkEnableLogging": "Enable logging",
+  "hintEnableLogging": "Write application diagnostic logs to files for troubleshooting."
 }

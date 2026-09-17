@@ -433,8 +433,12 @@ class DictationCubit extends Cubit<DictationState> {
     _bringingUp = () async {
       // Подметание идёт фоном, а наш сервер несёт те же метки: подняться
       // раньше, чем оно кончится, — значит быть убитым им же.
-      await _sweeping;
-      await _server.ensureUp(_options);
+      try {
+        await _sweeping;
+        await _server.ensureUp(_options);
+      } catch (e, st) {
+        Log.error('Dictation', 'Engine bringup failed: $e', e, st);
+      }
     }();
     unawaited(_bringingUp);
 
@@ -491,7 +495,13 @@ class DictationCubit extends Cubit<DictationState> {
       } else if (path != null) {
         // Сервер поднимался параллельно записи — дожидаемся, иначе фраза
         // короче подъёма уйдёт в «не удалось» при живой модели.
-        await _bringingUp;
+        if (_bringingUp != null) {
+          try {
+            await _bringingUp;
+          } catch (e, st) {
+            Log.error('Dictation', 'Waiting for engine bringup failed: $e', e, st);
+          }
+        }
         Log.info(
           'Dictation',
           'Transcribing dictation audio ($path) with model: ${_options.model}, lang: ${_options.lang}',
@@ -535,6 +545,15 @@ class DictationCubit extends Cubit<DictationState> {
             }
           }
         }
+      }
+    } catch (e, st) {
+      Log.error('Dictation', 'Unexpected error during stop/transcription: $e', e, st);
+      if (path != null && failurePath == null && !silent) {
+        final saved = rescueRecording(path);
+        failurePath = saved ?? path;
+        failure = saved == null
+            ? currentL10n().dictationFailedNoSave(path)
+            : currentL10n().dictationFailedSaved(saved);
       }
     } finally {
       _server.release();
@@ -651,6 +670,17 @@ class DictationCubit extends Cubit<DictationState> {
     _settings.save();
     _emit(_withSnapshots(state));
     unawaited(bridge.settingsChanged());
+    if (v && state.chosenModel.isNotEmpty) {
+      _bringingUp = () async {
+        try {
+          await _sweeping;
+          await _server.ensureUp(_options);
+        } catch (e, st) {
+          Log.error('Dictation', 'Engine prewarm failed: $e', e, st);
+        }
+      }();
+      unawaited(_bringingUp);
+    }
   }
 
   void setModel(String path) {
@@ -658,9 +688,18 @@ class DictationCubit extends Cubit<DictationState> {
     _settings.save();
     _emit(_withSnapshots(state));
     unawaited(bridge.settingsChanged());
-    // Модель меняется только перезапуском сервера — но не сейчас, а на
-    // следующей фразе: сегодняшнюю память отдаём сразу.
     if (_server.up && _server.model != path) unawaited(_server.shutdown());
+    if (_settings.enabled && path.isNotEmpty) {
+      _bringingUp = () async {
+        try {
+          await _sweeping;
+          await _server.ensureUp(_options);
+        } catch (e, st) {
+          Log.error('Dictation', 'Engine prewarm failed: $e', e, st);
+        }
+      }();
+      unawaited(_bringingUp);
+    }
   }
 
   Future<void> copyLast() async {

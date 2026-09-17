@@ -646,48 +646,134 @@ class _Footer extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Padding(
-        padding: const EdgeInsets.all(Gap.hint),
-        child: Column(
-          children: [
-            _MenuRow(
-              l10n.menuDictationSettingsEllipsis,
-              () => context.read<DictationCubit>().openSettings('dictation'),
-              shortcut: os.settingsShortcut,
+      padding: const EdgeInsets.all(Gap.hint),
+      child: Column(
+        children: [
+          _MenuRow(
+            l10n.menuDictationSettingsEllipsis,
+            () => context.read<DictationCubit>().openSettings('dictation'),
+            shortcut: os.settingsShortcut,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: Gap.inner,
+              vertical: Gap.hint,
             ),
-            _MenuRow(
-              l10n.menuOpenRecordingsFolder,
-              () {
-                final settings = Settings.load();
-                final path =
-                    (settings['libraryPath'] as String?)?.isNotEmpty == true
-                        ? settings['libraryPath'] as String
-                        : os.defaultLibraryPath;
-                revealInFinder(path, createIfMissing: true);
-              },
+            child: Row(
+              children: [
+                _FooterIconButton(
+                  icon: CupertinoIcons.waveform_circle,
+                  tooltip: l10n.menuOpenRecordingsFolder,
+                  onTap: () {
+                    final settings = Settings.load();
+                    final path =
+                        (settings['libraryPath'] as String?)?.isNotEmpty == true
+                            ? settings['libraryPath'] as String
+                            : os.defaultLibraryPath;
+                    revealInFinder(path, createIfMissing: true);
+                  },
+                ),
+                const SizedBox(width: Gap.hint),
+                _FooterIconButton(
+                  icon: CupertinoIcons.cube_box,
+                  tooltip: l10n.menuOpenModelsFolder,
+                  onTap: () => revealInFinder(os.modelsDir, createIfMissing: true),
+                ),
+                const SizedBox(width: Gap.hint),
+                _FooterIconButton(
+                  icon: CupertinoIcons.doc_plaintext,
+                  tooltip: l10n.menuOpenLogsFolder,
+                  onTap: () => Log.openLogsFolder(),
+                ),
+              ],
             ),
-            _MenuRow(
-              l10n.menuOpenModelsFolder,
-              () => revealInFinder(os.modelsDir, createIfMissing: true),
+          ),
+          _MenuRow(
+            l10n.menuOpenApp(appName),
+            context.read<DictationCubit>().openMainWindow,
+          ),
+          _MenuRow(
+            l10n.menuQuitApp(appName),
+            context.read<DictationCubit>().quit,
+            // Подпись только там, где сочетание и правда есть.
+            // ⌘Q приложению даёт сама macOS вместе со строкой меню;
+            // на Windows выход по Ctrl+Q не назначен ничем, и написать
+            // его значило бы соврать. Значок при этом рисует граница
+            // системы, а не строка в коде: строкой тут стояло «⌘Q».
+            shortcut: os.hasSystemMenuBar
+                ? os.menuShortcut(const ['cmd'], 'q')
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Компактная кнопка-значок для нижней панели с тактильным откликом.
+class _FooterIconButton extends StatefulWidget {
+  const _FooterIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  State<_FooterIconButton> createState() => _FooterIconButtonState();
+}
+
+class _FooterIconButtonState extends State<_FooterIconButton> {
+  bool _hover = false;
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) => MacosTooltip(
+        message: widget.tooltip,
+        child: Semantics(
+          button: true,
+          label: widget.tooltip,
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _hover = true),
+            onExit: (_) => setState(() => _hover = false),
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTapDown: (_) => setState(() => _down = true),
+              onTapUp: (_) => setState(() => _down = false),
+              onTapCancel: () => setState(() => _down = false),
+              onTap: widget.onTap,
+              child: AnimatedScale(
+                duration: Motion.dur(context, Motion.press),
+                scale: _down ? 0.92 : 1.0,
+                child: AnimatedContainer(
+                  duration: Motion.dur(context, Motion.quick),
+                  curve: Motion.curve(context, Motion.quickCurve),
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: _down
+                        ? Surface.pressed(context)
+                        : (_hover
+                            ? Surface.hover(context)
+                            : MacosColors.transparent),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  alignment: Alignment.center,
+                  child: MacosIcon(
+                    widget.icon,
+                    size: IconSize.button,
+                    color: Surface.secondaryText(context)
+                        .withValues(alpha: _hover ? 1 : 0.65),
+                  ),
+                ),
+              ),
             ),
-            _MenuRow(
-              l10n.openLogsFolder,
-              () => Log.openLogsFolder(),
-            ),
-            _MenuRow(l10n.menuOpenApp(appName),
-                context.read<DictationCubit>().openMainWindow),
-            _MenuRow(l10n.menuQuitApp(appName), context.read<DictationCubit>().quit,
-                // Подпись только там, где сочетание и правда есть.
-                // ⌘Q приложению даёт сама macOS вместе со строкой меню;
-                // на Windows выход по Ctrl+Q не назначен ничем, и написать
-                // его значило бы соврать. Значок при этом рисует граница
-                // системы, а не строка в коде: строкой тут стояло «⌘Q».
-                shortcut: os.hasSystemMenuBar
-                    ? os.menuShortcut(const ['cmd'], 'q')
-                    : null),
-          ],
+          ),
         ),
       );
-  }
 }
 
 // ── мелочи ──────────────────────────────────────────────────────────────────

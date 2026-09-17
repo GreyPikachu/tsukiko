@@ -28,6 +28,7 @@ class Log {
   static const int defaultMaxSizeBytes = 5 * 1024 * 1024; // 5 MB
   static int maxSizeBytes = defaultMaxSizeBytes;
   static bool printToStderr = true;
+  static bool enabled = true;
   static String? _customLogsDir;
 
   /// Папка с журналами работы приложения.
@@ -71,6 +72,8 @@ class Log {
     StackTrace? stack,
     DateTime? now,
   ]) {
+    if (!enabled) return;
+
     final entry = formatRecord(level, tag, msg, error, stack, now);
 
     if (printToStderr) {
@@ -157,9 +160,11 @@ class Log {
     String? customLogsDir,
     int? maxBytes,
     bool? stderr,
+    bool? enabled,
   }) {
     _customLogsDir = customLogsDir;
     maxSizeBytes = maxBytes ?? defaultMaxSizeBytes;
     if (stderr != null) printToStderr = stderr;
+    Log.enabled = enabled ?? true;
   }
 }

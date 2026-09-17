@@ -1069,7 +1069,10 @@ class _SettingsBodyState extends State<SettingsBody>
           child: Text(l10n.buttonOpenSystemSettings),
         ),
     ],
-    SectionTitle(l10n.openLogsFolder),
+    SectionTitle(l10n.sectionLogging),
+    Check(l10n.checkEnableLogging, s.loggingEnabled, _cubit.setLoggingEnabled),
+    Hint(l10n.hintEnableLogging, under: true),
+    const SizedBox(height: Gap.item),
     Row(
       children: [
         Expanded(
@@ -1089,7 +1092,7 @@ class _SettingsBodyState extends State<SettingsBody>
             controlSize: ControlSize.regular,
             secondary: true,
             onPressed: () => Log.openLogsFolder(),
-            child: Text(l10n.openLogsFolder),
+            child: Text(l10n.menuOpenLogsFolder),
           ),
         ),
       ],

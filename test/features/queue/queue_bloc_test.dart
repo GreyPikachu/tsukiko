@@ -719,6 +719,45 @@ void main() {
       final lines = await stream.transform(resilientLineDecoder()).toList();
       expect(lines, ['строка без переноса']);
     });
+
+    group('normalizePath', () {
+      test('обрезка пробелов и кавычек', () {
+        expect(normalizePath('  /path/to/file.mp3  '), '/path/to/file.mp3');
+        expect(normalizePath('"/path/to/file.mp3"'), '/path/to/file.mp3');
+        expect(normalizePath("'/path/to/file.mp3'"), '/path/to/file.mp3');
+        expect(normalizePath(' "\'/path/to/file.mp3\'" '), '/path/to/file.mp3');
+      });
+
+      test('удаление нуль-байтов и управляющих символов', () {
+        expect(normalizePath('/path/to\x00/file.mp3'), '/path/to/file.mp3');
+        expect(normalizePath('/path/to\x07\x1b/file.mp3'), '/path/to/file.mp3');
+      });
+
+      test('разбор file:// URI в локальный путь', () {
+        final path = normalizePath('file:///Users/test/music.mp3');
+        expect(path, anyOf('/Users/test/music.mp3', contains('music.mp3')));
+        expect(normalizePath('"file:///path/audio.wav"'), anyOf('/path/audio.wav', contains('audio.wav')));
+      });
+    });
+
+    blocTest<QueueBloc, QueueState>(
+      'файлы с кавычками и file:// успешно добавляются, дубликаты и не-аудио отсеиваются',
+      build: make,
+      act: (b) {
+        final raw = file('запись.m4a');
+        b.add(FilesAdded([
+          '"$raw"',
+          'file://$raw',
+          '   ',
+          '""',
+          'документ.pdf',
+        ]));
+      },
+      verify: (b) {
+        expect(b.state.jobs.length, 1);
+        expect(b.state.jobs.single.name, 'запись.m4a');
+      },
+    );
   });
 }
 

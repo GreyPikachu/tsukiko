@@ -89,6 +89,7 @@ class Job extends Equatable {
   /// Начатое и не досчитанное. Такое не бросают: его продолжают.
   bool get paused => state == JobState.paused;
   bool get done => transcript != null || raw != null;
+  bool get isDone => done;
   List<Segment> get segments => transcript?.segments ?? live;
 
   /// Сколько ещё осталось, если считать, что дальше пойдёт с той же скоростью.

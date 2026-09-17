@@ -111,9 +111,15 @@ void main() {
   ) async {
     await pumpPanel(tester, locale: const Locale('ru'));
 
-    final openRecordings = find.text('Открыть папку записей');
-    final openModels = find.text('Открыть папку моделей');
-    final openLogs = find.text('Папка журналов');
+    final openRecordings = find.byWidgetPredicate(
+      (w) => w is MacosTooltip && w.message == 'Открыть папку записей',
+    );
+    final openModels = find.byWidgetPredicate(
+      (w) => w is MacosTooltip && w.message == 'Открыть папку моделей',
+    );
+    final openLogs = find.byWidgetPredicate(
+      (w) => w is MacosTooltip && w.message == 'Открыть папку журналов',
+    );
 
     expect(openRecordings, findsOneWidget);
     expect(openModels, findsOneWidget);
@@ -137,9 +143,15 @@ void main() {
   ) async {
     await pumpPanel(tester, locale: const Locale('en'));
 
-    final openRecordings = find.text('Open Recordings Folder');
-    final openModels = find.text('Open Models Folder');
-    final openLogs = find.text('Logs Folder');
+    final openRecordings = find.byWidgetPredicate(
+      (w) => w is MacosTooltip && w.message == 'Open Recordings Folder',
+    );
+    final openModels = find.byWidgetPredicate(
+      (w) => w is MacosTooltip && w.message == 'Open Models Folder',
+    );
+    final openLogs = find.byWidgetPredicate(
+      (w) => w is MacosTooltip && w.message == 'Open Logs Folder',
+    );
 
     expect(openRecordings, findsOneWidget);
     expect(openModels, findsOneWidget);
