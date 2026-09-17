@@ -31,7 +31,6 @@
 #define ID_TRAY_QUIT 1003
 // Ожидание второго стука при назначении сочетания.
 #define ID_CAPTURE_TIMER 2001
-#define ID_PASTE_TIMER 2003
 #define ID_PREWARM_TIMER 2004
 
 /// Метка на наших же событиях клавиатуры.
@@ -775,11 +774,6 @@ bool DictationBridge::HandleWindowMessage(HWND hwnd, UINT message, WPARAM wparam
     return true;
   }
 
-  if (message == WM_TIMER && wparam == ID_PASTE_TIMER) {
-    KillTimer(main_window_, ID_PASTE_TIMER);
-    RestoreClipboard();
-    return true;
-  }
 
   if (message == WM_TIMER && wparam == ID_CAPTURE_TIMER) {
     KillTimer(main_window_, ID_CAPTURE_TIMER);
@@ -1100,7 +1094,6 @@ void DictationBridge::SendHotkeyEvent(const std::string& id, bool down, bool can
 void DictationBridge::SendCapturedHotkey(const std::vector<std::string>& mods,
                                         const std::vector<std::string>& keys,
                                         int taps) {
-  if (!DictationChannel()) return;
   flutter::EncodableMap map;
   flutter::EncodableList modsList;
   for (const auto& m : mods) modsList.push_back(flutter::EncodableValue(m));
@@ -1110,8 +1103,16 @@ void DictationBridge::SendCapturedHotkey(const std::vector<std::string>& mods,
   map[flutter::EncodableValue("mods")] = modsList;
   map[flutter::EncodableValue("keys")] = keysList;
   map[flutter::EncodableValue("taps")] = flutter::EncodableValue(taps);
-  DictationChannel()->InvokeMethod(
-      "captured", std::make_unique<flutter::EncodableValue>(map));
+
+  if (settings_channel_) {
+    settings_channel_->InvokeMethod("captured", std::make_unique<flutter::EncodableValue>(map));
+  }
+  if (channel_) {
+    channel_->InvokeMethod("captured", std::make_unique<flutter::EncodableValue>(map));
+  }
+  if (panel_channel_) {
+    panel_channel_->InvokeMethod("captured", std::make_unique<flutter::EncodableValue>(map));
+  }
 }
 
 /// Переспросить сторону диктовки и отдать её ответ тому, кто спросил.
@@ -1375,7 +1376,7 @@ void DictationBridge::PushAudioFrames(const int16_t* samples, uint32_t frames,
   // порога — почти никак. Иначе речь сама поднимает фон, от которого её
   // же и отсчитывают, и индикатор оседает за несколько секунд разговора.
   if (!has_noise_floor_) {
-    noise_floor_db_ = static_cast<float>(db);
+    noise_floor_db_ = std::min(static_cast<float>(db), -45.0f);
     has_noise_floor_ = true;
   }
   const double was = noise_floor_db_;
@@ -1424,51 +1425,15 @@ bool OpenClipboardPatiently(HWND owner) {
   return false;
 }
 
-/// Форматы, которые лежат не в общей памяти, а отдельными объектами
-/// системы (картинки, метафайлы, палитры). Скопировать их так же, как
-/// текст, нельзя, а испортить попыткой — можно.
-bool IsGlobalFormat(UINT format) {
-  return format != CF_BITMAP && format != CF_DSPBITMAP &&
-         format != CF_PALETTE && format != CF_METAFILEPICT &&
-         format != CF_DSPMETAFILEPICT && format != CF_ENHMETAFILE &&
-         format != CF_DSPENHMETAFILE && format != CF_OWNERDISPLAY;
-}
-
 }  // namespace
 
-/// Вставить текст в чужое окно, вернув человеку его буфер обмена.
-///
-/// Другого способа вставки нет: Windows не даёт положить текст в чужое
-/// поле ввода напрямую, только через буфер и Ctrl+V. Значит чужое
-/// содержимое буфера надо сначала запомнить, а потом вернуть, — иначе
-/// каждая продиктованная фраза стирает то, что человек копировал.
-/// На macOS это делается ровно так же (см. `paste` в Dictation.swift),
-/// а здесь возврата не было вовсе.
-///
-/// Возвращаем не сразу: получатель читает буфер уже после того, как
-/// Ctrl+V до него дошло. Отсюда таймер, и число то же, что на macOS, —
-/// 400 мс.
+/// Вставить текст в чужое окно через буфер обмена и Ctrl+V.
+/// Текст остаётся в буфере обмена (CF_UNICODETEXT), чтобы целевые
+/// приложения успели его прочитать и пользователь мог использовать его повторно.
 bool DictationBridge::PasteText(const std::string& text) {
   if (text.empty()) return true;
 
   if (!OpenClipboardPatiently(main_window_)) return false;
-
-  // Снимок чужого буфера — до того, как его затрём.
-  clipboard_backup_.clear();
-  for (UINT format = EnumClipboardFormats(0); format != 0;
-       format = EnumClipboardFormats(format)) {
-    if (!IsGlobalFormat(format)) continue;
-    HANDLE handle = GetClipboardData(format);
-    if (!handle) continue;
-    const SIZE_T size = GlobalSize(handle);
-    if (size == 0) continue;
-    const void* src = GlobalLock(handle);
-    if (!src) continue;
-    const BYTE* bytes = static_cast<const BYTE*>(src);
-    clipboard_backup_.emplace_back(format,
-                                   std::vector<BYTE>(bytes, bytes + size));
-    GlobalUnlock(handle);
-  }
 
   EmptyClipboard();
 
@@ -1477,17 +1442,21 @@ bool DictationBridge::PasteText(const std::string& text) {
   HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
   if (!hMem) {
     CloseClipboard();
-    clipboard_backup_.clear();
     return false;
   }
 
-  memcpy(GlobalLock(hMem), wtext.c_str(), bytes);
+  void* dst = GlobalLock(hMem);
+  if (!dst) {
+    GlobalFree(hMem);
+    CloseClipboard();
+    return false;
+  }
+  memcpy(dst, wtext.c_str(), bytes);
   GlobalUnlock(hMem);
   if (!SetClipboardData(CF_UNICODETEXT, hMem)) {
     // Не приняли — память наша, и освобождать её тоже нам.
     GlobalFree(hMem);
     CloseClipboard();
-    clipboard_backup_.clear();
     return false;
   }
   CloseClipboard();
@@ -1515,32 +1484,12 @@ bool DictationBridge::PasteText(const std::string& text) {
   key(VK_CONTROL, true);
 
   SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
-
-  KillTimer(main_window_, ID_PASTE_TIMER);
-  SetTimer(main_window_, ID_PASTE_TIMER, 400, nullptr);
   return true;
 }
 
 void DictationBridge::RestoreClipboard() {
-  if (clipboard_backup_.empty()) return;
-  auto saved = std::move(clipboard_backup_);
-  clipboard_backup_.clear();
-
-  if (!OpenClipboardPatiently(main_window_)) return;
-  EmptyClipboard();
-  for (const auto& [format, bytes] : saved) {
-    HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, bytes.size());
-    if (!mem) continue;
-    void* dst = GlobalLock(mem);
-    if (!dst) {
-      GlobalFree(mem);
-      continue;
-    }
-    memcpy(dst, bytes.data(), bytes.size());
-    GlobalUnlock(mem);
-    if (!SetClipboardData(format, mem)) GlobalFree(mem);
-  }
-  CloseClipboard();
+  // No-op: CF_UNICODETEXT intentionally left in clipboard to prevent
+  // corruption and allow target apps / user reliable access.
 }
 
 // ── Корзина и автозапуск ───────────────────────────────────────────────────

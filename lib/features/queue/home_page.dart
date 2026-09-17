@@ -19,6 +19,7 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../dictation/dictation_repository.dart';
 import '../../core/library.dart';
+import '../../core/logger.dart';
 import '../../core/models.dart';
 import '../../core/recognition.dart';
 import '../../core/text.dart';
@@ -488,17 +489,17 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// с метками имеют одну модель [Transcript], поэтому между ними нет
   /// цепочки потерь-парсеров: читаем один раз, пишем один раз.
   Future<void> _convertTranscript() async {
-    final input = await openFile(
-      acceptedTypeGroups: [
-        XTypeGroup(
-          label: l10n.fileTypeTranscripts,
-          extensions: transcriptExt.map((e) => e.substring(1)).toList(),
-        ),
-      ],
-    );
-    if (input == null) return;
-
     try {
+      final input = await openFile(
+        acceptedTypeGroups: [
+          XTypeGroup(
+            label: l10n.fileTypeTranscripts,
+            extensions: transcriptExt.map((e) => e.substring(1)).toList(),
+          ),
+        ],
+      );
+      if (input == null) return;
+
       final read = readTranscript(
         input.path,
         await File(input.path).readAsString(),
@@ -545,7 +546,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       );
       _send(SaveFormatChosen(chosen));
       _send(StatusReported(l10n.statusTranscriptConverted));
-    } catch (error) {
+    } catch (error, stack) {
+      Log.warn('Queue', 'Transcript conversion failed: $error', error, stack);
       stderr.writeln('tsukiko: расшифровка не преобразовалась — $error');
       _showAsk(
         Ask(l10n.askConversionFailedTitle, l10n.askConversionFailedBody),
@@ -842,6 +844,9 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     final ready = s.readyTargets.isNotEmpty;
     final copyFormat = formatById(s.copyFormat);
     final saveFormat = formatById(s.saveFormat);
+    final canConvert =
+        s.lead?.transcript?.segments.isNotEmpty == true ||
+        s.lead?.isDone == true;
 
     return AppToolBar(
       title: const ToolbarTitle(),
@@ -1012,10 +1017,10 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         if (!os.hasSystemMenuBar)
           ToolBarIconButton(
             label: l10n.menuConvertTranscript,
-            icon: _toolIcon(CupertinoIcons.arrow_2_squarepath, on: true),
+            icon: _toolIcon(CupertinoIcons.arrow_2_squarepath, on: canConvert),
             showLabel: false,
             tooltipMessage: l10n.menuConvertTranscript,
-            onPressed: _convertTranscript,
+            onPressed: canConvert ? _convertTranscript : null,
           ),
         // Последним — и это не случайность. Панель инструментов прячет
         // лишнее с конца: чем шире боковая колонка, тем меньше её остаётся,

@@ -247,12 +247,14 @@ void main() {
       await tester.pump();
 
       await tester.dragUntilVisible(
-        find.text('ПАПКА ЖУРНАЛОВ'),
+        find.text('ЖУРНАЛИРОВАНИЕ'),
         find.byType(ListView).first,
         const Offset(0, -150),
       );
-      expect(find.text('ПАПКА ЖУРНАЛОВ'), findsOneWidget);
-      final openLogsBtn = find.widgetWithText(PushButton, 'Папка журналов');
+      expect(find.text('ЖУРНАЛИРОВАНИЕ'), findsOneWidget);
+      expect(find.text('Вести журнал работы'), findsOneWidget);
+      final openLogsBtn =
+          find.widgetWithText(PushButton, 'Открыть папку журналов');
       expect(openLogsBtn, findsOneWidget);
 
       await tester.tap(openLogsBtn);

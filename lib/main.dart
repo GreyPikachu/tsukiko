@@ -6,6 +6,7 @@ import 'package:macos_ui/macos_ui.dart';
 import 'package:macos_ui/src/layout/wallpaper_tinting_settings/global_wallpaper_tinting_settings.dart';
 import 'core/app_locale.dart';
 import 'core/logger.dart';
+import 'core/settings.dart';
 import 'l10n/gen/app_localizations.dart';
 import 'legacy_migration.dart';
 import 'features/dictation/hud_page.dart' show runHud;
@@ -14,11 +15,18 @@ import 'features/settings/settings_page.dart' show runSettings;
 import 'features/queue/home_page.dart';
 import 'platform/os.dart';
 
+void _applyLoggingSetting() {
+  if (Settings.load()['loggingEnabled'] == false) {
+    Log.enabled = false;
+  }
+}
+
 /// Точка входа второго движка Flutter — того, что рисует панель у строки
 /// меню и ведёт диктовку. Она обязана лежать именно здесь: FlutterEngine
 /// на macOS ищет точку входа только в корневой библиотеке приложения.
 @pragma('vm:entry-point')
 void panelMain() {
+  _applyLoggingSetting();
   Log.info('App', 'Starting entrypoint: panelMain');
   runPanel();
 }
@@ -28,6 +36,7 @@ void panelMain() {
 /// строки меню там нет вовсе.
 @pragma('vm:entry-point')
 void settingsMain() {
+  _applyLoggingSetting();
   Log.info('App', 'Starting entrypoint: settingsMain');
   runSettings();
 }
@@ -37,6 +46,7 @@ void settingsMain() {
 /// в `docs/задача-панель-записи.md`.
 @pragma('vm:entry-point')
 void hudMain() {
+  _applyLoggingSetting();
   Log.info('App', 'Starting entrypoint: hudMain');
   runHud();
 }
@@ -45,6 +55,7 @@ void hudMain() {
 /// до запуска движка (AppDelegate.applicationWillFinishLaunching), подняв
 /// окно уже работающей. Проверять это в Dart больше нечем и незачем.
 Future<void> main(List<String> args) async {
+  _applyLoggingSetting();
   Log.info(
     'App',
     'Starting Tsukiko $appVersion (${os.platformId}, ${Platform.operatingSystemVersion}), '

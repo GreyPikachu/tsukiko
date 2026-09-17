@@ -1434,5 +1434,9 @@
   "tooltipOpenRecordingsFolder": "Папка записей",
   "tooltipOpenModelsFolder": "Папка моделей",
   "openLogsFolder": "Папка журналов",
-  "tooltipOpenLogsFolder": "Открыть папку с журналами работы"
+  "tooltipOpenLogsFolder": "Открыть папку с журналами работы",
+  "menuOpenLogsFolder": "Открыть папку журналов",
+  "sectionLogging": "Журналирование",
+  "checkEnableLogging": "Вести журнал работы",
+  "hintEnableLogging": "Записывать диагностические сообщения приложения в файлы для поиска неполадок."
 }

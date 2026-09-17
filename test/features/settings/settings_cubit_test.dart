@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tsukiko/core/logger.dart';
 import 'package:tsukiko/core/settings.dart';
 import 'package:tsukiko/core/text_commands.dart';
 import 'package:tsukiko/core/whisper_server.dart';
@@ -384,6 +385,28 @@ void main() {
         asked,
         reason: 'закрытое окно ни о чём не спрашивает',
       );
+    });
+  });
+
+  group('журналирование', () {
+    test('по умолчанию включено, сохраняется и синхронизирует Log.enabled', () async {
+      expect(cubit.state.loggingEnabled, isTrue);
+      expect(Log.enabled, isTrue);
+
+      cubit.setLoggingEnabled(false);
+      await settle();
+
+      expect(cubit.state.loggingEnabled, isFalse);
+      expect(Log.enabled, isFalse);
+      expect(Settings.load()['loggingEnabled'], isFalse);
+      expect(native.calls, contains('settingsChanged'));
+
+      cubit.setLoggingEnabled(true);
+      await settle();
+
+      expect(cubit.state.loggingEnabled, isTrue);
+      expect(Log.enabled, isTrue);
+      expect(Settings.load()['loggingEnabled'], isTrue);
     });
   });
 }

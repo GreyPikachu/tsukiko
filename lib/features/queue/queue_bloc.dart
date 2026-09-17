@@ -328,28 +328,104 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   List<String> _remember(List<String> recent, String path) =>
       [path, ...recent.where((p) => p != path)].take(10).toList();
 
+  /// Нормализация пути к файлу: обрезка пробелов, кавычек, спецсимволов и разбор file://
+  static String normalizePath(String raw) {
+    var s = raw.trim();
+
+    // Очистка от нуль-байтов и управляющих символов.
+    s = s.replaceAll('\x00', '').replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '').trim();
+
+    // Снятие обрамляющих кавычек (одинарных или двойных).
+    while ((s.startsWith('"') && s.endsWith('"')) ||
+        (s.startsWith("'") && s.endsWith("'"))) {
+      if (s.length >= 2) {
+        s = s.substring(1, s.length - 1).trim();
+      } else {
+        s = '';
+        break;
+      }
+    }
+
+    // Обработка file:// URI с преобразованием в путь локальной файловой системы.
+    if (s.startsWith('file://')) {
+      try {
+        final uri = Uri.parse(s);
+        if (uri.hasAuthority && uri.host == 'localhost') {
+          s = Uri(scheme: 'file', path: uri.path).toFilePath();
+        } else {
+          s = uri.toFilePath();
+        }
+      } catch (err) {
+        Log.warn('Queue', 'Failed to convert file URI to path: $s ($err)');
+      }
+    }
+
+    // Повторное снятие кавычек, если URI был в кавычках.
+    while ((s.startsWith('"') && s.endsWith('"')) ||
+        (s.startsWith("'") && s.endsWith("'"))) {
+      if (s.length >= 2) {
+        s = s.substring(1, s.length - 1).trim();
+      } else {
+        s = '';
+        break;
+      }
+    }
+
+    // Финальная очистка от нуль-байтов и управляющих символов.
+    s = s.replaceAll('\x00', '').replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '').trim();
+
+    return s;
+  }
+
   Future<void> _onFilesAdded(FilesAdded e, Emitter<QueueState> emit) async {
     var next = state;
     var added = 0, duplicates = 0, skipped = 0;
     Job? last;
 
     Future<void> take(Iterable<String> paths) async {
-      for (final p in paths) {
-        if (FileSystemEntity.isDirectorySync(p)) {
-          await take(
-            Directory(p)
+      for (final raw in paths) {
+        final p = normalizePath(raw);
+        if (p.isEmpty) {
+          skipped++;
+          continue;
+        }
+
+        bool isDir = false;
+        try {
+          isDir = FileSystemEntity.isDirectorySync(p);
+        } catch (err) {
+          Log.warn('Queue', 'Could not check directory status for "$p": $err');
+          skipped++;
+          continue;
+        }
+
+        if (isDir) {
+          List<String> entries = [];
+          try {
+            entries = Directory(p)
                 .listSync()
                 .whereType<File>()
                 .map((f) => f.path)
                 .where((f) => audioExt.contains(_ext(f)))
                 .toList()
-              ..sort(),
-          );
+              ..sort();
+          } catch (err) {
+            Log.warn('Queue', 'Could not list directory "$p": $err');
+            skipped++;
+            continue;
+          }
+          await take(entries);
           continue;
         }
+
         // Готовую расшифровку тоже принимаем перетаскиванием.
         if (transcriptExt.contains(_ext(p))) {
-          next = await _openTranscript(next, p);
+          try {
+            next = await _openTranscript(next, p);
+          } catch (err) {
+            Log.warn('Queue', 'Could not open transcript "$p": $err');
+            skipped++;
+          }
           continue;
         }
         if (!audioExt.contains(_ext(p))) {
@@ -360,13 +436,19 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
           duplicates++;
           continue;
         }
-        last = Job(File(p));
-        Log.info('Queue', 'Job queued: $p');
-        next = next.copyWith(
-          jobs: [...next.jobs, last!],
-          recent: _remember(next.recent, p),
-        );
-        added++;
+        try {
+          final file = File(p);
+          last = Job(file);
+          Log.info('Queue', 'Job queued: $p');
+          next = next.copyWith(
+            jobs: [...next.jobs, last!],
+            recent: _remember(next.recent, p),
+          );
+          added++;
+        } catch (err) {
+          Log.warn('Queue', 'Could not queue file "$p": $err');
+          skipped++;
+        }
       }
     }
 
@@ -1902,3 +1984,6 @@ String _decodeResilientBytes(List<int> bytes) {
     }
   }
 }
+
+/// Нормализация пути к файлу: обрезка пробелов, кавычек, спецсимволов и разбор file://
+String normalizePath(String raw) => QueueBloc.normalizePath(raw);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
@@ -283,6 +284,72 @@ void main() {
       );
     });
   });
+
+  group('прогрев и запуск', () {
+    test('выбор модели при включённой диктовке запускает фоновый прогрев', () async {
+      cubit.setEnabled(true);
+      server.ensureUpCalls.clear();
+
+      cubit.setModel('/path/to/test-model.bin');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      expect(server.ensureUpCalls, isNotEmpty);
+      expect(server.ensureUpCalls.last.model, '/path/to/test-model.bin');
+    });
+
+    test('включение диктовки при выбранной модели запускает фоновый прогрев', () async {
+      cubit.setEnabled(false);
+      cubit.setModel('/path/to/test-model.bin');
+      server.ensureUpCalls.clear();
+
+      cubit.setEnabled(true);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      expect(server.ensureUpCalls, isNotEmpty);
+      expect(server.ensureUpCalls.last.model, '/path/to/test-model.bin');
+    });
+
+    test('запись начинается сразу, даже если прогрев ещё не завершён', () async {
+      final completer = Completer<void>();
+      server.ensureUpCompleter = completer;
+
+      // Запуск записи не должен блокироваться на ensureUp
+      final starting = cubit.start();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(cubit.state.phase, Phase.recording);
+      expect(native.hudStates.last, 'recording');
+
+      completer.complete();
+      await starting;
+      await cubit.stop();
+      expect(cubit.state.phase, Phase.idle);
+    });
+
+    test('остановка сразу переходит в transcribing и дожидается прогрева', () async {
+      final completer = Completer<void>();
+      server.ensureUpCompleter = completer;
+
+      final starting = cubit.start();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(cubit.state.phase, Phase.recording);
+      await starting;
+
+      // Вызываем stop, пока прогрев ещё заблокирован
+      final stopping = cubit.stop();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(cubit.state.phase, Phase.transcribing);
+      expect(native.hudStates.last, 'transcribing');
+
+      // Разрешаем прогрев завершиться
+      completer.complete();
+      await stopping;
+
+      expect(cubit.state.phase, Phase.idle);
+      expect(cubit.state.last, 'сказанное вслух');
+    });
+  });
 }
 
 /// Подставной сервер: настоящий поднял бы процесс и прочитал в память
@@ -291,12 +358,19 @@ class _FakeServer extends WhisperServer {
   /// Что «распознала» модель. null — не удалось, как при обрыве.
   String? text = 'сказанное вслух';
   var shutdowns = 0;
+  final ensureUpCalls = <RunOptions>[];
+  Completer<void>? ensureUpCompleter;
 
   @override
   bool get up => false;
 
   @override
-  Future<void> ensureUp(RunOptions o) async {}
+  Future<void> ensureUp(RunOptions o) async {
+    ensureUpCalls.add(o);
+    if (ensureUpCompleter != null) {
+      await ensureUpCompleter!.future;
+    }
+  }
 
   @override
   Future<String?> transcribe(String wav, {String lang = 'auto'}) async => text;

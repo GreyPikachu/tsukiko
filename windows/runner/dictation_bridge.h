@@ -69,6 +69,7 @@ class DictationBridge {
   void ResetLevelMeter() {
     current_level_ = 0.0f;
     meter_level_ = 0.0f;
+    noise_floor_db_ = -50.0f;
     has_noise_floor_ = false;
   }
 
@@ -146,10 +147,6 @@ class DictationBridge {
   /// заметно. Теперь это делается один раз, когда приложение уже
   /// поднялось и никто ничего не ждёт.
   void PrewarmHud();
-
-  /// Что лежало в буфере обмена до вставки: формат и его содержимое.
-  /// Восстанавливается по таймеру — см. PasteText.
-  std::vector<std::pair<UINT, std::vector<BYTE>>> clipboard_backup_;
 
   void RestoreClipboard();
 
@@ -251,7 +248,7 @@ class DictationBridge {
   /// числа разобран у PushAudioFrames в .cpp — там же, где формулы.
   float current_level_ = 0.0f;
   float meter_level_ = 0.0f;
-  float noise_floor_db_ = 0.0f;
+  float noise_floor_db_ = -50.0f;
   bool has_noise_floor_ = false;
   bool is_recording_ = false;
 };

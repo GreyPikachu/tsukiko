@@ -164,5 +164,20 @@ void main() {
       // Must not throw
       expect(() => Log.info('Test', 'Safe failure'), returnsNormally);
     });
+
+    test('does not write or create file when enabled is false', () {
+      Log.enabled = false;
+      Log.info('App', 'This should not be logged');
+
+      expect(Log.logFile.existsSync(), isFalse);
+
+      Log.enabled = true;
+      Log.info('App', 'This should be logged');
+
+      expect(Log.logFile.existsSync(), isTrue);
+      final lines = Log.logFile.readAsLinesSync();
+      expect(lines.length, 1);
+      expect(lines.first, contains('This should be logged'));
+    });
   });
 }
