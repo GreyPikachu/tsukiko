@@ -383,7 +383,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     // Финальная очистка от нуль-байтов и управляющих символов.
     s = s.replaceAll('\x00', '').replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '').trim();
 
-    if (Platform.isWindows) {
+    if (Platform.isWindows && RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(s)) {
       s = s.replaceAll('/', r'\');
     }
 
