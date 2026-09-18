@@ -596,5 +596,59 @@
   "menuOpenLogsFolder": "Open Logs Folder",
   "sectionLogging": "Logging",
   "checkEnableLogging": "Enable logging",
-  "hintEnableLogging": "Write application diagnostic logs to files for troubleshooting."
+  "hintEnableLogging": "Write application diagnostic logs to files for troubleshooting.",
+  "settingsTabVocabulary": "Vocabulary",
+  "sectionVocabularyAndReplacements": "Vocabulary & Replacements",
+  "hintVocabularyScope": "The vocabulary improves recognition accuracy and automatically replaces phrases with text.",
+  "checkVocabularyDictation": "Apply in dictation",
+  "checkVocabularyTranscriber": "Apply in transcriber",
+  "sectionAddVocabulary": "Add to vocabulary",
+  "placeholderVocabularyPhrase": "What to say or recognize",
+  "placeholderVocabularyReplacement": "Replacement (optional)",
+  "hintVocabularyReplacementOptional": "Leave replacement empty to simply teach the model a rare word or name.",
+  "buttonAddVocabulary": "Add",
+  "sectionVocabularyItems": "Vocabulary entries",
+  "placeholderSearchVocabulary": "Search phrase or replacement…",
+  "filterAll": "All",
+  "filterHints": "Hints",
+  "filterReplacements": "Replacements",
+  "badgeHint": "Hint",
+  "badgeReplacement": "Replacement",
+  "tooltipEditVocabulary": "Edit entry",
+  "tooltipDeleteVocabulary": "Delete from vocabulary",
+  "tooltipEnableItem": "Enable entry",
+  "tooltipDisableItem": "Disable entry",
+  "emptyVocabularyTitle": "Vocabulary is empty",
+  "emptyVocabularySubtitle": "Add technical jargon, rare names, or configure phrase replacements.",
+  "promptBudgetNotice": "~{tokens} of {max} prompt tokens used",
+  "@promptBudgetNotice": {
+    "placeholders": {
+      "tokens": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "promptBudgetWarning": "Vocabulary is very large: model may ignore trailing entries",
+  "vocabularySummaryTitle": "Vocabulary & Replacements",
+  "vocabularySummaryStatus": "{count, plural, one{{count} entry} other{{count} entries}} ({hints} hints, {replacements} replacements)",
+  "@vocabularySummaryStatus": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "hints": {
+        "type": "int"
+      },
+      "replacements": {
+        "type": "int"
+      }
+    }
+  },
+  "buttonConfigureVocabulary": "Configure vocabulary →",
+  "statusVocabularyItemDeleted": "Entry removed from vocabulary",
+  "buttonUndo": "Undo",
+  "warningDuplicatePhrase": "This phrase already exists in the vocabulary"
 }

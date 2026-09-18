@@ -1,9 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
@@ -13,7 +14,6 @@ import '../../core/logger.dart';
 import '../../core/models.dart';
 import '../../core/recognition.dart';
 import '../../core/skill_install.dart';
-import '../../core/text_commands.dart';
 import '../../core/transcript.dart';
 import '../../core/whisper_server.dart' show Hotkey;
 import '../../design/design.dart';
@@ -22,8 +22,11 @@ import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import 'settings_cubit.dart';
 import 'widgets/model_row.dart';
+import 'widgets/vocabulary_item_row.dart';
+import 'widgets/vocabulary_summary_card.dart';
 import 'settings_state.dart';
 import '../../core/labels.dart';
+import '../../core/vocabulary.dart';
 
 /// Окно настроек: своё окно с вкладками, как у всех приложений системы.
 ///
@@ -46,13 +49,6 @@ void runSettings() {
 }
 
 /// Вкладки названы по потребителю, а не по виду настройки.
-///
-/// Раньше их было «Диктовка», «Модели», «Файлы», «Общие» — и на вопрос
-/// «чьи это модели и чьи файлы» вкладка не отвечала: у приложения два
-/// независимых потребителя моделей, расшифровщик и диктовка, и почти
-/// у каждой настройки есть ровно один хозяин. Теперь первые две вкладки —
-/// это и есть хозяева, «Модели» — общий склад файлов на двоих, а
-/// «Приложение» — то, что не принадлежит ни одному из них.
 List<({String id, String label, IconData icon})> _settingsTabs(
   AppLocalizations l10n,
 ) => [
@@ -62,6 +58,11 @@ List<({String id, String label, IconData icon})> _settingsTabs(
     icon: CupertinoIcons.doc_text,
   ),
   (id: 'dictation', label: l10n.settingsTabDictation, icon: CupertinoIcons.mic),
+  (
+    id: 'vocabulary',
+    label: l10n.settingsTabVocabulary,
+    icon: CupertinoIcons.book,
+  ),
   (id: 'models', label: l10n.settingsTabModels, icon: CupertinoIcons.cube_box),
   (id: 'app', label: l10n.settingsTabApp, icon: CupertinoIcons.gear),
 ];
@@ -102,10 +103,19 @@ class SettingsBody extends StatefulWidget {
 
 class _SettingsBodyState extends State<SettingsBody>
     with WidgetsBindingObserver {
-  /// Единственное, что остаётся окну: поле ввода подсказки.
+  /// Поле ввода подсказки для совместимости.
   final _promptCtrl = TextEditingController();
   final _modelsScroll = ScrollController();
   String _promptShown = '';
+
+  final _vocabSearchCtrl = TextEditingController();
+  final _newPhraseCtrl = TextEditingController();
+  final _newReplacementCtrl = TextEditingController();
+  final _newPhraseFocus = FocusNode();
+  int _vocabFilter = 0; // 0: All, 1: Hints, 2: Replacements
+  String _vocabQuery = '';
+  bool _showDeletedNotice = false;
+  Timer? _deletedNoticeTimer;
 
   /// Ключ API только что скопировали. Живёт до следующей перерисовки
   /// настроек и в кубите ему делать нечего: это не настройка, а ответ
@@ -139,7 +149,20 @@ class _SettingsBodyState extends State<SettingsBody>
     WidgetsBinding.instance.removeObserver(this);
     _promptCtrl.dispose();
     _modelsScroll.dispose();
+    _vocabSearchCtrl.dispose();
+    _newPhraseCtrl.dispose();
+    _newReplacementCtrl.dispose();
+    _newPhraseFocus.dispose();
+    _deletedNoticeTimer?.cancel();
     super.dispose();
+  }
+
+  void _triggerDeletedNotice() {
+    _deletedNoticeTimer?.cancel();
+    setState(() => _showDeletedNotice = true);
+    _deletedNoticeTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _showDeletedNotice = false);
+    });
   }
 
   /// Поле подсказки следует за настройкой, но не мешает набору.
@@ -226,6 +249,7 @@ class _SettingsBodyState extends State<SettingsBody>
                     if (s.problem != null) _problem(s.problem!),
                     ...switch (s.tab) {
                       'dictation' => _dictationTab(s),
+                      'vocabulary' => _vocabularyTab(s),
                       'models' => _modelsTab(s),
                       'app' => _appTab(s),
                       _ => _transcriberTab(s),
@@ -355,23 +379,15 @@ class _SettingsBodyState extends State<SettingsBody>
     const SizedBox(height: Gap.item),
     Check(l10n.checkPunctuate, s.punctuate, _cubit.setPunctuate),
     const SizedBox(height: Gap.item),
-    // Подпись стоит над полем, а не под ним: под полем она читалась
-    // как пояснение ко всему разделу.
-    _Field(
-      l10n.fieldModelPrompt,
-      AppTextField(
-        controller: _promptCtrl,
-        placeholder: l10n.placeholderPromptExample,
-        minLines: 3,
-        maxLines: null,
-        onChanged: (v) => _cubit.setPrompt(v),
-      ),
-    ),
-    Hint(l10n.hintPromptHelps),
-    ..._textCommands(
-      s,
-      enabled: s.dictationCommandsEnabled,
-      onEnabled: _cubit.setDictationCommandsEnabled,
+    SectionTitle(l10n.sectionVocabularyAndReplacements),
+    VocabularySummaryCard(
+      scope: VocabularyScope.dictation,
+      totalCount: s.vocabulary.length,
+      hintCount: s.vocabulary.where((i) => i.isHintOnly).length,
+      replacementCount: s.vocabulary.where((i) => i.isReplacement).length,
+      enabled: s.vocabularyDictationEnabled,
+      onEnabledChanged: _cubit.setVocabularyDictationEnabled,
+      onConfigure: () => _cubit.setTab('vocabulary'),
     ),
     SectionTitle(l10n.sectionModelInMemory),
     _Field(
@@ -436,6 +452,334 @@ class _SettingsBodyState extends State<SettingsBody>
       ),
     );
     return accepted;
+  }
+
+  // ── словарь ───────────────────────────────────────────────────────────────
+
+  bool get _isDuplicatePhrase {
+    final phrase = _newPhraseCtrl.text.trim().toLowerCase();
+    if (phrase.isEmpty) return false;
+    return _cubit.state.vocabulary
+        .any((i) => i.phrase.trim().toLowerCase() == phrase);
+  }
+
+  void _addVocabularyEntry() {
+    final phrase = _newPhraseCtrl.text.trim();
+    if (phrase.isEmpty) return;
+    _cubit.addVocabularyItem(phrase, _newReplacementCtrl.text.trim());
+    _newPhraseCtrl.clear();
+    _newReplacementCtrl.clear();
+    _newPhraseFocus.requestFocus();
+    setState(() {});
+  }
+
+  Widget _quickAddBar(SettingsState s) {
+    final phraseNonEmpty = _newPhraseCtrl.text.trim().isNotEmpty;
+    return Container(
+      padding: const EdgeInsets.all(Gap.item),
+      decoration: BoxDecoration(
+        color: Surface.hover(context),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Surface.hairline(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.enter):
+                  _addVocabularyEntry,
+            },
+            child: Row(
+              children: [
+                Expanded(
+                  child: AppTextField(
+                    controller: _newPhraseCtrl,
+                    placeholder: l10n.placeholderVocabularyPhrase,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.inner),
+                  child: MacosIcon(
+                    CupertinoIcons.arrow_right,
+                    size: IconSize.inline,
+                    color: Surface.secondaryText(context),
+                  ),
+                ),
+                Expanded(
+                  child: AppTextField(
+                    controller: _newReplacementCtrl,
+                    placeholder: l10n.placeholderVocabularyReplacement,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                const SizedBox(width: Gap.control),
+                PushButton(
+                  controlSize: ControlSize.regular,
+                  secondary: !phraseNonEmpty,
+                  onPressed: phraseNonEmpty ? _addVocabularyEntry : null,
+                  child: Text(l10n.buttonAddVocabulary),
+                ),
+              ],
+            ),
+          ),
+          if (_isDuplicatePhrase) ...[
+            const SizedBox(height: Gap.hint),
+            Text(
+              l10n.warningDuplicatePhrase,
+              style: Type.caption.copyWith(color: MacosColors.systemOrangeColor),
+            ),
+          ],
+          const SizedBox(height: Gap.hint),
+          Hint(l10n.hintVocabularyReplacementOptional),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyVocabularyState(SettingsState s) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 36, horizontal: Gap.edge),
+    alignment: Alignment.center,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MacosIcon(
+          CupertinoIcons.book,
+          size: IconSize.hero,
+          color: Surface.secondaryText(context),
+        ),
+        const SizedBox(height: Gap.item),
+        Text(
+          l10n.emptyVocabularyTitle,
+          style: Type.emptyTitle,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: Gap.hint),
+        Text(
+          l10n.emptyVocabularySubtitle,
+          style: Type.caption.copyWith(
+            color: Surface.secondaryText(context),
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: Gap.section),
+        Wrap(
+          spacing: Gap.inner,
+          runSpacing: Gap.inner,
+          alignment: WrapAlignment.center,
+          children: [
+            _SuggestionChip(
+              label: '+ юскейс → Use Case',
+              onTap: () {
+                _cubit.addVocabularyItem('юскейс', 'Use Case');
+              },
+            ),
+            _SuggestionChip(
+              label: '+ супервиспер → SuperWhisper',
+              onTap: () {
+                _cubit.addVocabularyItem('супервиспер', 'SuperWhisper');
+              },
+            ),
+            _SuggestionChip(
+              label: '+ TypeScript',
+              onTap: () {
+                _cubit.addVocabularyItem('TypeScript');
+              },
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  List<Widget> _vocabularyTab(SettingsState s) {
+    final query = _vocabQuery.toLowerCase();
+    final allItems = s.vocabulary;
+    final filtered = allItems.where((item) {
+      if (_vocabFilter == 1 && !item.isHintOnly) return false;
+      if (_vocabFilter == 2 && !item.isReplacement) return false;
+      if (query.isNotEmpty) {
+        final inPhrase = item.phrase.toLowerCase().contains(query);
+        final inRep = item.replacement.toLowerCase().contains(query);
+        if (!inPhrase && !inRep) return false;
+      }
+      return true;
+    }).toList();
+
+    final tokens = estimateVocabularyTokens(s.vocabulary);
+    final isOverBudget = tokens > 200;
+
+    return [
+      // 1. Область действия
+      SectionTitle(l10n.sectionVocabularyAndReplacements),
+      Check(
+        l10n.checkVocabularyDictation,
+        s.vocabularyDictationEnabled,
+        _cubit.setVocabularyDictationEnabled,
+      ),
+      const SizedBox(height: Gap.hint),
+      Check(
+        l10n.checkVocabularyTranscriber,
+        s.vocabularyTranscriberEnabled,
+        _cubit.setVocabularyTranscriberEnabled,
+      ),
+      Hint(l10n.hintVocabularyScope, under: true),
+
+      // 2. Добавить в словарь
+      SectionTitle(l10n.sectionAddVocabulary),
+      _quickAddBar(s),
+
+      // 3. Записи словаря
+      SectionTitle('${l10n.sectionVocabularyItems} (${s.vocabulary.length})'),
+
+      if (_showDeletedNotice && _cubit.lastDeletedItem != null) ...[
+        Container(
+          margin: const EdgeInsets.only(bottom: Gap.inner),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gap.inner,
+            vertical: Gap.hint,
+          ),
+          decoration: BoxDecoration(
+            color: Surface.hover(context),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Surface.hairline(context)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  l10n.statusVocabularyItemDeleted,
+                  style: Type.control,
+                ),
+              ),
+              PushButton(
+                controlSize: ControlSize.small,
+                secondary: true,
+                onPressed: () {
+                  _deletedNoticeTimer?.cancel();
+                  _cubit.undoDeleteVocabularyItem();
+                  setState(() => _showDeletedNotice = false);
+                },
+                child: Text(l10n.buttonUndo),
+              ),
+            ],
+          ),
+        ),
+      ],
+
+      // Панель поиска и фильтров
+      Row(
+        children: [
+          Expanded(
+            child: MacosSearchField(
+              controller: _vocabSearchCtrl,
+              placeholder: l10n.placeholderSearchVocabulary,
+              placeholderStyle: Surface.placeholder(context),
+              onChanged: (v) => setState(() => _vocabQuery = v.trim()),
+            ),
+          ),
+          const SizedBox(width: Gap.control),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _FilterSegment(
+                label: l10n.filterAll,
+                count: s.vocabulary.length,
+                selected: _vocabFilter == 0,
+                onTap: () => setState(() => _vocabFilter = 0),
+              ),
+              const SizedBox(width: Gap.tight),
+              _FilterSegment(
+                label: l10n.filterHints,
+                count: s.vocabulary.where((i) => i.isHintOnly).length,
+                selected: _vocabFilter == 1,
+                onTap: () => setState(() => _vocabFilter = 1),
+              ),
+              const SizedBox(width: Gap.tight),
+              _FilterSegment(
+                label: l10n.filterReplacements,
+                count: s.vocabulary.where((i) => i.isReplacement).length,
+                selected: _vocabFilter == 2,
+                onTap: () => setState(() => _vocabFilter = 2),
+              ),
+            ],
+          ),
+        ],
+      ),
+      const SizedBox(height: Gap.item),
+
+      // Список
+      if (s.vocabulary.isEmpty)
+        _emptyVocabularyState(s)
+      else if (filtered.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: Gap.section),
+          child: Center(
+            child: Text(
+              l10n.skillNotFound('—'),
+              style: Type.caption.copyWith(
+                color: Surface.secondaryText(context),
+              ),
+            ),
+          ),
+        )
+      else
+        for (final item in filtered) ...[
+          VocabularyItemRow(
+            key: ValueKey(item.id),
+            item: item,
+            onToggle: (enabled) {
+              final idx = s.vocabulary.indexOf(item);
+              if (idx != -1) _cubit.toggleVocabularyItem(idx, enabled);
+            },
+            onUpdate: (updated) {
+              final idx = s.vocabulary.indexOf(item);
+              if (idx != -1) _cubit.updateVocabularyItem(idx, updated);
+            },
+            onDelete: () {
+              final idx = s.vocabulary.indexOf(item);
+              if (idx != -1) {
+                _cubit.removeVocabularyItem(idx);
+                _triggerDeletedNotice();
+              }
+            },
+          ),
+          const SizedBox(height: Gap.tight),
+        ],
+
+      const SizedBox(height: Gap.item),
+      // Индикатор бюджета токенов контекста
+      Row(
+        children: [
+          MacosIcon(
+            CupertinoIcons.info_circle,
+            size: IconSize.inline,
+            color: isOverBudget
+                ? MacosColors.systemOrangeColor
+                : Surface.secondaryText(context),
+          ),
+          const SizedBox(width: Gap.hint),
+          Text(
+            l10n.promptBudgetNotice(tokens, 220),
+            style: Type.caption.copyWith(
+              color: isOverBudget
+                  ? MacosColors.systemOrangeColor
+                  : Surface.secondaryText(context),
+            ),
+          ),
+        ],
+      ),
+      if (isOverBudget) ...[
+        const SizedBox(height: Gap.tight),
+        Text(
+          l10n.promptBudgetWarning,
+          style: Type.caption.copyWith(
+            color: MacosColors.systemOrangeColor,
+          ),
+        ),
+      ],
+    ];
   }
 
   // ── модели ────────────────────────────────────────────────────────────────
@@ -730,10 +1074,16 @@ class _SettingsBodyState extends State<SettingsBody>
   List<Widget> _transcriberTab(SettingsState s) => [
     SectionTitle(l10n.sectionHowToRecognize),
     Hint(l10n.hintPerRecordingSettings),
-    ..._textCommands(
-      s,
-      enabled: s.transcriberCommandsEnabled,
-      onEnabled: _cubit.setTranscriberCommandsEnabled,
+    const SizedBox(height: Gap.item),
+    SectionTitle(l10n.sectionVocabularyAndReplacements),
+    VocabularySummaryCard(
+      scope: VocabularyScope.transcriber,
+      totalCount: s.vocabulary.length,
+      hintCount: s.vocabulary.where((i) => i.isHintOnly).length,
+      replacementCount: s.vocabulary.where((i) => i.isReplacement).length,
+      enabled: s.vocabularyTranscriberEnabled,
+      onEnabledChanged: _cubit.setVocabularyTranscriberEnabled,
+      onConfigure: () => _cubit.setTab('vocabulary'),
     ),
     SectionTitle(l10n.sectionAutoSave),
     Check(l10n.checkSaveToDisk, s.toLibrary, _cubit.setToLibrary),
@@ -803,41 +1153,6 @@ class _SettingsBodyState extends State<SettingsBody>
     SectionTitle(l10n.sectionInTranscriberWindow),
     Check(l10n.checkShowTimestamps, s.timestamps, _cubit.setTimestamps),
     Hint(l10n.hintShowTimestamps, under: true),
-  ];
-
-  /// Список один на диктовку и расшифровщик, а выключатели разные.
-  /// Показываем редактор в обеих вкладках: человеку не приходится помнить,
-  /// на какой стороне он когда-то завёл команду.
-  List<Widget> _textCommands(
-    SettingsState s, {
-    required bool enabled,
-    required ValueChanged<bool> onEnabled,
-  }) => [
-    SectionTitle(l10n.sectionVoiceCommands),
-    Check(l10n.checkVoiceCommands, enabled, onEnabled),
-    Hint(l10n.hintVoiceCommandsShared, under: true),
-    if (enabled) ...[
-      const SizedBox(height: Gap.item),
-      for (final (index, command) in s.textCommands.indexed)
-        Padding(
-          padding: const EdgeInsets.only(bottom: Gap.item),
-          child: _TextCommandRow(
-            key: ValueKey(index),
-            command: command,
-            phraseHint: l10n.placeholderCommandPhrase,
-            replacementHint: l10n.placeholderCommandReplacement,
-            removeHint: l10n.tooltipRemoveCommand,
-            onChanged: (next) => _cubit.updateTextCommand(index, next),
-            onRemove: () => _cubit.removeTextCommand(index),
-          ),
-        ),
-      PushButton(
-        controlSize: ControlSize.small,
-        secondary: true,
-        onPressed: _cubit.addTextCommand,
-        child: Text(l10n.buttonAddCommand),
-      ),
-    ],
   ];
 
   /// Местное API: та самая галка, которой открывают дверь наружу.
@@ -1101,127 +1416,6 @@ class _SettingsBodyState extends State<SettingsBody>
   ];
 }
 
-/// Одна команда редактируется на месте. Контроллеры принадлежат строке,
-/// иначе новая буква возвращала бы курсор в конец при каждом состоянии
-/// кубита, а удаление соседней строки оставляло бы в поле чужой текст.
-class _TextCommandRow extends StatefulWidget {
-  const _TextCommandRow({
-    super.key,
-    required this.command,
-    required this.phraseHint,
-    required this.replacementHint,
-    required this.removeHint,
-    required this.onChanged,
-    required this.onRemove,
-  });
-
-  final TextCommand command;
-  final String phraseHint, replacementHint, removeHint;
-  final ValueChanged<TextCommand> onChanged;
-  final VoidCallback onRemove;
-
-  @override
-  State<_TextCommandRow> createState() => _TextCommandRowState();
-}
-
-class _TextCommandRowState extends State<_TextCommandRow> {
-  late final _phrase = TextEditingController(text: widget.command.phrase);
-  late final _replacement = TextEditingController(
-    text: widget.command.replacement,
-  );
-
-  @override
-  void didUpdateWidget(covariant _TextCommandRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_phrase.text != widget.command.phrase) {
-      _phrase.text = widget.command.phrase;
-    }
-    if (_replacement.text != widget.command.replacement) {
-      _replacement.text = widget.command.replacement;
-    }
-  }
-
-  @override
-  void dispose() {
-    _phrase.dispose();
-    _replacement.dispose();
-    super.dispose();
-  }
-
-  void _changed() =>
-      widget.onChanged(TextCommand(_phrase.text, _replacement.text));
-
-  bool _removeHovered = false;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(Gap.item),
-    decoration: BoxDecoration(
-      color: Surface.hover(context),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: _commandField(label: widget.phraseHint, controller: _phrase),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(Gap.control, 28, Gap.control, 0),
-          child: MacosIcon(
-            CupertinoIcons.arrow_right,
-            size: IconSize.toolbar,
-            color: Surface.secondaryText(context),
-          ),
-        ),
-        Expanded(
-          child: _commandField(
-            label: widget.replacementHint,
-            controller: _replacement,
-          ),
-        ),
-        const SizedBox(width: Gap.control),
-        Padding(
-          padding: const EdgeInsets.only(top: 22),
-          child: MouseRegion(
-            onEnter: (_) => setState(() => _removeHovered = true),
-            onExit: (_) => setState(() => _removeHovered = false),
-            child: MacosTooltip(
-              message: widget.removeHint,
-              child: MacosIconButton(
-                icon: MacosIcon(
-                  CupertinoIcons.trash,
-                  size: IconSize.toolbar,
-                  color: _removeHovered
-                      ? MacosColors.systemRedColor
-                      : Surface.secondaryText(context),
-                ),
-                boxConstraints: const BoxConstraints.tightFor(
-                  width: 32,
-                  height: 32,
-                ),
-                onPressed: widget.onRemove,
-              ),
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _commandField({
-    required String label,
-    required TextEditingController controller,
-  }) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: Type.caption),
-      const SizedBox(height: Gap.inner),
-      AppTextField(controller: controller, onChanged: (_) => _changed()),
-    ],
-  );
-}
-
 /// Подпись над полем, а не слева от него: выпадающий список в macOS
 /// шириной со своё самое длинное имя, и в узкой колонке он вылезал
 /// за край окна.
@@ -1307,6 +1501,112 @@ class _TabButtonState extends State<_TabButton> {
                 style: Type.caption.copyWith(color: color),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterSegment extends StatefulWidget {
+  const _FilterSegment({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_FilterSegment> createState() => _FilterSegmentState();
+}
+
+class _FilterSegmentState extends State<_FilterSegment> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = MacosTheme.of(context).primaryColor;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: Motion.dur(context, Motion.press),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gap.inner,
+            vertical: 5,
+          ),
+          decoration: BoxDecoration(
+            color: widget.selected
+                ? accent.withValues(alpha: 0.15)
+                : (_hover ? Surface.hover(context) : MacosColors.transparent),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: widget.selected
+                  ? accent.withValues(alpha: 0.5)
+                  : Surface.hairline(context),
+            ),
+          ),
+          child: Text(
+            '${widget.label} (${widget.count})',
+            style: Type.caption.copyWith(
+              fontWeight: widget.selected ? FontWeight.w600 : FontWeight.normal,
+              color: widget.selected ? accent : null,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestionChip extends StatefulWidget {
+  const _SuggestionChip({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_SuggestionChip> createState() => _SuggestionChipState();
+}
+
+class _SuggestionChipState extends State<_SuggestionChip> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: Motion.dur(context, Motion.press),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gap.control,
+            vertical: Gap.inner,
+          ),
+          decoration: BoxDecoration(
+            color: _hover
+                ? Surface.hover(context)
+                : Surface.hover(context).withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Surface.hairline(context)),
+          ),
+          child: Text(
+            widget.label,
+            style: Type.control.copyWith(
+              color: MacosTheme.of(context).primaryColor,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
       ),

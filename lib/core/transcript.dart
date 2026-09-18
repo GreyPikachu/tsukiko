@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'languages.dart';
 import 'text_commands.dart';
+import 'vocabulary.dart';
 
 /// Что whisper сочиняет на тишине.
 ///
@@ -264,6 +265,11 @@ class Segment {
 
   Segment applyCommands(Iterable<TextCommand> commands) {
     final result = applyTextCommands(text, commands);
+    return Segment(from, to, result.text, replacements: result.replacements);
+  }
+
+  Segment applyVocabulary(Iterable<VocabularyItem> items) {
+    final result = applyVocabularyReplacements(text, items);
     return Segment(from, to, result.text, replacements: result.replacements);
   }
 

@@ -15,6 +15,7 @@ import '../../core/whisper.dart';
 import '../../platform/os.dart';
 import '../../core/settings.dart';
 import '../../core/text_commands.dart';
+import '../../core/vocabulary.dart';
 import '../../core/app_locale.dart';
 import '../../core/labels.dart';
 
@@ -82,7 +83,7 @@ class DictationCubit extends Cubit<DictationState> {
 
   late final WhisperServer _server;
   DictationSettings _settings = DictationSettings.load();
-  List<TextCommand> _textCommands = const [];
+  List<VocabularyItem> _vocabulary = const [];
   bool _commandsEnabled = true;
 
   Timer? _ticker;
@@ -152,9 +153,9 @@ class DictationCubit extends Cubit<DictationState> {
     );
     return _commandsEnabled
         ? options.copyWith(
-            prompt: promptWithTextCommands(
+            prompt: promptWithVocabulary(
               options.effectivePrompt,
-              _textCommands,
+              _vocabulary,
             ),
           )
         : options;
@@ -171,8 +172,10 @@ class DictationCubit extends Cubit<DictationState> {
     _hasVad = File(vadModelPath).existsSync();
     final app = Settings.load();
     final queueModel = (app['model'] as String?) ?? '';
-    _textCommands = textCommandsFromJson(app[textCommandsSetting]);
-    _commandsEnabled = (app[dictationCommandsEnabledSetting] as bool?) ?? true;
+    _vocabulary = loadAndMigrateVocabulary(app);
+    _commandsEnabled = (app[vocabularyDictationEnabledSetting] as bool?) ??
+        (app[dictationCommandsEnabledSetting] as bool?) ??
+        true;
     return from.copyWith(
       enabled: _settings.enabled,
       holdLabel: _settings.hold.label,
@@ -527,7 +530,7 @@ class DictationCubit extends Cubit<DictationState> {
         } else {
           _discard(path);
           final text = _commandsEnabled
-              ? applyTextCommands(recognized, _textCommands).text
+              ? applyVocabularyReplacements(recognized, _vocabulary).text
               : recognized;
           Log.info('Dictation', 'Dictation transcribed: ${text.length} chars');
           if (text.isNotEmpty) {

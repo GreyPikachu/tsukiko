@@ -1438,5 +1438,59 @@
   "menuOpenLogsFolder": "Открыть папку журналов",
   "sectionLogging": "Журналирование",
   "checkEnableLogging": "Вести журнал работы",
-  "hintEnableLogging": "Записывать диагностические сообщения приложения в файлы для поиска неполадок."
+  "hintEnableLogging": "Записывать диагностические сообщения приложения в файлы для поиска неполадок.",
+  "settingsTabVocabulary": "Словарь",
+  "sectionVocabularyAndReplacements": "Словарь и замены",
+  "hintVocabularyScope": "Словарь улучшает точность распознавания и автоматически заменяет нужные фразы текстом.",
+  "checkVocabularyDictation": "Применять в диктовке",
+  "checkVocabularyTranscriber": "Применять в расшифровщике",
+  "sectionAddVocabulary": "Добавить в словарь",
+  "placeholderVocabularyPhrase": "Что сказать или распознать",
+  "placeholderVocabularyReplacement": "Замена (необязательно)",
+  "hintVocabularyReplacementOptional": "Оставьте замену пустой, чтобы просто научить модель редкому слову или термину.",
+  "buttonAddVocabulary": "Добавить",
+  "sectionVocabularyItems": "Записи словаря",
+  "placeholderSearchVocabulary": "Найти слово или замену…",
+  "filterAll": "Все",
+  "filterHints": "Подсказки",
+  "filterReplacements": "Замены",
+  "badgeHint": "Подсказка",
+  "badgeReplacement": "Замена",
+  "tooltipEditVocabulary": "Редактировать запись",
+  "tooltipDeleteVocabulary": "Удалить из словаря",
+  "tooltipEnableItem": "Включить запись",
+  "tooltipDisableItem": "Выключить запись",
+  "emptyVocabularyTitle": "Словарь пока пуст",
+  "emptyVocabularySubtitle": "Добавьте редкие термины, имена или настройте автозамену фраз.",
+  "promptBudgetNotice": "Занято ~{tokens} из {max} токенов подсказки",
+  "@promptBudgetNotice": {
+    "placeholders": {
+      "tokens": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "promptBudgetWarning": "Словарь слишком велик: модель может игнорировать слова в конце",
+  "vocabularySummaryTitle": "Словарь и замены",
+  "vocabularySummaryStatus": "{count, plural, one{{count} запись} few{{count} записи} many{{count} записей} other{{count} записей}} ({hints} подсказок, {replacements} замен)",
+  "@vocabularySummaryStatus": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "hints": {
+        "type": "int"
+      },
+      "replacements": {
+        "type": "int"
+      }
+    }
+  },
+  "buttonConfigureVocabulary": "Настроить словарь →",
+  "statusVocabularyItemDeleted": "Запись удалена из словаря",
+  "buttonUndo": "Вернуть",
+  "warningDuplicatePhrase": "Такая фраза уже есть в словаре"
 }

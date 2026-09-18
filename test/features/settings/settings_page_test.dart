@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:macos_ui/macos_ui.dart';
-import 'package:tsukiko/core/text_commands.dart';
+import 'package:tsukiko/core/vocabulary.dart';
 import 'package:tsukiko/design/design.dart';
 import 'package:tsukiko/features/settings/settings_cubit.dart';
 import 'package:tsukiko/platform/bridge.dart';
@@ -36,7 +36,7 @@ class _FakeSettingsCubit extends Cubit<SettingsState> implements SettingsCubit {
 /// заводит TestWidgetsFlutterBinding, а та подменяет HttpClient — рядом
 /// с ней тесты загрузки моделей перестают видеть сеть.
 void main() {
-  testWidgets('редактор команды использует обычную кнопку и ровные поля', (
+  testWidgets('форма добавления в словарь использует ровные поля и кнопку', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(580, 560));
@@ -44,8 +44,68 @@ void main() {
     tester.platformDispatcher.localesTestValue = const [Locale('ru')];
     final cubit = _FakeSettingsCubit(
       SettingsState(
+        tab: 'vocabulary',
+        vocabulary: const [
+          VocabularyItem(
+            id: 'item-1',
+            phrase: 'адрес офиса',
+            replacement: 'Минск',
+          ),
+        ],
+      ),
+    );
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(
+      MacosApp(
+        locale: const Locale('ru'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: BlocProvider<SettingsCubit>.value(
+          value: cubit,
+          child: const SettingsBody(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final add = tester.widget<PushButton>(
+      find.widgetWithText(PushButton, 'Добавить'),
+    );
+    expect(add.controlSize, ControlSize.regular);
+    expect(find.text('Что сказать или распознать'), findsOneWidget);
+    expect(find.text('Замена (необязательно)'), findsOneWidget);
+    final phrase = tester.getRect(find.text('Что сказать или распознать'));
+    final replacement = tester.getRect(
+      find.text('Замена (необязательно)'),
+    );
+    expect((phrase.top - replacement.top).abs(), lessThan(1));
+    expect(find.text('адрес офиса'), findsOneWidget);
+    expect(find.text('Минск'), findsOneWidget);
+    expect(find.text('Замена'), findsOneWidget);
+    final trash = find.byWidgetPredicate(
+      (widget) => widget is MacosIcon && widget.icon == CupertinoIcons.trash,
+    );
+    expect(trash, findsOneWidget);
+    expect(tester.getSize(trash).width, IconSize.button);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('вкладка диктовки показывает сводку словаря', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(580, 560));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+    final cubit = _FakeSettingsCubit(
+      SettingsState(
         tab: 'dictation',
-        textCommands: const [TextCommand('адрес офиса', 'Минск')],
+        vocabulary: const [
+          VocabularyItem(
+            id: 'item-1',
+            phrase: 'адрес офиса',
+            replacement: 'Минск',
+          ),
+        ],
       ),
     );
     addTearDown(cubit.close);
@@ -63,35 +123,14 @@ void main() {
     );
     await tester.pump();
     await tester.dragUntilVisible(
-      find.text('Добавить команду'),
+      find.text('Словарь и замены'),
       find.byType(ListView).first,
       const Offset(0, -180),
     );
 
-    final add = tester.widget<PushButton>(
-      find.widgetWithText(PushButton, 'Добавить команду'),
-    );
-    expect(add.controlSize, ControlSize.small);
-    expect(find.text('Что сказать'), findsOneWidget);
-    expect(find.text('Что вставить'), findsOneWidget);
-    expect(find.textContaining('Автоматически добавлено'), findsNothing);
-    final card = tester.widget<Container>(
-      find
-          .descendant(
-            of: find.byKey(const ValueKey(0)),
-            matching: find.byType(Container),
-          )
-          .first,
-    );
-    expect(card.padding, const EdgeInsets.all(Gap.item));
-    final phrase = tester.getRect(find.text('Что сказать'));
-    final replacement = tester.getRect(find.text('Что вставить'));
-    expect((phrase.top - replacement.top).abs(), lessThan(1));
-    final trash = find.byWidgetPredicate(
-      (widget) => widget is MacosIcon && widget.icon == CupertinoIcons.trash,
-    );
-    expect(trash, findsOneWidget);
-    expect(tester.getSize(trash).width, IconSize.toolbar);
+    expect(find.text('Словарь и замены'), findsOneWidget);
+    expect(find.text('Применять в диктовке'), findsOneWidget);
+    expect(find.text('Настроить словарь →'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -138,7 +177,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('окно настроек рисуется на всех четырёх вкладках', (
+  testWidgets('окно настроек рисуется на всех пяти вкладках', (
     tester,
   ) async {
     // Размер настоящего окна: раскладка обязана сходиться именно в нём.
@@ -152,11 +191,12 @@ void main() {
     await tester.pump();
 
     // Вкладки названы по хозяину настройки: сперва два потребителя
-    // моделей, потом общий склад и само приложение.
+    // моделей, потом общий склад, словарь и само приложение.
     for (final (label, marker) in [
       ('Расшифровщик', 'Сохранять готовый текст на диск'),
       ('Диктовка', 'Держать и говорить'),
       ('Модели', 'АКТИВНЫЕ МОДЕЛИ'),
+      ('Словарь', 'СЛОВАРЬ И ЗАМЕНЫ'),
       ('Приложение', 'Показывать значок в ${os.appIconAreaName}'),
     ]) {
       await tester.tap(find.text(label));

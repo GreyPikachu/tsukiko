@@ -14,6 +14,7 @@ import '../../core/models.dart';
 import '../../core/settings.dart';
 import '../../core/text_commands.dart';
 import '../../core/transcript.dart';
+import '../../core/vocabulary.dart';
 import '../../core/whisper_server.dart';
 import '../api/api_server.dart';
 import '../../core/skill_install.dart';
@@ -118,11 +119,24 @@ class SettingsCubit extends Cubit<SettingsState> {
             : state.libraryFormats,
         copyFormat: _knownFormat(s['copyFormat']),
         saveFormat: _knownFormat(s['saveFormat']),
+        vocabulary: loadAndMigrateVocabulary(s),
+        vocabularyDictationEnabled:
+            (s[vocabularyDictationEnabledSetting] as bool?) ??
+            (s[dictationCommandsEnabledSetting] as bool?) ??
+            true,
+        vocabularyTranscriberEnabled:
+            (s[vocabularyTranscriberEnabledSetting] as bool?) ??
+            (s[transcriberCommandsEnabledSetting] as bool?) ??
+            true,
         textCommands: textCommandsFromJson(s[textCommandsSetting]),
         dictationCommandsEnabled:
-            (s[dictationCommandsEnabledSetting] as bool?) ?? true,
+            (s[dictationCommandsEnabledSetting] as bool?) ??
+            (s[vocabularyDictationEnabledSetting] as bool?) ??
+            true,
         transcriberCommandsEnabled:
-            (s[transcriberCommandsEnabledSetting] as bool?) ?? true,
+            (s[transcriberCommandsEnabledSetting] as bool?) ??
+            (s[vocabularyTranscriberEnabledSetting] as bool?) ??
+            true,
       ),
     );
     // Автозапуск держит система, а не наш файл: его можно выключить
@@ -308,10 +322,8 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   void setHud(bool v) => _saveDictation((d) => d.hud = v);
 
-  void setDictationCommandsEnabled(bool value) {
-    _emit(state.copyWith(dictationCommandsEnabled: value));
-    unawaited(_saveApp({dictationCommandsEnabledSetting: value}));
-  }
+  void setDictationCommandsEnabled(bool value) =>
+      setVocabularyDictationEnabled(value);
 
   // ── модели ────────────────────────────────────────────────────────────────
 
@@ -420,35 +432,130 @@ class SettingsCubit extends Cubit<SettingsState> {
     unawaited(_saveApp({'timestamps': v}));
   }
 
-  void setTranscriberCommandsEnabled(bool value) {
-    _emit(state.copyWith(transcriberCommandsEnabled: value));
-    unawaited(_saveApp({transcriberCommandsEnabledSetting: value}));
+  void setVocabularyDictationEnabled(bool value) {
+    _emit(
+      state.copyWith(
+        vocabularyDictationEnabled: value,
+        dictationCommandsEnabled: value,
+      ),
+    );
+    unawaited(
+      _saveApp({
+        vocabularyDictationEnabledSetting: value,
+        dictationCommandsEnabledSetting: value,
+      }),
+    );
+  }
+
+  void setVocabularyTranscriberEnabled(bool value) {
+    _emit(
+      state.copyWith(
+        vocabularyTranscriberEnabled: value,
+        transcriberCommandsEnabled: value,
+      ),
+    );
+    unawaited(
+      _saveApp({
+        vocabularyTranscriberEnabledSetting: value,
+        transcriberCommandsEnabledSetting: value,
+      }),
+    );
+  }
+
+  void setTranscriberCommandsEnabled(bool value) =>
+      setVocabularyTranscriberEnabled(value);
+
+  VocabularyItem? _lastDeletedItem;
+  int? _lastDeletedIndex;
+
+  VocabularyItem? get lastDeletedItem => _lastDeletedItem;
+
+  void addVocabularyItem(String phrase, [String replacement = '']) {
+    final trimmedPhrase = phrase.trim();
+    if (trimmedPhrase.isEmpty) return;
+    final item = VocabularyItem(
+      id: 'vocab_${DateTime.now().microsecondsSinceEpoch}',
+      phrase: trimmedPhrase,
+      replacement: replacement.trim(),
+      enabled: true,
+      createdAt: DateTime.now(),
+    );
+    _saveVocabulary([...state.vocabulary, item]);
+  }
+
+  void updateVocabularyItem(int index, VocabularyItem item) {
+    if (index < 0 || index >= state.vocabulary.length) return;
+    final items = [...state.vocabulary]..[index] = item;
+    _saveVocabulary(items);
+  }
+
+  void removeVocabularyItem(int index) {
+    if (index < 0 || index >= state.vocabulary.length) return;
+    _lastDeletedIndex = index;
+    _lastDeletedItem = state.vocabulary[index];
+    final items = [...state.vocabulary]..removeAt(index);
+    _saveVocabulary(items);
+  }
+
+  void toggleVocabularyItem(int index, bool enabled) {
+    if (index < 0 || index >= state.vocabulary.length) return;
+    final updated = state.vocabulary[index].copyWith(enabled: enabled);
+    updateVocabularyItem(index, updated);
+  }
+
+  void undoDeleteVocabularyItem() {
+    final item = _lastDeletedItem;
+    if (item == null) return;
+    final index = _lastDeletedIndex ?? state.vocabulary.length;
+    final items = [...state.vocabulary];
+    if (index >= 0 && index <= items.length) {
+      items.insert(index, item);
+    } else {
+      items.add(item);
+    }
+    _lastDeletedItem = null;
+    _lastDeletedIndex = null;
+    _saveVocabulary(items);
   }
 
   void addTextCommand() {
-    final commands = [...state.textCommands, const TextCommand('', '')];
-    _saveTextCommands(commands);
+    final item = VocabularyItem(
+      id: 'cmd_${DateTime.now().microsecondsSinceEpoch}',
+      phrase: '',
+      replacement: '',
+      enabled: true,
+      createdAt: DateTime.now(),
+    );
+    _saveVocabulary([...state.vocabulary, item]);
   }
 
   void updateTextCommand(int index, TextCommand command) {
-    if (index < 0 || index >= state.textCommands.length) return;
-    final commands = [...state.textCommands]..[index] = command;
-    _saveTextCommands(commands);
+    if (index < 0 || index >= state.vocabulary.length) return;
+    final prev = state.vocabulary[index];
+    final updated = prev.copyWith(
+      phrase: command.phrase,
+      replacement: command.replacement,
+    );
+    updateVocabularyItem(index, updated);
   }
 
-  void removeTextCommand(int index) {
-    if (index < 0 || index >= state.textCommands.length) return;
-    final commands = [...state.textCommands]..removeAt(index);
-    _saveTextCommands(commands);
-  }
+  void removeTextCommand(int index) => removeVocabularyItem(index);
 
-  void _saveTextCommands(List<TextCommand> commands) {
-    _emit(state.copyWith(textCommands: commands));
+  void _saveVocabulary(List<VocabularyItem> items) {
+    final textCommands = items
+        .where((i) => i.isReplacement)
+        .map((i) => i.toTextCommand())
+        .toList();
+    _emit(
+      state.copyWith(
+        vocabulary: items,
+        textCommands: textCommands,
+      ),
+    );
     unawaited(
       _saveApp({
-        textCommandsSetting: commands
-            .map((command) => command.toJson())
-            .toList(),
+        vocabularySetting: items.map((i) => i.toJson()).toList(),
+        textCommandsSetting: textCommands.map((c) => c.toJson()).toList(),
       }),
     );
   }
