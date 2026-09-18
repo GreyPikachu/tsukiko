@@ -92,7 +92,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('вкладка диктовки показывает сводку словаря', (tester) async {
+  testWidgets('вкладка диктовки не содержит сводку словаря', (tester) async {
     await tester.binding.setSurfaceSize(const Size(580, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     tester.platformDispatcher.localesTestValue = const [Locale('ru')];
@@ -122,15 +122,10 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.dragUntilVisible(
-      find.text('Словарь и замены'),
-      find.byType(ListView).first,
-      const Offset(0, -180),
-    );
 
-    expect(find.text('Словарь и замены'), findsOneWidget);
-    expect(find.text('Применять в диктовке'), findsOneWidget);
-    expect(find.text('Настроить словарь →'), findsOneWidget);
+    expect(find.text('Словарь и замены'), findsNothing);
+    expect(find.text('Применять в диктовке'), findsNothing);
+    expect(find.text('Настроить словарь →'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

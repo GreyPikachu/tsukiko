@@ -18,6 +18,7 @@ import 'package:tsukiko/features/queue/queue_event.dart';
 import 'package:tsukiko/features/settings/settings_cubit.dart';
 import 'package:tsukiko/features/settings/settings_page.dart';
 import 'package:tsukiko/features/settings/settings_state.dart';
+import 'package:tsukiko/features/settings/widgets/vocabulary_summary_card.dart';
 import 'package:tsukiko/l10n/gen/app_localizations.dart';
 import 'package:tsukiko/platform/bridge.dart';
 
@@ -775,7 +776,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('VocabularySummaryCard rendering and navigation in Dictation and Transcriber tabs', (
+    testWidgets('Dictation and Transcriber tabs do not render VocabularySummaryCard (uncluttered)', (
       tester,
     ) async {
       await tester.binding.setSurfaceSize(const Size(580, 700));
@@ -799,41 +800,62 @@ void main() {
       await tester.pump();
 
       // 1. In Dictation tab
-      await tester.dragUntilVisible(
-        find.text('Словарь и замены'),
-        find.byType(ListView).first,
-        const Offset(0, -200),
-      );
-
-      expect(find.text('Словарь и замены'), findsOneWidget);
-      expect(
-        find.textContaining('2 записи'),
-        findsOneWidget,
-      );
-      expect(
-        find.textContaining('1 подсказок, 1 замен'),
-        findsOneWidget,
-      );
-      expect(find.text('Применять в диктовке'), findsOneWidget);
-
-      // Tapping "Настроить словарь →" switches to 'vocabulary' tab
-      final configBtn = find.text('Настроить словарь →');
-      expect(configBtn, findsOneWidget);
-      await tester.tap(configBtn);
-      await tester.pump();
-
-      expect(cubit.state.tab, 'vocabulary');
+      expect(find.byType(VocabularySummaryCard), findsNothing);
+      expect(find.text('Настроить словарь →'), findsNothing);
 
       // 2. In Transcriber tab
       cubit.setTab('transcriber');
       await tester.pump();
 
-      expect(find.text('Словарь и замены'), findsOneWidget);
-      expect(find.text('Применять в расшифровщике'), findsOneWidget);
+      expect(find.byType(VocabularySummaryCard), findsNothing);
+      expect(find.text('Настроить словарь →'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('VocabularySummaryCard standalone component renders and fires callbacks', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(580, 400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+
+      bool configured = false;
+
+      await tester.pumpWidget(
+        MacosApp(
+          locale: const Locale('ru'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: MacosWindow(
+            child: MacosScaffold(
+              children: [
+                ContentArea(
+                  builder: (context, _) => VocabularySummaryCard(
+                    scope: VocabularyScope.dictation,
+                    totalCount: 2,
+                    hintCount: 1,
+                    replacementCount: 1,
+                    enabled: true,
+                    onEnabledChanged: (_) {},
+                    onConfigure: () => configured = true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(VocabularySummaryCard), findsOneWidget);
+      expect(find.textContaining('2 записи'), findsOneWidget);
+      expect(find.textContaining('1 подсказок, 1 замен'), findsOneWidget);
+      expect(find.text('Применять в диктовке'), findsOneWidget);
 
       await tester.tap(find.text('Настроить словарь →'));
-      await tester.pump();
-      expect(cubit.state.tab, 'vocabulary');
+      await tester.pumpAndSettle();
+      expect(configured, isTrue);
 
       await tester.pumpWidget(const SizedBox());
     });
