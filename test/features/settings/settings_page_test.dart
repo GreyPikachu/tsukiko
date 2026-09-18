@@ -247,7 +247,7 @@ void main() {
       await tester.pump();
 
       await tester.dragUntilVisible(
-        find.text('ЖУРНАЛИРОВАНИЕ'),
+        find.widgetWithText(PushButton, 'Открыть папку журналов'),
         find.byType(ListView).first,
         const Offset(0, -150),
       );
