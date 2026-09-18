@@ -55,7 +55,6 @@ class AppDelegate: FlutterAppDelegate {
   /// и в инспекторе, не делало ничего. Надпись стоит в xib, а действие
   /// назначается здесь: цель у пункта живая, из макета её не назначить.
   override func applicationDidFinishLaunching(_ notification: Notification) {
-    super.applicationDidFinishLaunching(notification)
     if let item = NSApp.mainMenu?.items.first?.submenu?.items
       .first(where: { $0.keyEquivalent == "," })
     {
@@ -64,7 +63,7 @@ class AppDelegate: FlutterAppDelegate {
     }
   }
 
-  @objc private func openSettings() {
+  @objc private func openSettings(_ sender: Any? = nil) {
     DictationBridge.openSettings(tab: "dictation")
   }
 

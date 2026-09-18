@@ -291,7 +291,7 @@ void main() {
       server.ensureUpCalls.clear();
 
       cubit.setModel('/path/to/test-model.bin');
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await cubit.bringingUpForTesting;
 
       expect(server.ensureUpCalls, isNotEmpty);
       expect(server.ensureUpCalls.last.model, '/path/to/test-model.bin');
@@ -303,7 +303,7 @@ void main() {
       server.ensureUpCalls.clear();
 
       cubit.setEnabled(true);
-      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await cubit.bringingUpForTesting;
 
       expect(server.ensureUpCalls, isNotEmpty);
       expect(server.ensureUpCalls.last.model, '/path/to/test-model.bin');

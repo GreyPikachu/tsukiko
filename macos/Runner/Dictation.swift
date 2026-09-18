@@ -28,6 +28,17 @@ private let sidedModifierNames: [CGKeyCode: String] = [
   63: "fn",
 ]
 
+private let sidedDeviceMasks: [CGKeyCode: UInt64] = [
+  55: 0x08,       // leftcmd
+  54: 0x10,       // rightcmd
+  56: 0x02,       // leftshift
+  60: 0x04,       // rightshift
+  58: 0x20,       // leftopt
+  61: 0x40,       // rightopt
+  59: 0x01,       // leftctrl
+  62: 0x20000000, // rightctrl
+]
+
 private func modifierFamily(_ raw: String) -> String {
   var name = raw.lowercased()
   if name.hasPrefix("left") { name.removeFirst(4) }
@@ -403,6 +414,7 @@ final class DictationBridge: NSObject {
     let args = call.arguments as? [String: Any]
     switch call.method {
     case "bind":
+      ensureTap()
       hold = HotkeySpec(args?["hold"] as? [String: Any])
       toggle = HotkeySpec(args?["toggle"] as? [String: Any])
       cancelKey = HotkeySpec(args?["cancel"] as? [String: Any])
@@ -414,6 +426,7 @@ final class DictationBridge: NSObject {
       swallowed = []
       reply(nil)
     case "capture":
+      ensureTap()
       // Назначенное сочетание ждёт то окно, которое его попросило:
       // инспектор и панель живут на разных движках.
       captureChannel = source
@@ -665,8 +678,12 @@ final class DictationBridge: NSObject {
       let mask = modifierFlags.first(where: { $0.0 == modifierFamily(name) })?.1
     {
       if flags.contains(mask) {
-        if heldModifiers.contains(name) {
-          heldModifiers.remove(name)
+        if let devMask = sidedDeviceMasks[code] {
+          if (flags.rawValue & devMask) != 0 {
+            heldModifiers.insert(name)
+          } else {
+            heldModifiers.remove(name)
+          }
         } else {
           heldModifiers.insert(name)
         }
@@ -784,7 +801,7 @@ final class DictationBridge: NSObject {
     }
 
     // Всё отпущено — сочетание набрано.
-    guard heldKeys.isEmpty, mods.isEmpty, !captureKeys.isEmpty || !captureMods.isEmpty
+    guard heldKeys.isEmpty, mods.isEmpty, (!captureKeys.isEmpty || !captureMods.isEmpty)
     else { return nil }
 
     let quick = Date().timeIntervalSince(captureStartedAt ?? Date()) < tapMaxHold
@@ -838,10 +855,11 @@ final class DictationBridge: NSObject {
   }
 
   private func sendCaptured(mods: Set<String>, keys: [String], taps: Int) {
-    let target = captureChannel ?? channel
+    let args = ["mods": Array(mods), "keys": keys, "taps": taps] as [String: Any]
     DispatchQueue.main.async {
-      target?.invokeMethod(
-        "captured", arguments: ["mods": Array(mods), "keys": keys, "taps": taps])
+      for ch in self.channels {
+        ch.invokeMethod("captured", arguments: args)
+      }
     }
   }
 

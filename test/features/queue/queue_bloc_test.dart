@@ -737,6 +737,8 @@ void main() {
         final path = normalizePath('file:///Users/test/music.mp3');
         expect(path, anyOf('/Users/test/music.mp3', contains('music.mp3')));
         expect(normalizePath('"file:///path/audio.wav"'), anyOf('/path/audio.wav', contains('audio.wav')));
+        expect(normalizePath(r'file://C:\Users\test\music.mp3'), anyOf(contains('music.mp3'), contains(r'C:\Users')));
+        expect(normalizePath('file:///C:/Users/test/music.mp3'), anyOf(contains('music.mp3'), contains(r'C:\Users')));
       });
     });
 
@@ -745,8 +747,10 @@ void main() {
       build: make,
       act: (b) {
         final raw = file('запись.m4a');
+        final fileUri = Uri.file(raw).toString();
         b.add(FilesAdded([
           '"$raw"',
+          fileUri,
           'file://$raw',
           '   ',
           '""',

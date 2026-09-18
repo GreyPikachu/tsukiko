@@ -349,11 +349,20 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     // Обработка file:// URI с преобразованием в путь локальной файловой системы.
     if (s.startsWith('file://')) {
       try {
-        final uri = Uri.parse(s);
+        var uriStr = s;
+        // На Windows пути вида file://C:\... или file://C:/... парсер Uri считает
+        // хостом authority 'c:', что приводит к UNC-пути вида \\c\...
+        // Превращаем в стандартный file:///C:/...
+        final driveMatch = RegExp(r'^file://([a-zA-Z]:[\\/])').firstMatch(uriStr);
+        if (driveMatch != null) {
+          uriStr = 'file:///${uriStr.substring(7)}';
+        }
+        uriStr = uriStr.replaceAll(r'\', '/');
+        final uri = Uri.parse(uriStr);
         if (uri.hasAuthority && uri.host == 'localhost') {
-          s = Uri(scheme: 'file', path: uri.path).toFilePath();
+          s = Uri(scheme: 'file', path: uri.path).toFilePath(windows: Platform.isWindows);
         } else {
-          s = uri.toFilePath();
+          s = uri.toFilePath(windows: Platform.isWindows);
         }
       } catch (err) {
         Log.warn('Queue', 'Failed to convert file URI to path: $s ($err)');
@@ -373,6 +382,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
     // Финальная очистка от нуль-байтов и управляющих символов.
     s = s.replaceAll('\x00', '').replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '').trim();
+
+    if (Platform.isWindows) {
+      s = s.replaceAll('/', r'\');
+    }
 
     return s;
   }

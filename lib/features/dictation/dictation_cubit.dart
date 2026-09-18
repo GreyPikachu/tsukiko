@@ -247,6 +247,9 @@ class DictationCubit extends Cubit<DictationState> {
   @visibleForTesting
   RunOptions get optionsForTesting => _options;
 
+  @visibleForTesting
+  Future<void>? get bringingUpForTesting => _bringingUp;
+
   /// «Разрешения нет» — вывод не с первой попытки. Сразу после запуска
   /// система отвечает «нет» и тем, кто всё давно разрешил: процесс ещё
   /// не осел. Плашка на пустом месте пугает зря, поэтому верим только
