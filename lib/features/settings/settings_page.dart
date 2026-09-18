@@ -23,7 +23,6 @@ import '../../platform/os.dart';
 import 'settings_cubit.dart';
 import 'widgets/model_row.dart';
 import 'widgets/vocabulary_item_row.dart';
-import 'widgets/vocabulary_summary_card.dart';
 import 'settings_state.dart';
 import '../../core/labels.dart';
 import '../../core/vocabulary.dart';
@@ -378,17 +377,6 @@ class _SettingsBodyState extends State<SettingsBody>
     Hint(l10n.hintThreads),
     const SizedBox(height: Gap.item),
     Check(l10n.checkPunctuate, s.punctuate, _cubit.setPunctuate),
-    const SizedBox(height: Gap.item),
-    SectionTitle(l10n.sectionVocabularyAndReplacements),
-    VocabularySummaryCard(
-      scope: VocabularyScope.dictation,
-      totalCount: s.vocabulary.length,
-      hintCount: s.vocabulary.where((i) => i.isHintOnly).length,
-      replacementCount: s.vocabulary.where((i) => i.isReplacement).length,
-      enabled: s.vocabularyDictationEnabled,
-      onEnabledChanged: _cubit.setVocabularyDictationEnabled,
-      onConfigure: () => _cubit.setTab('vocabulary'),
-    ),
     SectionTitle(l10n.sectionModelInMemory),
     _Field(
       l10n.fieldKeepModel,
@@ -1074,17 +1062,6 @@ class _SettingsBodyState extends State<SettingsBody>
   List<Widget> _transcriberTab(SettingsState s) => [
     SectionTitle(l10n.sectionHowToRecognize),
     Hint(l10n.hintPerRecordingSettings),
-    const SizedBox(height: Gap.item),
-    SectionTitle(l10n.sectionVocabularyAndReplacements),
-    VocabularySummaryCard(
-      scope: VocabularyScope.transcriber,
-      totalCount: s.vocabulary.length,
-      hintCount: s.vocabulary.where((i) => i.isHintOnly).length,
-      replacementCount: s.vocabulary.where((i) => i.isReplacement).length,
-      enabled: s.vocabularyTranscriberEnabled,
-      onEnabledChanged: _cubit.setVocabularyTranscriberEnabled,
-      onConfigure: () => _cubit.setTab('vocabulary'),
-    ),
     SectionTitle(l10n.sectionAutoSave),
     Check(l10n.checkSaveToDisk, s.toLibrary, _cubit.setToLibrary),
     Hint(l10n.hintSaveToDisk(appName), under: true),
