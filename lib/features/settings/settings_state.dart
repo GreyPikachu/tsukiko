@@ -6,6 +6,7 @@ import '../../core/app_locale.dart';
 import '../../core/models.dart';
 import '../../core/skill_install.dart';
 import '../../core/text_commands.dart';
+import '../../core/vocabulary.dart';
 import '../../core/whisper_server.dart' show Hotkey;
 
 /// Сколько потоков предложить на выбор.
@@ -56,6 +57,9 @@ class SettingsState extends Equatable {
     this.textCommands = const [],
     this.dictationCommandsEnabled = true,
     this.transcriberCommandsEnabled = true,
+    this.vocabulary = const [],
+    this.vocabularyDictationEnabled = true,
+    this.vocabularyTranscriberEnabled = true,
     this.idleSeconds = 180,
     this.insert = true,
     this.hud = true,
@@ -178,6 +182,8 @@ class SettingsState extends Equatable {
   final String prompt;
   final List<TextCommand> textCommands;
   final bool dictationCommandsEnabled, transcriberCommandsEnabled;
+  final List<VocabularyItem> vocabulary;
+  final bool vocabularyDictationEnabled, vocabularyTranscriberEnabled;
   final int idleSeconds;
   final bool insert, hud;
 
@@ -250,6 +256,9 @@ class SettingsState extends Equatable {
     List<TextCommand>? textCommands,
     bool? dictationCommandsEnabled,
     bool? transcriberCommandsEnabled,
+    List<VocabularyItem>? vocabulary,
+    bool? vocabularyDictationEnabled,
+    bool? vocabularyTranscriberEnabled,
     int? idleSeconds,
     bool? insert,
     bool? hud,
@@ -300,6 +309,11 @@ class SettingsState extends Equatable {
         dictationCommandsEnabled ?? this.dictationCommandsEnabled,
     transcriberCommandsEnabled:
         transcriberCommandsEnabled ?? this.transcriberCommandsEnabled,
+    vocabulary: vocabulary ?? this.vocabulary,
+    vocabularyDictationEnabled:
+        vocabularyDictationEnabled ?? this.vocabularyDictationEnabled,
+    vocabularyTranscriberEnabled:
+        vocabularyTranscriberEnabled ?? this.vocabularyTranscriberEnabled,
     idleSeconds: idleSeconds ?? this.idleSeconds,
     insert: insert ?? this.insert,
     hud: hud ?? this.hud,
@@ -343,6 +357,9 @@ class SettingsState extends Equatable {
     textCommands.map((command) => command.toJson()).toList(),
     dictationCommandsEnabled,
     transcriberCommandsEnabled,
+    vocabulary.map((item) => item.toJson()).toList(),
+    vocabularyDictationEnabled,
+    vocabularyTranscriberEnabled,
     idleSeconds,
     insert,
     hud,

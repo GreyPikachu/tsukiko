@@ -17,6 +17,7 @@ import '../../core/settings.dart';
 import '../../core/text.dart';
 import '../../core/text_commands.dart';
 import '../../core/transcript.dart';
+import '../../core/vocabulary.dart';
 import '../../core/whisper.dart';
 import '../../core/whisper_server.dart'
     show forgetRecognizerPid, rememberRecognizerPid;
@@ -268,18 +269,20 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   Timer? _pollTimer, _saveTimer;
   bool _windowVisible = true;
 
-  List<TextCommand> _textCommands = const [];
+  List<VocabularyItem> _vocabulary = const [];
   bool _commandsEnabled = true;
 
   void _loadTextCommands() {
     final settings = Settings.load();
-    _textCommands = textCommandsFromJson(settings[textCommandsSetting]);
+    _vocabulary = loadAndMigrateVocabulary(settings);
     _commandsEnabled =
-        (settings[transcriberCommandsEnabledSetting] as bool?) ?? true;
+        (settings[vocabularyTranscriberEnabledSetting] as bool?) ??
+        (settings[transcriberCommandsEnabledSetting] as bool?) ??
+        true;
   }
 
   Segment _applyCommands(Segment segment) =>
-      _commandsEnabled ? segment.applyCommands(_textCommands) : segment;
+      _commandsEnabled ? segment.applyVocabulary(_vocabulary) : segment;
 
   /// Работающий whisper-cli и его временная папка.
   Process? _proc;
@@ -885,9 +888,9 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     final selected = state.optionsFor(job);
     final opts = _commandsEnabled
         ? selected.copyWith(
-            prompt: promptWithTextCommands(
+            prompt: promptWithVocabulary(
               selected.effectivePrompt,
-              _textCommands,
+              _vocabulary,
             ),
           )
         : selected;
@@ -1842,8 +1845,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     final s = Settings.load();
     final selectedModel = s['model'] as String?;
     final models = findModels();
-    _textCommands = textCommandsFromJson(s[textCommandsSetting]);
-    _commandsEnabled = (s[transcriberCommandsEnabledSetting] as bool?) ?? true;
+    _vocabulary = loadAndMigrateVocabulary(s);
+    _commandsEnabled = (s[vocabularyTranscriberEnabledSetting] as bool?) ??
+        (s[transcriberCommandsEnabledSetting] as bool?) ??
+        true;
     final formats = (s['libraryFormats'] as List?)
         ?.cast<String>()
         .where((v) => exportFormats.any((f) => f.id == v))
