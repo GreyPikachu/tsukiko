@@ -872,7 +872,7 @@ void main() {
         SettingsState(
           tab: 'vocabulary',
           vocabulary: const [
-            VocabularyItem(id: '1', phrase: 'TypeScript'),
+            VocabularyItem(id: '1', phrase: 'TypeScript', isPriority: true),
           ],
         ),
       );
@@ -881,7 +881,7 @@ void main() {
       await tester.pumpWidget(buildTestApp(cubitSmall));
       await tester.pump();
 
-      expect(find.textContaining('из 220 токенов подсказки'), findsOneWidget);
+      expect(find.textContaining('из 220 токенов'), findsOneWidget);
       expect(
         find.text(
           'Словарь превышает рекомендуемый лимит. Часть подсказок может не попасть в окно контекста модели.',
@@ -893,9 +893,9 @@ void main() {
 
       // Over-budget vocabulary (> 200 tokens)
       final heavyItems = [
-        VocabularyItem(id: '1', phrase: 'Термин' * 40),
-        VocabularyItem(id: '2', phrase: 'Определение' * 40),
-        VocabularyItem(id: '3', phrase: 'Концепция' * 40),
+        VocabularyItem(id: '1', phrase: 'Термин' * 40, isPriority: true),
+        VocabularyItem(id: '2', phrase: 'Определение' * 40, isPriority: true),
+        VocabularyItem(id: '3', phrase: 'Концепция' * 40, isPriority: true),
       ];
 
       final cubitHeavy = _TestVocabularyCubit(
@@ -956,11 +956,13 @@ void main() {
           const VocabularyItem(
             id: 'v1',
             phrase: 'TypeScript',
+            isPriority: true,
           ).toJson(),
           const VocabularyItem(
             id: 'v2',
             phrase: 'юскейс',
             replacement: 'Use Case',
+            isPriority: true,
           ).toJson(),
         ],
         vocabularyDictationEnabledSetting: true,

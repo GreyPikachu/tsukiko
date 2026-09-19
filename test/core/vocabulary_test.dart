@@ -4,11 +4,13 @@ import 'package:tsukiko/core/vocabulary.dart';
 void main() {
   group('Equivalence Classes (Classes 1-10)', () {
     test('Class 1: Pure acoustic hints (no replacement, hint-only)', () {
-      const hint1 = VocabularyItem(id: 'h1', phrase: 'TypeScript');
+      const hint1 =
+          VocabularyItem(id: 'h1', phrase: 'TypeScript', isPriority: true);
       const hint2 = VocabularyItem(
         id: 'h2',
         phrase: 'Кубернетис',
         replacement: '',
+        isPriority: true,
       );
 
       expect(hint1.isHintOnly, isTrue);
@@ -21,7 +23,7 @@ void main() {
       expect(hint2.type, VocabularyType.hint);
       expect(hint2.usable, isTrue);
 
-      // In promptWithVocabulary, pure acoustic hints are included to condition the model
+      // In promptWithVocabulary, pure acoustic hints marked as priority are included
       final prompt = promptWithVocabulary('Базовый текст', [hint1, hint2]);
       expect(prompt, 'Базовый текст, TypeScript, Кубернетис');
 
@@ -42,11 +44,13 @@ void main() {
         id: 'r1',
         phrase: 'мак',
         replacement: 'Mac',
+        isPriority: true,
       );
       const itemSdk = VocabularyItem(
         id: 'r2',
         phrase: 'сдк',
         replacement: 'SDK',
+        isPriority: true,
       );
 
       expect(itemMac.isReplacement, isTrue);
@@ -259,22 +263,29 @@ void main() {
     });
 
     test('Class 8: Disabled items (enabled = false)', () {
-      const activeHint = VocabularyItem(id: '1', phrase: 'Flutter');
+      const activeHint = VocabularyItem(
+        id: '1',
+        phrase: 'Flutter',
+        isPriority: true,
+      );
       const disabledHint = VocabularyItem(
         id: '2',
         phrase: 'React',
         enabled: false,
+        isPriority: true,
       );
       const activeRep = VocabularyItem(
         id: '3',
         phrase: 'мак',
         replacement: 'Mac',
+        isPriority: true,
       );
       const disabledRep = VocabularyItem(
         id: '4',
         phrase: 'винда',
         replacement: 'Windows',
         enabled: false,
+        isPriority: true,
       );
 
       final items = [activeHint, disabledHint, activeRep, disabledRep];
@@ -301,9 +312,9 @@ void main() {
 
     test('Class 9: Token budgeting, truncation and formatting', () {
       final items = [
-        const VocabularyItem(id: '1', phrase: 'Альфа'),
-        const VocabularyItem(id: '2', phrase: 'Бета'),
-        const VocabularyItem(id: '3', phrase: 'Гамма'),
+        const VocabularyItem(id: '1', phrase: 'Альфа', isPriority: true),
+        const VocabularyItem(id: '2', phrase: 'Бета', isPriority: true),
+        const VocabularyItem(id: '3', phrase: 'Гамма', isPriority: true),
       ];
 
       // Base prompt punctuation formatting
@@ -337,7 +348,7 @@ void main() {
       expect(emptyEst, 0);
 
       final singleEst = estimateVocabularyTokens([
-        const VocabularyItem(id: '1', phrase: 'Тест'),
+        const VocabularyItem(id: '1', phrase: 'Тест', isPriority: true),
       ]);
       expect(singleEst, greaterThan(0));
 
@@ -347,6 +358,7 @@ void main() {
         (i) => VocabularyItem(
           id: 'item_$i',
           phrase: 'ДлинныйТерминНомер$i',
+          isPriority: true,
         ),
       );
 
@@ -450,6 +462,7 @@ void main() {
         id: 'b1_3',
         phrase: '  мак  ',
         replacement: '  Mac  ',
+        isPriority: true,
       );
       expect(untrimmed.usable, isTrue);
 
@@ -584,8 +597,8 @@ void main() {
       // 200 tokens * 3.8 chars/token ≈ 760 chars
       // We test that promptWithVocabulary strictly respects maxEstimatedTokens
       final itemTokens = [
-        const VocabularyItem(id: '1', phrase: 'Слово1'),
-        const VocabularyItem(id: '2', phrase: 'Слово2'),
+        const VocabularyItem(id: '1', phrase: 'Слово1', isPriority: true),
+        const VocabularyItem(id: '2', phrase: 'Слово2', isPriority: true),
       ];
 
       final prompt200 = promptWithVocabulary('', itemTokens, maxEstimatedTokens: 200);
@@ -623,6 +636,161 @@ void main() {
         const VocabularyItem(id: '2', phrase: 'сдк', replacement: 'SDK'),
       ]);
       expect(resMulti.text, 'Mac и SDK');
+    });
+
+    test('Priority Routing: Only starred items go to model prompt context', () {
+      final items = [
+        const VocabularyItem(
+          id: '1',
+          phrase: 'StarWord',
+          replacement: 'StarReplacement',
+          isPriority: true,
+        ),
+        const VocabularyItem(
+          id: '2',
+          phrase: 'NormalWord',
+          replacement: 'NormalReplacement',
+          isPriority: false,
+        ),
+        const VocabularyItem(
+          id: '3',
+          phrase: 'StarHint',
+          isPriority: true,
+        ),
+        const VocabularyItem(
+          id: '4',
+          phrase: 'NormalHint',
+          isPriority: false,
+        ),
+      ];
+
+      // Default promptWithVocabulary (onlyPriority = true)
+      final prompt = promptWithVocabulary('Context', items);
+      expect(prompt, contains('StarWord'));
+      expect(prompt, contains('StarHint'));
+      expect(prompt, isNot(contains('NormalWord')));
+      expect(prompt, isNot(contains('NormalHint')));
+
+      // Non-starred items still work 100% in post-processing!
+      final replaced = applyVocabularyReplacements(
+        'Here is StarWord and NormalWord in text.',
+        items,
+      );
+      expect(
+        replaced.text,
+        'Here is StarReplacement and NormalReplacement in text.',
+      );
+
+      // When onlyPriority: false, all items can be included
+      final fullPrompt = promptWithVocabulary(
+        'Context',
+        items,
+        onlyPriority: false,
+      );
+      expect(fullPrompt, contains('StarWord'));
+      expect(fullPrompt, contains('NormalWord'));
+      expect(fullPrompt, contains('StarHint'));
+      expect(fullPrompt, contains('NormalHint'));
+
+      // Token estimation counts only priority tokens
+      final priorityTokens = estimateVocabularyTokens(items);
+      final allTokens =
+          estimateVocabularyTokens(items, onlyPriority: false);
+      expect(priorityTokens, greaterThan(0));
+      expect(allTokens, greaterThan(priorityTokens));
+
+      // If no priority items, 0 extra tokens
+      final zeroTokens = estimateVocabularyTokens([
+        const VocabularyItem(id: 'a', phrase: 'Word1', isPriority: false),
+        const VocabularyItem(id: 'b', phrase: 'Word2', isPriority: false),
+      ]);
+      expect(zeroTokens, 0);
+    });
+
+    test('Global Languages & Scripts: CJK, Nordic, Spanish, Hindi, Swahili, etc.', () {
+      // 1. Chinese Hanzi without spaces
+      final cjkRule = const VocabularyItem(
+        id: 'zh1',
+        phrase: '北京',
+        replacement: 'Beijing',
+      );
+      final zhRes = applyVocabularyReplacements(
+        '我爱北京天安门',
+        [cjkRule],
+      );
+      expect(zhRes.text, '我爱Beijing天安门');
+
+      // 2. English embedded in Chinese text without spaces
+      final engInZh = const VocabularyItem(
+        id: 'zh2',
+        phrase: 'TypeScript',
+        replacement: 'TS',
+      );
+      final tsRes = applyVocabularyReplacements(
+        '我喜欢用TypeScript写代码',
+        [engInZh],
+      );
+      expect(tsRes.text, '我喜欢用TS写代码');
+
+      // 3. Strict preservation of word boundaries in Latin (no false substring matches)
+      final catRule = const VocabularyItem(
+        id: 'en1',
+        phrase: 'cat',
+        replacement: 'feline',
+      );
+      final boundaryRes = applyVocabularyReplacements(
+        'The cat caught the scat',
+        [catRule],
+      );
+      expect(boundaryRes.text, 'The feline caught the scat');
+
+      // 4. Nordic languages (Danish, Norwegian, Swedish with umlauts/special letters)
+      final dkRule = const VocabularyItem(
+        id: 'dk1',
+        phrase: 'København',
+        replacement: 'Copenhagen',
+      );
+      final dkRes = applyVocabularyReplacements(
+        'Velkommen til København i dag',
+        [dkRule],
+      );
+      expect(dkRes.text, 'Velkommen til Copenhagen i dag');
+
+      // 5. Spanish with accents
+      final esRule = const VocabularyItem(
+        id: 'es1',
+        phrase: 'español',
+        replacement: 'castellano',
+      );
+      final esRes = applyVocabularyReplacements(
+        'Hablo español con mis amigos',
+        [esRule],
+      );
+      expect(esRes.text, 'Hablo castellano con mis amigos');
+
+      // 6. Indic / Hindi (Devanagari script)
+      final hiRule = const VocabularyItem(
+        id: 'hi1',
+        phrase: 'नमस्ते',
+        replacement: 'Hello',
+      );
+      final hiRes = applyVocabularyReplacements(
+        'सबको नमस्ते दुनिया',
+        [hiRule],
+      );
+      expect(hiRes.text, 'सबको Hello दुनिया');
+
+      // 7. African language (Swahili)
+      final swRule = const VocabularyItem(
+        id: 'sw1',
+        phrase: 'habari',
+        replacement: 'jambo',
+      );
+      final swRes = applyVocabularyReplacements(
+        'Habari ya asubuhi rafiki',
+        [swRule],
+      );
+      expect(swRes.text, 'jambo ya asubuhi rafiki');
     });
   });
 }

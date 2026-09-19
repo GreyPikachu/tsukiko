@@ -1462,7 +1462,9 @@
   "tooltipDisableItem": "Выключить запись",
   "emptyVocabularyTitle": "Словарь пока пуст",
   "emptyVocabularySubtitle": "Добавьте редкие термины, имена или настройте автозамену фраз.",
-  "promptBudgetNotice": "Занято ~{tokens} из {max} токенов подсказки",
+  "tooltipSetPriority": "Передавать в контекст модели (приоритет)",
+  "tooltipRemovePriority": "Убрать из контекста модели (только постпроцессинг)",
+  "promptBudgetNotice": "Занято ~{tokens} из {max} токенов модели (приоритет)",
   "@promptBudgetNotice": {
     "placeholders": {
       "tokens": {
@@ -1473,6 +1475,15 @@
       }
     }
   },
+  "promptBudgetZeroNotice": "0 из {max} токенов модели (все слова заменяются на постпроцессинге)",
+  "@promptBudgetZeroNotice": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "promptBudgetPriorityHint": "Отметьте звёздочкой (★) слова, которые нужно передавать напрямую в акустический контекст нейросети. Остальные слова заменяются на постпроцессинге без ограничений по токенам.",
   "promptBudgetWarning": "Словарь слишком велик: модель может игнорировать слова в конце",
   "vocabularySummaryTitle": "Словарь и замены",
   "vocabularySummaryStatus": "{count, plural, one{{count} запись} few{{count} записи} many{{count} записей} other{{count} записей}} ({hints} подсказок, {replacements} замен)",

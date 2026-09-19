@@ -26,6 +26,7 @@ class VocabularyItem extends Equatable {
     required this.phrase,
     this.replacement = '',
     this.enabled = true,
+    this.isPriority = false,
     this.createdAt,
   });
 
@@ -43,6 +44,11 @@ class VocabularyItem extends Equatable {
   /// Включена ли запись для распознавания и автозамены.
   final bool enabled;
 
+  /// Приоритетная ли запись для передачи напрямую в контекст (токены) модели.
+  /// Если false — запись применяется только на этапе постпроцессинга, не
+  /// расходуя лимит токенов нейросети и защищая её от галлюцинаций.
+  final bool isPriority;
+
   final DateTime? createdAt;
 
   bool get isReplacement => replacement.trim().isNotEmpty;
@@ -57,6 +63,7 @@ class VocabularyItem extends Equatable {
     String? phrase,
     String? replacement,
     bool? enabled,
+    bool? isPriority,
     DateTime? createdAt,
   }) =>
       VocabularyItem(
@@ -64,6 +71,7 @@ class VocabularyItem extends Equatable {
         phrase: phrase ?? this.phrase,
         replacement: replacement ?? this.replacement,
         enabled: enabled ?? this.enabled,
+        isPriority: isPriority ?? this.isPriority,
         createdAt: createdAt ?? this.createdAt,
       );
 
@@ -72,6 +80,7 @@ class VocabularyItem extends Equatable {
         'phrase': phrase,
         'replacement': replacement,
         'enabled': enabled,
+        'isPriority': isPriority,
         if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
       };
 
@@ -82,6 +91,7 @@ class VocabularyItem extends Equatable {
     final id = value['id'] as String? ?? phrase.trim().toLowerCase();
     final replacement = (value['replacement'] as String?) ?? '';
     final enabled = (value['enabled'] as bool?) ?? true;
+    final isPriority = (value['isPriority'] as bool?) ?? false;
     final createdAtStr = value['createdAt'] as String?;
     final createdAt =
         createdAtStr != null ? DateTime.tryParse(createdAtStr) : null;
@@ -91,6 +101,7 @@ class VocabularyItem extends Equatable {
       phrase: phrase,
       replacement: replacement,
       enabled: enabled,
+      isPriority: isPriority,
       createdAt: createdAt,
     );
   }
@@ -104,10 +115,12 @@ class VocabularyItem extends Equatable {
         phrase: cmd.phrase,
         replacement: cmd.replacement,
         enabled: true,
+        isPriority: false,
       );
 
   @override
-  List<Object?> get props => [id, phrase, replacement, enabled, createdAt];
+  List<Object?> get props =>
+      [id, phrase, replacement, enabled, isPriority, createdAt];
 }
 
 /// Разбор списка элементов словаря из JSON.
@@ -124,12 +137,15 @@ List<VocabularyItem> vocabularyFromJson(Object? value) {
 /// Составляет затравку (conditioning prompt) для модели из базовой подсказки
 /// и активных записей словаря.
 ///
-/// В затравку попадают как чистые подсказки, так и фразы замен (чтобы модель
-/// слышала и писала их предсказуемо). Ограничивается бюджетом токенов.
+/// По умолчанию в затравку модели попадают только приоритетные (⭐ [isPriority])
+/// записи, чтобы защитить акустическую нейросеть от галлюцинаций, зацикливаний
+/// и переполнения окна контекста (220 токенов). Все остальные записи применяются
+/// на этапе нечёткого постпроцессинга без каких-либо лимитов.
 String promptWithVocabulary(
   String basePrompt,
   Iterable<VocabularyItem> items, {
   int maxEstimatedTokens = 220,
+  bool onlyPriority = true,
 }) {
   final base = basePrompt.trim();
   final lowerBase = base.toLowerCase();
@@ -139,6 +155,7 @@ String promptWithVocabulary(
 
   for (final item in items) {
     if (!item.usable) continue;
+    if (onlyPriority && !item.isPriority) continue;
     final phrase = item.phrase.trim();
     final lower = phrase.toLowerCase();
 
@@ -173,17 +190,74 @@ String promptWithVocabulary(
 int estimateVocabularyTokens(
   Iterable<VocabularyItem> items, {
   String basePrompt = '',
+  bool onlyPriority = true,
 }) {
-  final prompt = promptWithVocabulary(basePrompt, items, maxEstimatedTokens: 9999);
+  final prompt = promptWithVocabulary(
+    basePrompt,
+    items,
+    maxEstimatedTokens: 9999,
+    onlyPriority: onlyPriority,
+  );
   if (prompt.isEmpty) return 0;
   return (prompt.length / 3.8).ceil();
 }
 
 final _vocabWordCharacter = RegExp(r'[\p{L}\p{N}_]', unicode: true);
+final _cjkOrNonSpacedRegex = RegExp(
+  r'[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF\u3040-\u309F\u30A0-\u30FF\u0E00-\u0E7F]',
+);
 
 bool _isWordCharacterAt(String text, int at) {
   if (at < 0 || at >= text.length) return false;
   return _vocabWordCharacter.hasMatch(text.substring(at, at + 1));
+}
+
+bool _isCjkOrNonSpacedAt(String text, int at) {
+  if (at < 0 || at >= text.length) return false;
+  return _cjkOrNonSpacedRegex.hasMatch(text.substring(at, at + 1));
+}
+
+bool _isValidWordBoundary({
+  required String source,
+  required int start,
+  required int end,
+  required bool isRuleCjk,
+}) {
+  // Левая граница
+  if (start > 0) {
+    final prevIsWord = _isWordCharacterAt(source, start - 1);
+    if (prevIsWord) {
+      if (!isRuleCjk) {
+        final prevIsCjk = _isCjkOrNonSpacedAt(source, start - 1);
+        final currIsCjk = _isCjkOrNonSpacedAt(source, start);
+        // Если оба символа принадлежат одному алфавитному скрипту без пробела — это внутри слова
+        if (!prevIsCjk && !currIsCjk) return false;
+      }
+    }
+  }
+
+  // Правая граница
+  if (end < source.length) {
+    final nextIsWord = _isWordCharacterAt(source, end);
+    if (nextIsWord) {
+      if (!isRuleCjk) {
+        final lastIsCjk = _isCjkOrNonSpacedAt(source, end - 1);
+        final nextIsCjk = _isCjkOrNonSpacedAt(source, end);
+        // Если оба символа принадлежат одному алфавитному скрипту без пробела — это внутри слова
+        if (!lastIsCjk && !nextIsCjk) return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+bool _isWordStartAt(String source, int at) {
+  if (at < 0 || at >= source.length) return false;
+  if (!_isWordCharacterAt(source, at)) return false;
+  if (at == 0) return true;
+  if (!_isWordCharacterAt(source, at - 1)) return true;
+  return _isCjkOrNonSpacedAt(source, at - 1) != _isCjkOrNonSpacedAt(source, at);
 }
 
 class _VocabRule {
@@ -195,7 +269,8 @@ class _VocabRule {
         collapsedLower =
             PhoneticNormalizer.stripWhitespace(item.phrase.trim()).toLowerCase(),
         phoneticKey = PhoneticNormalizer.normalize(item.phrase.trim()),
-        wordCount = _countWords(item.phrase.trim());
+        wordCount = _countWords(item.phrase.trim()),
+        isCjk = _cjkOrNonSpacedRegex.hasMatch(item.phrase.trim());
 
   final VocabularyItem item;
   final String phrase;
@@ -205,6 +280,7 @@ class _VocabRule {
   final String collapsedLower;
   final String phoneticKey;
   final int wordCount;
+  final bool isCjk;
 
   static int _countWords(String text) {
     final words = text.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty);
@@ -432,8 +508,12 @@ CommandText applyVocabularyReplacements(
       final end = at + rule.charLength;
       if (end > source.length) continue;
       if (!lowerSource.startsWith(rule.lower, at)) continue;
-      if (_isWordCharacterAt(source, at - 1) ||
-          _isWordCharacterAt(source, end)) {
+      if (!_isValidWordBoundary(
+        source: source,
+        start: at,
+        end: end,
+        isRuleCjk: rule.isCjk,
+      )) {
         continue;
       }
       exactMatch = rule;
@@ -458,7 +538,7 @@ CommandText applyVocabularyReplacements(
 
     // 2. Нечёткое и фонетическое сопоставление
     // Срабатывает только на границе слова
-    if (_isWordCharacterAt(source, at) && !_isWordCharacterAt(source, at - 1)) {
+    if (_isWordStartAt(source, at)) {
       final match = _findFuzzyMatchAt(
         source: source,
         at: at,
@@ -518,6 +598,7 @@ List<VocabularyItem> loadAndMigrateVocabulary(Map<String, dynamic> settingsJson)
             phrase: cmd.phrase.trim(),
             replacement: cmd.replacement,
             enabled: true,
+            isPriority: true,
             createdAt: DateTime.now(),
           ),
         );
@@ -539,6 +620,7 @@ List<VocabularyItem> loadAndMigrateVocabulary(Map<String, dynamic> settingsJson)
             phrase: token,
             replacement: '', // Чистая подсказка
             enabled: true,
+            isPriority: true,
             createdAt: DateTime.now(),
           ),
         );
