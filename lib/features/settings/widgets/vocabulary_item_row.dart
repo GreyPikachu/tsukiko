@@ -131,16 +131,7 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
         ),
         child: Row(
           children: [
-            MacosTooltip(
-              message: item.enabled
-                  ? l10n.tooltipDisableItem
-                  : l10n.tooltipEnableItem,
-              child: MacosCheckbox(
-                value: item.enabled,
-                onChanged: (v) => widget.onToggle(v),
-              ),
-            ),
-            const SizedBox(width: Gap.inner),
+            // Только звёздочка (приоритет в подсказках модели) в начале строки
             MacosTooltip(
               message: item.isPriority
                   ? l10n.tooltipRemovePriority
@@ -152,31 +143,30 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                     item.copyWith(isPriority: !item.isPriority),
                   ),
                   behavior: HitTestBehavior.opaque,
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: Center(
-                      child: AnimatedScale(
-                        scale: item.isPriority ? 1.08 : 1.0,
-                        duration: Motion.dur(context, Motion.quick),
-                        curve: Motion.curve(context, Motion.quickCurve),
-                        child: MacosIcon(
-                          item.isPriority
-                              ? CupertinoIcons.star_fill
-                              : CupertinoIcons.star,
-                          size: 14,
-                          color: item.isPriority
-                              ? MacosColors.systemYellowColor
-                              : Surface.secondaryText(context)
-                                  .withValues(alpha: 0.45),
-                        ),
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    child: AnimatedScale(
+                      scale: item.isPriority ? 1.15 : 1.0,
+                      duration: Motion.dur(context, Motion.quick),
+                      curve: Motion.curve(context, Motion.quickCurve),
+                      child: MacosIcon(
+                        item.isPriority
+                            ? CupertinoIcons.star_fill
+                            : CupertinoIcons.star,
+                        size: 15,
+                        color: item.isPriority
+                            ? MacosColors.systemYellowColor
+                            : Surface.secondaryText(context)
+                                .withValues(alpha: 0.4),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: Gap.inner),
+            const SizedBox(width: Gap.tight),
             Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -188,10 +178,12 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                         item.phrase,
                         style: Type.control.copyWith(
                           fontWeight: FontWeight.w600,
+                          fontStyle:
+                              item.enabled ? FontStyle.normal : FontStyle.italic,
                           color: item.enabled
                               ? null
                               : Surface.secondaryText(context)
-                                  .withValues(alpha: 0.55),
+                                  .withValues(alpha: 0.45),
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -203,18 +195,22 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                         child: MacosIcon(
                           CupertinoIcons.arrow_right,
                           size: 11,
-                          color: Surface.secondaryText(context)
-                              .withValues(alpha: 0.5),
+                          color: Surface.secondaryText(context).withValues(
+                            alpha: item.enabled ? 0.5 : 0.3,
+                          ),
                         ),
                       ),
                       Flexible(
                         child: Text(
                           item.replacement,
                           style: Type.control.copyWith(
+                            fontStyle: item.enabled
+                                ? FontStyle.normal
+                                : FontStyle.italic,
                             color: item.enabled
                                 ? null
                                 : Surface.secondaryText(context)
-                                    .withValues(alpha: 0.55),
+                                    .withValues(alpha: 0.45),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -250,7 +246,7 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                     size: 10,
                     color: item.enabled
                         ? badgeColor
-                        : Surface.secondaryText(context),
+                        : Surface.secondaryText(context).withValues(alpha: 0.4),
                   ),
                   const SizedBox(width: 3.5),
                   Text(
@@ -261,21 +257,47 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                       letterSpacing: 0.25,
                       color: item.enabled
                           ? badgeColor
-                          : Surface.secondaryText(context),
+                          : Surface.secondaryText(context).withValues(alpha: 0.4),
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: Gap.inner),
-            // Действия: карандаш и корзина с анимацией и мгновенным откликом
-            AnimatedOpacity(
-              duration: Motion.dur(context, Motion.quick),
-              opacity: _hover ? 1.0 : 0.0,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  MacosTooltip(
+            // Действия: переключение активности, карандаш и корзина
+            // Всегда остаются видимыми с деликатной resting-прозрачностью
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                MacosTooltip(
+                  message: item.enabled
+                      ? l10n.tooltipDisableItem
+                      : l10n.tooltipEnableItem,
+                  child: AnimatedOpacity(
+                    duration: Motion.dur(context, Motion.quick),
+                    opacity: _hover ? 1.0 : (item.enabled ? 0.55 : 0.85),
+                    child: MacosIconButton(
+                      icon: MacosIcon(
+                        item.enabled
+                            ? CupertinoIcons.checkmark_circle
+                            : CupertinoIcons.pause_circle_fill,
+                        size: IconSize.button,
+                        color: item.enabled
+                            ? MacosColors.systemGreenColor
+                            : MacosColors.systemOrangeColor,
+                      ),
+                      boxConstraints: const BoxConstraints.tightFor(
+                        width: 28,
+                        height: 28,
+                      ),
+                      onPressed: () => widget.onToggle(!item.enabled),
+                    ),
+                  ),
+                ),
+                AnimatedOpacity(
+                  duration: Motion.dur(context, Motion.quick),
+                  opacity: _hover ? 1.0 : 0.45,
+                  child: MacosTooltip(
                     message: l10n.tooltipEditVocabulary,
                     child: MacosIconButton(
                       icon: MacosIcon(
@@ -290,7 +312,11 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                       onPressed: _startEditing,
                     ),
                   ),
-                  MouseRegion(
+                ),
+                AnimatedOpacity(
+                  duration: Motion.dur(context, Motion.quick),
+                  opacity: _hover ? 1.0 : 0.45,
+                  child: MouseRegion(
                     onEnter: (_) => setState(() => _deleteHover = true),
                     onExit: (_) => setState(() => _deleteHover = false),
                     child: MacosTooltip(
@@ -311,8 +337,8 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),

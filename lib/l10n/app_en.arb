@@ -660,5 +660,9 @@
   "buttonConfigureVocabulary": "Configure vocabulary →",
   "statusVocabularyItemDeleted": "Entry removed from vocabulary",
   "buttonUndo": "Undo",
-  "warningDuplicatePhrase": "This phrase already exists in the vocabulary"
+  "warningDuplicatePhrase": "This phrase already exists in the vocabulary",
+  "menuVocabularyActions": "Vocabulary Actions",
+  "actionEnableAllVocabulary": "Enable All Entries",
+  "actionDisableAllVocabulary": "Pause All Entries",
+  "actionClearAllPriorities": "Clear All Starred (★)"
 }

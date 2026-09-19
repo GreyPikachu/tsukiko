@@ -1503,5 +1503,9 @@
   "buttonConfigureVocabulary": "Настроить словарь →",
   "statusVocabularyItemDeleted": "Запись удалена из словаря",
   "buttonUndo": "Вернуть",
-  "warningDuplicatePhrase": "Такая фраза уже есть в словаре"
+  "warningDuplicatePhrase": "Такая фраза уже есть в словаре",
+  "menuVocabularyActions": "Действия со словарём",
+  "actionEnableAllVocabulary": "Включить все записи",
+  "actionDisableAllVocabulary": "Приостановить все записи",
+  "actionClearAllPriorities": "Снять все звёздочки (★)"
 }

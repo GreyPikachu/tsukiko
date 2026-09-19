@@ -503,6 +503,20 @@ class SettingsCubit extends Cubit<SettingsState> {
     updateVocabularyItem(index, updated);
   }
 
+  void setAllVocabularyEnabled(bool enabled) {
+    if (state.vocabulary.isEmpty) return;
+    final items =
+        state.vocabulary.map((i) => i.copyWith(enabled: enabled)).toList();
+    _saveVocabulary(items);
+  }
+
+  void clearAllVocabularyPriorities() {
+    if (state.vocabulary.isEmpty) return;
+    final items =
+        state.vocabulary.map((i) => i.copyWith(isPriority: false)).toList();
+    _saveVocabulary(items);
+  }
+
   void undoDeleteVocabularyItem() {
     final item = _lastDeletedItem;
     if (item == null) return;
