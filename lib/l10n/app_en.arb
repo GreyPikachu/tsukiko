@@ -619,8 +619,9 @@
   "tooltipEnableItem": "Enable entry",
   "tooltipDisableItem": "Disable entry",
   "emptyVocabularyTitle": "Vocabulary is empty",
-  "emptyVocabularySubtitle": "Add technical jargon, rare names, or configure phrase replacements.",
-  "promptBudgetNotice": "~{tokens} of {max} prompt tokens used",
+  "tooltipSetPriority": "Send to model prompt context (priority)",
+  "tooltipRemovePriority": "Remove from model prompt context (post-processing only)",
+  "promptBudgetNotice": "~{tokens} of {max} model tokens used (priority)",
   "@promptBudgetNotice": {
     "placeholders": {
       "tokens": {
@@ -631,6 +632,15 @@
       }
     }
   },
+  "promptBudgetZeroNotice": "0 of {max} model tokens (all words replaced via post-processing)",
+  "@promptBudgetZeroNotice": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "promptBudgetPriorityHint": "Star (★) words to send them directly into the neural acoustic prompt. All other words are replaced during post-processing with no token limits.",
   "promptBudgetWarning": "Vocabulary is very large: model may ignore trailing entries",
   "vocabularySummaryTitle": "Vocabulary & Replacements",
   "vocabularySummaryStatus": "{count, plural, one{{count} entry} other{{count} entries}} ({hints} hints, {replacements} replacements)",

@@ -139,7 +139,31 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                 onChanged: (v) => widget.onToggle(v),
               ),
             ),
-            const SizedBox(width: Gap.inner),
+            const SizedBox(width: Gap.tight),
+            MacosTooltip(
+              message: item.isPriority
+                  ? l10n.tooltipRemovePriority
+                  : l10n.tooltipSetPriority,
+              child: GestureDetector(
+                onTap: () => widget.onUpdate(
+                  item.copyWith(isPriority: !item.isPriority),
+                ),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                  child: MacosIcon(
+                    item.isPriority
+                        ? CupertinoIcons.star_fill
+                        : CupertinoIcons.star,
+                    size: 15,
+                    color: item.isPriority
+                        ? MacosColors.systemYellowColor
+                        : Surface.secondaryText(context).withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: Gap.hint),
             Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,

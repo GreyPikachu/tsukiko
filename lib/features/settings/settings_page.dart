@@ -595,7 +595,9 @@ class _SettingsBodyState extends State<SettingsBody>
       return true;
     }).toList();
 
-    final tokens = estimateVocabularyTokens(s.vocabulary);
+    final priorityItems =
+        s.vocabulary.where((item) => item.usable && item.isPriority).toList();
+    final tokens = estimateVocabularyTokens(priorityItems);
     final isOverBudget = tokens > 200;
 
     return [
@@ -741,23 +743,31 @@ class _SettingsBodyState extends State<SettingsBody>
       Row(
         children: [
           MacosIcon(
-            CupertinoIcons.info_circle,
+            CupertinoIcons.star_circle,
             size: IconSize.inline,
             color: isOverBudget
                 ? MacosColors.systemOrangeColor
-                : Surface.secondaryText(context),
+                : (priorityItems.isNotEmpty
+                    ? MacosColors.systemYellowColor
+                    : Surface.secondaryText(context)),
           ),
           const SizedBox(width: Gap.hint),
-          Text(
-            l10n.promptBudgetNotice(tokens, 220),
-            style: Type.caption.copyWith(
-              color: isOverBudget
-                  ? MacosColors.systemOrangeColor
-                  : Surface.secondaryText(context),
+          Expanded(
+            child: Text(
+              priorityItems.isEmpty
+                  ? l10n.promptBudgetZeroNotice(220)
+                  : l10n.promptBudgetNotice(tokens, 220),
+              style: Type.caption.copyWith(
+                color: isOverBudget
+                    ? MacosColors.systemOrangeColor
+                    : Surface.secondaryText(context),
+              ),
             ),
           ),
         ],
       ),
+      const SizedBox(height: Gap.tight),
+      Hint(l10n.promptBudgetPriorityHint),
       if (isOverBudget) ...[
         const SizedBox(height: Gap.tight),
         Text(
