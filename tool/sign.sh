@@ -99,11 +99,39 @@ dart compile exe --target-os macos --target-arch arm64 \
 arch -x86_64 "$X64_ROOT/dart-sdk/bin/dart" compile exe \
   --target-os macos --target-arch x64 \
   bin/tsukiko_transcribe.dart -o "$CLI_WORK/tsukiko-transcribe-x64"
-lipo -create \
-  "$CLI_WORK/tsukiko-transcribe-arm64" \
-  "$CLI_WORK/tsukiko-transcribe-x64" \
-  -output "$APP/Contents/Helpers/tsukiko-transcribe"
-chmod +x "$APP/Contents/Helpers/tsukiko-transcribe"
+
+# Dart AOT-бинарники хранят снапшот в хвосте Mach-O файла — lipo портит
+# смещение и вызов падает с «Usage: dartvm». Делаем универсальный C-трамплин,
+# который мгновенно передаёт управление родной архитектуре через execv.
+cat << 'EOF' > "$CLI_WORK/trampoline.c"
+#include <unistd.h>
+#include <mach-o/dyld.h>
+#include <limits.h>
+#include <stdio.h>
+
+int main(int argc, char *argv[]) {
+    char path[PATH_MAX];
+    uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) != 0) {
+        return 1;
+    }
+    char target[PATH_MAX + 16];
+#if defined(__arm64__)
+    snprintf(target, sizeof(target), "%s-arm64", path);
+#else
+    snprintf(target, sizeof(target), "%s-x64", path);
+#endif
+    execv(target, argv);
+    perror("execv");
+    return 1;
+}
+EOF
+clang -arch arm64 -arch x86_64 -O3 -o "$APP/Contents/Helpers/tsukiko-transcribe" "$CLI_WORK/trampoline.c"
+cp "$CLI_WORK/tsukiko-transcribe-arm64" "$APP/Contents/Helpers/tsukiko-transcribe-arm64"
+cp "$CLI_WORK/tsukiko-transcribe-x64" "$APP/Contents/Helpers/tsukiko-transcribe-x64"
+chmod +x "$APP/Contents/Helpers/tsukiko-transcribe" \
+  "$APP/Contents/Helpers/tsukiko-transcribe-arm64" \
+  "$APP/Contents/Helpers/tsukiko-transcribe-x64"
 
 # Метка времени от службы Apple, а не `--timestamp=none`.
 #

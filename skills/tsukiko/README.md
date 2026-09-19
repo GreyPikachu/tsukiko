@@ -30,17 +30,19 @@
 |---|---|---|
 | **Claude Code** | `~/.claude/skills/tsukiko/` | `.claude/skills/tsukiko/` |
 | **OpenAI Codex** | `~/.codex/skills/tsukiko/` | `.agents/skills/tsukiko/` |
-| **Google Antigravity** | `~/.gemini/antigravity/skills/tsukiko/` | `.agents/skills/tsukiko/` |
+| **Google Antigravity** | `~/.gemini/config/skills/tsukiko/` | `.agents/skills/tsukiko/` |
+| **AI Skills (Единый репозиторий)** | `~/ai-skills/tsukiko/` | — |
 | **OpenClaw** | `~/.openclaw/skills/tsukiko/` | `skills/tsukiko/` в рабочей папке |
 | **OpenCode** | `~/.config/opencode/skills/tsukiko/` | `.agents/skills/tsukiko/` |
 | **Hermes** | `~/.hermes/skills/tsukiko/` | `skills/tsukiko/` в рабочей папке |
 
-Например, для Claude Code и Codex сразу:
+Например, для Claude Code, Codex и Antigravity сразу:
 
 ```sh
-mkdir -p ~/.claude/skills ~/.codex/skills
+mkdir -p ~/.claude/skills ~/.codex/skills ~/.gemini/config/skills ~/.config/opencode/skills
 cp -R skills/tsukiko ~/.claude/skills/
 cp -R skills/tsukiko ~/.codex/skills/
+cp -R skills/tsukiko ~/.gemini/config/skills/
 ```
 
 Перезапускать инструмент обычно не нужно — список скиллов он перечитывает

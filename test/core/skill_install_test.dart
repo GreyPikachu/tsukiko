@@ -69,5 +69,23 @@ void main() {
     expect(skillAgents.firstWhere((a) => a.id == 'claude-code').envHome,
         'CLAUDE_CONFIG_DIR');
     expect(skillAgents.firstWhere((a) => a.id == 'codex').envHome, 'CODEX_HOME');
+    expect(skillAgents.firstWhere((a) => a.id == 'ai-skills').envHome,
+        'AI_SKILLS_DIR');
+  });
+
+  test('Antigravity находит ~/.gemini/config и кладёт в skills', () {
+    dir(['.gemini', 'config']).createSync(recursive: true);
+    final agy = skillAgents.firstWhere((a) => a.id == 'antigravity');
+    expect(agy.configDir(), os.join(os.home, '.gemini', 'config'));
+    expect(
+        agy.plannedSkillDir(),
+        os.join(os.join(os.home, '.gemini', 'config'), 'skills', 'tsukiko'));
+  });
+
+  test('ai-skills кладёт скилл прямо в корень репозитория скиллов', () {
+    dir(['ai-skills']).createSync(recursive: true);
+    final ai = skillAgents.firstWhere((a) => a.id == 'ai-skills');
+    expect(ai.configDir(), os.join(os.home, 'ai-skills'));
+    expect(ai.plannedSkillDir(), os.join(os.home, 'ai-skills', 'tsukiko'));
   });
 }

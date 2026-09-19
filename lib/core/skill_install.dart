@@ -23,6 +23,7 @@ class AgentTarget {
     this.name, {
     required this.candidates,
     this.envHome,
+    this.subPath = 'skills',
   });
 
   final String id, name;
@@ -36,6 +37,9 @@ class AgentTarget {
   /// а не одной: инструменты переименовываются, и люди с прежней папкой
   /// не должны отваливаться.
   final List<List<String>> candidates;
+
+  /// Подкаталог для скиллов (по умолчанию 'skills', пустая строка если папка сама репозиторий).
+  final String subPath;
 
   /// Папка настроек этого агента или null, если его тут нет.
   String? configDir() {
@@ -51,7 +55,10 @@ class AgentTarget {
   /// Куда лёг бы наш скилл. null — агента нет.
   String? skillDir() {
     final config = configDir();
-    return config == null ? null : os.join(config, 'skills', appName);
+    if (config == null) return null;
+    return subPath.isEmpty
+        ? os.join(config, appName)
+        : os.join(config, subPath, appName);
   }
 
   /// Куда положить скилл, даже если агента на машине пока нет.
@@ -59,8 +66,12 @@ class AgentTarget {
   /// Нужно затем, что человек может поставить агента после нас: галку
   /// у ненайденного он вправе поставить сам, и тогда скилл ляжет туда,
   /// где агент его будет искать, — в первую из известных папок.
-  String plannedSkillDir() =>
-      os.join(skillDirBase(), 'skills', appName);
+  String plannedSkillDir() {
+    final base = skillDirBase();
+    return subPath.isEmpty
+        ? os.join(base, appName)
+        : os.join(base, subPath, appName);
+  }
 
   String skillDirBase() =>
       configDir() ??
@@ -88,7 +99,9 @@ const skillAgents = [
       envHome: 'CLAUDE_CONFIG_DIR', candidates: [['.claude']]),
   AgentTarget('codex', 'Codex', envHome: 'CODEX_HOME', candidates: [['.codex']]),
   AgentTarget('antigravity', 'Antigravity',
-      candidates: [['.gemini', 'antigravity']]),
+      candidates: [['.gemini', 'config'], ['.gemini', 'antigravity']]),
+  AgentTarget('ai-skills', 'AI Skills',
+      envHome: 'AI_SKILLS_DIR', candidates: [['ai-skills']], subPath: ''),
   // Переименовывался дважды; у людей с прежней установкой лежит старая папка.
   AgentTarget('openclaw', 'OpenClaw',
       candidates: [['.openclaw'], ['.clawdbot'], ['.moltbot']]),

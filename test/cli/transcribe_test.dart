@@ -73,6 +73,11 @@ void main() {
       expect(o.threads, 8);
     });
 
+    test('ключ --prompt дополняет подсказку модели', () {
+      final o = optionsFrom(parseArgs(['--prompt', 'Gemini, Claude', 'а.m4a']));
+      expect(o.prompt, 'Gemini, Claude');
+    });
+
     test('без файла настроек программа всё равно знает, чем считать', () {
       final o = optionsFrom(parseArgs(['а.m4a']));
       expect(o.lang, 'auto');

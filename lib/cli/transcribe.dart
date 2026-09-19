@@ -3,7 +3,9 @@ import 'dart:io';
 
 import '../core/library.dart';
 import '../core/recognition.dart';
+import '../core/text_commands.dart';
 import '../core/transcript.dart';
+import '../core/vocabulary.dart';
 import '../core/whisper.dart';
 import '../platform/os.dart';
 
@@ -55,6 +57,7 @@ tsukiko-transcribe — расшифровка аудио на месте, без
   --format <txt|txt-ts|srt|vtt|md|json>  что печатать (по умолчанию txt)
   --lang <ru|en|auto>                    язык речи (по умолчанию из настроек)
   --model <путь>                         файл модели (по умолчанию из настроек)
+  --prompt <текст>                       подсказка модели / ключевые слова
   --json                                 ответ целиком в JSON, а не голым текстом
   --quiet                                не писать ход работы в stderr
   --status                               что установлено и готово ли к работе
@@ -69,7 +72,7 @@ tsukiko-transcribe — расшифровка аудио на месте, без
 /// у себя, — это цепочка поставки, которую придётся кому-то доверять.
 class Args {
   final files = <String>[];
-  String format = 'txt', lang = '', model = '';
+  String format = 'txt', lang = '', model = '', prompt = '';
   bool json = false, quiet = false, status = false, help = false;
   String? problem;
 }
@@ -87,6 +90,8 @@ Args parseArgs(List<String> argv) {
         a.lang = next();
       case '--model':
         a.model = next();
+      case '--prompt':
+        a.prompt = next();
       case '--json':
         a.json = true;
       case '--quiet':
@@ -165,6 +170,11 @@ RunOptions optionsFrom(Args a) {
   }
   if (a.lang.isNotEmpty) o = o.copyWith(lang: a.lang);
   if (a.model.isNotEmpty) o = o.copyWith(model: a.model);
+  if (a.prompt.isNotEmpty) {
+    o = o.copyWith(
+      prompt: o.prompt.isEmpty ? a.prompt : '${o.prompt}, ${a.prompt}',
+    );
+  }
   return o;
 }
 
@@ -455,10 +465,23 @@ Future<int> run(List<String> argv) async {
 }
 
 Future<Transcript> _own(String path, Args a, void Function(String) say) async {
-  final o = optionsFrom(a);
+  final s = readSettings();
+  final vocab = loadAndMigrateVocabulary(s);
+  final vocabEnabled = (s['vocabularyTranscriberEnabled'] as bool?) ??
+      (s[transcriberCommandsEnabledSetting] as bool?) ??
+      true;
+
+  var o = optionsFrom(a);
   if (o.model.isEmpty || !File(o.model).existsSync()) {
     throw Exception(
         'нет модели. Откройте tsukiko и скачайте её в настройках, или укажите файл ключом --model');
   }
-  return transcribeHere(path, o, say);
+  if (vocabEnabled && vocab.isNotEmpty) {
+    o = o.copyWith(prompt: promptWithVocabulary(o.effectivePrompt, vocab));
+  }
+  var t = await transcribeHere(path, o, say);
+  if (vocabEnabled && vocab.isNotEmpty) {
+    t = t.applyVocabulary(vocab);
+  }
+  return t;
 }
