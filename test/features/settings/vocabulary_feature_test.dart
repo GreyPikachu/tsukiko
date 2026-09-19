@@ -112,6 +112,28 @@ class _TestVocabularyCubit extends Cubit<SettingsState>
   }
 
   @override
+  void setAllVocabularyEnabled(bool enabled) {
+    if (state.vocabulary.isEmpty) return;
+    final items =
+        state.vocabulary.map((i) => i.copyWith(enabled: enabled)).toList();
+    emit(state.copyWith(
+      vocabulary: items,
+      textCommands: items
+          .where((i) => i.isReplacement)
+          .map((i) => i.toTextCommand())
+          .toList(),
+    ));
+  }
+
+  @override
+  void clearAllVocabularyPriorities() {
+    if (state.vocabulary.isEmpty) return;
+    final items =
+        state.vocabulary.map((i) => i.copyWith(isPriority: false)).toList();
+    emit(state.copyWith(vocabulary: items));
+  }
+
+  @override
   void undoDeleteVocabularyItem() {
     final item = _lastDeletedItem;
     if (item == null) return;
@@ -612,7 +634,7 @@ void main() {
     testWidgets('search filtering via MacosSearchField filters items dynamically', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 700));
+      await tester.binding.setSurfaceSize(const Size(580, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 
@@ -695,6 +717,7 @@ void main() {
       expect(chip3, findsOneWidget);
 
       // Click chip 1
+      await tester.ensureVisible(chip1);
       await tester.tap(chip1);
       await tester.pump();
 
@@ -728,10 +751,12 @@ void main() {
       // Check badge
       expect(find.text('Замена'), findsOneWidget);
 
-      // 1. Toggle enabled checkbox
-      final checkboxFinder = find.byType(MacosCheckbox);
-      expect(checkboxFinder, findsWidgets);
-      await tester.tap(checkboxFinder.last);
+      // 1. Toggle enabled status via trailing active/pause button
+      final toggleFinder = find.byWidgetPredicate(
+        (w) => w is MacosIcon && w.icon == CupertinoIcons.checkmark_circle,
+      );
+      expect(toggleFinder, findsOneWidget);
+      await tester.tap(toggleFinder);
       await tester.pump();
       expect(cubit.state.vocabulary.first.enabled, isFalse);
 

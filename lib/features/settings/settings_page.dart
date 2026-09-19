@@ -699,7 +699,21 @@ class _SettingsBodyState extends State<SettingsBody>
         ),
       ],
 
-      // Панель поиска и фильтров
+      if (s.vocabulary.isNotEmpty) ...[
+        // Индикатор бюджета токенов контекста модели — вверху перед глазами
+        _TokenBudgetCard(
+          tokens: tokens,
+          isOverBudget: isOverBudget,
+          priorityItemsCount: priorityItems.length,
+          zeroBudgetNotice: l10n.promptBudgetZeroNotice(220),
+          budgetNotice: l10n.promptBudgetNotice(tokens, 220),
+          priorityHint: l10n.promptBudgetPriorityHint,
+          budgetWarning: l10n.promptBudgetWarning,
+        ),
+        const SizedBox(height: Gap.item),
+      ],
+
+      // Панель поиска, фильтров и массовых действий
       Row(
         children: [
           Expanded(
@@ -722,6 +736,33 @@ class _SettingsBodyState extends State<SettingsBody>
             replacementsLabel: l10n.filterReplacements,
             onSelected: (idx) => setState(() => _vocabFilter = idx),
           ),
+          if (s.vocabulary.isNotEmpty) ...[
+            const SizedBox(width: Gap.inner),
+            MacosTooltip(
+              message: l10n.menuVocabularyActions,
+              child: MacosPulldownButton(
+                icon: CupertinoIcons.ellipsis_circle,
+                items: [
+                  MacosPulldownMenuItem(
+                    title: Text(l10n.actionEnableAllVocabulary),
+                    label: l10n.actionEnableAllVocabulary,
+                    onTap: () => _cubit.setAllVocabularyEnabled(true),
+                  ),
+                  MacosPulldownMenuItem(
+                    title: Text(l10n.actionDisableAllVocabulary),
+                    label: l10n.actionDisableAllVocabulary,
+                    onTap: () => _cubit.setAllVocabularyEnabled(false),
+                  ),
+                  const MacosPulldownMenuDivider(),
+                  MacosPulldownMenuItem(
+                    title: Text(l10n.actionClearAllPriorities),
+                    label: l10n.actionClearAllPriorities,
+                    onTap: () => _cubit.clearAllVocabularyPriorities(),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
       const SizedBox(height: Gap.item),
@@ -781,18 +822,6 @@ class _SettingsBodyState extends State<SettingsBody>
             ],
           ),
         ),
-
-      const SizedBox(height: Gap.item),
-      // Индикатор бюджета токенов контекста
-      _TokenBudgetCard(
-        tokens: tokens,
-        isOverBudget: isOverBudget,
-        priorityItemsCount: priorityItems.length,
-        zeroBudgetNotice: l10n.promptBudgetZeroNotice(220),
-        budgetNotice: l10n.promptBudgetNotice(tokens, 220),
-        priorityHint: l10n.promptBudgetPriorityHint,
-        budgetWarning: l10n.promptBudgetWarning,
-      ),
     ];
   }
 
