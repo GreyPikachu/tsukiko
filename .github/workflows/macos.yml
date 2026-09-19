@@ -1,14 +1,16 @@
 # Сборка под macOS.
 #
-# Заведена для проверки сборки под macOS на каждый пуш и для формирования
-# готового дистрибутива: универсальный CLI tsukiko-transcribe, приложение
-# tsukiko.app и образ tsukiko.dmg с установкой перетаскиванием в «Программы».
+# На каждый пуш и pull request запускается быстрая проверка (линтер и тесты).
+# Полная сборка приложения (tsukiko.app), универсального CLI и образа tsukiko.dmg
+# выполняется только при наличии флага [build] / [release] в сообщении коммита,
+# при пуше тега версии (v*), либо при ручном запуске (workflow_dispatch).
 
 name: macOS
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -17,7 +19,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    name: Проверка (линтер и тесты)
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Разбор
+        run: flutter analyze
+
+      - name: Тесты
+        run: flutter test --reporter expanded
+
   build:
+    name: Сборка дистрибутива (DMG и App)
+    needs: check
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(github.event.head_commit.message, '[build]') ||
+      contains(github.event.head_commit.message, '[release]') ||
+      contains(github.event.pull_request.title, '[build]') ||
+      contains(github.event.pull_request.title, '[release]') ||
+      github.event_name == 'workflow_dispatch'
     runs-on: macos-14
 
     steps:
@@ -59,12 +90,6 @@ jobs:
         run: mkdir -p logs
 
       - run: flutter pub get
-
-      - name: Разбор
-        run: set -o pipefail; flutter analyze 2>&1 | tee logs/analyze.txt
-
-      - name: Тесты
-        run: set -o pipefail; flutter test --reporter expanded 2>&1 | tee logs/test.txt
 
       - name: Приложение
         id: app
