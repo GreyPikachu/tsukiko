@@ -283,6 +283,9 @@ class Transcript {
   final String lang;
   final List<Segment> segments;
   const Transcript(this.lang, this.segments);
+
+  Transcript applyVocabulary(Iterable<VocabularyItem> items) =>
+      Transcript(lang, segments.map((s) => s.applyVocabulary(items)).toList());
 }
 
 final _segmentLine = RegExp(
