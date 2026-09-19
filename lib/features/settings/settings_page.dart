@@ -464,7 +464,7 @@ class _SettingsBodyState extends State<SettingsBody>
   Widget _quickAddBar(SettingsState s) {
     final phraseNonEmpty = _newPhraseCtrl.text.trim().isNotEmpty;
     return Container(
-      padding: const EdgeInsets.all(Gap.item),
+      padding: const EdgeInsets.all(Gap.inner),
       decoration: BoxDecoration(
         color: Surface.hover(context),
         borderRadius: BorderRadius.circular(8),
@@ -491,8 +491,9 @@ class _SettingsBodyState extends State<SettingsBody>
                   padding: const EdgeInsets.symmetric(horizontal: Gap.inner),
                   child: MacosIcon(
                     CupertinoIcons.arrow_right,
-                    size: IconSize.inline,
-                    color: Surface.secondaryText(context),
+                    size: 11,
+                    color:
+                        Surface.secondaryText(context).withValues(alpha: 0.5),
                   ),
                 ),
                 Expanded(
@@ -514,9 +515,24 @@ class _SettingsBodyState extends State<SettingsBody>
           ),
           if (_isDuplicatePhrase) ...[
             const SizedBox(height: Gap.hint),
-            Text(
-              l10n.warningDuplicatePhrase,
-              style: Type.caption.copyWith(color: MacosColors.systemOrangeColor),
+            Row(
+              children: [
+                const MacosIcon(
+                  CupertinoIcons.exclamationmark_triangle_fill,
+                  size: IconSize.inline,
+                  color: MacosColors.systemOrangeColor,
+                ),
+                const SizedBox(width: Gap.hint),
+                Expanded(
+                  child: Text(
+                    l10n.warningDuplicatePhrase,
+                    style: Type.caption.copyWith(
+                      color: MacosColors.systemOrangeColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
           const SizedBox(height: Gap.hint),
@@ -601,20 +617,39 @@ class _SettingsBodyState extends State<SettingsBody>
     final isOverBudget = tokens > 200;
 
     return [
-      // 1. Область действия
+      // 1. Область действия (Apple Inset Grouped Settings Box)
       SectionTitle(l10n.sectionVocabularyAndReplacements),
-      Check(
-        l10n.checkVocabularyDictation,
-        s.vocabularyDictationEnabled,
-        _cubit.setVocabularyDictationEnabled,
+      Container(
+        decoration: BoxDecoration(
+          color: Surface.hover(context),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Surface.hairline(context)),
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: Gap.inner,
+          vertical: Gap.tight,
+        ),
+        child: Column(
+          children: [
+            Check(
+              l10n.checkVocabularyDictation,
+              s.vocabularyDictationEnabled,
+              _cubit.setVocabularyDictationEnabled,
+            ),
+            Container(
+              height: 1,
+              margin: const EdgeInsets.only(left: 28),
+              color: Surface.hairline(context),
+            ),
+            Check(
+              l10n.checkVocabularyTranscriber,
+              s.vocabularyTranscriberEnabled,
+              _cubit.setVocabularyTranscriberEnabled,
+            ),
+          ],
+        ),
       ),
-      const SizedBox(height: Gap.hint),
-      Check(
-        l10n.checkVocabularyTranscriber,
-        s.vocabularyTranscriberEnabled,
-        _cubit.setVocabularyTranscriberEnabled,
-      ),
-      Hint(l10n.hintVocabularyScope, under: true),
+      Hint(l10n.hintVocabularyScope),
 
       // 2. Добавить в словарь
       SectionTitle(l10n.sectionAddVocabulary),
@@ -631,12 +666,18 @@ class _SettingsBodyState extends State<SettingsBody>
             vertical: Gap.hint,
           ),
           decoration: BoxDecoration(
-            color: Surface.hover(context),
-            borderRadius: BorderRadius.circular(6),
+            color: Surface.pressed(context),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Surface.hairline(context)),
           ),
           child: Row(
             children: [
+              MacosIcon(
+                CupertinoIcons.arrow_uturn_left,
+                size: IconSize.inline,
+                color: Surface.secondaryText(context),
+              ),
+              const SizedBox(width: Gap.inner),
               Expanded(
                 child: Text(
                   l10n.statusVocabularyItemDeleted,
@@ -670,36 +711,22 @@ class _SettingsBodyState extends State<SettingsBody>
             ),
           ),
           const SizedBox(width: Gap.control),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _FilterSegment(
-                label: l10n.filterAll,
-                count: s.vocabulary.length,
-                selected: _vocabFilter == 0,
-                onTap: () => setState(() => _vocabFilter = 0),
-              ),
-              const SizedBox(width: Gap.tight),
-              _FilterSegment(
-                label: l10n.filterHints,
-                count: s.vocabulary.where((i) => i.isHintOnly).length,
-                selected: _vocabFilter == 1,
-                onTap: () => setState(() => _vocabFilter = 1),
-              ),
-              const SizedBox(width: Gap.tight),
-              _FilterSegment(
-                label: l10n.filterReplacements,
-                count: s.vocabulary.where((i) => i.isReplacement).length,
-                selected: _vocabFilter == 2,
-                onTap: () => setState(() => _vocabFilter = 2),
-              ),
-            ],
+          _VocabularyFilterBar(
+            selectedFilter: _vocabFilter,
+            totalCount: s.vocabulary.length,
+            hintsCount: s.vocabulary.where((i) => i.isHintOnly).length,
+            replacementsCount:
+                s.vocabulary.where((i) => i.isReplacement).length,
+            allLabel: l10n.filterAll,
+            hintsLabel: l10n.filterHints,
+            replacementsLabel: l10n.filterReplacements,
+            onSelected: (idx) => setState(() => _vocabFilter = idx),
           ),
         ],
       ),
       const SizedBox(height: Gap.item),
 
-      // Список
+      // Список в объединённой карточке Inset Grouped Table
       if (s.vocabulary.isEmpty)
         _emptyVocabularyState(s)
       else if (filtered.isEmpty)
@@ -715,68 +742,57 @@ class _SettingsBodyState extends State<SettingsBody>
           ),
         )
       else
-        for (final item in filtered) ...[
-          VocabularyItemRow(
-            key: ValueKey(item.id),
-            item: item,
-            onToggle: (enabled) {
-              final idx = s.vocabulary.indexOf(item);
-              if (idx != -1) _cubit.toggleVocabularyItem(idx, enabled);
-            },
-            onUpdate: (updated) {
-              final idx = s.vocabulary.indexOf(item);
-              if (idx != -1) _cubit.updateVocabularyItem(idx, updated);
-            },
-            onDelete: () {
-              final idx = s.vocabulary.indexOf(item);
-              if (idx != -1) {
-                _cubit.removeVocabularyItem(idx);
-                _triggerDeletedNotice();
-              }
-            },
+        Container(
+          decoration: BoxDecoration(
+            color: Surface.hover(context),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Surface.hairline(context)),
           ),
-          const SizedBox(height: Gap.tight),
-        ],
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var i = 0; i < filtered.length; i++) ...[
+                if (i > 0)
+                  Container(
+                    height: 1,
+                    margin: const EdgeInsets.only(left: 44),
+                    color: Surface.hairline(context),
+                  ),
+                VocabularyItemRow(
+                  key: ValueKey(filtered[i].id),
+                  item: filtered[i],
+                  onToggle: (enabled) {
+                    final idx = s.vocabulary.indexOf(filtered[i]);
+                    if (idx != -1) _cubit.toggleVocabularyItem(idx, enabled);
+                  },
+                  onUpdate: (updated) {
+                    final idx = s.vocabulary.indexOf(filtered[i]);
+                    if (idx != -1) _cubit.updateVocabularyItem(idx, updated);
+                  },
+                  onDelete: () {
+                    final idx = s.vocabulary.indexOf(filtered[i]);
+                    if (idx != -1) {
+                      _cubit.removeVocabularyItem(idx);
+                      _triggerDeletedNotice();
+                    }
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
 
       const SizedBox(height: Gap.item),
       // Индикатор бюджета токенов контекста
-      Row(
-        children: [
-          MacosIcon(
-            CupertinoIcons.star_circle,
-            size: IconSize.inline,
-            color: isOverBudget
-                ? MacosColors.systemOrangeColor
-                : (priorityItems.isNotEmpty
-                    ? MacosColors.systemYellowColor
-                    : Surface.secondaryText(context)),
-          ),
-          const SizedBox(width: Gap.hint),
-          Expanded(
-            child: Text(
-              priorityItems.isEmpty
-                  ? l10n.promptBudgetZeroNotice(220)
-                  : l10n.promptBudgetNotice(tokens, 220),
-              style: Type.caption.copyWith(
-                color: isOverBudget
-                    ? MacosColors.systemOrangeColor
-                    : Surface.secondaryText(context),
-              ),
-            ),
-          ),
-        ],
+      _TokenBudgetCard(
+        tokens: tokens,
+        isOverBudget: isOverBudget,
+        priorityItemsCount: priorityItems.length,
+        zeroBudgetNotice: l10n.promptBudgetZeroNotice(220),
+        budgetNotice: l10n.promptBudgetNotice(tokens, 220),
+        priorityHint: l10n.promptBudgetPriorityHint,
+        budgetWarning: l10n.promptBudgetWarning,
       ),
-      const SizedBox(height: Gap.tight),
-      Hint(l10n.promptBudgetPriorityHint),
-      if (isOverBudget) ...[
-        const SizedBox(height: Gap.tight),
-        Text(
-          l10n.promptBudgetWarning,
-          style: Type.caption.copyWith(
-            color: MacosColors.systemOrangeColor,
-          ),
-        ),
-      ],
     ];
   }
 
@@ -1495,6 +1511,65 @@ class _TabButtonState extends State<_TabButton> {
   }
 }
 
+class _VocabularyFilterBar extends StatelessWidget {
+  const _VocabularyFilterBar({
+    required this.selectedFilter,
+    required this.totalCount,
+    required this.hintsCount,
+    required this.replacementsCount,
+    required this.allLabel,
+    required this.hintsLabel,
+    required this.replacementsLabel,
+    required this.onSelected,
+  });
+
+  final int selectedFilter;
+  final int totalCount;
+  final int hintsCount;
+  final int replacementsCount;
+  final String allLabel;
+  final String hintsLabel;
+  final String replacementsLabel;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Surface.isDark(context);
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0x1F2A2A2E) : const Color(0x0F000000),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: Surface.hairline(context)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _FilterSegment(
+            label: allLabel,
+            count: totalCount,
+            selected: selectedFilter == 0,
+            onTap: () => onSelected(0),
+          ),
+          _FilterSegment(
+            label: hintsLabel,
+            count: hintsCount,
+            selected: selectedFilter == 1,
+            onTap: () => onSelected(1),
+          ),
+          _FilterSegment(
+            label: replacementsLabel,
+            count: replacementsCount,
+            selected: selectedFilter == 2,
+            onTap: () => onSelected(2),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FilterSegment extends StatefulWidget {
   const _FilterSegment({
     required this.label,
@@ -1517,38 +1592,163 @@ class _FilterSegmentState extends State<_FilterSegment> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = MacosTheme.of(context).primaryColor;
+    final isDark = Surface.isDark(context);
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
-          duration: Motion.dur(context, Motion.press),
-          padding: const EdgeInsets.symmetric(
-            horizontal: Gap.inner,
-            vertical: 5,
-          ),
+          duration: Motion.dur(context, Motion.quick),
+          curve: Motion.curve(context, Motion.quickCurve),
+          padding: const EdgeInsets.symmetric(horizontal: Gap.inner),
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             color: widget.selected
-                ? accent.withValues(alpha: 0.15)
-                : (_hover ? Surface.hover(context) : MacosColors.transparent),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: widget.selected
-                  ? accent.withValues(alpha: 0.5)
-                  : Surface.hairline(context),
-            ),
+                ? (isDark ? const Color(0xFF3A3A3C) : const Color(0xFFFFFFFF))
+                : (_hover
+                    ? (isDark
+                        ? const Color(0x10FFFFFF)
+                        : const Color(0x08000000))
+                    : MacosColors.transparent),
+            borderRadius: BorderRadius.circular(5),
+            boxShadow: widget.selected
+                ? [
+                    const BoxShadow(
+                      color: Color(0x1F000000),
+                      blurRadius: 3,
+                      offset: Offset(0, 1),
+                    ),
+                  ]
+                : null,
+            border: widget.selected
+                ? Border.all(color: Surface.hairline(context), width: 0.5)
+                : null,
           ),
           child: Text(
             '${widget.label} (${widget.count})',
             style: Type.caption.copyWith(
               fontWeight: widget.selected ? FontWeight.w600 : FontWeight.normal,
-              color: widget.selected ? accent : null,
+              color: widget.selected
+                  ? null
+                  : Surface.secondaryText(context),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _TokenBudgetCard extends StatelessWidget {
+  const _TokenBudgetCard({
+    required this.tokens,
+    required this.isOverBudget,
+    required this.priorityItemsCount,
+    required this.zeroBudgetNotice,
+    required this.budgetNotice,
+    required this.priorityHint,
+    required this.budgetWarning,
+  });
+
+  final int tokens;
+  final bool isOverBudget;
+  final int priorityItemsCount;
+  final String zeroBudgetNotice;
+  final String budgetNotice;
+  final String priorityHint;
+  final String budgetWarning;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = isOverBudget
+        ? MacosColors.systemOrangeColor
+        : (priorityItemsCount > 0
+            ? MacosColors.systemYellowColor
+            : Surface.secondaryText(context));
+
+    final percentage = (tokens / 220.0 * 100).clamp(0, 100).toInt();
+
+    return Container(
+      padding: const EdgeInsets.all(Gap.inner),
+      decoration: BoxDecoration(
+        color: Surface.hover(context),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Surface.hairline(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              MacosIcon(
+                CupertinoIcons.star_circle,
+                size: IconSize.inline,
+                color: statusColor,
+              ),
+              const SizedBox(width: Gap.hint),
+              Expanded(
+                child: Text(
+                  priorityItemsCount == 0 ? zeroBudgetNotice : budgetNotice,
+                  style: Type.caption.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: isOverBudget
+                        ? MacosColors.systemOrangeColor
+                        : (priorityItemsCount > 0
+                            ? null
+                            : Surface.secondaryText(context)),
+                  ),
+                ),
+              ),
+              Text(
+                '$percentage%',
+                style: Type.caption.copyWith(
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: isOverBudget
+                      ? MacosColors.systemOrangeColor
+                      : Surface.secondaryText(context),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Gap.inner),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: Container(
+              height: 4,
+              width: double.infinity,
+              color: Surface.hairline(context),
+              child: FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: (tokens / 220.0).clamp(0.0, 1.0),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isOverBudget
+                        ? MacosColors.systemOrangeColor
+                        : (tokens > 150
+                            ? MacosColors.systemYellowColor
+                            : MacosColors.systemGreenColor),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: Gap.hint),
+          Hint(priorityHint),
+          if (isOverBudget) ...[
+            const SizedBox(height: Gap.tight),
+            Text(
+              budgetWarning,
+              style: Type.caption.copyWith(
+                color: MacosColors.systemOrangeColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1566,33 +1766,52 @@ class _SuggestionChip extends StatefulWidget {
 
 class _SuggestionChipState extends State<_SuggestionChip> {
   bool _hover = false;
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
+      onExit: (_) => setState(() {
+        _hover = false;
+        _pressed = false;
+      }),
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onTap,
-        child: AnimatedContainer(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 0.96 : (_hover ? 1.02 : 1.0),
           duration: Motion.dur(context, Motion.press),
-          padding: const EdgeInsets.symmetric(
-            horizontal: Gap.control,
-            vertical: Gap.inner,
-          ),
-          decoration: BoxDecoration(
-            color: _hover
-                ? Surface.hover(context)
-                : Surface.hover(context).withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Surface.hairline(context)),
-          ),
-          child: Text(
-            widget.label,
-            style: Type.control.copyWith(
-              color: MacosTheme.of(context).primaryColor,
-              fontWeight: FontWeight.w500,
+          curve: Motion.curve(context, Motion.settleCurve),
+          child: AnimatedContainer(
+            duration: Motion.dur(context, Motion.quick),
+            curve: Motion.curve(context, Motion.quickCurve),
+            padding: const EdgeInsets.symmetric(
+              horizontal: Gap.control,
+              vertical: Gap.inner,
+            ),
+            decoration: BoxDecoration(
+              color: _hover
+                  ? Surface.hover(context)
+                  : Surface.hover(context).withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _hover
+                    ? MacosTheme.of(context)
+                        .primaryColor
+                        .withValues(alpha: 0.5)
+                    : Surface.hairline(context),
+              ),
+            ),
+            child: Text(
+              widget.label,
+              style: Type.control.copyWith(
+                color: MacosTheme.of(context).primaryColor,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ),

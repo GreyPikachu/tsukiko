@@ -118,15 +118,16 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: AnimatedContainer(
-        duration: Motion.dur(context, Motion.press),
-        curve: Curves.easeOut,
+        duration: Motion.dur(context, Motion.quick),
+        curve: Motion.curve(context, Motion.quickCurve),
         padding: const EdgeInsets.symmetric(
           horizontal: Gap.inner,
-          vertical: Gap.inner,
+          vertical: 7,
         ),
         decoration: BoxDecoration(
-          color: _hover ? Surface.hover(context) : MacosColors.transparent,
-          borderRadius: BorderRadius.circular(6),
+          color: _hover
+              ? Surface.pressed(context).withValues(alpha: 0.4)
+              : MacosColors.transparent,
         ),
         child: Row(
           children: [
@@ -139,31 +140,43 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                 onChanged: (v) => widget.onToggle(v),
               ),
             ),
-            const SizedBox(width: Gap.tight),
+            const SizedBox(width: Gap.inner),
             MacosTooltip(
               message: item.isPriority
                   ? l10n.tooltipRemovePriority
                   : l10n.tooltipSetPriority,
-              child: GestureDetector(
-                onTap: () => widget.onUpdate(
-                  item.copyWith(isPriority: !item.isPriority),
-                ),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                  child: MacosIcon(
-                    item.isPriority
-                        ? CupertinoIcons.star_fill
-                        : CupertinoIcons.star,
-                    size: 15,
-                    color: item.isPriority
-                        ? MacosColors.systemYellowColor
-                        : Surface.secondaryText(context).withValues(alpha: 0.5),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () => widget.onUpdate(
+                    item.copyWith(isPriority: !item.isPriority),
+                  ),
+                  behavior: HitTestBehavior.opaque,
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Center(
+                      child: AnimatedScale(
+                        scale: item.isPriority ? 1.08 : 1.0,
+                        duration: Motion.dur(context, Motion.quick),
+                        curve: Motion.curve(context, Motion.quickCurve),
+                        child: MacosIcon(
+                          item.isPriority
+                              ? CupertinoIcons.star_fill
+                              : CupertinoIcons.star,
+                          size: 14,
+                          color: item.isPriority
+                              ? MacosColors.systemYellowColor
+                              : Surface.secondaryText(context)
+                                  .withValues(alpha: 0.45),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: Gap.hint),
+            const SizedBox(width: Gap.inner),
             Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -177,18 +190,21 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                           fontWeight: FontWeight.w600,
                           color: item.enabled
                               ? null
-                              : Surface.secondaryText(context),
+                              : Surface.secondaryText(context)
+                                  .withValues(alpha: 0.55),
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (item.isReplacement) ...[
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: Gap.hint),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: Gap.inner),
                         child: MacosIcon(
                           CupertinoIcons.arrow_right,
-                          size: IconSize.inline,
-                          color: Surface.secondaryText(context),
+                          size: 11,
+                          color: Surface.secondaryText(context)
+                              .withValues(alpha: 0.5),
                         ),
                       ),
                       Flexible(
@@ -197,7 +213,8 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                           style: Type.control.copyWith(
                             color: item.enabled
                                 ? null
-                                : Surface.secondaryText(context),
+                                : Surface.secondaryText(context)
+                                    .withValues(alpha: 0.55),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -208,29 +225,50 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
               ),
             ),
             const SizedBox(width: Gap.inner),
-            // Бейдж типа
+            // Капсульный бейдж типа с микро-значком и оптическим трекингом
             Container(
               padding: const EdgeInsets.symmetric(
                 horizontal: Gap.inner,
-                vertical: Gap.tight,
+                vertical: 3.0,
               ),
               decoration: BoxDecoration(
-                color: badgeColor.withValues(alpha: item.enabled ? 0.12 : 0.06),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                isHint ? l10n.badgeHint : l10n.badgeReplacement,
-                style: Type.caption.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 10.5,
-                  color: item.enabled
-                      ? badgeColor
-                      : Surface.secondaryText(context),
+                color: badgeColor.withValues(alpha: item.enabled ? 0.12 : 0.05),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color:
+                      badgeColor.withValues(alpha: item.enabled ? 0.25 : 0.1),
+                  width: 0.5,
                 ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MacosIcon(
+                    isHint
+                        ? CupertinoIcons.text_quote
+                        : CupertinoIcons.arrow_2_squarepath,
+                    size: 10,
+                    color: item.enabled
+                        ? badgeColor
+                        : Surface.secondaryText(context),
+                  ),
+                  const SizedBox(width: 3.5),
+                  Text(
+                    isHint ? l10n.badgeHint : l10n.badgeReplacement,
+                    style: Type.caption.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 10.5,
+                      letterSpacing: 0.25,
+                      color: item.enabled
+                          ? badgeColor
+                          : Surface.secondaryText(context),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: Gap.inner),
-            // Действия: карандаш и корзина
+            // Действия: карандаш и корзина с анимацией и мгновенным откликом
             AnimatedOpacity(
               duration: Motion.dur(context, Motion.quick),
               opacity: _hover ? 1.0 : 0.0,
