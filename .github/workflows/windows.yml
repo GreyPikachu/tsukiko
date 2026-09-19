@@ -1,40 +1,58 @@
 # Сборка под Windows.
 #
-# Заведена не для красоты: рабочей машины с Windows у автора нет, и
-# без неё нельзя проверить даже того, что нативная часть вообще
-# компилируется — четыре движка Flutter, перехват клавиш, панель
-# у значка, `dart compile exe`. Здесь это проверяется на каждый пуш.
-#
-# Собранное лежит в артефактах: скачал, распаковал, запустил. Того,
-# что проверяется только руками — встаёт ли панель у значка, работает
-# ли двойной стук, — CI не заменит.
+# На каждый пуш и pull request запускается быстрая проверка (линтер и тесты).
+# Полная сборка приложения (tsukiko.exe), компиляция C++ движка, подготовка ffmpeg
+# и создание установщика (tsukiko-setup.exe) выполняются только при наличии флага
+# [build] / [release] в сообщении коммита, при пуше тега версии (v*), либо при
+# ручном запуске (workflow_dispatch).
 
 name: Windows
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
-  # Кнопкой: сборка долгая, и гонять её на каждую правку документа незачем.
   workflow_dispatch:
 
-# Новый пуш отменяет прежнюю сборку той же ветки: минуты Windows идут
-# по двойному тарифу, а результат устаревшей работы всё равно никому
-# не нужен.
 concurrency:
   group: windows-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  check:
+    name: Проверка (линтер и тесты)
+    runs-on: windows-2025
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Разбор
+        run: flutter analyze
+
+      - name: Тесты
+        run: flutter test --reporter expanded
+
   build:
-    # Не windows-latest: с июня 2026 эта метка ведёт на Visual Studio 2026,
-    # и версия компилятора менялась бы у нас под ногами. Переезжать —
-    # осознанно и разом.
+    name: Сборка дистрибутива (EXE и Setup)
+    needs: check
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(github.event.head_commit.message, '[build]') ||
+      contains(github.event.head_commit.message, '[release]') ||
+      contains(github.event.pull_request.title, '[build]') ||
+      contains(github.event.pull_request.title, '[release]') ||
+      github.event_name == 'workflow_dispatch'
     runs-on: windows-2025
 
     env:
-      # Версия та же, на которой собирает свой Vulkan сам llama.cpp:
-      # спорить с ними о совместимости шейдеров нам не с руки.
       VULKAN_VERSION: 1.4.357.0
 
     steps:
@@ -45,16 +63,6 @@ jobs:
           channel: stable
           cache: true
 
-      # Нативные движки не меняются от правки к правке приложения.
-      # Whisper собирается минут двадцать, NeMo скачивается готовым.
-      # Ключ — по скрипту сборки и патчу: в них лежит и версия движка,
-      # и всё, что на неё влияет.
-      #
-      # Восстановление и сохранение порознь, а не одним `actions/cache`:
-      # тот сохраняет только при удавшейся работе. А работа падает как
-      # раз на приложении — то есть после того, как движок уже собран,
-      # — и он собирался бы заново каждый раз, пока приложение не
-      # починится. Двадцать минут за правку в одну строку.
       - name: Кэш движка
         id: engine-cache
         uses: actions/cache/restore@v6
@@ -62,8 +70,6 @@ jobs:
           path: windows/Engine
           key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/nemo-engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
 
-      # Ставится только когда движок собирается заново: две минуты
-      # на установку ради восстановления из кэша — работа впустую.
       - name: Vulkan SDK
         if: steps.engine-cache.outputs.cache-hit != 'true'
         run: |
@@ -77,7 +83,6 @@ jobs:
         if: steps.engine-cache.outputs.cache-hit != 'true'
         run: .\tool\engine-win.ps1
 
-      # Сразу, как собрался, и независимо от того, что будет дальше.
       - name: Движок в кэш
         if: always() && steps.engine-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
@@ -85,10 +90,6 @@ jobs:
           path: windows/Engine
           key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/nemo-engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
 
-      # Аудиодекодер: whisper читает сам только wav, mp3, flac и ogg
-      # с Vorbis, а в разговор приходят голосовые (Opus), записи
-      # с диктофона (AAC) и дорожки из видео. Кэш свой, отдельно
-      # от движка: версии у них разные и меняются порознь.
       - name: Кэш ffmpeg
         id: ffmpeg-cache
         uses: actions/cache/restore@v6
@@ -99,8 +100,6 @@ jobs:
             windows/Engine/.ffmpeg-version
           key: ffmpeg-${{ runner.os }}-${{ hashFiles('tool/build-ffmpeg.sh') }}
 
-      # Собирается в MSYS2: своей сборочной среды в духе Unix у ffmpeg
-      # нет, configure — обычный шелл-скрипт.
       - uses: msys2/setup-msys2@v2
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         with:
@@ -128,25 +127,15 @@ jobs:
             windows/Engine/.ffmpeg-version
           key: ffmpeg-${{ runner.os }}-${{ hashFiles('tool/build-ffmpeg.sh') }}
 
-      # Журналы пишем в файлы по ходу дела: разбирать упавшую сборку
-      # удобнее скачанным файлом, чем листая её в браузере.
       - name: Папка журналов
         run: New-Item -ItemType Directory -Force -Path logs | Out-Null
 
       - run: flutter pub get
 
-      # Разбор и тесты идут до сборки: падать лучше за минуту, чем
-      # за двадцать. И идут они именно здесь, на Windows, — половина
-      # наших тестов про пути и разделители, а на macOS такое не видно.
-      - name: Разбор
-        run: flutter analyze 2>&1 | Tee-Object -FilePath logs/analyze.txt
-
       - name: Приложение
         id: app
         run: flutter build windows --release 2>&1 | Tee-Object -FilePath logs/build.txt
 
-      # Расшифровка из командной строки: ею пользуется скилл для
-      # нейросетевых агентов, и Flutter в неё не входит.
       - name: tsukiko-transcribe
         run: dart compile exe bin/tsukiko_transcribe.dart -o build/windows/x64/runner/Release/tsukiko-transcribe.exe
 
@@ -156,20 +145,6 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$release/Engine" | Out-Null
           Copy-Item "windows/Engine/*" "$release/Engine" -Recurse -Force
 
-      # Тесты после сборки, а не до неё: половина из них про пути
-      # и разделители, и на Windows они падают иначе, чем на macOS, —
-      # но узнать, что нативная часть вообще компилируется, важнее.
-      # Упавший тест уронит работу, а собранное всё равно приложится.
-      - name: Тесты
-        run: flutter test --reporter expanded 2>&1 | Tee-Object -FilePath logs/test.txt
-
-      # Установщик собирается только когда есть аудиодекодер: без него
-      # приложение не переложит m4a и opus в WAV, и раздавать такую
-      # сборку нельзя. Проверить, что всё компилируется, это не мешает —
-      # для того и папка ниже.
-      #
-      # ISCC зовём напрямую, а не через tool\package-win.ps1: тот собрал
-      # бы приложение во второй раз, а оно уже собрано.
       - name: Установщик
         id: installer
         if: hashFiles('windows/Engine/ffmpeg.exe') != ''
@@ -186,11 +161,6 @@ jobs:
           Write-Host "::warning::Без него не расшифровать m4a, opus и дорожки из видео."
           Write-Host "::warning::Как его получить — docs/сборка-и-выпуск.md"
 
-      # Папку отдаём и когда тесты упали: собранное — главное, ради чего
-      # всё затевалось, а упавший тест виден и так, в самой работе.
-      # always() здесь обязателен: без него условие со ссылкой на шаг
-      # всё равно молчаливо подразумевает «если ничего не падало», и
-      # ровно в тот раз, когда собранное нужнее всего, его бы и не было.
       - name: Собранное
         if: always() && steps.app.outcome == 'success'
         uses: actions/upload-artifact@v7
@@ -199,7 +169,6 @@ jobs:
           path: build/windows/x64/runner/Release/
           if-no-files-found: error
 
-      # И при удаче, и при провале: провал важнее.
       - name: Журналы
         if: always()
         uses: actions/upload-artifact@v7
