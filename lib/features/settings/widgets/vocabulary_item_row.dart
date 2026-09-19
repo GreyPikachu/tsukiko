@@ -144,23 +144,18 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                   ),
                   behavior: HitTestBehavior.opaque,
                   child: Container(
-                    width: 28,
-                    height: 28,
+                    width: 24,
+                    height: 24,
                     alignment: Alignment.center,
-                    child: AnimatedScale(
-                      scale: item.isPriority ? 1.15 : 1.0,
-                      duration: Motion.dur(context, Motion.quick),
-                      curve: Motion.curve(context, Motion.quickCurve),
-                      child: MacosIcon(
-                        item.isPriority
-                            ? CupertinoIcons.star_fill
-                            : CupertinoIcons.star,
-                        size: 15,
-                        color: item.isPriority
-                            ? MacosColors.systemYellowColor
-                            : Surface.secondaryText(context)
-                                .withValues(alpha: 0.4),
-                      ),
+                    child: MacosIcon(
+                      item.isPriority
+                          ? CupertinoIcons.star_fill
+                          : CupertinoIcons.star,
+                      size: 13.5,
+                      color: item.isPriority
+                          ? MacosColors.systemYellowColor
+                          : Surface.secondaryText(context)
+                              .withValues(alpha: 0.4),
                     ),
                   ),
                 ),
@@ -265,7 +260,7 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
             ),
             const SizedBox(width: Gap.inner),
             // Действия: переключение активности, карандаш и корзина
-            // Всегда остаются видимыми с деликатной resting-прозрачностью
+            // Оптически выровнены по весу со звёздочкой и текстом строки
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -275,8 +270,9 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                       : l10n.tooltipEnableItem,
                   child: AnimatedOpacity(
                     duration: Motion.dur(context, Motion.quick),
-                    opacity: _hover ? 1.0 : (item.enabled ? 0.55 : 0.85),
+                    opacity: _hover ? 1.0 : (item.enabled ? 0.7 : 0.9),
                     child: MacosIconButton(
+                      padding: const EdgeInsets.all(4),
                       icon: MacosIcon(
                         item.enabled
                             ? CupertinoIcons.checkmark_circle
@@ -296,10 +292,11 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                 ),
                 AnimatedOpacity(
                   duration: Motion.dur(context, Motion.quick),
-                  opacity: _hover ? 1.0 : 0.45,
+                  opacity: _hover ? 1.0 : 0.65,
                   child: MacosTooltip(
                     message: l10n.tooltipEditVocabulary,
                     child: MacosIconButton(
+                      padding: const EdgeInsets.all(4),
                       icon: MacosIcon(
                         CupertinoIcons.pencil,
                         size: IconSize.button,
@@ -315,13 +312,14 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                 ),
                 AnimatedOpacity(
                   duration: Motion.dur(context, Motion.quick),
-                  opacity: _hover ? 1.0 : 0.45,
+                  opacity: _hover ? 1.0 : 0.65,
                   child: MouseRegion(
                     onEnter: (_) => setState(() => _deleteHover = true),
                     onExit: (_) => setState(() => _deleteHover = false),
                     child: MacosTooltip(
                       message: l10n.tooltipDeleteVocabulary,
                       child: MacosIconButton(
+                        padding: const EdgeInsets.all(4),
                         icon: MacosIcon(
                           CupertinoIcons.trash,
                           size: IconSize.button,
