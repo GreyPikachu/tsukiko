@@ -145,17 +145,20 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
                   behavior: HitTestBehavior.opaque,
                   child: Container(
                     width: 24,
-                    height: 24,
+                    height: 28,
                     alignment: Alignment.center,
-                    child: MacosIcon(
-                      item.isPriority
-                          ? CupertinoIcons.star_fill
-                          : CupertinoIcons.star,
-                      size: 13.5,
-                      color: item.isPriority
-                          ? MacosColors.systemYellowColor
-                          : Surface.secondaryText(context)
-                              .withValues(alpha: 0.4),
+                    child: Transform.translate(
+                      offset: const Offset(0, -1.5),
+                      child: MacosIcon(
+                        item.isPriority
+                            ? CupertinoIcons.star_fill
+                            : CupertinoIcons.star,
+                        size: 13.5,
+                        color: item.isPriority
+                            ? MacosColors.systemYellowColor
+                            : Surface.secondaryText(context)
+                                .withValues(alpha: 0.4),
+                      ),
                     ),
                   ),
                 ),
