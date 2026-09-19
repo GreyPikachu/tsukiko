@@ -4,8 +4,11 @@
 // текстовые автозамены (text replacements) в единую модель данных.
 // Не зависит от Flutter и файловой системы.
 
+import 'dart:math' as math;
+
 import 'package:equatable/equatable.dart';
 
+import 'fuzzy_matching.dart';
 import 'text_commands.dart';
 
 const vocabularySetting = 'vocabulary';
@@ -176,16 +179,315 @@ int estimateVocabularyTokens(
   return (prompt.length / 3.8).ceil();
 }
 
+final _vocabWordCharacter = RegExp(r'[\p{L}\p{N}_]', unicode: true);
+
+bool _isWordCharacterAt(String text, int at) {
+  if (at < 0 || at >= text.length) return false;
+  return _vocabWordCharacter.hasMatch(text.substring(at, at + 1));
+}
+
+class _VocabRule {
+  _VocabRule(this.item)
+      : phrase = item.phrase.trim(),
+        lower = item.phrase.trim().toLowerCase(),
+        charLength = item.phrase.trim().length,
+        replacement = item.replacement,
+        collapsedLower =
+            PhoneticNormalizer.stripWhitespace(item.phrase.trim()).toLowerCase(),
+        phoneticKey = PhoneticNormalizer.normalize(item.phrase.trim()),
+        wordCount = _countWords(item.phrase.trim());
+
+  final VocabularyItem item;
+  final String phrase;
+  final String lower;
+  final int charLength;
+  final String replacement;
+  final String collapsedLower;
+  final String phoneticKey;
+  final int wordCount;
+
+  static int _countWords(String text) {
+    final words = text.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty);
+    return words.isEmpty ? 1 : words.length;
+  }
+}
+
+class _CandidateMatch {
+  _CandidateMatch({
+    required this.rule,
+    required this.matchedLength,
+    required this.score,
+    required this.distance,
+  });
+
+  final _VocabRule rule;
+  final int matchedLength;
+  final double score;
+  final int distance;
+}
+
+class _CandidateSpan {
+  const _CandidateSpan(this.end, this.wordCount);
+  final int end;
+  final int wordCount;
+}
+
+_CandidateMatch? _findFuzzyMatchAt({
+  required String source,
+  required int at,
+  required List<_VocabRule> rules,
+  required int maxWordCount,
+}) {
+  final candidateSpans = <_CandidateSpan>[];
+  var current = at;
+  var wordsCounted = 0;
+  final maxWordsToScan = math.min(maxWordCount + 1, 6);
+
+  while (current < source.length && wordsCounted < maxWordsToScan) {
+    var wordEnd = current;
+    while (wordEnd < source.length && _isWordCharacterAt(source, wordEnd)) {
+      wordEnd++;
+    }
+    if (wordEnd == current) break;
+    wordsCounted++;
+    candidateSpans.add(_CandidateSpan(wordEnd, wordsCounted));
+
+    var nextWordStart = wordEnd;
+    while (nextWordStart < source.length &&
+        (source[nextWordStart] == ' ' ||
+            source[nextWordStart] == '\t' ||
+            source[nextWordStart] == '-' ||
+            source[nextWordStart] == '_')) {
+      nextWordStart++;
+    }
+    if (nextWordStart == wordEnd ||
+        nextWordStart >= source.length ||
+        !_isWordCharacterAt(source, nextWordStart)) {
+      break;
+    }
+    current = nextWordStart;
+  }
+
+  if (candidateSpans.isEmpty) return null;
+
+  final matches = <_CandidateMatch>[];
+
+  for (final span in candidateSpans) {
+    final candidate = source.substring(at, span.end);
+    final candWords = span.wordCount;
+    final candLower = candidate.toLowerCase();
+    final candCollapsed =
+        PhoneticNormalizer.stripWhitespace(candLower).toLowerCase();
+    final candPhonetic = PhoneticNormalizer.normalize(candidate);
+
+    for (final rule in rules) {
+      // Invariant: L <= 3 requires exact match (tau = 0)
+      if (rule.charLength <= 3) continue;
+
+      // Length pre-filtering (spec line 515: |L_cand - L_ref| <= tau)
+      final tau = DamerauLevenshtein.adaptiveThreshold(rule.charLength);
+      final collapsedLenDiff =
+          (candCollapsed.length - rule.collapsedLower.length).abs();
+
+      // 1. Space variations / Agglutination match (any word count)
+      if (candCollapsed == rule.collapsedLower) {
+        matches.add(
+          _CandidateMatch(
+            rule: rule,
+            matchedLength: candidate.length,
+            score: 1.0,
+            distance: 0,
+          ),
+        );
+        continue;
+      }
+
+      // 2. Exact Phonetic Skeleton match (any word count)
+      if (candPhonetic.isNotEmpty && candPhonetic == rule.phoneticKey) {
+        matches.add(
+          _CandidateMatch(
+            rule: rule,
+            matchedLength: candidate.length,
+            score: 0.98,
+            distance: 0,
+          ),
+        );
+        continue;
+      }
+
+      // Beyond exact collapsed and exact phonetic skeleton matches,
+      // candidate must satisfy length pre-filtering and word count matching
+      if (candWords != rule.wordCount || collapsedLenDiff > tau || tau == 0) {
+        continue;
+      }
+
+      // 3. Metric distance (OSA) on surface and collapsed strings
+      final d1 = DamerauLevenshtein.distance(candLower, rule.lower, tau);
+      final d2 = DamerauLevenshtein.distance(
+        candCollapsed,
+        rule.collapsedLower,
+        tau,
+      );
+      final dist = math.min(d1, d2);
+
+      if (dist <= tau) {
+        final maxL = math.max(candLower.length, rule.charLength);
+        final sim = 1.0 - (dist / maxL);
+        matches.add(
+          _CandidateMatch(
+            rule: rule,
+            matchedLength: candidate.length,
+            score: 0.85 + (sim * 0.10),
+            distance: dist,
+          ),
+        );
+        continue;
+      }
+
+      // 4. Phonetic Skeleton Distance
+      if (candPhonetic.isNotEmpty && rule.phoneticKey.isNotEmpty) {
+        final tauPh =
+            DamerauLevenshtein.adaptiveThreshold(rule.phoneticKey.length);
+        if (tauPh > 0) {
+          final distPh = DamerauLevenshtein.distance(
+            candPhonetic,
+            rule.phoneticKey,
+            tauPh,
+          );
+          if (distPh <= tauPh) {
+            final maxPL = math.max(
+              candPhonetic.length,
+              rule.phoneticKey.length,
+            );
+            final simPh = 1.0 - (distPh / maxPL);
+            matches.add(
+              _CandidateMatch(
+                rule: rule,
+                matchedLength: candidate.length,
+                score: 0.80 + (simPh * 0.10),
+                distance: distPh,
+              ),
+            );
+          }
+        }
+      }
+    }
+  }
+
+  if (matches.isEmpty) return null;
+
+  // Tie-breaking priority:
+  // 1. Highest score
+  // 2. Longest rule charLength (Maximum Munch of rule phrases)
+  // 3. Lowest distance
+  // 4. Closest matchedLength to rule charLength (prefers minimal matching span)
+  matches.sort((a, b) {
+    final scoreCmp = b.score.compareTo(a.score);
+    if (scoreCmp != 0) return scoreCmp;
+    final ruleLenCmp = b.rule.charLength.compareTo(a.rule.charLength);
+    if (ruleLenCmp != 0) return ruleLenCmp;
+    final distCmp = a.distance.compareTo(b.distance);
+    if (distCmp != 0) return distCmp;
+    final deltaA = (a.matchedLength - a.rule.charLength).abs();
+    final deltaB = (b.matchedLength - b.rule.charLength).abs();
+    return deltaA.compareTo(deltaB);
+  });
+
+  return matches.first;
+}
+
 /// Применяет активные автозамены из словаря к распознанному тексту.
+///
+/// Поддерживает:
+/// - Быстрый точный поиск (O(1)) для точных совпадений без учёта регистра.
+/// - Нечёткое (fuzzy) сопоставление через Optimal String Alignment (Damerau-Levenshtein).
+/// - Фонетическую аппроксимацию (IPNF) между кириллицей и латиницей.
+/// - Вариации склейки и пробелов в составных словах (юскейс / юс кейс / use case).
+/// - Строгую защиту коротких слов (длина <= 3 требует строго точного совпадения).
+/// - Неразрушающее отслеживание координат сгенерированных замен.
 CommandText applyVocabularyReplacements(
   String source,
   Iterable<VocabularyItem> items,
 ) {
-  final replacementCommands = items
-      .where((item) => item.usable && item.isReplacement)
-      .map((item) => item.toTextCommand());
+  final activeItems =
+      items.where((item) => item.usable && item.isReplacement).toList();
+  if (source.isEmpty || activeItems.isEmpty) {
+    return CommandText(source, const []);
+  }
 
-  return applyTextCommands(source, replacementCommands);
+  final rules = activeItems.map((item) => _VocabRule(item)).toList()
+    ..sort((a, b) => b.charLength.compareTo(a.charLength));
+
+  final maxWordCount = rules.map((r) => r.wordCount).fold(1, math.max);
+
+  final lowerSource = source.toLowerCase();
+  final out = StringBuffer();
+  final replacements = <TextReplacement>[];
+  var at = 0;
+
+  while (at < source.length) {
+    // 1. Точный путь (O(1)): ищем прямое совпадение с учётом границ слов
+    _VocabRule? exactMatch;
+    for (final rule in rules) {
+      final end = at + rule.charLength;
+      if (end > source.length) continue;
+      if (!lowerSource.startsWith(rule.lower, at)) continue;
+      if (_isWordCharacterAt(source, at - 1) ||
+          _isWordCharacterAt(source, end)) {
+        continue;
+      }
+      exactMatch = rule;
+      break;
+    }
+
+    if (exactMatch != null) {
+      final start = out.length;
+      final original = source.substring(at, at + exactMatch.charLength);
+      out.write(exactMatch.replacement);
+      replacements.add(
+        TextReplacement(
+          start: start,
+          end: start + exactMatch.replacement.length,
+          original: original,
+          replacement: exactMatch.replacement,
+        ),
+      );
+      at += exactMatch.charLength;
+      continue;
+    }
+
+    // 2. Нечёткое и фонетическое сопоставление
+    // Срабатывает только на границе слова
+    if (_isWordCharacterAt(source, at) && !_isWordCharacterAt(source, at - 1)) {
+      final match = _findFuzzyMatchAt(
+        source: source,
+        at: at,
+        rules: rules,
+        maxWordCount: maxWordCount,
+      );
+
+      if (match != null) {
+        final start = out.length;
+        final original = source.substring(at, at + match.matchedLength);
+        out.write(match.rule.replacement);
+        replacements.add(
+          TextReplacement(
+            start: start,
+            end: start + match.rule.replacement.length,
+            original: original,
+            replacement: match.rule.replacement,
+          ),
+        );
+        at += match.matchedLength;
+        continue;
+      }
+    }
+
+    out.write(source[at]);
+    at++;
+  }
+
+  return CommandText(out.toString(), List.unmodifiable(replacements));
 }
 
 /// Бесшовная миграция настроек из устаревших `textCommands` и `prompt`.
