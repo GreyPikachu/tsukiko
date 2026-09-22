@@ -35,6 +35,8 @@ OpenCode) и положит скилл только им.
 
 ## Сборка
 
+Правила версий и официальных выпусков: [docs/версионирование.md](docs/версионирование.md).
+
 ```sh
 ./tool/engine.sh          # один раз: собрать движок (нужен brew install cmake)
 flutter build macos --release

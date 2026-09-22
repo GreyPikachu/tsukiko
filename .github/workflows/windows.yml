@@ -3,8 +3,7 @@
 # На каждый пуш и pull request запускается быстрая проверка (линтер и тесты).
 # Полная сборка приложения (tsukiko.exe), компиляция C++ движка, подготовка ffmpeg
 # и создание установщика (tsukiko-setup.exe) выполняются только при наличии флага
-# [build] / [build-windows] / [release] в сообщении коммита, при пуше тега версии (v*), либо при
-# ручном запуске (workflow_dispatch).
+# [build] / [build-windows] / [release] в сообщении коммита на main.
 # Для пропуска сборки под Windows можно использовать [skip-windows] или [build-macos].
 
 name: Windows
@@ -31,6 +30,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Версия
+        run: |
+          python tool/version.py check
+          python -m unittest discover -s tool -p test_version.py
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -48,28 +52,28 @@ jobs:
     name: Сборка дистрибутива (EXE и Setup)
     needs: check
     if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       !contains(github.event.head_commit.message, '[skip-windows]') &&
       !contains(github.event.head_commit.message, '[build-macos]') &&
       (
-        startsWith(github.ref, 'refs/tags/v') ||
         contains(github.event.head_commit.message, '[build]') ||
         contains(github.event.head_commit.message, '[build-windows]') ||
         contains(github.event.head_commit.message, '[build-win]') ||
         contains(github.event.head_commit.message, '[windows]') ||
-        contains(github.event.head_commit.message, '[release]') ||
-        contains(github.event.pull_request.title, '[build]') ||
-        contains(github.event.pull_request.title, '[build-windows]') ||
-        contains(github.event.pull_request.title, '[build-win]') ||
-        contains(github.event.pull_request.title, '[release]') ||
-        github.event_name == 'workflow_dispatch'
+        contains(github.event.head_commit.message, '[release]')
       )
     runs-on: windows-2025
+    permissions:
+      contents: write
 
     env:
       VULKAN_VERSION: 1.4.357.0
 
     steps:
       - uses: actions/checkout@v7
+
+      - name: Проверить уникальность версии
+        run: python tool/version.py build --platform windows
 
       - uses: subosito/flutter-action@v2
         with:
@@ -160,19 +164,13 @@ jobs:
 
       - name: Установщик
         id: installer
-        if: hashFiles('windows/Engine/ffmpeg.exe') != ''
         run: |
+          if (-not (Test-Path 'windows/Engine/ffmpeg.exe')) { throw 'Нет ffmpeg.exe; установщик обязателен для выпуска' }
           choco install innosetup --no-progress -y
-          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
+          $version = python tool/version.py current
+          $buildNumber = (Select-String -Path pubspec.yaml -Pattern '^version:\s*\d+\.\d+\.\d+\+(\d+)\s*$').Matches[0].Groups[1].Value
           New-Item -ItemType Directory -Force -Path build/installer | Out-Null
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" tool\installer.iss
-
-      - name: Сказать про пропущенный установщик
-        if: steps.installer.outcome == 'skipped'
-        run: |
-          Write-Host "::warning::Установщик не собран: нет windows/Engine/ffmpeg.exe."
-          Write-Host "::warning::Без него не расшифровать m4a, opus и дорожки из видео."
-          Write-Host "::warning::Как его получить — docs/сборка-и-выпуск.md"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" "/DMyAppBuildNumber=$buildNumber" tool\installer.iss
 
       - name: Собранное
         if: always() && steps.app.outcome == 'success'
@@ -191,9 +189,14 @@ jobs:
           if-no-files-found: ignore
 
       - name: Установщик в артефакты
-        if: steps.installer.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: tsukiko-setup
           path: build/installer/tsukiko-setup.exe
           if-no-files-found: error
+
+      - name: Зарезервировать выпущенную версию Windows
+        run: |
+          $tag = python tool/version.py tag --platform windows
+          git tag $tag
+          git push origin "refs/tags/$tag"
