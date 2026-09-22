@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
@@ -264,16 +265,30 @@ class SegmentRowState extends State<SegmentRow>
 /// Полог при перетаскивании: материал приходит с лёгким перелётом —
 /// жест уже нёс импульс.
 class DropVeil extends StatelessWidget {
-  const DropVeil({super.key, required this.active, this.compact = false});
+  const DropVeil({
+    super.key,
+    required this.active,
+    this.compact = false,
+    this.title,
+    this.subtitle,
+  });
   final bool active;
 
   /// Узкая колонка очереди: коту в ней не поместиться, и он там не нужен —
   /// подсветки края и подписи хватает, чтобы понять, что файл здесь примут.
   final bool compact;
 
+  /// Заголовок действия (по умолчанию — dropVeilHint).
+  final String? title;
+
+  /// Подпись с пояснением форматов или статуса.
+  final String? subtitle;
+
   @override
   Widget build(BuildContext context) {
     final accent = MacosTheme.of(context).primaryColor;
+    final isDark = MacosTheme.brightnessOf(context) == Brightness.dark;
+    final l10n = AppLocalizations.of(context);
     return IgnorePointer(
       child: AnimatedOpacity(
         duration: Motion.dur(context, Motion.toss),
@@ -295,35 +310,74 @@ class DropVeil extends StatelessWidget {
                     Gap.item * 4,
                   ),
             decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(14),
+              color: isDark
+                  ? accent.withValues(alpha: 0.15)
+                  : accent.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: accent.withValues(alpha: 0.55),
+                color: accent.withValues(alpha: 0.50),
                 width: 1.5,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.12),
+                  blurRadius: 24,
+                  spreadRadius: -4,
+                ),
+              ],
             ),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Кот тянется навстречу файлу. Тыкать в него сейчас нельзя —
-                  // вуаль и так перехватывает всё под собой.
-                  if (!compact) ...[
-                    const Mascot(
-                      mood: Mood.surprised,
-                      height: 116,
-                      interactive: false,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? Gap.inner : Gap.section,
                     ),
-                    const SizedBox(height: Gap.inner),
-                  ],
-                  Text(
-                    AppLocalizations.of(context).dropVeilHint,
-                    textAlign: TextAlign.center,
-                    style: (compact ? Type.caption : Type.emptyTitle).copyWith(
-                      color: accent,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (compact) ...[
+                          Icon(
+                            CupertinoIcons.arrow_down_doc_fill,
+                            size: 28,
+                            color: accent,
+                          ),
+                          const SizedBox(height: Gap.inner),
+                        ] else ...[
+                          // Кот тянется навстречу файлу. Высота 138 совпадает
+                          // с MascotPlaceholder, чтобы переход ощущался естественным.
+                          const Mascot(
+                            mood: Mood.surprised,
+                            height: 138,
+                            interactive: false,
+                          ),
+                          const SizedBox(height: Gap.item),
+                        ],
+                        Text(
+                          title ?? l10n.dropVeilHint,
+                          textAlign: TextAlign.center,
+                          style: (compact ? Type.caption : Type.emptyTitle).copyWith(
+                            color: accent,
+                            fontWeight: compact ? FontWeight.w600 : null,
+                          ),
+                        ),
+                        if (!compact && subtitle != null) ...[
+                          const SizedBox(height: Gap.hint),
+                          Text(
+                            subtitle!,
+                            textAlign: TextAlign.center,
+                            style: Type.control.copyWith(
+                              color: Surface.secondaryText(context),
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ),

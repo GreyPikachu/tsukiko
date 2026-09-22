@@ -44,6 +44,10 @@ fi
 mkdir -p "$APP/Contents/Helpers"
 cp "$ENGINE/tsukiko-recognizer" "$ENGINE/tsukiko-dictation" "$APP/Contents/Helpers/"
 cp "$ENGINE/whisper.cpp-LICENSE.txt" "$APP/Contents/Resources/"
+if [ -d "icon/Tsukiko.icon" ]; then
+  rm -rf "$APP/Contents/Resources/AppIcon.icon"
+  cp -R "icon/Tsukiko.icon" "$APP/Contents/Resources/AppIcon.icon"
+fi
 rm -rf "$APP/Contents/Helpers/nemo"
 # В Helpers macOS разрешает только вложенный код. Официальный архив NeMo
 # кроме бинарника и dylib содержит CMake-файлы, индекс и лицензии; если

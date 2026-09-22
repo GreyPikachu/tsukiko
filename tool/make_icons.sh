@@ -2,6 +2,7 @@
 # Пересобирает растр иконок из design/*.svg. Запускать после правки SVG.
 # Нужен rsvg-convert (brew install librsvg).
 set -e
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 cd "$(dirname "$0")/.."
 
 app=macos/Runner/Assets.xcassets/AppIcon.appiconset

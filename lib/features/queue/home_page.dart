@@ -1160,8 +1160,21 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     },
     child: Stack(
       children: [
-        Positioned.fill(child: _queueList(s, controller)),
-        Positioned.fill(child: DropVeil(active: _draggingQueue, compact: true)),
+        Positioned.fill(
+          child: AnimatedOpacity(
+            duration: Motion.dur(context, Motion.toss),
+            curve: Motion.curve(context, Motion.tossCurve),
+            opacity: _draggingQueue ? 0.0 : 1.0,
+            child: _queueList(s, controller),
+          ),
+        ),
+        Positioned.fill(
+          child: DropVeil(
+            active: _draggingQueue,
+            compact: true,
+            title: l10n.dropVeilHint,
+          ),
+        ),
       ],
     ),
   );
@@ -1470,8 +1483,21 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       },
       child: Stack(
         children: [
-          Positioned.fill(child: content),
-          Positioned.fill(child: DropVeil(active: _dragging)),
+          Positioned.fill(
+            child: AnimatedOpacity(
+              duration: Motion.dur(context, Motion.toss),
+              curve: Motion.curve(context, Motion.tossCurve),
+              opacity: _dragging ? 0.0 : 1.0,
+              child: content,
+            ),
+          ),
+          Positioned.fill(
+            child: DropVeil(
+              active: _dragging,
+              title: l10n.dropVeilHint,
+              subtitle: l10n.subtitleDropAudioHere,
+            ),
+          ),
         ],
       ),
     );

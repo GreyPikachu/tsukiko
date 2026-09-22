@@ -3,8 +3,9 @@
 # На каждый пуш и pull request запускается быстрая проверка (линтер и тесты).
 # Полная сборка приложения (tsukiko.exe), компиляция C++ движка, подготовка ffmpeg
 # и создание установщика (tsukiko-setup.exe) выполняются только при наличии флага
-# [build] / [release] в сообщении коммита, при пуше тега версии (v*), либо при
+# [build] / [build-windows] / [release] в сообщении коммита, при пуше тега версии (v*), либо при
 # ручном запуске (workflow_dispatch).
+# Для пропуска сборки под Windows можно использовать [skip-windows] или [build-macos].
 
 name: Windows
 
@@ -22,6 +23,9 @@ concurrency:
 jobs:
   check:
     name: Проверка (линтер и тесты)
+    if: >-
+      !contains(github.event.head_commit.message, '[skip-windows]') &&
+      !contains(github.event.head_commit.message, '[build-macos]')
     runs-on: windows-2025
 
     steps:
@@ -44,12 +48,21 @@ jobs:
     name: Сборка дистрибутива (EXE и Setup)
     needs: check
     if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
-      contains(github.event.head_commit.message, '[build]') ||
-      contains(github.event.head_commit.message, '[release]') ||
-      contains(github.event.pull_request.title, '[build]') ||
-      contains(github.event.pull_request.title, '[release]') ||
-      github.event_name == 'workflow_dispatch'
+      !contains(github.event.head_commit.message, '[skip-windows]') &&
+      !contains(github.event.head_commit.message, '[build-macos]') &&
+      (
+        startsWith(github.ref, 'refs/tags/v') ||
+        contains(github.event.head_commit.message, '[build]') ||
+        contains(github.event.head_commit.message, '[build-windows]') ||
+        contains(github.event.head_commit.message, '[build-win]') ||
+        contains(github.event.head_commit.message, '[windows]') ||
+        contains(github.event.head_commit.message, '[release]') ||
+        contains(github.event.pull_request.title, '[build]') ||
+        contains(github.event.pull_request.title, '[build-windows]') ||
+        contains(github.event.pull_request.title, '[build-win]') ||
+        contains(github.event.pull_request.title, '[release]') ||
+        github.event_name == 'workflow_dispatch'
+      )
     runs-on: windows-2025
 
     env:
