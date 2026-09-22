@@ -25,12 +25,13 @@
 ;    мастер удаления.
 
 #define MyAppName "tsukiko"
-; Версию передаёт tool\package-win.ps1 ключом /DMyAppVersion — он читает
-; её из pubspec.yaml. Значение ниже нужно лишь тому, кто запускает ISCC
-; руками: третий список версий рядом с pubspec.yaml и os.dart разошёлся бы
-; на первом же выпуске.
+; Версию и номер сборки передаёт упаковщик из pubspec.yaml.
+; Прямой вызов ISCC без них запрещён, чтобы не получить неверную версию.
 #ifndef MyAppVersion
-  #define MyAppVersion "0.0.0"
+  #error MyAppVersion must be supplied from pubspec.yaml
+#endif
+#ifndef MyAppBuildNumber
+  #error MyAppBuildNumber must be supplied from pubspec.yaml
 #endif
 #define MyAppPublisher "Yukovsky"
 #define MyAppExeName "tsukiko.exe"
@@ -46,7 +47,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}.{#MyAppBuildNumber}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 UninstallDisplayName={#MyAppName}

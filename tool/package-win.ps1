@@ -17,6 +17,13 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = Split-Path -Parent $ScriptDir
 Set-Location $RootDir
 
+# Проверяем версию до начала тяжёлой сборки и не используем уже выпущенную.
+python "$ScriptDir/version.py" build --platform windows
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$VERSION = python "$ScriptDir/version.py" current
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$BUILD_NUMBER = (Select-String -Path "pubspec.yaml" -Pattern '^version:\s*\d+\.\d+\.\d+\+(\d+)\s*$').Matches[0].Groups[1].Value
+
 $ENGINE_DIR = "windows/Engine"
 if (-not $SkipEngine) {
     # Сборок движка две — с Vulkan и без; какую запускать, приложение
@@ -54,13 +61,7 @@ if (-not (Test-Path $OUT_INSTALLER)) {
     New-Item -ItemType Directory -Force -Path $OUT_INSTALLER | Out-Null
 }
 
-# Версия — из одного места: pubspec.yaml. Установщик получает её ключом,
-# а не хранит свою копию.
-$VERSION = (Select-String -Path "pubspec.yaml" -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
-if (-not $VERSION) {
-    Write-Error "Не удалось прочитать version: из pubspec.yaml"
-    exit 1
-}
+# Версия уже проверена в начале скрипта.
 Write-Host "Версия выпуска: $VERSION"
 
 # Без аудиодекодера установщик собирать нельзя: на Windows без него
@@ -87,7 +88,7 @@ if (-not $ISCC) {
 
 if ($ISCC) {
     Write-Host "Создаём установщик tsukiko-setup.exe через Inno Setup..."
-    & $ISCC "/DMyAppVersion=$VERSION" "$ScriptDir/installer.iss"
+    & $ISCC "/DMyAppVersion=$VERSION" "/DMyAppBuildNumber=$BUILD_NUMBER" "$ScriptDir/installer.iss"
     Write-Host "Установщик создан: $OUT_INSTALLER/tsukiko-setup.exe"
 } else {
     Write-Warning "Inno Setup (ISCC.exe) не найден. Установите Inno Setup для генерации tsukiko-setup.exe."
