@@ -157,6 +157,9 @@ String promptWithVocabulary(
     if (!item.usable) continue;
     if (onlyPriority && !item.isPriority) continue;
     final phrase = item.phrase.trim();
+    // Короткий триггер автозамены не является доказательством, что слово
+    // прозвучало. В подсказке он склонял Whisper повторять FITU сам по себе.
+    if (item.isReplacement && phrase.length <= 4) continue;
     final lower = phrase.toLowerCase();
 
     // Предотвращаем дублирование
@@ -269,6 +272,8 @@ class _VocabRule {
         collapsedLower =
             PhoneticNormalizer.stripWhitespace(item.phrase.trim()).toLowerCase(),
         phoneticKey = PhoneticNormalizer.normalize(item.phrase.trim()),
+        fullPhoneticKey = PhoneticNormalizer.normalize(
+          item.phrase.trim(), extractSkeleton: false),
         wordCount = _countWords(item.phrase.trim()),
         isCjk = _cjkOrNonSpacedRegex.hasMatch(item.phrase.trim());
 
@@ -279,6 +284,7 @@ class _VocabRule {
   final String replacement;
   final String collapsedLower;
   final String phoneticKey;
+  final String fullPhoneticKey;
   final int wordCount;
   final bool isCjk;
 
@@ -357,8 +363,25 @@ _CandidateMatch? _findFuzzyMatchAt({
     final candPhonetic = PhoneticNormalizer.normalize(candidate);
 
     for (final rule in rules) {
-      // Invariant: L <= 3 requires exact match (tau = 0)
-      if (rule.charLength <= 3) continue;
+      // У короткой аббревиатуры слишком мало звуков для сравнения скелета
+      // согласных: FITU и «фото» иначе схлопываются в один ключ. Но «фиту»
+      // целиком сохраняем как явный межалфавитный вариант.
+      if (rule.charLength <= 4) {
+        if (rule.charLength == 4 &&
+            rule.phrase == rule.phrase.toUpperCase() &&
+            candidate.length == rule.charLength &&
+            // Межалфавитное чтение аббревиатуры, а не «кот»/«код».
+            RegExp(r'[A-Za-z]').hasMatch(rule.phrase) !=
+                RegExp(r'[A-Za-z]').hasMatch(candidate) &&
+            PhoneticNormalizer.normalize(candidate, extractSkeleton: false) ==
+                rule.fullPhoneticKey) {
+          matches.add(_CandidateMatch(
+            rule: rule, matchedLength: candidate.length,
+            score: 0.97, distance: 0,
+          ));
+        }
+        continue;
+      }
 
       // Length pre-filtering (spec line 515: |L_cand - L_ref| <= tau)
       final tau = DamerauLevenshtein.adaptiveThreshold(rule.charLength);
@@ -375,6 +398,18 @@ _CandidateMatch? _findFuzzyMatchAt({
             distance: 0,
           ),
         );
+        continue;
+      }
+
+      // Полная межалфавитная фонетика сохраняет гласные. Для имён вроде
+      // tsukiko / цукико она точна, а короткий скелет FITU / фото — нет.
+      if (rule.fullPhoneticKey.length >= 5 &&
+          PhoneticNormalizer.normalize(candidate, extractSkeleton: false) ==
+              rule.fullPhoneticKey) {
+        matches.add(_CandidateMatch(
+          rule: rule, matchedLength: candidate.length,
+          score: 0.98, distance: 0,
+        ));
         continue;
       }
 
@@ -479,7 +514,8 @@ _CandidateMatch? _findFuzzyMatchAt({
 /// - Нечёткое (fuzzy) сопоставление через Optimal String Alignment (Damerau-Levenshtein).
 /// - Фонетическую аппроксимацию (IPNF) между кириллицей и латиницей.
 /// - Вариации склейки и пробелов в составных словах (юскейс / юс кейс / use case).
-/// - Строгую защиту коротких слов (длина <= 3 требует строго точного совпадения).
+/// - Строгую защиту коротких слов (до 4 букв; исключение — полное чтение
+///   четырёхбуквенной латинской аббревиатуры кириллицей).
 /// - Неразрушающее отслеживание координат сгенерированных замен.
 CommandText applyVocabularyReplacements(
   String source,

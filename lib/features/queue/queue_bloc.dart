@@ -75,6 +75,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     on<OptionsEdited>(_onOptionsEdited);
     on<OverridesReset>(_onOverridesReset);
     on<LeadOptionsMadeDefault>(_onMakeDefault);
+    on<VocabularyReplacementAdded>(_onVocabularyReplacementAdded);
 
     on<ModelChosen>(_onModelChosen);
     on<ModelDownloadRequested>(_onDownload, transformer: droppable());
@@ -185,6 +186,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       recent: ((s['recent'] as List?)?.cast<String>() ?? const [])
           .where((p) => File(p).existsSync())
           .toList(),
+      vocabulary: loadAndMigrateVocabulary(s),
     );
   }
 
@@ -721,6 +723,76 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       ),
     );
     _persist();
+  }
+
+  Future<void> _onVocabularyReplacementAdded(
+    VocabularyReplacementAdded e,
+    Emitter<QueueState> emit,
+  ) async {
+    final phrase = e.phrase.trim();
+    final replacement = e.replacement.trim();
+    if (phrase.isEmpty) return;
+
+    if (replacement.isNotEmpty) {
+      final s = Settings.load();
+      final vocab = loadAndMigrateVocabulary(s);
+      final item = VocabularyItem(
+        id: 'vocab_${DateTime.now().microsecondsSinceEpoch}',
+        phrase: phrase,
+        replacement: replacement,
+        enabled: true,
+        isPriority: true,
+        createdAt: DateTime.now(),
+      );
+      final updated = [...vocab, item];
+      final textCommands = updated
+          .where((i) => i.isReplacement)
+          .map((i) => i.toTextCommand())
+          .toList();
+      await Settings.save({
+        vocabularySetting: updated.map((i) => i.toJson()).toList(),
+        textCommandsSetting: textCommands.map((c) => c.toJson()).toList(),
+      });
+      _vocabulary = updated;
+
+      if (e.removeFromPrompt) {
+        final currentPrompt = state.shown.prompt;
+        final terms = currentPrompt.split(RegExp(r',\s*'));
+        final lower = phrase.toLowerCase();
+        final filtered = terms.where((t) => t.trim().toLowerCase() != lower);
+        final newPrompt = filtered.join(', ');
+        if (newPrompt != currentPrompt) {
+          add(OptionsEdited((x) => x.copyWith(prompt: newPrompt)));
+        }
+      }
+
+      emit(
+        state.copyWith(
+          vocabulary: _vocabulary,
+          status: currentL10n().statusReplacementAdded(phrase, replacement),
+        ),
+      );
+      await bridge.settingsChanged();
+    } else {
+      final currentPrompt = state.shown.prompt;
+      final terms = currentPrompt
+          .split(RegExp(r',\s*'))
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+      final lower = phrase.toLowerCase();
+      if (!terms.any((t) => t.toLowerCase() == lower)) {
+        final newPrompt = currentPrompt.trim().isEmpty
+            ? phrase
+            : '${currentPrompt.trim()}, $phrase';
+        add(OptionsEdited((x) => x.copyWith(prompt: newPrompt)));
+      }
+      emit(
+        state.copyWith(
+          status: currentL10n().statusWordAddedToPrompt(phrase),
+        ),
+      );
+    }
   }
 
   /// Заменить записи по правилу, сохранив выделение и ведущую.
@@ -1876,6 +1948,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
             ? state.defaults
             : state.defaults.copyWith(model: selectedModel),
         models: _withOwn(models, selectedModel ?? state.defaults.model),
+        vocabulary: _vocabulary,
       ),
     );
     // Галку API правит окно настроек, а сервер живёт здесь — узнать

@@ -285,7 +285,7 @@
   "lastTranscriptTitle": "Last Transcript",
   "noDictationYet": "Nothing dictated yet.",
   "modelUnloaded": "Unloaded",
-  "modelSizeInMemory": "{size} in memory",
+  "modelSizeInMemory": "{size} in process RAM",
   "modelInMemory": "In Memory",
   "modelFreesIn": "frees up in {time}",
   "modelNotFound": "Model Not Found",
@@ -664,5 +664,39 @@
   "menuVocabularyActions": "Vocabulary Actions",
   "actionEnableAllVocabulary": "Enable All Entries",
   "actionDisableAllVocabulary": "Pause All Entries",
-  "actionClearAllPriorities": "Clear All Starred (★)"
+  "actionClearAllPriorities": "Clear All Starred (★)",
+  "statusWordAddedToPrompt": "Word \"{word}\" added to prompt",
+  "@statusWordAddedToPrompt": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "statusReplacementAdded": "Replacement \"{phrase} → {replacement}\" added to vocabulary",
+  "@statusReplacementAdded": {
+    "placeholders": {
+      "phrase": {
+        "type": "String"
+      },
+      "replacement": {
+        "type": "String"
+      }
+    }
+  },
+  "buttonEditPrompt": "Model prompt…",
+  "buttonEditPromptSubtitle": "{count, plural, zero{Empty · click to configure} one{{count} word} other{{count} words}}",
+  "@buttonEditPromptSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "buttonQuickAddPromptWord": "Add",
+  "placeholderQuickAddPhrase": "Quick add word…",
+  "placeholderQuickAddReplacement": "Replace with…",
+  "checkMakeReplacement": "Make replacement",
+  "tooltipMakeReplacement": "Make an automatic text replacement in vocabulary",
+  "buttonSaveReplacement": "Save replacement"
 }

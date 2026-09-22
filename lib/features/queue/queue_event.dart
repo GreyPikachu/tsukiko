@@ -180,6 +180,22 @@ class LeadOptionsMadeDefault extends QueueEvent {
   const LeadOptionsMadeDefault();
 }
 
+/// Добавить слово в подсказку модели или создать правило автозамены в словаре.
+class VocabularyReplacementAdded extends QueueEvent {
+  const VocabularyReplacementAdded({
+    required this.phrase,
+    this.replacement = '',
+    this.removeFromPrompt = false,
+  });
+
+  final String phrase;
+  final String replacement;
+  final bool removeFromPrompt;
+
+  @override
+  List<Object?> get props => [phrase, replacement, removeFromPrompt];
+}
+
 // ── модели ──────────────────────────────────────────────────────────────────
 
 class ModelChosen extends QueueEvent {

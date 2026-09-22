@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 import '../dictation/dictation_repository.dart';
 import '../../core/models.dart';
+import '../../core/vocabulary.dart';
 import '../../core/whisper.dart';
 import 'job.dart';
 
@@ -43,6 +44,7 @@ class QueueState extends Equatable {
     this.copyFormat = 'txt',
     this.saveFormat = 'txt',
     this.recent = const [],
+    this.vocabulary = const [],
     this.ask,
   });
 
@@ -85,6 +87,7 @@ class QueueState extends Equatable {
   final String copyFormat, saveFormat;
 
   final List<String> recent;
+  final List<VocabularyItem> vocabulary;
 
   /// Вопрос к человеку, если очередь на него наткнулась.
   final Ask? ask;
@@ -143,6 +146,7 @@ class QueueState extends Equatable {
     String? copyFormat,
     String? saveFormat,
     List<String>? recent,
+    List<VocabularyItem>? vocabulary,
     Ask? ask,
     bool clearLead = false,
     bool clearDownload = false,
@@ -172,6 +176,7 @@ class QueueState extends Equatable {
     copyFormat: copyFormat ?? this.copyFormat,
     saveFormat: saveFormat ?? this.saveFormat,
     recent: recent ?? this.recent,
+    vocabulary: vocabulary ?? this.vocabulary,
     ask: clearAsk ? null : (ask ?? this.ask),
   );
 
@@ -197,6 +202,7 @@ class QueueState extends Equatable {
     copyFormat,
     saveFormat,
     recent,
+    vocabulary,
     ask,
   ];
 }
