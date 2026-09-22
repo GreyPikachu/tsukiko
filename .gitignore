@@ -54,3 +54,4 @@ app.*.map.json
 macos/Engine/
 windows/Engine/
 graphify-out/
+accounts_popover_scrolled.png

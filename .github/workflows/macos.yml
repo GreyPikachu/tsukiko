@@ -2,8 +2,9 @@
 #
 # На каждый пуш и pull request запускается быстрая проверка (линтер и тесты).
 # Полная сборка приложения (tsukiko.app), универсального CLI и образа tsukiko.dmg
-# выполняется только при наличии флага [build] / [release] в сообщении коммита,
+# выполняется только при наличии флага [build] / [build-macos] / [release] в сообщении коммита,
 # при пуше тега версии (v*), либо при ручном запуске (workflow_dispatch).
+# Для пропуска сборки под macOS используйте [skip-macos] или [build-windows].
 
 name: macOS
 
@@ -21,6 +22,10 @@ concurrency:
 jobs:
   check:
     name: Проверка (линтер и тесты)
+    if: >-
+      !contains(github.event.head_commit.message, '[skip-macos]') &&
+      !contains(github.event.head_commit.message, '[build-windows]') &&
+      !contains(github.event.head_commit.message, '[build-win]')
     runs-on: macos-14
 
     steps:
@@ -43,12 +48,20 @@ jobs:
     name: Сборка дистрибутива (DMG и App)
     needs: check
     if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
-      contains(github.event.head_commit.message, '[build]') ||
-      contains(github.event.head_commit.message, '[release]') ||
-      contains(github.event.pull_request.title, '[build]') ||
-      contains(github.event.pull_request.title, '[release]') ||
-      github.event_name == 'workflow_dispatch'
+      !contains(github.event.head_commit.message, '[skip-macos]') &&
+      !contains(github.event.head_commit.message, '[build-windows]') &&
+      !contains(github.event.head_commit.message, '[build-win]') &&
+      !contains(github.event.head_commit.message, '[windows]') &&
+      (
+        startsWith(github.ref, 'refs/tags/v') ||
+        contains(github.event.head_commit.message, '[build]') ||
+        contains(github.event.head_commit.message, '[build-macos]') ||
+        contains(github.event.head_commit.message, '[release]') ||
+        contains(github.event.pull_request.title, '[build]') ||
+        contains(github.event.pull_request.title, '[build-macos]') ||
+        contains(github.event.pull_request.title, '[release]') ||
+        github.event_name == 'workflow_dispatch'
+      )
     runs-on: macos-14
 
     steps:

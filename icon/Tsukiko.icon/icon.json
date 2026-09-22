@@ -1,0 +1,48 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "extended-srgb:0.29804,0.31765,0.60000,1.00000",
+      "extended-srgb:0.17255,0.18431,0.38824,1.00000"
+    ]
+  },
+  "groups": [
+    {
+      "name": "Eyes Group",
+      "layers": [
+        {
+          "name": "Eyes",
+          "image-name": "cat_eyes.svg"
+        }
+      ]
+    },
+    {
+      "name": "Mascot Liquid Glass",
+      "layers": [
+        {
+          "name": "Fur Silhouette",
+          "image-name": "cat_body.svg",
+          "glass": true
+        }
+      ],
+      "blur-material": 0.5,
+      "refractivity": true,
+      "refractivity-depth": 0.05,
+      "refractivity-strength": 0.5,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular": "automatic",
+      "translucency": {
+        "enabled": true,
+        "value": 0.35
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": "shared"
+  }
+}
