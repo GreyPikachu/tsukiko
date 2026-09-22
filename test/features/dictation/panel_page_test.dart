@@ -138,6 +138,24 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('текстовые действия идут перед значками папок в заданном порядке',
+      (tester) async {
+    await pumpPanel(tester);
+    final quit = find.text('Завершить tsukiko');
+    final open = find.text('Открыть tsukiko…');
+    final settings = find.text('Настройки диктовки…');
+    final folders = find.byWidgetPredicate(
+      (w) => w is MacosTooltip && w.message == 'Открыть папку записей',
+    );
+    expect(quit, findsOneWidget);
+    expect(open, findsOneWidget);
+    expect(settings, findsOneWidget);
+    expect(tester.getTopLeft(quit).dy, lessThan(tester.getTopLeft(open).dy));
+    expect(tester.getTopLeft(open).dy, lessThan(tester.getTopLeft(settings).dy));
+    expect(tester.getTopLeft(settings).dy,
+        lessThan(tester.getTopLeft(folders).dy));
+  });
+
   testWidgets('меню поповера содержит пункты открытия папок на английском языке', (
     tester,
   ) async {

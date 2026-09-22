@@ -780,7 +780,7 @@
   "lastTranscriptTitle": "Последняя расшифровка",
   "noDictationYet": "Пока ничего не надиктовано.",
   "modelUnloaded": "Выгружена",
-  "modelSizeInMemory": "{size} в памяти",
+  "modelSizeInMemory": "{size} в ОЗУ процесса",
   "@modelSizeInMemory": {
     "placeholders": {
       "size": {
@@ -1507,5 +1507,39 @@
   "menuVocabularyActions": "Действия со словарём",
   "actionEnableAllVocabulary": "Включить все записи",
   "actionDisableAllVocabulary": "Приостановить все записи",
-  "actionClearAllPriorities": "Снять все звёздочки (★)"
+  "actionClearAllPriorities": "Снять все звёздочки (★)",
+  "statusWordAddedToPrompt": "Слово «{word}» добавлено в подсказку",
+  "@statusWordAddedToPrompt": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "statusReplacementAdded": "Замена «{phrase} → {replacement}» добавлена в словарь",
+  "@statusReplacementAdded": {
+    "placeholders": {
+      "phrase": {
+        "type": "String"
+      },
+      "replacement": {
+        "type": "String"
+      }
+    }
+  },
+  "buttonEditPrompt": "Подсказка модели…",
+  "buttonEditPromptSubtitle": "{count, plural, zero{Пусто · нажать для настройки} one{{count} слово} few{{count} слова} many{{count} слов} other{{count} слов}}",
+  "@buttonEditPromptSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "buttonQuickAddPromptWord": "Добавить",
+  "placeholderQuickAddPhrase": "Быстро добавить слово…",
+  "placeholderQuickAddReplacement": "Заменять на…",
+  "checkMakeReplacement": "Сделать заменой",
+  "tooltipMakeReplacement": "Сделать автозаменой текста в словаре",
+  "buttonSaveReplacement": "Сохранить замену"
 }

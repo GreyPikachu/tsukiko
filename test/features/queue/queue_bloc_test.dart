@@ -763,6 +763,45 @@ void main() {
       },
     );
   });
+
+  group('подсказка и замены', () {
+    blocTest<QueueBloc, QueueState>(
+      'слово добавляется в подсказку модели',
+      build: make,
+      act: (b) => b.add(const VocabularyReplacementAdded(phrase: 'KubeJS')),
+      verify: (b) {
+        expect(b.state.shown.prompt, contains('KubeJS'));
+        expect(b.state.status, contains('KubeJS'));
+      },
+    );
+
+    blocTest<QueueBloc, QueueState>(
+      'замена добавляется в словарь и убирается из подсказки',
+      build: () {
+        final b = make();
+        b.add(OptionsEdited((o) => o.copyWith(prompt: 'Flutter, тсукико, Dart')));
+        return b;
+      },
+      act: (b) => b.add(
+        const VocabularyReplacementAdded(
+          phrase: 'тсукико',
+          replacement: 'Tsukiko',
+          removeFromPrompt: true,
+        ),
+      ),
+      verify: (b) {
+        expect(b.state.shown.prompt, 'Flutter, Dart');
+        expect(
+          b.state.vocabulary.any(
+            (v) => v.phrase == 'тсукико' && v.replacement == 'Tsukiko',
+          ),
+          isTrue,
+        );
+        expect(b.state.status, contains('тсукико'));
+        expect(b.state.status, contains('Tsukiko'));
+      },
+    );
+  });
 }
 
 /// Подставная родная сторона: очередь спрашивает у неё разрешение забрать

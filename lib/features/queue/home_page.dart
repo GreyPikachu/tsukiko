@@ -32,6 +32,7 @@ import '../../platform/bridge.dart';
 import '../../platform/os.dart';
 import 'job.dart';
 import 'library_sheet.dart';
+import 'prompt_section.dart';
 import 'queue_bloc.dart';
 import 'queue_event.dart';
 import '../../core/update.dart';
@@ -71,6 +72,7 @@ class _HomeView extends StatefulWidget {
 }
 
 class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
+  static const _windowsFileInput = MethodChannel('tsukiko/file_input');
   // Только про окно: очередь, настройки и распознавание живут в блоке.
   final _promptCtrl = TextEditingController();
   final _searchCtrl = TextEditingController();
@@ -107,6 +109,13 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    if (Platform.isWindows) {
+      _windowsFileInput.setMethodCallHandler((call) async {
+        if (call.method != 'filesDropped') return;
+        final paths = (call.arguments as List).whereType<String>();
+        if (mounted && paths.isNotEmpty) _send(FilesAdded(paths));
+      });
+    }
     WidgetsBinding.instance.addObserver(this);
     // Первое состояние приходит мимо listener'а: BlocConsumer зовёт его
     // только на переменах, а самая первая перемена — это уже вторая. Без
@@ -130,6 +139,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    if (Platform.isWindows) _windowsFileInput.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     _promptCtrl.dispose();
     _searchCtrl.dispose();
@@ -459,6 +469,19 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   }
 
   Future<void> _pickFiles() async {
+    if (Platform.isWindows) {
+      try {
+        final paths = await _windowsFileInput.invokeListMethod<String>(
+          'pickAudioFiles',
+        );
+        if (mounted && paths != null && paths.isNotEmpty) {
+          _send(FilesAdded(paths));
+        }
+      } on PlatformException catch (error) {
+        Log.error('Queue', 'Windows file dialog failed: $error', error);
+      }
+      return;
+    }
     final files = await openFiles(
       acceptedTypeGroups: [
         XTypeGroup(
@@ -765,8 +788,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         onOpenSettings: () => _openSettings('transcriber'),
         onOpenRecordings: () =>
             revealInFinder(s.libraryPath, createIfMissing: true),
-        onOpenModels: () =>
-            revealInFinder(os.modelsDir, createIfMissing: true),
+        onOpenModels: () => revealInFinder(os.modelsDir, createIfMissing: true),
       ),
     );
   }
@@ -1754,15 +1776,24 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
               _send(OptionsEdited((x) => x.copyWith(threads: v ?? o.threads))),
         ),
         Hint(l10n.hintThreads),
-        SectionTitle(l10n.fieldModelPrompt),
-        AppTextField(
-          controller: _promptCtrl,
-          placeholder: l10n.placeholderPromptExample,
-          minLines: 3,
-          maxLines: null,
-          onChanged: (v) => _send(OptionsEdited((x) => x.copyWith(prompt: v))),
+        ModelPromptSection(
+          prompt: o.prompt,
+          onOpenVocabularySettings: () => _openSettings('vocabulary'),
+          onAddPromptWord: (word) =>
+              _send(VocabularyReplacementAdded(phrase: word)),
+          onAddReplacement:
+              ({
+                required String phrase,
+                required String replacement,
+                bool removeFromPrompt = false,
+              }) => _send(
+                VocabularyReplacementAdded(
+                  phrase: phrase,
+                  replacement: replacement,
+                  removeFromPrompt: removeFromPrompt,
+                ),
+              ),
         ),
-        Hint(l10n.hintPromptHelps),
 
         // Остальное — куда сохранять текст, диктовка, склад моделей,
         // поведение приложения — живёт в своём окне. Дорога туда теперь

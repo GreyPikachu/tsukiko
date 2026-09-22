@@ -1823,9 +1823,9 @@ class _SuggestionChipState extends State<_SuggestionChip> {
               vertical: Gap.inner,
             ),
             decoration: BoxDecoration(
-              color: _hover
-                  ? Surface.hover(context)
-                  : Surface.hover(context).withValues(alpha: 0.5),
+              color: Surface.isDark(context)
+                  ? (_hover ? const Color(0xFF48484C) : const Color(0xFF38383B))
+                  : (_hover ? const Color(0xFFE5E5E9) : const Color(0xFFF0F0F2)),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: _hover
@@ -1838,7 +1838,9 @@ class _SuggestionChipState extends State<_SuggestionChip> {
             child: Text(
               widget.label,
               style: Type.control.copyWith(
-                color: MacosTheme.of(context).primaryColor,
+                color: Surface.isDark(context)
+                    ? const Color(0xFFF5F5F7)
+                    : const Color(0xFF242428),
                 fontWeight: FontWeight.w500,
               ),
             ),

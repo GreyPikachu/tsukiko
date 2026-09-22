@@ -2,6 +2,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/vocabulary.dart';
 
 void main() {
+  test('FITU only replaces an explicit standalone trigger', () {
+    const fitu = VocabularyItem(
+      id: 'fitu', phrase: 'FITU',
+      replacement: 'Факультет информационных технологий и управления',
+      isPriority: true,
+    );
+    const tsukiko = VocabularyItem(
+      id: 'tsukiko', phrase: 'tsukiko',
+      replacement: 'Tsukiko', isPriority: true,
+    );
+    expect(promptWithVocabulary('', [fitu, tsukiko]), 'tsukiko');
+    const unrelated = 'Это фото и fituistic внутри слов.';
+    final result = applyVocabularyReplacements(unrelated, [fitu, tsukiko]);
+    expect(result.text, unrelated);
+    expect(result.replacements, isEmpty);
+    expect(applyVocabularyReplacements('Сказал FITU.', [fitu]).text,
+        'Сказал ${fitu.replacement}.');
+    expect(applyVocabularyReplacements('Сказал фиту.', [fitu]).text,
+        'Сказал ${fitu.replacement}.');
+    expect(applyVocabularyReplacements('Сказал Цукико.', [tsukiko]).text,
+        'Сказал Tsukiko.');
+  });
+
   group('Equivalence Classes (Classes 1-10)', () {
     test('Class 1: Pure acoustic hints (no replacement, hint-only)', () {
       const hint1 =
@@ -57,9 +80,9 @@ void main() {
       expect(itemMac.type, VocabularyType.replacement);
       expect(itemSdk.isReplacement, isTrue);
 
-      // Included in initial prompt
+      // Short replacement triggers are applied after recognition.
       final prompt = promptWithVocabulary('', [itemMac, itemSdk]);
-      expect(prompt, 'мак, сдк');
+      expect(prompt, isEmpty);
 
       // Replaces exact case triggers
       final result = applyVocabularyReplacements(
@@ -293,7 +316,7 @@ void main() {
       // In promptWithVocabulary, disabled items are omitted
       final prompt = promptWithVocabulary('Инструменты', items);
       expect(prompt, contains('Flutter'));
-      expect(prompt, contains('мак'));
+      expect(prompt, isNot(contains('мак')));
       expect(prompt, isNot(contains('React')));
       expect(prompt, isNot(contains('винда')));
 
@@ -467,7 +490,7 @@ void main() {
       expect(untrimmed.usable, isTrue);
 
       final prompt = promptWithVocabulary('', [untrimmed]);
-      expect(prompt, 'мак');
+      expect(prompt, isEmpty);
 
       final result = applyVocabularyReplacements('Купил мак.', [untrimmed]);
       expect(result.text, 'Купил   Mac  .');

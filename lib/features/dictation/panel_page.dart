@@ -580,7 +580,7 @@ class _Model extends StatelessWidget {
             Text(l10n.modelNotFound,
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: Type.fileName)
           else
-            MacosPopupButton<String>(
+            SizedBox(width: double.infinity, child: MacosPopupButton<String>(
               value: s.models.contains(s.chosenModel) ? s.chosenModel : null,
               hint: Text(l10n.modelNotChosen, style: Type.fileName),
               items: [
@@ -598,7 +598,7 @@ class _Model extends StatelessWidget {
               // перезапускается только если модель правда сменилась —
               // об этом заботится сам cubit.setModel.
               onChanged: (v) => v == null ? null : cubit.setModel(v),
-            ),
+            )),
           const SizedBox(height: Gap.hint),
           Text(!s.hasModels ? l10n.nothingToRecognizeWith : serverState, style: grey),
           // Кнопки под текстом, как в блоке последней расшифровки: два
@@ -650,10 +650,27 @@ class _Footer extends StatelessWidget {
       child: Column(
         children: [
           _MenuRow(
+            l10n.menuQuitApp(appName),
+            context.read<DictationCubit>().quit,
+            // Подпись только там, где сочетание и правда есть.
+            // ⌘Q приложению даёт сама macOS вместе со строкой меню;
+            // на Windows выход по Ctrl+Q не назначен ничем, и написать
+            // его значило бы соврать. Значок при этом рисует граница
+            // системы, а не строка в коде: строкой тут стояло «⌘Q».
+            shortcut: os.hasSystemMenuBar
+                ? os.menuShortcut(const ['cmd'], 'q')
+                : null,
+          ),
+          _MenuRow(
+            l10n.menuOpenApp(appName),
+            context.read<DictationCubit>().openMainWindow,
+          ),
+          _MenuRow(
             l10n.menuDictationSettingsEllipsis,
             () => context.read<DictationCubit>().openSettings('dictation'),
             shortcut: os.settingsShortcut,
           ),
+          const _Divider(),
           Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: Gap.inner,
@@ -687,22 +704,6 @@ class _Footer extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-          _MenuRow(
-            l10n.menuOpenApp(appName),
-            context.read<DictationCubit>().openMainWindow,
-          ),
-          _MenuRow(
-            l10n.menuQuitApp(appName),
-            context.read<DictationCubit>().quit,
-            // Подпись только там, где сочетание и правда есть.
-            // ⌘Q приложению даёт сама macOS вместе со строкой меню;
-            // на Windows выход по Ctrl+Q не назначен ничем, и написать
-            // его значило бы соврать. Значок при этом рисует граница
-            // системы, а не строка в коде: строкой тут стояло «⌘Q».
-            shortcut: os.hasSystemMenuBar
-                ? os.menuShortcut(const ['cmd'], 'q')
-                : null,
           ),
         ],
       ),

@@ -3,6 +3,8 @@
 
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
 
 #include <memory>
 
@@ -28,12 +30,18 @@ class FlutterWindow : public Win32Window {
   LRESULT MessageHandler(HWND window, UINT const message, WPARAM const wparam,
                          LPARAM const lparam) noexcept override;
 
+  static LRESULT CALLBACK FileDropProc(HWND window, UINT message, WPARAM wparam,
+                                       LPARAM lparam, UINT_PTR id,
+                                       DWORD_PTR context);
+
  private:
   // The project to run.
   flutter::DartProject project_;
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> file_input_;
+  HWND file_drop_window_ = nullptr;
 
   /// Панель диктовки на своём движке. Живёт столько же, сколько окно:
   /// диктовка должна работать и когда окно спрятано в трей.
