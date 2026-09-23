@@ -7,6 +7,7 @@
 #include <flutter/standard_method_codec.h>
 
 #include <memory>
+#include <ole2.h>
 
 class PanelWindow;
 
@@ -42,6 +43,7 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> file_input_;
   HWND file_drop_window_ = nullptr;
+  IDropTarget* file_drop_target_ = nullptr;
 
   /// Панель диктовки на своём движке. Живёт столько же, сколько окно:
   /// диктовка должна работать и когда окно спрятано в трей.

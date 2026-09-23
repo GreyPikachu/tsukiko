@@ -286,8 +286,9 @@ Future<int> freePort() async {
 /// Доводы для whisper-server. Пути — через `os.processPath` по той же
 /// причине, что и в `buildArgs`: с кириллицей в пути движок не откроет
 /// ни модель, ни звук (разбор в `os.dart`).
-List<String> serverArgs(RunOptions o, int port) => [
+List<String> serverArgs(RunOptions o, int port, {bool noGpu = false}) => [
   '-m', os.processPath(o.model),
+  if (noGpu) '-ng',
   '-l', o.lang,
   '-t', '${o.threads}',
   '--host', '127.0.0.1',
@@ -368,6 +369,7 @@ class WhisperServer {
   Future<void>? _starting;
   Future<void>? _shuttingDown;
   String _lastEngineError = '';
+  final Set<String> _cpuFallbackModels = {};
   String get lastEngineError => _lastEngineError;
   final List<String> _startupLog = [];
 
@@ -466,7 +468,8 @@ class WhisperServer {
         proc = await Process.start(
           runnableEngine(exe, _startedEngineName!)!,
           engine == RecognitionEngine.whisperCpp
-              ? serverArgs(o, _port)
+              ? serverArgs(o, _port,
+                  noGpu: _cpuFallbackModels.contains(o.model))
               : nemoServerArgs(o, _port),
         );
       } catch (e, st) {
@@ -542,7 +545,7 @@ class WhisperServer {
   /// Порт открывается только после того, как модель прочитана целиком —
   /// проверено: 0,75 с на прогретом кеше, до 2 с на холодном. Поэтому
   /// «порт отвечает» и есть «модель готова».
-  Future<bool> waitReady({Duration timeout = const Duration(seconds: 30)}) async {
+  Future<bool> waitReady({Duration timeout = const Duration(minutes: 2)}) async {
     final sw = Stopwatch()..start();
     final until = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(until)) {
@@ -567,6 +570,18 @@ class WhisperServer {
           'Engine',
           'Server process died before port opened (elapsed: ${sw.elapsedMilliseconds} ms)',
         );
+        // macOS иногда обрывает загрузку large-v3 при выделении памяти
+        // Metal. Повторяем сохранённую запись на CPU вместо ручного импорта.
+        if (Platform.isMacOS &&
+            engineName == dictationExeName &&
+            options != null &&
+            !_cpuFallbackModels.contains(options.model) &&
+            _lastEngineError.contains('ggml_metal')) {
+          _cpuFallbackModels.add(options.model);
+          Log.warn('Engine', 'Metal startup failed; retrying ${options.model} on CPU');
+          await ensureUp(options);
+          return _proc != null && await waitReady(timeout: timeout);
+        }
         if (dead == null ||
             engineName == null ||
             options == null ||

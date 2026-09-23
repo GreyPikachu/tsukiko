@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../../core/models.dart';
 import '../../core/transcript.dart';
 import '../../core/whisper.dart';
+import '../../core/vocabulary.dart';
 import 'job.dart';
 
 /// Что случилось с очередью.
@@ -267,6 +268,14 @@ class WindowVisibilityChanged extends QueueEvent {
 
 class SettingsReloaded extends QueueEvent {
   const SettingsReloaded();
+}
+
+class LegacyPromptMigrated extends QueueEvent {
+  const LegacyPromptMigrated(this.vocabulary);
+  final List<VocabularyItem> vocabulary;
+
+  @override
+  List<Object?> get props => [vocabulary];
 }
 
 class TimestampsToggled extends QueueEvent {

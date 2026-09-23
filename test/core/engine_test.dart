@@ -17,6 +17,12 @@ import 'package:tsukiko/core/labels.dart';
 import '../support/fake_os.dart';
 
 void main() {
+  test('Metal failure can restart whisper-server without GPU', () {
+    const options = RunOptions(model: '/models/large.bin', lang: 'auto', threads: 4);
+    expect(serverArgs(options, 1234), isNot(contains('-ng')));
+    expect(serverArgs(options, 1234, noGpu: true), contains('-ng'));
+  });
+
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
   // TestWidgetsFlutterBinding подменяет HttpOverrides и заворачивает
   // любой HttpClient в фальшивый 400 — а этот файл настоящую сеть

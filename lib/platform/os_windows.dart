@@ -357,8 +357,7 @@ class WindowsOs implements Os {
   /// `F:\Загрузки\голос.ogg` иначе не открывается. Рабочая папка передаётся
   /// Windows отдельным wide-string полем, а в argv остаются только ASCII-имена.
   ///
-  /// Если конвертация не удалась или ffmpeg отсутствует — возвращаем исходный
-  /// файл, пусть whisper попробует сам.
+  /// Ошибку конвертации показываем явно: MP4 нельзя передавать движку как WAV.
   @override
   Future<String> toWav(String src, String dst) async {
     final bundledFfmpeg = join(engineDir, 'ffmpeg.exe');
@@ -398,18 +397,28 @@ class WindowsOs implements Os {
         'pcm_s16le',
         output,
       ], workingDirectory: workingDirectory);
-      if (r.exitCode != 0) return src;
+      if (r.exitCode != 0) {
+        throw StateError('ffmpeg не преобразовал аудио (${r.exitCode}): '
+            '${(r.stderr as String).trim()}');
+      }
       if (staging != null) {
         final made = File(join(staging.path, output));
-        if (!made.existsSync()) return src;
+        if (!made.existsSync()) {
+          throw StateError('ffmpeg завершился без выходного WAV-файла');
+        }
         await made.copy(dst);
       }
-      return File(dst).existsSync() ? dst : src;
-    } catch (_) {
-      return src;
+      if (!File(dst).existsSync()) {
+        throw StateError('ffmpeg завершился без выходного WAV-файла');
+      }
+      return dst;
+    } catch (error) {
+      throw StateError('Не удалось подготовить звук из $src: $error');
     } finally {
       try {
-        if (staging?.existsSync() ?? false) staging!.deleteSync(recursive: true);
+        if (staging?.existsSync() ?? false) {
+          staging!.deleteSync(recursive: true);
+        }
       } catch (_) {}
     }
   }

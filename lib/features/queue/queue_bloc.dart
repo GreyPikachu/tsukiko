@@ -101,6 +101,14 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     on<DictationPolled>(_onDictationPolled, transformer: droppable());
     on<WindowVisibilityChanged>(_onVisibility);
     on<SettingsReloaded>(_onSettingsReloaded);
+    on<LegacyPromptMigrated>(
+      (e, emit) => emit(
+        state.copyWith(
+          defaults: state.defaults.copyWith(prompt: ''),
+          vocabulary: e.vocabulary,
+        ),
+      ),
+    );
     on<TimestampsToggled>(_onTimestampsToggled);
     on<RecentCleared>(_onRecentCleared);
 
@@ -159,7 +167,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     // Настройки могли не пережить переустановку, а подсказка живёт ещё и
     // рядом с расшифровками — оттуда её и возвращаем. Только если в
     // настройках пусто: стёртая руками подсказка должна остаться стёртой.
-    if (defaults.prompt.isEmpty) {
+    if (defaults.prompt.isEmpty &&
+        s['transcriberPromptMigratedToVocabulary'] != true) {
       defaults = defaults.copyWith(prompt: Prompts.read(Prompts.transcriber));
     }
     // Раньше форматы хранились расширениями («.txt») — переводим в имена.
@@ -267,6 +276,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
   final NativeBridge bridge;
 
+  static const _promptMigratedSetting = 'transcriberPromptMigratedToVocabulary';
+
   StreamSubscription<void>? _settingsSub;
   Timer? _pollTimer, _saveTimer;
   bool _windowVisible = true;
@@ -277,6 +288,33 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   void _loadTextCommands() {
     final settings = Settings.load();
     _vocabulary = loadAndMigrateVocabulary(settings);
+    // Прежняя подсказка расшифровщика была отдельным списком слов.
+    // Переносим его в общий словарь и больше не читаем запасную копию.
+    final legacyPrompt = state.defaults.prompt.trim();
+    if (legacyPrompt.isNotEmpty && settings[_promptMigratedSetting] != true) {
+      for (final raw in legacyPrompt.split(RegExp(r'[,;\n]+'))) {
+        final phrase = raw.trim();
+        if (phrase.isEmpty ||
+            _vocabulary.any(
+              (item) =>
+                  item.phrase.trim().toLowerCase() == phrase.toLowerCase(),
+            )) {
+          continue;
+        }
+        _vocabulary = upsertVocabulary(_vocabulary, phrase);
+      }
+      add(LegacyPromptMigrated(_vocabulary));
+      unawaited(
+        Settings.save({
+          vocabularySetting: _vocabulary.map((item) => item.toJson()).toList(),
+          'prompt': '',
+          _promptMigratedSetting: true,
+        }).then((_) async {
+          Prompts.write(Prompts.transcriber, '');
+          await bridge.settingsChanged();
+        }),
+      );
+    }
     _commandsEnabled =
         (settings[vocabularyTranscriberEnabledSetting] as bool?) ??
         (settings[transcriberCommandsEnabledSetting] as bool?) ??
@@ -338,7 +376,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     var s = raw.trim();
 
     // Очистка от нуль-байтов и управляющих символов.
-    s = s.replaceAll('\x00', '').replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '').trim();
+    s = s
+        .replaceAll('\x00', '')
+        .replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '')
+        .trim();
 
     // Снятие обрамляющих кавычек (одинарных или двойных).
     while ((s.startsWith('"') && s.endsWith('"')) ||
@@ -358,14 +399,19 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         // На Windows пути вида file://C:\... или file://C:/... парсер Uri считает
         // хостом authority 'c:', что приводит к UNC-пути вида \\c\...
         // Превращаем в стандартный file:///C:/...
-        final driveMatch = RegExp(r'^file://([a-zA-Z]:[\\/])').firstMatch(uriStr);
+        final driveMatch = RegExp(
+          r'^file://([a-zA-Z]:[\\/])',
+        ).firstMatch(uriStr);
         if (driveMatch != null) {
           uriStr = 'file:///${uriStr.substring(7)}';
         }
         uriStr = uriStr.replaceAll(r'\', '/');
         final uri = Uri.parse(uriStr);
         if (uri.hasAuthority && uri.host == 'localhost') {
-          s = Uri(scheme: 'file', path: uri.path).toFilePath(windows: Platform.isWindows);
+          s = Uri(
+            scheme: 'file',
+            path: uri.path,
+          ).toFilePath(windows: Platform.isWindows);
         } else {
           s = uri.toFilePath(windows: Platform.isWindows);
         }
@@ -386,7 +432,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     }
 
     // Финальная очистка от нуль-байтов и управляющих символов.
-    s = s.replaceAll('\x00', '').replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '').trim();
+    s = s
+        .replaceAll('\x00', '')
+        .replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '')
+        .trim();
 
     if (Platform.isWindows && RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(s)) {
       s = s.replaceAll('/', r'\');
@@ -420,13 +469,14 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         if (isDir) {
           List<String> entries = [];
           try {
-            entries = Directory(p)
-                .listSync()
-                .whereType<File>()
-                .map((f) => f.path)
-                .where((f) => audioExt.contains(_ext(f)))
-                .toList()
-              ..sort();
+            entries =
+                Directory(p)
+                    .listSync()
+                    .whereType<File>()
+                    .map((f) => f.path)
+                    .where((f) => audioExt.contains(_ext(f)))
+                    .toList()
+                  ..sort();
           } catch (err) {
             Log.warn('Queue', 'Could not list directory "$p": $err');
             skipped++;
@@ -733,66 +783,39 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     final replacement = e.replacement.trim();
     if (phrase.isEmpty) return;
 
-    if (replacement.isNotEmpty) {
-      final s = Settings.load();
-      final vocab = loadAndMigrateVocabulary(s);
-      final item = VocabularyItem(
-        id: 'vocab_${DateTime.now().microsecondsSinceEpoch}',
-        phrase: phrase,
-        replacement: replacement,
-        enabled: true,
-        isPriority: true,
-        createdAt: DateTime.now(),
-      );
-      final updated = [...vocab, item];
-      final textCommands = updated
-          .where((i) => i.isReplacement)
-          .map((i) => i.toTextCommand())
-          .toList();
-      await Settings.save({
-        vocabularySetting: updated.map((i) => i.toJson()).toList(),
-        textCommandsSetting: textCommands.map((c) => c.toJson()).toList(),
-      });
-      _vocabulary = updated;
+    final s = Settings.load();
+    final vocab = loadAndMigrateVocabulary(s);
+    final updated = upsertVocabulary(vocab, phrase, replacement: replacement);
+    final textCommands = updated
+        .where((i) => i.isReplacement)
+        .map((i) => i.toTextCommand())
+        .toList();
+    await Settings.save({
+      vocabularySetting: updated.map((i) => i.toJson()).toList(),
+      textCommandsSetting: textCommands.map((c) => c.toJson()).toList(),
+    });
+    _vocabulary = updated;
 
-      if (e.removeFromPrompt) {
-        final currentPrompt = state.shown.prompt;
-        final terms = currentPrompt.split(RegExp(r',\s*'));
-        final lower = phrase.toLowerCase();
-        final filtered = terms.where((t) => t.trim().toLowerCase() != lower);
-        final newPrompt = filtered.join(', ');
-        if (newPrompt != currentPrompt) {
-          add(OptionsEdited((x) => x.copyWith(prompt: newPrompt)));
-        }
-      }
-
-      emit(
-        state.copyWith(
-          vocabulary: _vocabulary,
-          status: currentL10n().statusReplacementAdded(phrase, replacement),
-        ),
-      );
-      await bridge.settingsChanged();
-    } else {
+    if (e.removeFromPrompt) {
       final currentPrompt = state.shown.prompt;
-      final terms = currentPrompt
-          .split(RegExp(r',\s*'))
-          .map((t) => t.trim())
-          .where((t) => t.isNotEmpty)
-          .toList();
+      final terms = currentPrompt.split(RegExp(r',\s*'));
       final lower = phrase.toLowerCase();
-      if (!terms.any((t) => t.toLowerCase() == lower)) {
-        final newPrompt = currentPrompt.trim().isEmpty
-            ? phrase
-            : '${currentPrompt.trim()}, $phrase';
+      final filtered = terms.where((t) => t.trim().toLowerCase() != lower);
+      final newPrompt = filtered.join(', ');
+      if (newPrompt != currentPrompt) {
         add(OptionsEdited((x) => x.copyWith(prompt: newPrompt)));
       }
-      emit(
-        state.copyWith(
-          status: currentL10n().statusWordAddedToPrompt(phrase),
-        ),
-      );
     }
+
+    emit(
+      state.copyWith(
+        vocabulary: _vocabulary,
+        status: replacement.isEmpty
+            ? currentL10n().statusWordAddedToPrompt(phrase)
+            : currentL10n().statusReplacementAdded(phrase, replacement),
+      ),
+    );
+    await bridge.settingsChanged();
   }
 
   /// Заменить записи по правилу, сохранив выделение и ведущую.
@@ -960,10 +983,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     final selected = state.optionsFor(job);
     final opts = _commandsEnabled
         ? selected.copyWith(
-            prompt: promptWithVocabulary(
-              selected.effectivePrompt,
-              _vocabulary,
-            ),
+            prompt: promptWithVocabulary(selected.effectivePrompt, _vocabulary),
           )
         : selected;
     var it = job;
@@ -1001,8 +1021,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     // досчитываем с места остановки), и сказанное первой из них — самое
     // важное, что есть.
     _engineLog.clear();
+    var audioPrepared = false;
     try {
       final wav = await os.toWav(it.path, '$base.wav');
+      audioPrepared = true;
 
       // Пустая запись — это не «плохой файл», а ничего: заголовок
       // и нулевой кусок данных. Движок на таком говорит «failed to read
@@ -1074,7 +1096,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         Log.info(
           'Queue',
           'Transcribing started: engine=${engineTechnicalName(engine)}, '
-          'model=${opts.model}, threads=${opts.threads}, args=${args.join(" ")}',
+              'model=${opts.model}, threads=${opts.threads}, args=${args.join(" ")}',
         );
         code = await _runRecognizer(it, engine, args);
         it = _find(it) ?? it;
@@ -1099,7 +1121,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         Log.error(
           'Queue',
           'Job failed: ${it.name}, exitCode=$code'
-          '${_engineErrorText.isNotEmpty ? ', error: $_engineErrorText' : ''}',
+              '${_engineErrorText.isNotEmpty ? ', error: $_engineErrorText' : ''}',
         );
         // Со словами движка, а не без них: «не справился с этим файлом»
         // не говорит человеку ничего, а строка от whisper — «failed to
@@ -1152,7 +1174,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       Log.info(
         'Queue',
         'Job completed: ${it.name}, duration: ${took?.inMilliseconds}ms, '
-        'language: ${t.lang}, segments: ${t.segments.length}',
+            'language: ${t.lang}, segments: ${t.segments.length}',
       );
       emit(
         _replace(
@@ -1182,7 +1204,9 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
           it,
           it.copyWith(
             state: JobState.failed,
-            detail: currentL10n().jobDetailParseFailed,
+            detail: audioPrepared
+                ? currentL10n().jobDetailParseFailed
+                : currentL10n().jobDetailAudioConversionFailed,
             error: [
               if (_engineErrorText.isNotEmpty) _engineErrorText,
               '$err',
@@ -1412,7 +1436,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     // за безымянным whisper-cli, и чей он — не понять.
     final proc = await Process.start(runnableEngine(exe, processName)!, args);
     _proc = proc;
-    Log.info('Queue', 'Recognizer process launched: PID=${proc.pid} ($processName)');
+    Log.info(
+      'Queue',
+      'Recognizer process launched: PID=${proc.pid} ($processName)',
+    );
     // Номер на диск: обычное «Завершить» до Dart не доходит, и погасить
     // движок вместе с приложением может только родная сторона — а найти
     // его она может лишь по этой записи.
@@ -1440,15 +1467,14 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     // текст в «РџСЂРёРІРµС‚». При этом ошибки CRT могут приходить в stderr
     // в CP1251. [resilientLineDecoder] декодирует UTF-8, а при невалидных
     // байтах откатывается к systemEncoding.
-    final out = proc.stdout
-        .transform(resilientLineDecoder())
-        .listen(onLine);
-    final err = proc.stderr
-        .transform(resilientLineDecoder())
-        .listen(onLine);
+    final out = proc.stdout.transform(resilientLineDecoder()).listen(onLine);
+    final err = proc.stderr.transform(resilientLineDecoder()).listen(onLine);
     try {
       final exitCode = await proc.exitCode;
-      Log.info('Queue', 'Recognizer process PID=${proc.pid} exited with code $exitCode');
+      Log.info(
+        'Queue',
+        'Recognizer process PID=${proc.pid} exited with code $exitCode',
+      );
       return exitCode;
     } finally {
       watch.cancel();
@@ -1468,7 +1494,10 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       );
     }
     if (e.progress != null) {
-      Log.debug('Queue', 'Progress for ${job.name}: ${(e.progress! * 100).toStringAsFixed(1)}%');
+      Log.debug(
+        'Queue',
+        'Progress for ${job.name}: ${(e.progress! * 100).toStringAsFixed(1)}%',
+      );
       return emit(_replace(state, job, job.copyWith(progress: e.progress)));
     }
     if (e.language != null) {
@@ -1918,7 +1947,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     final selectedModel = s['model'] as String?;
     final models = findModels();
     _vocabulary = loadAndMigrateVocabulary(s);
-    _commandsEnabled = (s[vocabularyTranscriberEnabledSetting] as bool?) ??
+    _commandsEnabled =
+        (s[vocabularyTranscriberEnabledSetting] as bool?) ??
         (s[transcriberCommandsEnabledSetting] as bool?) ??
         true;
     final formats = (s['libraryFormats'] as List?)

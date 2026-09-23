@@ -138,7 +138,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('текстовые действия идут перед значками папок в заданном порядке',
+  testWidgets('значки папок стоят над открытием, настройками и выходом',
       (tester) async {
     await pumpPanel(tester);
     final quit = find.text('Завершить tsukiko');
@@ -150,10 +150,9 @@ void main() {
     expect(quit, findsOneWidget);
     expect(open, findsOneWidget);
     expect(settings, findsOneWidget);
-    expect(tester.getTopLeft(quit).dy, lessThan(tester.getTopLeft(open).dy));
+    expect(tester.getTopLeft(folders).dy, lessThan(tester.getTopLeft(open).dy));
     expect(tester.getTopLeft(open).dy, lessThan(tester.getTopLeft(settings).dy));
-    expect(tester.getTopLeft(settings).dy,
-        lessThan(tester.getTopLeft(folders).dy));
+    expect(tester.getTopLeft(settings).dy, lessThan(tester.getTopLeft(quit).dy));
   });
 
   testWidgets('меню поповера содержит пункты открытия папок на английском языке', (
