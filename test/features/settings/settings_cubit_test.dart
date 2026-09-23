@@ -116,6 +116,7 @@ void main() {
           return false;
         },
       );
+      await settle();
       await native.sendCaptured(const Hotkey([], keys: ['y']));
       await declined;
 
@@ -126,10 +127,22 @@ void main() {
         'hold',
         confirmExclusive: (_) async => true,
       );
+      await settle();
       await native.sendCaptured(const Hotkey(['leftctrl']));
       await accepted;
 
       expect(cubit.state.hold.mods, ['leftctrl']);
+    });
+
+    test('без универсального доступа назначение сразу объясняет причину', () async {
+      if (!Platform.isMacOS) return;
+      native.permitted = false;
+      await cubit.reassign('hold');
+
+      expect(native.calls, isNot(contains('capture')));
+      expect(native.calls, contains('requestPermission'));
+      expect(cubit.state.allowed, isFalse);
+      expect(cubit.state.problem, contains('Универсальный доступ'));
     });
   });
 

@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../../core/app_locale.dart';
+import '../../core/labels.dart';
 import '../../core/library.dart';
 import '../../core/logger.dart';
 import '../../core/models.dart';
@@ -233,6 +234,15 @@ class SettingsCubit extends Cubit<SettingsState> {
     String id, {
     Future<bool> Function(Hotkey hotkey)? confirmExclusive,
   }) async {
+    if (os.needsAccessibilityPermission && !await bridge.permission()) {
+      _denied = 3;
+      _emit(state.copyWith(
+        allowed: false,
+        problem: currentL10n().permissionMissing(os.accessibilityName, appName),
+      ));
+      await bridge.requestPermission();
+      return;
+    }
     final hk = await bridge.capture();
     if (hk == null) return;
     final taken = {
