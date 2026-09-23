@@ -18,14 +18,19 @@ cd "$(dirname "$0")/.."
 APP=build/macos/Build/Products/Release/tsukiko.app
 # Строка «0 valid identities found» — итог, а не сертификат. Прежний awk
 # принимал слово `valid` за его идентификатор, и codesign закономерно падал.
-ID=$(security find-identity -v -p codesigning |
-  awk '/^[[:space:]]*[0-9]+\)/ {print $2; exit}')
+if [ -n "$TSUKIKO_SIGNING_KEYCHAIN" ]; then
+  ID=$(security find-identity -v -p codesigning "$TSUKIKO_SIGNING_KEYCHAIN" |
+    awk '/^[[:space:]]*[0-9]+\)/ {print $2; exit}')
+else
+  ID=$(security find-identity -v -p codesigning |
+    awk '/^[[:space:]]*[0-9]+\)/ {print $2; exit}')
+fi
 if [ -z "$ID" ]; then
-  if [ -n "$CI" ] || [ -n "$TSUKIKO_ADHOC_SIGN" ]; then
-    echo "Нет сертификата разработчика в связке ключей. Используется ad-hoc подпись (-)."
+  if [ -n "$TSUKIKO_ADHOC_SIGN" ] && [ -z "$CI" ]; then
+    echo "Локальная тестовая сборка: ad-hoc подпись (-)."
     ID="-"
   else
-    echo "Нет сертификата для подписи кода. Xcode → Settings → Accounts." >&2
+    echo "Нет сертификата для постоянной подписи. Сборка с ad-hoc подписью потеряет разрешение «Универсальный доступ» после обновления." >&2
     exit 1
   fi
 fi
@@ -161,4 +166,15 @@ find "$APP/Contents/Helpers" -type f \( -perm -111 -o -name '*.dylib' \) -print0
   xargs -0 -I{} codesign --force --sign "$ID" "$STAMP" {}
 codesign --force --sign "$ID" "$STAMP" \
   --entitlements macos/Runner/Release.entitlements "$APP"
+codesign --verify --deep --strict "$APP"
+SIGN_DETAILS=$(codesign -dv "$APP" 2>&1)
+if [ -n "$CI" ] && printf '%s\n' "$SIGN_DETAILS" | grep -q 'Signature=adhoc'; then
+  echo "Официальная macOS-сборка не может иметь ad-hoc подпись." >&2
+  exit 1
+fi
+if [ -n "$TSUKIKO_EXPECTED_TEAM" ] &&
+  ! printf '%s\n' "$SIGN_DETAILS" | grep -q "TeamIdentifier=$TSUKIKO_EXPECTED_TEAM"; then
+  echo "Приложение подписано сертификатом другой команды Apple." >&2
+  exit 1
+fi
 codesign -dv "$APP" 2>&1 | grep -E 'Authority|TeamIdentifier|Signature' || true

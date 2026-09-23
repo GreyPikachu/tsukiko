@@ -114,6 +114,31 @@ jobs:
         id: app
         run: set -o pipefail; flutter build macos --release 2>&1 | tee logs/build.txt
 
+      - name: Импорт сертификата для постоянной подписи
+        env:
+          SIGNING_CERT: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_CERT" ] || [ -z "$SIGNING_PASSWORD" ]; then
+            echo "Нет MACOS_SIGNING_P12_BASE64 или MACOS_SIGNING_P12_PASSWORD: выпуск без постоянной подписи запрещён." >&2
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/tsukiko-signing.keychain-db"
+          password="$(openssl rand -hex 24)"
+          certificate="$RUNNER_TEMP/tsukiko-signing.p12"
+          printf '%s' "$SIGNING_CERT" | base64 -D > "$certificate"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$SIGNING_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -s "$keychain"
+          security find-identity -v -p codesigning "$keychain" | grep -q 'Apple Development'
+          rm -f "$certificate"
+          echo "TSUKIKO_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "TSUKIKO_EXPECTED_TEAM=YOUR_TEAM_ID" >> "$GITHUB_ENV"
+
       - name: Подпись и вложенные программы
         id: sign
         run: set -o pipefail; ./tool/sign.sh 2>&1 | tee logs/sign.txt
