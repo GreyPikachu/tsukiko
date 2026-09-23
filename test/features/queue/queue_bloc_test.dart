@@ -765,12 +765,29 @@ void main() {
   });
 
   group('подсказка и замены', () {
+    test('старая подсказка переносится в общий словарь без дублей', () async {
+      await Settings.save({
+        'prompt': 'tsukiko, TypeScript',
+        'vocabulary': [
+          {'id': 'existing', 'phrase': 'tsukiko', 'replacement': '', 'isPriority': true},
+        ],
+      });
+      final bloc = make();
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(bloc.state.shown.prompt, isEmpty);
+      expect(bloc.state.vocabulary.where((item) => item.phrase == 'tsukiko'), hasLength(1));
+      expect(bloc.state.vocabulary.any((item) => item.phrase == 'TypeScript'), isTrue);
+      expect(Settings.load()['transcriberPromptMigratedToVocabulary'], isTrue);
+      await bloc.close();
+    });
+
     blocTest<QueueBloc, QueueState>(
-      'слово добавляется в подсказку модели',
+      'слово добавляется в общий словарь и подсказку модели',
       build: make,
       act: (b) => b.add(const VocabularyReplacementAdded(phrase: 'KubeJS')),
       verify: (b) {
-        expect(b.state.shown.prompt, contains('KubeJS'));
+        expect(b.state.vocabulary.any((v) => v.phrase == 'KubeJS' && v.isPriority), isTrue);
+        expect(b.state.shown.prompt, isEmpty);
         expect(b.state.status, contains('KubeJS'));
       },
     );

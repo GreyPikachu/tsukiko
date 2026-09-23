@@ -14,6 +14,83 @@
 
 namespace {
 
+// Свой OLE target нужен, чтобы видеть начало перетаскивания. WM_DROPFILES
+// сообщает только о завершённом drop, поэтому анимация Flutter не появлялась.
+// Путь читаем через Unicode API и выделяем буфер по реальной длине.
+class FileDropTarget final : public IDropTarget {
+ public:
+  explicit FileDropTarget(flutter::MethodChannel<flutter::EncodableValue>* channel)
+      : channel_(channel) {}
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override {
+    if (iid != IID_IUnknown && iid != IID_IDropTarget) {
+      *object = nullptr;
+      return E_NOINTERFACE;
+    }
+    *object = static_cast<IDropTarget*>(this);
+    AddRef();
+    return S_OK;
+  }
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++refs_; }
+  ULONG STDMETHODCALLTYPE Release() override {
+    const ULONG left = --refs_;
+    if (left == 0) delete this;
+    return left;
+  }
+
+  HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD, POINTL,
+                                      DWORD* effect) override {
+    FORMATETC format{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+    accepts_ = data && data->QueryGetData(&format) == S_OK;
+    *effect = accepts_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+    if (accepts_) Notify("fileDragEntered");
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE DragOver(DWORD, POINTL, DWORD* effect) override {
+    *effect = accepts_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE DragLeave() override {
+    if (accepts_) Notify("fileDragExited");
+    accepts_ = false;
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE Drop(IDataObject* data, DWORD, POINTL,
+                                DWORD* effect) override {
+    *effect = DROPEFFECT_NONE;
+    if (!accepts_ || !data) return S_OK;
+    Notify("fileDragExited");
+    accepts_ = false;
+    FORMATETC format{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+    STGMEDIUM medium{};
+    if (data->GetData(&format, &medium) != S_OK) return S_OK;
+    flutter::EncodableList paths;
+    HDROP drop = reinterpret_cast<HDROP>(medium.hGlobal);
+    const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+    for (UINT i = 0; i < count; ++i) {
+      const UINT length = DragQueryFileW(drop, i, nullptr, 0);
+      std::wstring path(length + 1, L'\0');
+      DragQueryFileW(drop, i, path.data(), length + 1);
+      paths.emplace_back(Utf8FromUtf16(path.c_str()));
+    }
+    ReleaseStgMedium(&medium);
+    if (!paths.empty()) {
+      *effect = DROPEFFECT_COPY;
+      channel_->InvokeMethod(
+          "filesDropped", std::make_unique<flutter::EncodableValue>(paths));
+    }
+    return S_OK;
+  }
+
+ private:
+  void Notify(const char* method) {
+    channel_->InvokeMethod(method, std::make_unique<flutter::EncodableValue>());
+  }
+  flutter::MethodChannel<flutter::EncodableValue>* channel_;
+  ULONG refs_ = 1;
+  bool accepts_ = false;
+};
+
 flutter::EncodableList PickAudioFiles(HWND owner, DWORD* error) {
   std::wstring buffer(65536, L'\0');
   // GetOpenFileNameW uses a double-NUL-terminated filter list.
@@ -100,13 +177,18 @@ bool FlutterWindow::OnCreate() {
     panel_ = nullptr;
   }
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
-  // Use the shell's WM_DROPFILES path for the main window, independently of
-  // desktop_drop's OLE target. Other Flutter engines keep their plugins.
+  // desktop_drop's Windows OLE target uses a fixed MAX_PATH buffer. Replace
+  // only this view's target with one that reports hover and reads full paths.
   file_drop_window_ = flutter_controller_->view()->GetNativeWindow();
   RevokeDragDrop(file_drop_window_);
-  SetWindowSubclass(file_drop_window_, FileDropProc, 1,
-                    reinterpret_cast<DWORD_PTR>(this));
-  DragAcceptFiles(file_drop_window_, TRUE);
+  file_drop_target_ = new FileDropTarget(file_input_.get());
+  if (RegisterDragDrop(file_drop_window_, file_drop_target_) != S_OK) {
+    file_drop_target_->Release();
+    file_drop_target_ = nullptr;
+    SetWindowSubclass(file_drop_window_, FileDropProc, 1,
+                      reinterpret_cast<DWORD_PTR>(this));
+    DragAcceptFiles(file_drop_window_, TRUE);
+  }
 
   // Показать окно на первом кадре — и только на первом.
   //
@@ -138,8 +220,14 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   if (file_drop_window_) {
-    DragAcceptFiles(file_drop_window_, FALSE);
-    RemoveWindowSubclass(file_drop_window_, FileDropProc, 1);
+    if (file_drop_target_) {
+      RevokeDragDrop(file_drop_window_);
+      file_drop_target_->Release();
+      file_drop_target_ = nullptr;
+    } else {
+      DragAcceptFiles(file_drop_window_, FALSE);
+      RemoveWindowSubclass(file_drop_window_, FileDropProc, 1);
+    }
     file_drop_window_ = nullptr;
   }
   file_input_ = nullptr;

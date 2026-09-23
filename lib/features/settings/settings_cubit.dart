@@ -471,16 +471,10 @@ class SettingsCubit extends Cubit<SettingsState> {
   VocabularyItem? get lastDeletedItem => _lastDeletedItem;
 
   void addVocabularyItem(String phrase, [String replacement = '']) {
-    final trimmedPhrase = phrase.trim();
-    if (trimmedPhrase.isEmpty) return;
-    final item = VocabularyItem(
-      id: 'vocab_${DateTime.now().microsecondsSinceEpoch}',
-      phrase: trimmedPhrase,
-      replacement: replacement.trim(),
-      enabled: true,
-      createdAt: DateTime.now(),
+    if (phrase.trim().isEmpty) return;
+    _saveVocabulary(
+      upsertVocabulary(state.vocabulary, phrase, replacement: replacement),
     );
-    _saveVocabulary([...state.vocabulary, item]);
   }
 
   void updateVocabularyItem(int index, VocabularyItem item) {
@@ -505,15 +499,17 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   void setAllVocabularyEnabled(bool enabled) {
     if (state.vocabulary.isEmpty) return;
-    final items =
-        state.vocabulary.map((i) => i.copyWith(enabled: enabled)).toList();
+    final items = state.vocabulary
+        .map((i) => i.copyWith(enabled: enabled))
+        .toList();
     _saveVocabulary(items);
   }
 
   void clearAllVocabularyPriorities() {
     if (state.vocabulary.isEmpty) return;
-    final items =
-        state.vocabulary.map((i) => i.copyWith(isPriority: false)).toList();
+    final items = state.vocabulary
+        .map((i) => i.copyWith(isPriority: false))
+        .toList();
     _saveVocabulary(items);
   }
 
@@ -560,12 +556,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         .where((i) => i.isReplacement)
         .map((i) => i.toTextCommand())
         .toList();
-    _emit(
-      state.copyWith(
-        vocabulary: items,
-        textCommands: textCommands,
-      ),
-    );
+    _emit(state.copyWith(vocabulary: items, textCommands: textCommands));
     unawaited(
       _saveApp({
         vocabularySetting: items.map((i) => i.toJson()).toList(),

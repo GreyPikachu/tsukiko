@@ -197,9 +197,12 @@ class MacOs implements Os {
     try {
       final r = await Process.run(
           'afconvert', ['-f', 'WAVE', '-d', 'LEI16@16000', '-c', '1', src, dst]);
-      return (r.exitCode == 0 && File(dst).existsSync()) ? dst : src;
-    } catch (_) {
-      return src;
+      if (r.exitCode != 0 || !File(dst).existsSync()) {
+        throw StateError('afconvert не преобразовал аудио: ${r.stderr}');
+      }
+      return dst;
+    } catch (error) {
+      throw StateError('Не удалось подготовить звук из $src: $error');
     }
   }
 

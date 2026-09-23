@@ -36,8 +36,12 @@ class HudWindow {
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam);
 
+  void ShowReady();
+
   HWND window_ = nullptr;
   std::unique_ptr<flutter::FlutterViewController> controller_;
+  bool first_frame_ready_ = false;
+  bool wanted_visible_ = false;
 };
 
 /// Окно настроек: обычное окно на своём, третьем движке.

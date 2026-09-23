@@ -21,13 +21,14 @@ set -e
 cd "$(dirname "$0")/.."
 
 VERSION=7.1.5
+BUILD_ID="$VERSION-audio2"
 SHA=de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
 
 OUT=windows/Engine
 WORK=build/ffmpeg
 STAMP="$OUT/.ffmpeg-version"
 
-if [ "$1" != "--force" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$VERSION" ] &&
+if [ "$1" != "--force" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$BUILD_ID" ] &&
   [ -f "$OUT/ffmpeg.exe" ]; then
   echo "ffmpeg $VERSION уже собран — $OUT"
   exit 0
@@ -48,7 +49,7 @@ fi
 cd "$SRC"
 # --disable-everything и поимённый список: полный ffmpeg весит под сотню
 # мегабайт и тянет кодеки, которые нам не нужны ни на что.
-[ -f config.h ] || ./configure \
+./configure \
   --disable-everything \
   --disable-network \
   --disable-autodetect \
@@ -59,11 +60,11 @@ cd "$SRC"
   --enable-small \
   --enable-protocol=file \
   --enable-demuxer=wav,ogg,matroska,mov,mp3,flac,aac,aiff,asf,w64 \
-  --enable-decoder=opus,vorbis,aac,mp3,flac,alac,wmav1,wmav2,wmapro,wmalossless,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_u8 \
-  --enable-parser=opus,vorbis,aac,mpegaudio,flac \
+  --enable-decoder=opus,vorbis,aac,mp3,mp2,ac3,eac3,flac,alac,wmav1,wmav2,wmapro,wmalossless,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_u8,pcm_alaw,pcm_mulaw \
+  --enable-parser=opus,vorbis,aac,mpegaudio,ac3,flac \
   --enable-muxer=wav \
   --enable-encoder=pcm_s16le \
-  --enable-filter=aresample,aformat,anull \
+  --enable-filter=abuffer,abuffersink,aresample,aformat,anull \
   --enable-bsf=null
 
 make -j "$(nproc 2>/dev/null || echo 4)"
@@ -72,7 +73,7 @@ cd - >/dev/null
 cp "$SRC/ffmpeg.exe" "$OUT/ffmpeg.exe"
 # LGPL обязывает возить с собой текст лицензии.
 cp "$SRC/COPYING.LGPLv2.1" "$OUT/ffmpeg-LICENSE.txt"
-echo "$VERSION" > "$STAMP"
+echo "$BUILD_ID" > "$STAMP"
 
 ls -la "$OUT/ffmpeg.exe"
 echo "ffmpeg $VERSION собран"

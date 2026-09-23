@@ -267,8 +267,13 @@ HudWindow::~HudWindow() {
 void HudWindow::Show(
     const flutter::DartProject& base,
     const std::function<void(flutter::BinaryMessenger*)>& on_ready) {
+  wanted_visible_ = true;
   Prepare(base, on_ready);
-  if (!window_) return;
+  if (first_frame_ready_) ShowReady();
+}
+
+void HudWindow::ShowReady() {
+  if (!window_ || !wanted_visible_) return;
 
   // Внизу по центру рабочей области — там же, где она стоит на macOS.
   RECT work;
@@ -318,10 +323,18 @@ void HudWindow::Prepare(
     MoveWindow(view, 0, 0, kHudWidth, kHudHeight, TRUE);
     ShowWindow(view, SW_SHOW);
     on_ready(controller_->engine()->messenger());
+    // Первый показ ждёт первый кадр Flutter. Иначе Windows показывает
+    // серую пустую поверхность, пока запускается отдельный движок HUD.
+    controller_->engine()->SetNextFrameCallback([this]() {
+      first_frame_ready_ = true;
+      ShowReady();
+    });
+    controller_->ForceRedraw();
   }
 }
 
 void HudWindow::Hide() {
+  wanted_visible_ = false;
   if (window_) ShowWindow(window_, SW_HIDE);
 }
 

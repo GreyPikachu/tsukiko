@@ -2,6 +2,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/vocabulary.dart';
 
 void main() {
+  test('same word from sidebar and settings stays one shared model hint', () {
+    final first = upsertVocabulary(const [], ' tsukiko ');
+    final second = upsertVocabulary(first, 'TSUKIKO');
+    expect(second, hasLength(1));
+    expect(second.single.isPriority, isTrue);
+    expect(promptWithVocabulary('', second), 'TSUKIKO');
+    final replacement = upsertVocabulary(second, 'tsukiko', replacement: 'Цукико');
+    expect(replacement, hasLength(1));
+    expect(replacement.single.replacement, 'Цукико');
+    expect(replacement.single.isPriority, isFalse);
+    final addedAgain = upsertVocabulary(replacement, 'TSUKIKO');
+    expect(addedAgain, hasLength(1));
+    expect(addedAgain.single.replacement, 'Цукико');
+  });
+
   test('FITU only replaces an explicit standalone trigger', () {
     const fitu = VocabularyItem(
       id: 'fitu', phrase: 'FITU',

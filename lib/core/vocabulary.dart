@@ -134,6 +134,44 @@ List<VocabularyItem> vocabularyFromJson(Object? value) {
   return items;
 }
 
+/// Одна операция добавления для словаря в настройках и в расшифровщике.
+/// Повторное добавление того же слова обновляет запись, а не создаёт дубль.
+List<VocabularyItem> upsertVocabulary(
+  Iterable<VocabularyItem> items,
+  String phrase, {
+  String replacement = '',
+}) {
+  final word = phrase.trim();
+  if (word.isEmpty) return items.toList();
+  final value = replacement.trim();
+  final updated = items.toList();
+  final index = updated.indexWhere(
+    (item) => item.phrase.trim().toLowerCase() == word.toLowerCase(),
+  );
+  if (index >= 0) {
+    final old = updated[index];
+    // Повторное добавление слова как подсказки не должно стирать уже
+    // настроенную для него автозамену.
+    final effectiveReplacement = value.isEmpty ? old.replacement : value;
+    updated[index] = old.copyWith(
+      phrase: word,
+      replacement: effectiveReplacement,
+      enabled: true,
+      isPriority: effectiveReplacement.isEmpty,
+    );
+  } else {
+    updated.add(VocabularyItem(
+      id: 'vocab_${DateTime.now().microsecondsSinceEpoch}',
+      phrase: word,
+      replacement: value,
+      enabled: true,
+      isPriority: value.isEmpty,
+      createdAt: DateTime.now(),
+    ));
+  }
+  return updated;
+}
+
 /// Составляет затравку (conditioning prompt) для модели из базовой подсказки
 /// и активных записей словаря.
 ///

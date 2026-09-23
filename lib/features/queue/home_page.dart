@@ -24,6 +24,7 @@ import '../../core/models.dart';
 import '../../core/recognition.dart';
 import '../../core/text.dart';
 import '../../core/transcript.dart';
+import '../../core/vocabulary.dart';
 import '../../design/design.dart';
 import '../../design/mascot.dart';
 import '../../design/toolbar.dart';
@@ -74,7 +75,6 @@ class _HomeView extends StatefulWidget {
 class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   static const _windowsFileInput = MethodChannel('tsukiko/file_input');
   // Только про окно: очередь, настройки и распознавание живут в блоке.
-  final _promptCtrl = TextEditingController();
   final _searchCtrl = TextEditingController();
   final _searchFocus = FocusNode();
   final _queueFocus = FocusNode(debugLabel: 'очередь');
@@ -85,11 +85,6 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       _scrolled = false,
       _findOpen = false;
   String _query = '';
-
-  /// Подсказка модели правится полем ввода, а приходит из состояния:
-  /// синхронизируем только когда они разошлись, иначе курсор прыгал бы
-  /// на каждую букву.
-  String _promptShown = '';
 
   QueueBloc get _bloc => context.read<QueueBloc>();
   AppLocalizations get l10n => AppLocalizations.of(context);
@@ -111,18 +106,19 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     super.initState();
     if (Platform.isWindows) {
       _windowsFileInput.setMethodCallHandler((call) async {
-        if (call.method != 'filesDropped') return;
-        final paths = (call.arguments as List).whereType<String>();
-        if (mounted && paths.isNotEmpty) _send(FilesAdded(paths));
+        if (!mounted) return;
+        if (call.method == 'fileDragEntered') {
+          setState(() => _dragging = true);
+        } else if (call.method == 'fileDragExited') {
+          setState(() => _dragging = false);
+        } else if (call.method == 'filesDropped') {
+          setState(() => _dragging = false);
+          final paths = (call.arguments as List).whereType<String>();
+          if (paths.isNotEmpty) _send(FilesAdded(paths));
+        }
       });
     }
     WidgetsBinding.instance.addObserver(this);
-    // Первое состояние приходит мимо listener'а: BlocConsumer зовёт его
-    // только на переменах, а самая первая перемена — это уже вторая. Без
-    // этой строки поле подсказки после запуска стояло пустым, хотя сама
-    // подсказка была прочитана с диска и жила в состоянии: человек видел
-    // пустоту и решал, что настройка слетела.
-    _syncPromptField(_bloc.state);
     _transcriptScroll.addListener(() {
       final scrolled =
           _transcriptScroll.hasClients && _transcriptScroll.offset > 6;
@@ -141,24 +137,11 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   void dispose() {
     if (Platform.isWindows) _windowsFileInput.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
-    _promptCtrl.dispose();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     _queueFocus.dispose();
     _transcriptScroll.dispose();
     super.dispose();
-  }
-
-  /// Поле подсказки следует за выбранной записью, но не мешает набору.
-  void _syncPromptField(QueueState s) {
-    final text = s.shown.prompt;
-    if (text == _promptShown) return;
-    _promptShown = text;
-    if (_promptCtrl.text == text) return;
-    _promptCtrl.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
   }
 
   /// Догон хвоста уже назначен на ближайший кадр.
@@ -737,10 +720,8 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     return BlocConsumer<QueueBloc, QueueState>(
       listenWhen: (was, now) =>
           was.ask != now.ask ||
-          was.shown.prompt != now.shown.prompt ||
           (was.lead?.live.length ?? 0) != (now.lead?.live.length ?? 0),
       listener: (context, s) {
-        _syncPromptField(s);
         // Новый фрагмент — держимся хвоста, пока человек сам не отлистал.
         if ((s.lead?.live.length ?? 0) > 0) _followTail();
         final ask = s.ask;
@@ -1777,7 +1758,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         ),
         Hint(l10n.hintThreads),
         ModelPromptSection(
-          prompt: o.prompt,
+          prompt: promptWithVocabulary('', s.vocabulary),
           onOpenVocabularySettings: () => _openSettings('vocabulary'),
           onAddPromptWord: (word) =>
               _send(VocabularyReplacementAdded(phrase: word)),
