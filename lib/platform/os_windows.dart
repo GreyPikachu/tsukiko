@@ -461,7 +461,7 @@ class WindowsOs implements Os {
   @override
   Future<List<ProcListing>> listProcesses() async {
     try {
-      final r = await Process.run('powershell', [
+      final proc = await Process.start('powershell', [
         '-NoProfile',
         '-NonInteractive',
         '-Command',
@@ -470,8 +470,23 @@ class WindowsOs implements Os {
         r'Get-CimInstance Win32_Process | ForEach-Object { '
             r'"$($_.ProcessId)|$([int]($_.WorkingSetSize/1024))|$($_.CommandLine)" }',
       ]);
+      final lines = proc.stdout
+          .transform(systemEncoding.decoder)
+          .transform(const LineSplitter())
+          .toList();
+      final errors = proc.stderr.drain<void>();
+      final code = await proc.exitCode.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          proc.kill();
+          return -1;
+        },
+      );
+      final output = await lines;
+      await errors;
+      if (code != 0) return const [];
       final out = <ProcListing>[];
-      for (final line in const LineSplitter().convert(r.stdout as String)) {
+      for (final line in output) {
         final at = line.indexOf('|');
         if (at < 0) continue;
         final rest = line.indexOf('|', at + 1);
