@@ -30,7 +30,7 @@ const _punctuationPrimerEn =
     'question and exclamation marks, and a capital letter at the start of '
     'every sentence.';
 
-const _cyrillicLangs = {'auto', 'ru', 'be', 'uk', 'kk'};
+const _cyrillicLangs = {'ru', 'be', 'uk', 'kk'};
 
 String punctuationPrimer(String lang) =>
     _cyrillicLangs.contains(lang) ? _punctuationPrimerRu : _punctuationPrimerEn;
@@ -115,7 +115,7 @@ class RunOptions {
   /// Своя подсказка важнее: она уже задаёт модели и стиль, и словарь.
   String get effectivePrompt => prompt.trim().isNotEmpty
       ? prompt.trim()
-      : punctuate
+      : punctuate && lang != 'auto'
           ? punctuationPrimer(lang)
           : '';
 }

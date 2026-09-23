@@ -42,19 +42,22 @@ class ModelPromptSection extends StatefulWidget {
   const ModelPromptSection({
     super.key,
     required this.prompt,
+    this.vocabularyCount,
     required this.onOpenVocabularySettings,
     required this.onAddPromptWord,
     required this.onAddReplacement,
   });
 
   final String prompt;
+  final int? vocabularyCount;
   final VoidCallback onOpenVocabularySettings;
   final ValueChanged<String> onAddPromptWord;
   final void Function({
     required String phrase,
     required String replacement,
     bool removeFromPrompt,
-  }) onAddReplacement;
+  })
+  onAddReplacement;
 
   @override
   State<ModelPromptSection> createState() => _ModelPromptSectionState();
@@ -109,8 +112,8 @@ class _ModelPromptSectionState extends State<ModelPromptSection> {
 
   @override
   Widget build(BuildContext context) {
-    final terms = parsePromptTerms(widget.prompt);
-    final count = terms.length;
+    final count =
+        widget.vocabularyCount ?? parsePromptTerms(widget.prompt).length;
     final tokens = estimatePromptTokens(widget.prompt);
 
     return Column(
@@ -126,9 +129,7 @@ class _ModelPromptSectionState extends State<ModelPromptSection> {
         ],
         const SizedBox(height: Gap.hint),
         Hint(
-          _replacementMode
-              ? l10n.hintVocabularyScope
-              : l10n.hintPromptHelps,
+          _replacementMode ? l10n.hintVocabularyScope : l10n.hintPromptHelps,
         ),
       ],
     );
@@ -153,8 +154,8 @@ class _ModelPromptSectionState extends State<ModelPromptSection> {
             color: _cardHovered
                 ? Surface.hover(context)
                 : (Surface.isDark(context)
-                    ? const Color(0x0FFFFFFF)
-                    : const Color(0x08000000)),
+                      ? const Color(0x0FFFFFFF)
+                      : const Color(0x08000000)),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: _cardHovered
@@ -234,7 +235,9 @@ class _ModelPromptSectionState extends State<ModelPromptSection> {
             icon: MacosIcon(
               CupertinoIcons.arrow_right_arrow_left,
               size: 14,
-              color: _replacementMode ? primary : Surface.secondaryText(context),
+              color: _replacementMode
+                  ? primary
+                  : Surface.secondaryText(context),
             ),
             onPressed: () {
               setState(() => _replacementMode = !_replacementMode);

@@ -125,11 +125,11 @@ void main() {
   });
 
   group('Cross-Lingual Test Vectors (FUZZY_MATCHING_SPEC Section 7.1)', () {
-    test('Vector 1: юскейс -> Use Case (Cross-script phonetic skeleton match)', () {
+    test('Vector 1: explicit pronunciation avoids a weak cross-script guess', () {
       final items = [
         const VocabularyItem(
           id: 'v1',
-          phrase: 'use case',
+          phrase: 'юскейс',
           replacement: 'Use Case',
         ),
       ];
@@ -280,7 +280,7 @@ void main() {
       ];
       final res = applyVocabularyReplacements('Er ist ein Überflieger.', items);
       expect(res.text, 'Er ist ein Überflieger.');
-      expect(res.replacements.first.original, 'Überflieger');
+      expect(res.replacements, isEmpty);
     });
   });
 
@@ -312,7 +312,7 @@ void main() {
         ),
         const VocabularyItem(
           id: 'rep2',
-          phrase: 'use case',
+          phrase: 'юскейс',
           replacement: 'Use Case',
         ),
       ];
@@ -513,20 +513,18 @@ void main() {
       expect(result.replacements.length, 5);
     });
 
-    test('Russian grammatical inflection invariance for loanwords', () {
+    test('inflected words need explicit rules rather than lossy skeletons', () {
       final items = [
         const VocabularyItem(id: 'inf1', phrase: 'use case', replacement: 'Use Case'),
       ];
 
-      // Plural: "юскейсы" produces IPNF 'uskys', matching "use case" -> 'uskys'
       final resPlural = applyVocabularyReplacements('Это новые юскейсы для системы.', items);
-      expect(resPlural.text, 'Это новые Use Case для системы.');
-      expect(resPlural.replacements.single.original, 'юскейсы');
+      expect(resPlural.text, 'Это новые юскейсы для системы.');
+      expect(resPlural.replacements, isEmpty);
 
-      // Genitive: "юскейса" produces IPNF 'uskys'
       final resGen = applyVocabularyReplacements('У нас нет такого юскейса.', items);
-      expect(resGen.text, 'У нас нет такого Use Case.');
-      expect(resGen.replacements.single.original, 'юскейса');
+      expect(resGen.text, 'У нас нет такого юскейса.');
+      expect(resGen.replacements, isEmpty);
     });
   });
 

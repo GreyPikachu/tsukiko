@@ -1759,6 +1759,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         Hint(l10n.hintThreads),
         ModelPromptSection(
           prompt: promptWithVocabulary('', s.vocabulary),
+          vocabularyCount: s.vocabulary.length,
           onOpenVocabularySettings: () => _openSettings('vocabulary'),
           onAddPromptWord: (word) =>
               _send(VocabularyReplacementAdded(phrase: word)),

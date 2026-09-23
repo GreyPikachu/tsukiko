@@ -48,7 +48,7 @@ void main() {
       Future<void>.delayed(const Duration(milliseconds: 20));
 
   group('запись', () {
-    test('фраза команды передаётся модели вместе с подсказкой', () async {
+    test('старая команда не перегружает модель подсказкой', () async {
       await Settings.save({
         textCommandsSetting: [
           const TextCommand('адрес офиса', 'Минск').toJson(),
@@ -57,7 +57,7 @@ void main() {
       });
       await cubit.reloadSettingsForTesting();
 
-      expect(cubit.optionsForTesting.effectivePrompt, contains('адрес офиса'));
+      expect(cubit.optionsForTesting.effectivePrompt, isNot(contains('адрес офиса')));
     });
 
     test('начинается и переходит в распознавание', () async {

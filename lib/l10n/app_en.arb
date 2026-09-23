@@ -31,9 +31,9 @@
   "threadsCount": "{count, plural, one{{count} thread} other{{count} threads}}",
   "hintThreads": "Threads speed up CPU recognition. More is not always faster: excess threads compete for CPU and memory; NeMo manages parallelism itself.",
   "checkPunctuate": "Add punctuation",
-  "fieldModelPrompt": "Model prompt",
+  "fieldModelPrompt": "Recognition vocabulary",
   "placeholderPromptExample": "Names, terms, titles",
-  "hintPromptHelps": "Words from the prompt are transcribed more accurately.",
+  "hintPromptHelps": "The vocabulary corrects recognized words. Star a rare term to also send it to the model.",
   "sectionModelInMemory": "Dictation model in memory",
   "fieldKeepModel": "Keep the model loaded",
   "duration30s": "30 seconds",
@@ -606,7 +606,7 @@
   "sectionAddVocabulary": "Add to vocabulary",
   "placeholderVocabularyPhrase": "What to say or recognize",
   "placeholderVocabularyReplacement": "Replacement (optional)",
-  "hintVocabularyReplacementOptional": "Leave replacement empty to simply teach the model a rare word or name.",
+  "hintVocabularyReplacementOptional": "Leave replacement empty to correct the spelling of a recognized term. A star also sends it to the model.",
   "buttonAddVocabulary": "Add",
   "sectionVocabularyItems": "Vocabulary entries",
   "placeholderSearchVocabulary": "Search phrase or replacement…",
@@ -641,7 +641,7 @@
       }
     }
   },
-  "promptBudgetPriorityHint": "Star (★) words to send them directly into the neural acoustic prompt. All other words are replaced during post-processing with no token limits.",
+  "promptBudgetPriorityHint": "The vocabulary corrects text after recognition. Star (★) only rare words the model otherwise misses: prompting can introduce false words.",
   "promptBudgetWarning": "Vocabulary is very large: model may ignore trailing entries",
   "vocabularySummaryTitle": "Vocabulary & Replacements",
   "vocabularySummaryStatus": "{count, plural, one{{count} entry} other{{count} entries}} ({hints} hints, {replacements} replacements)",
@@ -666,7 +666,7 @@
   "actionEnableAllVocabulary": "Enable All Entries",
   "actionDisableAllVocabulary": "Pause All Entries",
   "actionClearAllPriorities": "Clear All Starred (★)",
-  "statusWordAddedToPrompt": "Word \"{word}\" added to prompt",
+  "statusWordAddedToPrompt": "Word \"{word}\" added to vocabulary",
   "@statusWordAddedToPrompt": {
     "placeholders": {
       "word": {
@@ -685,7 +685,7 @@
       }
     }
   },
-  "buttonEditPrompt": "Model prompt…",
+  "buttonEditPrompt": "Shared vocabulary…",
   "buttonEditPromptSubtitle": "{count, plural, zero{Empty · click to configure} one{{count} word} other{{count} words}}",
   "@buttonEditPromptSubtitle": {
     "placeholders": {

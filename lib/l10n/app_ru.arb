@@ -38,9 +38,9 @@
   },
   "hintThreads": "Потоки ускоряют CPU-часть распознавания. Больше не всегда быстрее: лишние потоки конкурируют за процессор и память; NeMo выбирает параллелизм сам.",
   "checkPunctuate": "Ставить знаки препинания",
-  "fieldModelPrompt": "Подсказка модели",
+  "fieldModelPrompt": "Словарь распознавания",
   "placeholderPromptExample": "Имена, термины, названия",
-  "hintPromptHelps": "Слова из подсказки модель пишет правильнее.",
+  "hintPromptHelps": "Словарь исправляет распознанные слова. Звёздочка отдельно передаёт редкий термин модели.",
   "sectionModelInMemory": "Модель диктовки в памяти",
   "fieldKeepModel": "Держать модель",
   "duration30s": "30 секунд",
@@ -1448,7 +1448,7 @@
   "sectionAddVocabulary": "Добавить в словарь",
   "placeholderVocabularyPhrase": "Что сказать или распознать",
   "placeholderVocabularyReplacement": "Замена (необязательно)",
-  "hintVocabularyReplacementOptional": "Оставьте замену пустой, чтобы просто научить модель редкому слову или термину.",
+  "hintVocabularyReplacementOptional": "Оставьте замену пустой, чтобы исправлять написание распознанного термина. Звёздочка дополнительно передаёт его модели.",
   "buttonAddVocabulary": "Добавить",
   "sectionVocabularyItems": "Записи словаря",
   "placeholderSearchVocabulary": "Найти слово или замену…",
@@ -1484,7 +1484,7 @@
       }
     }
   },
-  "promptBudgetPriorityHint": "Отметьте звёздочкой (★) слова, которые нужно передавать напрямую в акустический контекст нейросети. Остальные слова заменяются на постпроцессинге без ограничений по токенам.",
+  "promptBudgetPriorityHint": "Словарь исправляет текст после распознавания. Звёздочку (★) включайте только для редких слов, которые модель иначе не распознаёт: подсказка может вызывать ложные слова.",
   "promptBudgetWarning": "Словарь слишком велик: модель может игнорировать слова в конце",
   "vocabularySummaryTitle": "Словарь и замены",
   "vocabularySummaryStatus": "{count, plural, one{{count} запись} few{{count} записи} many{{count} записей} other{{count} записей}} ({hints} подсказок, {replacements} замен)",
@@ -1509,7 +1509,7 @@
   "actionEnableAllVocabulary": "Включить все записи",
   "actionDisableAllVocabulary": "Приостановить все записи",
   "actionClearAllPriorities": "Снять все звёздочки (★)",
-  "statusWordAddedToPrompt": "Слово «{word}» добавлено в подсказку",
+  "statusWordAddedToPrompt": "Слово «{word}» добавлено в словарь",
   "@statusWordAddedToPrompt": {
     "placeholders": {
       "word": {
@@ -1528,7 +1528,7 @@
       }
     }
   },
-  "buttonEditPrompt": "Подсказка модели…",
+  "buttonEditPrompt": "Общий словарь…",
   "buttonEditPromptSubtitle": "{count, plural, zero{Пусто · нажать для настройки} one{{count} слово} few{{count} слова} many{{count} слов} other{{count} слов}}",
   "@buttonEditPromptSubtitle": {
     "placeholders": {

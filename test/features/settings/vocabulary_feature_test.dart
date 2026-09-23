@@ -885,7 +885,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('Token budget indicator displays count and warning when exceeding 200 tokens', (
+    testWidgets('Token budget indicator warns beyond the conservative limit', (
       tester,
     ) async {
       await tester.binding.setSurfaceSize(const Size(580, 1400));
@@ -906,7 +906,7 @@ void main() {
       await tester.pumpWidget(buildTestApp(cubitSmall));
       await tester.pump();
 
-      expect(find.textContaining('из 220 токенов'), findsOneWidget);
+      expect(find.textContaining('из 160 токенов'), findsOneWidget);
       expect(
         find.text(
           'Словарь превышает рекомендуемый лимит. Часть подсказок может не попасть в окно контекста модели.',
@@ -916,7 +916,7 @@ void main() {
 
       await tester.pumpWidget(const SizedBox());
 
-      // Over-budget vocabulary (> 200 tokens)
+      // Over-budget vocabulary (> 160 estimated tokens)
       final heavyItems = [
         VocabularyItem(id: '1', phrase: 'Термин' * 40, isPriority: true),
         VocabularyItem(id: '2', phrase: 'Определение' * 40, isPriority: true),

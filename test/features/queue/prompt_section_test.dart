@@ -55,7 +55,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Подсказка модели…'), findsOneWidget);
+      expect(find.text('Общий словарь…'), findsOneWidget);
       expect(find.textContaining('3 слова'), findsOneWidget);
       expect(find.textContaining('ток.'), findsOneWidget);
     });
@@ -78,7 +78,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('Подсказка модели…'));
+      await tester.tap(find.text('Общий словарь…'));
       await tester.pumpAndSettle();
       expect(opened, isTrue);
     });

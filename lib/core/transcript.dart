@@ -284,8 +284,17 @@ class Transcript {
   final List<Segment> segments;
   const Transcript(this.lang, this.segments);
 
-  Transcript applyVocabulary(Iterable<VocabularyItem> items) =>
-      Transcript(lang, segments.map((s) => s.applyVocabulary(items)).toList());
+  Transcript applyVocabulary(Iterable<VocabularyItem> items) {
+    final matcher = VocabularyMatcher(items);
+    return Transcript(
+      lang,
+      segments.map((s) {
+        final result = matcher.apply(s.text);
+        return Segment(s.from, s.to, result.text,
+            replacements: result.replacements);
+      }).toList(),
+    );
+  }
 }
 
 final _segmentLine = RegExp(

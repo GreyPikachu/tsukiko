@@ -283,11 +283,17 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
   bool _windowVisible = true;
 
   List<VocabularyItem> _vocabulary = const [];
+  VocabularyMatcher _vocabularyMatcher = VocabularyMatcher(const []);
+
+  void _setVocabulary(List<VocabularyItem> items) {
+    _vocabulary = items;
+    _vocabularyMatcher = VocabularyMatcher(items);
+  }
   bool _commandsEnabled = true;
 
   void _loadTextCommands() {
     final settings = Settings.load();
-    _vocabulary = loadAndMigrateVocabulary(settings);
+    _setVocabulary(loadAndMigrateVocabulary(settings));
     // Прежняя подсказка расшифровщика была отдельным списком слов.
     // Переносим его в общий словарь и больше не читаем запасную копию.
     final legacyPrompt = state.defaults.prompt.trim();
@@ -301,7 +307,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
             )) {
           continue;
         }
-        _vocabulary = upsertVocabulary(_vocabulary, phrase);
+        _setVocabulary(upsertVocabulary(_vocabulary, phrase));
       }
       add(LegacyPromptMigrated(_vocabulary));
       unawaited(
@@ -321,8 +327,12 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         true;
   }
 
-  Segment _applyCommands(Segment segment) =>
-      _commandsEnabled ? segment.applyVocabulary(_vocabulary) : segment;
+  Segment _applyCommands(Segment segment) {
+    if (!_commandsEnabled) return segment;
+    final result = _vocabularyMatcher.apply(segment.text);
+    return Segment(segment.from, segment.to, result.text,
+        replacements: result.replacements);
+  }
 
   /// Работающий whisper-cli и его временная папка.
   Process? _proc;
@@ -794,7 +804,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       vocabularySetting: updated.map((i) => i.toJson()).toList(),
       textCommandsSetting: textCommands.map((c) => c.toJson()).toList(),
     });
-    _vocabulary = updated;
+    _setVocabulary(updated);
 
     if (e.removeFromPrompt) {
       final currentPrompt = state.shown.prompt;
@@ -1946,7 +1956,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     final s = Settings.load();
     final selectedModel = s['model'] as String?;
     final models = findModels();
-    _vocabulary = loadAndMigrateVocabulary(s);
+    _setVocabulary(loadAndMigrateVocabulary(s));
     _commandsEnabled =
         (s[vocabularyTranscriberEnabledSetting] as bool?) ??
         (s[transcriberCommandsEnabledSetting] as bool?) ??

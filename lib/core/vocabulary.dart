@@ -14,11 +14,11 @@ import 'text_commands.dart';
 const vocabularySetting = 'vocabulary';
 const vocabularyDictationEnabledSetting = 'vocabularyDictationEnabled';
 const vocabularyTranscriberEnabledSetting = 'vocabularyTranscriberEnabled';
+// Whisper reserves at most half its 448-token text context for the initial
+// prompt. Leave room for estimation error and for the model's own context.
+const vocabularyPromptBudget = 160;
 
-enum VocabularyType {
-  hint,
-  replacement,
-}
+enum VocabularyType { hint, replacement }
 
 class VocabularyItem extends Equatable {
   const VocabularyItem({
@@ -65,24 +65,26 @@ class VocabularyItem extends Equatable {
     bool? enabled,
     bool? isPriority,
     DateTime? createdAt,
-  }) =>
-      VocabularyItem(
-        id: id ?? this.id,
-        phrase: phrase ?? this.phrase,
-        replacement: replacement ?? this.replacement,
-        enabled: enabled ?? this.enabled,
-        isPriority: isPriority ?? this.isPriority,
-        createdAt: createdAt ?? this.createdAt,
-      );
+  }) => VocabularyItem(
+    id: id ?? this.id,
+    phrase: phrase ?? this.phrase,
+    replacement: replacement ?? this.replacement,
+    enabled: enabled ?? this.enabled,
+    isPriority: isPriority ?? this.isPriority,
+    createdAt: createdAt ?? this.createdAt,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'phrase': phrase,
-        'replacement': replacement,
-        'enabled': enabled,
-        'isPriority': isPriority,
-        if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
-      };
+    'id': id,
+    'phrase': phrase,
+    'replacement': replacement,
+    'enabled': enabled,
+    'isPriority': isPriority,
+    // Older versions starred every newly added hint automatically. Only
+    // an explicit star in the new format may bias the decoder.
+    'priorityExplicit': isPriority,
+    if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+  };
 
   static VocabularyItem? fromJson(Object? value) {
     if (value is! Map) return null;
@@ -91,10 +93,12 @@ class VocabularyItem extends Equatable {
     final id = value['id'] as String? ?? phrase.trim().toLowerCase();
     final replacement = (value['replacement'] as String?) ?? '';
     final enabled = (value['enabled'] as bool?) ?? true;
-    final isPriority = (value['isPriority'] as bool?) ?? false;
+    final isPriority =
+        value['priorityExplicit'] == true && value['isPriority'] == true;
     final createdAtStr = value['createdAt'] as String?;
-    final createdAt =
-        createdAtStr != null ? DateTime.tryParse(createdAtStr) : null;
+    final createdAt = createdAtStr != null
+        ? DateTime.tryParse(createdAtStr)
+        : null;
 
     return VocabularyItem(
       id: id,
@@ -119,8 +123,14 @@ class VocabularyItem extends Equatable {
       );
 
   @override
-  List<Object?> get props =>
-      [id, phrase, replacement, enabled, isPriority, createdAt];
+  List<Object?> get props => [
+    id,
+    phrase,
+    replacement,
+    enabled,
+    isPriority,
+    createdAt,
+  ];
 }
 
 /// Разбор списка элементов словаря из JSON.
@@ -157,17 +167,19 @@ List<VocabularyItem> upsertVocabulary(
       phrase: word,
       replacement: effectiveReplacement,
       enabled: true,
-      isPriority: effectiveReplacement.isEmpty,
+      isPriority: old.isPriority,
     );
   } else {
-    updated.add(VocabularyItem(
-      id: 'vocab_${DateTime.now().microsecondsSinceEpoch}',
-      phrase: word,
-      replacement: value,
-      enabled: true,
-      isPriority: value.isEmpty,
-      createdAt: DateTime.now(),
-    ));
+    updated.add(
+      VocabularyItem(
+        id: 'vocab_${DateTime.now().microsecondsSinceEpoch}',
+        phrase: word,
+        replacement: value,
+        enabled: true,
+        isPriority: false,
+        createdAt: DateTime.now(),
+      ),
+    );
   }
   return updated;
 }
@@ -182,7 +194,7 @@ List<VocabularyItem> upsertVocabulary(
 String promptWithVocabulary(
   String basePrompt,
   Iterable<VocabularyItem> items, {
-  int maxEstimatedTokens = 220,
+  int maxEstimatedTokens = vocabularyPromptBudget,
   bool onlyPriority = true,
 }) {
   final base = basePrompt.trim();
@@ -212,8 +224,8 @@ String promptWithVocabulary(
   final buffer = StringBuffer(base);
   for (final addition in additions) {
     final candidate = buffer.isEmpty ? addition : ', $addition';
-    if ((buffer.length + candidate.length) / 3.8 > maxEstimatedTokens) {
-      break;
+    if (_estimatePromptTokens('$buffer$candidate') > maxEstimatedTokens) {
+      continue;
     }
     if (buffer.isNotEmpty &&
         !RegExp(r'[.!?…,:;]\s*$').hasMatch(buffer.toString())) {
@@ -240,7 +252,17 @@ int estimateVocabularyTokens(
     onlyPriority: onlyPriority,
   );
   if (prompt.isEmpty) return 0;
-  return (prompt.length / 3.8).ceil();
+  return _estimatePromptTokens(prompt);
+}
+
+int _estimatePromptTokens(String prompt) {
+  var weight = 0.0;
+  for (final rune in prompt.runes) {
+    // Cyrillic and other non-ASCII scripts usually consume substantially
+    // more Whisper tokens per character than English prose.
+    weight += rune < 128 ? 1 / 3 : 2 / 3;
+  }
+  return weight.ceil();
 }
 
 final _vocabWordCharacter = RegExp(r'[\p{L}\p{N}_]', unicode: true);
@@ -303,17 +325,20 @@ bool _isWordStartAt(String source, int at) {
 
 class _VocabRule {
   _VocabRule(this.item)
-      : phrase = item.phrase.trim(),
-        lower = item.phrase.trim().toLowerCase(),
-        charLength = item.phrase.trim().length,
-        replacement = item.replacement,
-        collapsedLower =
-            PhoneticNormalizer.stripWhitespace(item.phrase.trim()).toLowerCase(),
-        phoneticKey = PhoneticNormalizer.normalize(item.phrase.trim()),
-        fullPhoneticKey = PhoneticNormalizer.normalize(
-          item.phrase.trim(), extractSkeleton: false),
-        wordCount = _countWords(item.phrase.trim()),
-        isCjk = _cjkOrNonSpacedRegex.hasMatch(item.phrase.trim());
+    : phrase = item.phrase.trim(),
+      lower = item.phrase.trim().toLowerCase(),
+      charLength = item.phrase.trim().length,
+      replacement = item.replacement,
+      collapsedLower = PhoneticNormalizer.stripWhitespace(
+        item.phrase.trim(),
+      ).toLowerCase(),
+      phoneticKey = PhoneticNormalizer.normalize(item.phrase.trim()),
+      fullPhoneticKey = PhoneticNormalizer.normalize(
+        item.phrase.trim(),
+        extractSkeleton: false,
+      ),
+      wordCount = _countWords(item.phrase.trim()),
+      isCjk = _cjkOrNonSpacedRegex.hasMatch(item.phrase.trim());
 
   final VocabularyItem item;
   final String phrase;
@@ -325,11 +350,47 @@ class _VocabRule {
   final String fullPhoneticKey;
   final int wordCount;
   final bool isCjk;
+  String get output => item.isReplacement ? replacement : phrase;
 
   static int _countWords(String text) {
     final words = text.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty);
     return words.isEmpty ? 1 : words.length;
   }
+}
+
+/// Build the lookup once per transcript, rather than comparing every word in
+/// every segment with the entire vocabulary. The dictionary itself has no
+/// artificial size limit; only an explicitly starred decoder prompt does.
+class VocabularyMatcher {
+  VocabularyMatcher(Iterable<VocabularyItem> items) {
+    for (final item in items) {
+      if (!item.usable) continue;
+      final rule = _VocabRule(item);
+      maxWordCount = math.max(maxWordCount, rule.wordCount);
+      _exact.putIfAbsent(rule.lower[0], () => []).add(rule);
+      if (rule.charLength > 4) {
+        _surface.putIfAbsent(rule.lower[0], () => []).add(rule);
+        if (rule.fullPhoneticKey.isNotEmpty) {
+          _phonetic.putIfAbsent(rule.phoneticKey, () => []).add(rule);
+          _fullPhonetic.putIfAbsent(rule.fullPhoneticKey, () => []).add(rule);
+        }
+      } else if (rule.charLength == 4 &&
+          rule.phrase == rule.phrase.toUpperCase()) {
+        _fullPhonetic.putIfAbsent(rule.fullPhoneticKey, () => []).add(rule);
+      }
+    }
+    for (final bucket in _exact.values) {
+      bucket.sort((a, b) => b.charLength.compareTo(a.charLength));
+    }
+  }
+
+  final Map<String, List<_VocabRule>> _exact = {};
+  final Map<String, List<_VocabRule>> _surface = {};
+  final Map<String, List<_VocabRule>> _phonetic = {};
+  final Map<String, List<_VocabRule>> _fullPhonetic = {};
+  int maxWordCount = 1;
+
+  CommandText apply(String source) => _applyVocabulary(source, this);
 }
 
 class _CandidateMatch {
@@ -355,7 +416,7 @@ class _CandidateSpan {
 _CandidateMatch? _findFuzzyMatchAt({
   required String source,
   required int at,
-  required List<_VocabRule> rules,
+  required VocabularyMatcher matcher,
   required int maxWordCount,
 }) {
   final candidateSpans = <_CandidateSpan>[];
@@ -396,11 +457,25 @@ _CandidateMatch? _findFuzzyMatchAt({
     final candidate = source.substring(at, span.end);
     final candWords = span.wordCount;
     final candLower = candidate.toLowerCase();
-    final candCollapsed =
-        PhoneticNormalizer.stripWhitespace(candLower).toLowerCase();
+    final candCollapsed = PhoneticNormalizer.stripWhitespace(
+      candLower,
+    ).toLowerCase();
     final candPhonetic = PhoneticNormalizer.normalize(candidate);
+    final candFullPhonetic = PhoneticNormalizer.normalize(
+      candidate,
+      extractSkeleton: false,
+    );
+    final candidateRules = <_VocabRule>{
+      ...?matcher._surface[candLower[0]],
+      ...?matcher._phonetic[candPhonetic],
+      ...?matcher._fullPhonetic[candFullPhonetic],
+    };
 
-    for (final rule in rules) {
+    for (final rule in candidateRules) {
+      if (candLower == rule.lower) continue;
+      final crossScript =
+          RegExp(r'[A-Za-z]').hasMatch(rule.phrase) !=
+          RegExp(r'[A-Za-z]').hasMatch(candidate);
       // У короткой аббревиатуры слишком мало звуков для сравнения скелета
       // согласных: FITU и «фото» иначе схлопываются в один ключ. Но «фиту»
       // целиком сохраняем как явный межалфавитный вариант.
@@ -409,14 +484,16 @@ _CandidateMatch? _findFuzzyMatchAt({
             rule.phrase == rule.phrase.toUpperCase() &&
             candidate.length == rule.charLength &&
             // Межалфавитное чтение аббревиатуры, а не «кот»/«код».
-            RegExp(r'[A-Za-z]').hasMatch(rule.phrase) !=
-                RegExp(r'[A-Za-z]').hasMatch(candidate) &&
-            PhoneticNormalizer.normalize(candidate, extractSkeleton: false) ==
-                rule.fullPhoneticKey) {
-          matches.add(_CandidateMatch(
-            rule: rule, matchedLength: candidate.length,
-            score: 0.97, distance: 0,
-          ));
+            crossScript &&
+            candFullPhonetic == rule.fullPhoneticKey) {
+          matches.add(
+            _CandidateMatch(
+              rule: rule,
+              matchedLength: candidate.length,
+              score: 0.97,
+              distance: 0,
+            ),
+          );
         }
         continue;
       }
@@ -442,17 +519,27 @@ _CandidateMatch? _findFuzzyMatchAt({
       // Полная межалфавитная фонетика сохраняет гласные. Для имён вроде
       // tsukiko / цукико она точна, а короткий скелет FITU / фото — нет.
       if (rule.fullPhoneticKey.length >= 5 &&
-          PhoneticNormalizer.normalize(candidate, extractSkeleton: false) ==
-              rule.fullPhoneticKey) {
-        matches.add(_CandidateMatch(
-          rule: rule, matchedLength: candidate.length,
-          score: 0.98, distance: 0,
-        ));
+          candFullPhonetic == rule.fullPhoneticKey) {
+        matches.add(
+          _CandidateMatch(
+            rule: rule,
+            matchedLength: candidate.length,
+            score: 0.98,
+            distance: 0,
+          ),
+        );
         continue;
       }
 
       // 2. Exact Phonetic Skeleton match (any word count)
-      if (candPhonetic.isNotEmpty && candPhonetic == rule.phoneticKey) {
+      if (crossScript &&
+          rule.phoneticKey.length >= 3 &&
+          candPhonetic == rule.phoneticKey &&
+          DamerauLevenshtein.similarity(
+                candFullPhonetic,
+                rule.fullPhoneticKey,
+              ) >=
+              0.72) {
         matches.add(
           _CandidateMatch(
             rule: rule,
@@ -466,7 +553,10 @@ _CandidateMatch? _findFuzzyMatchAt({
 
       // Beyond exact collapsed and exact phonetic skeleton matches,
       // candidate must satisfy length pre-filtering and word count matching
-      if (candWords != rule.wordCount || collapsedLenDiff > tau || tau == 0) {
+      if (crossScript ||
+          candWords != rule.wordCount ||
+          collapsedLenDiff > tau ||
+          tau == 0) {
         continue;
       }
 
@@ -493,33 +583,8 @@ _CandidateMatch? _findFuzzyMatchAt({
         continue;
       }
 
-      // 4. Phonetic Skeleton Distance
-      if (candPhonetic.isNotEmpty && rule.phoneticKey.isNotEmpty) {
-        final tauPh =
-            DamerauLevenshtein.adaptiveThreshold(rule.phoneticKey.length);
-        if (tauPh > 0) {
-          final distPh = DamerauLevenshtein.distance(
-            candPhonetic,
-            rule.phoneticKey,
-            tauPh,
-          );
-          if (distPh <= tauPh) {
-            final maxPL = math.max(
-              candPhonetic.length,
-              rule.phoneticKey.length,
-            );
-            final simPh = 1.0 - (distPh / maxPL);
-            matches.add(
-              _CandidateMatch(
-                rule: rule,
-                matchedLength: candidate.length,
-                score: 0.80 + (simPh * 0.10),
-                distance: distPh,
-              ),
-            );
-          }
-        }
-      }
+      // Approximate consonant skeletons are too lossy for automatic edits:
+      // ordinary words with different vowels collapse to the same key.
     }
   }
 
@@ -542,6 +607,13 @@ _CandidateMatch? _findFuzzyMatchAt({
     return deltaA.compareTo(deltaB);
   });
 
+  // Two plausible dictionary entries are not enough evidence to rewrite
+  // speech. Prefer leaving the model's text alone to choosing arbitrarily.
+  if (matches.length > 1 &&
+      matches[0].rule.output != matches[1].rule.output &&
+      matches[0].score - matches[1].score < 0.03) {
+    return null;
+  }
   return matches.first;
 }
 
@@ -558,17 +630,16 @@ _CandidateMatch? _findFuzzyMatchAt({
 CommandText applyVocabularyReplacements(
   String source,
   Iterable<VocabularyItem> items,
-) {
-  final activeItems =
-      items.where((item) => item.usable && item.isReplacement).toList();
-  if (source.isEmpty || activeItems.isEmpty) {
+) => VocabularyMatcher(items).apply(source);
+
+CommandText _applyVocabulary(String source, VocabularyMatcher matcher) {
+  if (source.isEmpty ||
+      (matcher._exact.isEmpty &&
+          matcher._surface.isEmpty &&
+          matcher._fullPhonetic.isEmpty)) {
     return CommandText(source, const []);
   }
-
-  final rules = activeItems.map((item) => _VocabRule(item)).toList()
-    ..sort((a, b) => b.charLength.compareTo(a.charLength));
-
-  final maxWordCount = rules.map((r) => r.wordCount).fold(1, math.max);
+  final maxWordCount = matcher.maxWordCount;
 
   final lowerSource = source.toLowerCase();
   final out = StringBuffer();
@@ -578,7 +649,8 @@ CommandText applyVocabularyReplacements(
   while (at < source.length) {
     // 1. Точный путь (O(1)): ищем прямое совпадение с учётом границ слов
     _VocabRule? exactMatch;
-    for (final rule in rules) {
+    for (final rule
+        in matcher._exact[lowerSource[at]] ?? const <_VocabRule>[]) {
       final end = at + rule.charLength;
       if (end > source.length) continue;
       if (!lowerSource.startsWith(rule.lower, at)) continue;
@@ -597,15 +669,16 @@ CommandText applyVocabularyReplacements(
     if (exactMatch != null) {
       final start = out.length;
       final original = source.substring(at, at + exactMatch.charLength);
-      out.write(exactMatch.replacement);
-      replacements.add(
-        TextReplacement(
+      final output = exactMatch.output;
+      out.write(output);
+      if (original != output) {
+        replacements.add(TextReplacement(
           start: start,
-          end: start + exactMatch.replacement.length,
+          end: start + output.length,
           original: original,
-          replacement: exactMatch.replacement,
-        ),
-      );
+          replacement: output,
+        ));
+      }
       at += exactMatch.charLength;
       continue;
     }
@@ -616,22 +689,25 @@ CommandText applyVocabularyReplacements(
       final match = _findFuzzyMatchAt(
         source: source,
         at: at,
-        rules: rules,
+        matcher: matcher,
         maxWordCount: maxWordCount,
       );
 
       if (match != null) {
         final start = out.length;
         final original = source.substring(at, at + match.matchedLength);
-        out.write(match.rule.replacement);
-        replacements.add(
-          TextReplacement(
-            start: start,
-            end: start + match.rule.replacement.length,
-            original: original,
-            replacement: match.rule.replacement,
-          ),
-        );
+        final output = match.rule.output;
+        out.write(output);
+        if (original != output) {
+          replacements.add(
+            TextReplacement(
+              start: start,
+              end: start + output.length,
+              original: original,
+              replacement: output,
+            ),
+          );
+        }
         at += match.matchedLength;
         continue;
       }
@@ -645,7 +721,9 @@ CommandText applyVocabularyReplacements(
 }
 
 /// Бесшовная миграция настроек из устаревших `textCommands` и `prompt`.
-List<VocabularyItem> loadAndMigrateVocabulary(Map<String, dynamic> settingsJson) {
+List<VocabularyItem> loadAndMigrateVocabulary(
+  Map<String, dynamic> settingsJson,
+) {
   // 1. Если уже сохранён современный ключ 'vocabulary'
   if (settingsJson.containsKey('vocabulary')) {
     final list = settingsJson['vocabulary'];
@@ -672,7 +750,7 @@ List<VocabularyItem> loadAndMigrateVocabulary(Map<String, dynamic> settingsJson)
             phrase: cmd.phrase.trim(),
             replacement: cmd.replacement,
             enabled: true,
-            isPriority: true,
+            isPriority: false,
             createdAt: DateTime.now(),
           ),
         );
@@ -694,7 +772,7 @@ List<VocabularyItem> loadAndMigrateVocabulary(Map<String, dynamic> settingsJson)
             phrase: token,
             replacement: '', // Чистая подсказка
             enabled: true,
-            isPriority: true,
+            isPriority: false,
             createdAt: DateTime.now(),
           ),
         );

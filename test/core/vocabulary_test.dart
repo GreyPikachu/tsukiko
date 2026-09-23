@@ -2,12 +2,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/vocabulary.dart';
 
 void main() {
-  test('same word from sidebar and settings stays one shared model hint', () {
+  test('new words use local correction unless model prompting is explicit', () {
     final first = upsertVocabulary(const [], ' tsukiko ');
     final second = upsertVocabulary(first, 'TSUKIKO');
     expect(second, hasLength(1));
-    expect(second.single.isPriority, isTrue);
-    expect(promptWithVocabulary('', second), 'TSUKIKO');
+    expect(second.single.isPriority, isFalse);
+    expect(promptWithVocabulary('', second), isEmpty);
+    expect(applyVocabularyReplacements('Я сказал цукико.', second).text,
+        'Я сказал TSUKIKO.');
+    expect(applyVocabularyReplacements('Я сказал tsukiko.', second).text,
+        'Я сказал TSUKIKO.');
+    expect(promptWithVocabulary('', [second.single.copyWith(isPriority: true)]),
+        'TSUKIKO');
     final replacement = upsertVocabulary(second, 'tsukiko', replacement: 'Цукико');
     expect(replacement, hasLength(1));
     expect(replacement.single.replacement, 'Цукико');
@@ -15,6 +21,38 @@ void main() {
     final addedAgain = upsertVocabulary(replacement, 'TSUKIKO');
     expect(addedAgain, hasLength(1));
     expect(addedAgain.single.replacement, 'Цукико');
+  });
+
+  test('old automatic stars do not keep biasing the model after upgrade', () {
+    final old = VocabularyItem.fromJson({
+      'id': 'old', 'phrase': 'tsukiko', 'isPriority': true,
+    })!;
+    expect(old.isPriority, isFalse);
+    expect(promptWithVocabulary('', [old]), isEmpty);
+    final explicit = VocabularyItem.fromJson(
+        old.copyWith(isPriority: true).toJson())!;
+    expect(explicit.isPriority, isTrue);
+  });
+
+  test('ambiguous phonetic corrections leave the transcript intact', () {
+    const items = [
+      VocabularyItem(id: 'a', phrase: 'tsukiko', replacement: 'Tsukiko'),
+      VocabularyItem(id: 'b', phrase: 'tsukiko', replacement: '月子'),
+    ];
+    final result = applyVocabularyReplacements('Я сказал цукико.', items);
+    expect(result.text, 'Я сказал цукико.');
+    expect(result.replacements, isEmpty);
+  });
+
+  test('large unstarred vocabulary remains available without model tokens', () {
+    final items = [
+      for (var i = 0; i < 1000; i++)
+        VocabularyItem(id: '$i', phrase: 'термин$i'),
+      const VocabularyItem(id: 'name', phrase: 'tsukiko'),
+    ];
+    expect(promptWithVocabulary('', items), isEmpty);
+    expect(applyVocabularyReplacements('Я сказал цукико.', items).text,
+        'Я сказал tsukiko.');
   });
 
   test('FITU only replaces an explicit standalone trigger', () {
@@ -631,9 +669,7 @@ void main() {
       expect(estimateVocabularyTokens([]), 0);
       expect(estimateVocabularyTokens([], basePrompt: ''), 0);
 
-      // Boundary around 200 tokens
-      // 200 tokens * 3.8 chars/token ≈ 760 chars
-      // We test that promptWithVocabulary strictly respects maxEstimatedTokens
+      // Cyrillic needs a more conservative token estimate than English.
       final itemTokens = [
         const VocabularyItem(id: '1', phrase: 'Слово1', isPriority: true),
         const VocabularyItem(id: '2', phrase: 'Слово2', isPriority: true),
@@ -643,11 +679,11 @@ void main() {
       expect(prompt200, 'Слово1, Слово2');
 
       final promptSmall = promptWithVocabulary('', itemTokens, maxEstimatedTokens: 1);
-      // 'Слово1' length is 6 -> 6 / 3.8 = 1.57 > 1 -> should not fit even the first word
+      // The first word alone exceeds one estimated token.
       expect(promptSmall, '');
 
-      final promptJustFits = promptWithVocabulary('', itemTokens, maxEstimatedTokens: 2);
-      // 'Слово1' fits (1.57 <= 2), but ', Слово2' (6 + 8 = 14 / 3.8 = 3.68 > 2) does not
+      final promptJustFits = promptWithVocabulary('', itemTokens, maxEstimatedTokens: 4);
+      // The first word fits; two words do not.
       expect(promptJustFits, 'Слово1');
 
       // 500 tokens budget

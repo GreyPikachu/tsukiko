@@ -782,11 +782,11 @@ void main() {
     });
 
     blocTest<QueueBloc, QueueState>(
-      'слово добавляется в общий словарь и подсказку модели',
+      'слово добавляется в общий словарь без автоматической подсказки модели',
       build: make,
       act: (b) => b.add(const VocabularyReplacementAdded(phrase: 'KubeJS')),
       verify: (b) {
-        expect(b.state.vocabulary.any((v) => v.phrase == 'KubeJS' && v.isPriority), isTrue);
+        expect(b.state.vocabulary.any((v) => v.phrase == 'KubeJS' && !v.isPriority), isTrue);
         expect(b.state.shown.prompt, isEmpty);
         expect(b.state.status, contains('KubeJS'));
       },

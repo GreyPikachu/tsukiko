@@ -614,7 +614,7 @@ class _SettingsBodyState extends State<SettingsBody>
     final priorityItems =
         s.vocabulary.where((item) => item.usable && item.isPriority).toList();
     final tokens = estimateVocabularyTokens(priorityItems);
-    final isOverBudget = tokens > 200;
+    final isOverBudget = tokens > vocabularyPromptBudget;
 
     return [
       // 1. Область действия (Apple Inset Grouped Settings Box)
@@ -705,8 +705,10 @@ class _SettingsBodyState extends State<SettingsBody>
           tokens: tokens,
           isOverBudget: isOverBudget,
           priorityItemsCount: priorityItems.length,
-          zeroBudgetNotice: l10n.promptBudgetZeroNotice(220),
-          budgetNotice: l10n.promptBudgetNotice(tokens, 220),
+          zeroBudgetNotice:
+              l10n.promptBudgetZeroNotice(vocabularyPromptBudget),
+          budgetNotice:
+              l10n.promptBudgetNotice(tokens, vocabularyPromptBudget),
           priorityHint: l10n.promptBudgetPriorityHint,
           budgetWarning: l10n.promptBudgetWarning,
         ),

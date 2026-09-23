@@ -80,6 +80,8 @@ void main() {
       find.text('Замена (необязательно)'),
     );
     expect((phrase.top - replacement.top).abs(), lessThan(1));
+    await tester.ensureVisible(find.text('адрес офиса', skipOffstage: false));
+    await tester.pump();
     expect(find.text('адрес офиса'), findsOneWidget);
     expect(find.text('Минск'), findsOneWidget);
     expect(find.text('Замена'), findsOneWidget);

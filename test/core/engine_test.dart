@@ -111,6 +111,8 @@ void main() {
   test('затравка на пунктуацию', () {
     // по умолчанию — подсказка на языке записи
     const ru = RunOptions(model: 'm', lang: 'ru', threads: 4);
+    expect(const RunOptions(model: 'm', lang: 'auto', threads: 4)
+        .effectivePrompt, isEmpty);
     expect(buildArgs(ru, '/a.wav', '/o').contains('--prompt'), isTrue);
     expect(ru.effectivePrompt, contains('правилам русского языка'));
     // Затравка не должна наводить модель на диалог и на субтитры: оттуда
