@@ -1586,6 +1586,8 @@
   "calibrationProcessing": "Анализ звукового слепка…",
   "calibrationSampleAccepted": "Образец успешно записан!",
   "calibrationSampleFailed": "Слишком тихо или неразборчиво. Попробуйте ещё раз.",
+  "calibrationIdlePrompt": "Нажмите «Начать запись» и произнесите фразу",
+  "calibrationMicPermissionError": "Нет разрешения на использование микрофона",
   "calibrationCompletedTitle": "Калибровка завершена",
   "calibrationCompletedBody": "Профиль вашего голоса сохранён локально. Tsukiko готов откликаться на команды.",
   "buttonDone": "Готово"

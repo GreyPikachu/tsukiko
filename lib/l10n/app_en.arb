@@ -743,6 +743,8 @@
   "calibrationProcessing": "Analyzing voiceprint…",
   "calibrationSampleAccepted": "Sample recorded successfully!",
   "calibrationSampleFailed": "Too quiet or unclear. Please try again.",
+  "calibrationIdlePrompt": "Press Start Recording and speak the phrase",
+  "calibrationMicPermissionError": "Microphone permission is required for voice calibration",
   "calibrationCompletedTitle": "Calibration Complete",
   "calibrationCompletedBody": "Your voice profile is saved locally. Tsukiko is ready to respond to your commands.",
   "buttonDone": "Done"

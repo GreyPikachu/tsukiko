@@ -7,6 +7,7 @@ import 'package:tsukiko/core/wakeword/wakeword_service.dart';
 import 'package:tsukiko/core/whisper.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/features/dictation/dictation_cubit.dart';
+import 'package:tsukiko/features/dictation/dictation_state.dart';
 import 'package:tsukiko/platform/bridge.dart';
 
 import '../../support/fake_os.dart';
@@ -102,7 +103,7 @@ void main() {
 
     // Имитируем триггер CloseWord от сервиса
     wakeWordService.onCloseWordTriggered?.call();
-    await settle();
+    await cubit.stream.firstWhere((s) => s.phase == Phase.idle);
 
     expect(cubit.state.recording, isFalse);
     // Хвостовое слово «стоп.» должно быть отрезано из итогового текста
@@ -126,7 +127,7 @@ void main() {
 
     // Срабатывает таймаут тишины
     wakeWordService.onSilenceTimeoutTriggered?.call();
-    await settle();
+    await cubit.stream.firstWhere((s) => s.phase == Phase.idle);
 
     expect(cubit.state.recording, isFalse);
     expect(cubit.state.last, 'Привет мир');

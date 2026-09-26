@@ -48,21 +48,37 @@ class WakeWordService {
   /// Запущен ли сервис.
   bool get isRunning => _state != WakeWordListeningState.disabled;
 
+  int _operationGeneration = 0;
+
   /// Запустить сервис голосовой активации с указанными настройками.
   Future<bool> start({
     required DictationSettings settings,
     SpeakerProfile? profile,
   }) async {
-    await stop();
-    _settings = settings;
-    _profile = profile ?? SpeakerProfile.load();
-
     if (!settings.wakeWordEnabled) {
-      _state = WakeWordListeningState.disabled;
+      await stop();
       return false;
     }
 
+    // Если сервис уже активен и ключевые слова не менялись, просто обновляем настройки без перезапуска потока
+    if (_state != WakeWordListeningState.disabled &&
+        _settings?.wakeWord == settings.wakeWord &&
+        _settings?.closeWord == settings.closeWord &&
+        _settings?.voiceCalibrationEnabled == settings.voiceCalibrationEnabled) {
+      _settings = settings;
+      _profile = profile ?? _profile;
+      return true;
+    }
+
+    final generation = ++_operationGeneration;
+    await stop(invalidate: false);
+    if (_operationGeneration != generation) return false;
+
+    _settings = settings;
+    _profile = profile ?? SpeakerProfile.load();
+
     final hasPerm = await _audioSource.hasPermission();
+    if (_operationGeneration != generation) return false;
     if (!hasPerm) {
       Log.warn('WakeWord', 'Microphone permission not granted for WakeWord');
       onError?.call('Microphone permission not granted');
@@ -74,6 +90,7 @@ class WakeWordService {
       wakeWord: settings.wakeWord,
       closeWord: settings.closeWord,
     );
+    if (_operationGeneration != generation) return false;
 
     if (!kwsOk) {
       Log.warn('WakeWord', 'Failed to initialize SherpaOnnx KeywordSpotter');
@@ -83,17 +100,24 @@ class WakeWordService {
 
     // Инициализируем VAD
     await _engine.initVad();
+    if (_operationGeneration != generation) return false;
 
     // Инициализируем верификацию спикера (если есть профиль)
     if (_profile != null && _profile!.embeddings.isNotEmpty) {
       await _engine.initSpeakerRecognition(
         enrolledEmbeddings: _profile!.embeddings,
       );
+      if (_operationGeneration != generation) return false;
     }
 
     // Запускаем аудиопоток
     try {
       final stream = await _audioSource.startStream(sampleRate: 16000);
+      if (_operationGeneration != generation) {
+        await _audioSource.stopStream();
+        return false;
+      }
+      await _audioSub?.cancel();
       _audioSub = stream.listen(
         _onAudioFrame,
         onError: (Object e) {
@@ -235,7 +259,8 @@ class WakeWordService {
   }
 
   /// Остановить сервис.
-  Future<void> stop() async {
+  Future<void> stop({bool invalidate = true}) async {
+    if (invalidate) _operationGeneration++;
     _state = WakeWordListeningState.disabled;
     await _audioSub?.cancel();
     _audioSub = null;
@@ -245,6 +270,7 @@ class WakeWordService {
 
   /// Полное освобождение памяти и процессов.
   Future<void> dispose() async {
+    _operationGeneration++;
     await stop();
     await _audioSource.dispose();
     _engine.dispose();

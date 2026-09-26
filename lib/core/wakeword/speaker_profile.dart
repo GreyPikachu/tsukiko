@@ -29,8 +29,7 @@ class SpeakerProfile {
 
   /// Проверить наличие сохранённого профиля на диске.
   static bool exists([String? path]) {
-    final file = File(path ?? defaultPath);
-    return file.existsSync() && file.lengthSync() > 0;
+    return load(path) != null;
   }
 
   /// Удалить сохранённый профиль.
@@ -49,9 +48,11 @@ class SpeakerProfile {
   static SpeakerProfile? load([String? path]) {
     try {
       final file = File(path ?? defaultPath);
-      if (!file.existsSync()) return null;
+      if (!file.existsSync() || file.lengthSync() == 0) return null;
       final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
-      return SpeakerProfile.fromJson(json);
+      final profile = SpeakerProfile.fromJson(json);
+      if (profile.embeddings.isEmpty) return null;
+      return profile;
     } catch (_) {
       return null;
     }
@@ -85,11 +86,20 @@ class SpeakerProfile {
 
     for (final raw in rawEmbeddings) {
       if (raw is List) {
+        if (dim > 0 && raw.length != dim) continue;
         final f = Float32List(raw.length);
+        var valid = true;
         for (var i = 0; i < raw.length; i++) {
-          f[i] = (raw[i] as num).toDouble();
+          final v = raw[i];
+          if (v is! num) {
+            valid = false;
+            break;
+          }
+          f[i] = v.toDouble();
         }
-        embeddingsList.add(f);
+        if (valid) {
+          embeddingsList.add(f);
+        }
       }
     }
 
@@ -120,8 +130,9 @@ class SpeakerProfile {
       normB += y * y;
     }
 
-    if (normA <= 0.0 || normB <= 0.0) return 0.0;
-    return dot / (math.sqrt(normA) * math.sqrt(normB));
+    if (normA <= 0.0 || normB <= 0.0 || normA.isNaN || normB.isNaN) return 0.0;
+    final sim = dot / (math.sqrt(normA) * math.sqrt(normB));
+    return sim.isNaN ? 0.0 : sim;
   }
 
   /// Вычислить максимальное и среднее сходство кандидата с зарегистрированными эмбеддингами.

@@ -504,6 +504,7 @@ class DictationCubit extends Cubit<DictationState> {
       Log.error('Dictation', 'Recording failed to start');
       _stopMeter();
       _server.release();
+      _wakeWordService?.notifyRecordingStopped();
       if (_settings.hud) unawaited(bridge.hud(HudState.failed));
       _emit(
         state.copyWith(

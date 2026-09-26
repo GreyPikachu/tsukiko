@@ -79,6 +79,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
 
   double _audioLevel = 0.0;
   Timer? _levelDecayTimer;
+  Timer? _stepTransitionTimer;
 
   @override
   void initState() {
@@ -91,6 +92,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   void dispose() {
     _stopRecordingStream();
     _levelDecayTimer?.cancel();
+    _stepTransitionTimer?.cancel();
     super.dispose();
   }
 
@@ -111,9 +113,10 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
     final hasPerm = await _audioSource.hasPermission();
     if (!hasPerm) {
       if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
       setState(() {
         _phase = CalibrationPhase.failed;
-        _errorMessage = 'Нет разрешения на использование микрофона';
+        _errorMessage = l10n.calibrationMicPermissionError;
       });
       return;
     }
@@ -208,7 +211,8 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
         _phase = CalibrationPhase.stepCompleted;
       });
       // Плавный переход на следующий шаг через полсекунды
-      Future.delayed(const Duration(milliseconds: 650), () {
+      _stepTransitionTimer?.cancel();
+      _stepTransitionTimer = Timer(const Duration(milliseconds: 650), () {
         if (!mounted) return;
         setState(() {
           _currentStep++;
@@ -420,6 +424,12 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                         onPressed: null,
                         child: Text(l10n.calibrationProcessing),
                       )
+                    else if (_phase == CalibrationPhase.stepCompleted)
+                      PushButton(
+                        controlSize: ControlSize.large,
+                        onPressed: null,
+                        child: Text(l10n.calibrationSampleAccepted),
+                      )
                     else
                       PushButton(
                         controlSize: ControlSize.large,
@@ -621,7 +631,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
     }
 
     return Text(
-      'Нажмите «Начать запись» и произнесите фразу',
+      l10n.calibrationIdlePrompt,
       style: Type.caption.copyWith(
         color: MacosTheme.brightnessOf(context) == Brightness.dark
             ? const Color(0xFF757575)

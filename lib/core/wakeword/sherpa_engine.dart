@@ -201,8 +201,15 @@ class NativeSherpaEngine implements SherpaEngine {
       _speakerManager = manager;
 
       if (enrolledEmbeddings != null && enrolledEmbeddings.isNotEmpty) {
-        manager.addMulti(name: 'user', embeddingList: enrolledEmbeddings);
-        Log.info('SherpaEngine', 'Enrolled ${enrolledEmbeddings.length} speaker embeddings');
+        final validEmbeddings = enrolledEmbeddings
+            .where((emb) => emb.length == extractor.dim)
+            .toList();
+        if (validEmbeddings.isNotEmpty) {
+          manager.addMulti(name: 'user', embeddingList: validEmbeddings);
+          Log.info('SherpaEngine', 'Enrolled ${validEmbeddings.length} speaker embeddings');
+        } else {
+          Log.warn('SherpaEngine', 'All speaker embeddings had mismatched dimension (expected ${extractor.dim})');
+        }
       }
 
       return true;
@@ -288,20 +295,20 @@ class NativeSherpaEngine implements SherpaEngine {
     final extractor = _speakerExtractor;
     if (extractor == null || audio.isEmpty) return null;
 
+    sherpa.OnlineStream? stream;
     try {
-      final stream = extractor.createStream();
+      stream = extractor.createStream();
       stream.acceptWaveform(samples: audio, sampleRate: 16000);
       stream.inputFinished();
       if (!extractor.isReady(stream)) {
-        stream.free();
         return null;
       }
-      final emb = extractor.compute(stream);
-      stream.free();
-      return emb;
+      return extractor.compute(stream);
     } catch (e) {
       Log.error('SherpaEngine', 'extractSpeakerEmbedding error: $e');
       return null;
+    } finally {
+      stream?.free();
     }
   }
 

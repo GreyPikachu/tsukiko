@@ -149,7 +149,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   void _readDictation() {
-    final profileFile = File(SpeakerProfile.defaultProfilePath);
+    final profileExists = SpeakerProfile.exists();
     _emit(
       state.copyWith(
         hold: _dictation.hold,
@@ -168,7 +168,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         completionMode: _dictation.completionMode,
         voiceCalibrationEnabled: _dictation.voiceCalibrationEnabled,
         speakerThreshold: _dictation.speakerThreshold,
-        speakerProfileExists: profileFile.existsSync(),
+        speakerProfileExists: profileExists,
       ),
     );
   }
