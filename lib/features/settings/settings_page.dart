@@ -15,7 +15,7 @@ import '../../core/models.dart';
 import '../../core/recognition.dart';
 import '../../core/skill_install.dart';
 import '../../core/transcript.dart';
-import '../../core/whisper_server.dart' show Hotkey;
+import '../../core/whisper_server.dart' show Hotkey, PhraseCompletionMode;
 import '../../design/design.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../platform/bridge.dart';
@@ -23,6 +23,7 @@ import '../../platform/os.dart';
 import 'settings_cubit.dart';
 import 'widgets/model_row.dart';
 import 'widgets/vocabulary_item_row.dart';
+import 'widgets/voice_calibration_dialog.dart';
 import 'settings_state.dart';
 import '../../core/labels.dart';
 
@@ -103,8 +104,12 @@ class _SettingsBodyState extends State<SettingsBody>
     with WidgetsBindingObserver {
   /// Поле ввода подсказки для совместимости.
   final _promptCtrl = TextEditingController();
+  final _wakeWordCtrl = TextEditingController();
+  final _closeWordCtrl = TextEditingController();
   final _modelsScroll = ScrollController();
   String _promptShown = '';
+  String _wakeWordShown = '';
+  String _closeWordShown = '';
 
   final _vocabSearchCtrl = TextEditingController();
   final _newPhraseCtrl = TextEditingController();
@@ -131,6 +136,8 @@ class _SettingsBodyState extends State<SettingsBody>
     // только на переменах. Без этой строки поле подсказки в только что
     // открытом окне стояло пустым, хотя подсказка была на месте.
     _syncPromptField(_cubit.state.prompt);
+    _syncWakeWordField(_cubit.state.wakeWord);
+    _syncCloseWordField(_cubit.state.closeWord);
     // Первый вопрос о разрешении задаём сразу: окно только что открыли.
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncVisibility());
   }
@@ -146,6 +153,8 @@ class _SettingsBodyState extends State<SettingsBody>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _promptCtrl.dispose();
+    _wakeWordCtrl.dispose();
+    _closeWordCtrl.dispose();
     _modelsScroll.dispose();
     _vocabSearchCtrl.dispose();
     _newPhraseCtrl.dispose();
@@ -169,6 +178,26 @@ class _SettingsBodyState extends State<SettingsBody>
     _promptShown = text;
     if (_promptCtrl.text == text) return;
     _promptCtrl.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  void _syncWakeWordField(String text) {
+    if (text == _wakeWordShown) return;
+    _wakeWordShown = text;
+    if (_wakeWordCtrl.text == text) return;
+    _wakeWordCtrl.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  void _syncCloseWordField(String text) {
+    if (text == _closeWordShown) return;
+    _closeWordShown = text;
+    if (_closeWordCtrl.text == text) return;
+    _closeWordCtrl.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
     );
@@ -215,9 +244,14 @@ class _SettingsBodyState extends State<SettingsBody>
   Widget build(BuildContext context) =>
       BlocConsumer<SettingsCubit, SettingsState>(
         listenWhen: (was, now) =>
-            was.prompt != now.prompt || (!was.downloading && now.downloading),
+            was.prompt != now.prompt ||
+            was.wakeWord != now.wakeWord ||
+            was.closeWord != now.closeWord ||
+            (!was.downloading && now.downloading),
         listener: (context, s) {
           _syncPromptField(s.prompt);
+          _syncWakeWordField(s.wakeWord);
+          _syncCloseWordField(s.closeWord);
           if (s.downloading) _revealModelDownload();
         },
         builder: (context, s) => Container(
@@ -401,7 +435,154 @@ class _SettingsBodyState extends State<SettingsBody>
     const SizedBox(height: Gap.item),
     Check(l10n.checkShowHud, s.hud, _cubit.setHud),
     Hint(l10n.hintHud, under: true),
+    SectionTitle(l10n.sectionWakeWord),
+    Hint(l10n.hintWakeWordSection),
+    const SizedBox(height: Gap.inner),
+    Check(
+      l10n.checkWakeWordEnabled,
+      s.wakeWordEnabled,
+      _cubit.setWakeWordEnabled,
+    ),
+    if (s.wakeWordEnabled) ...[
+      const SizedBox(height: Gap.item),
+      _Field(
+        l10n.fieldWakeWord,
+        AppTextField(
+          controller: _wakeWordCtrl,
+          placeholder: l10n.placeholderWakeWord,
+          onChanged: _cubit.setWakeWord,
+        ),
+      ),
+      const SizedBox(height: Gap.item),
+      _Field(
+        l10n.fieldCloseWord,
+        AppTextField(
+          controller: _closeWordCtrl,
+          placeholder: l10n.placeholderCloseWord,
+          onChanged: _cubit.setCloseWord,
+        ),
+      ),
+      Hint(l10n.hintCloseWord, under: true),
+      const SizedBox(height: Gap.item),
+      _Field(
+        l10n.fieldCompletionMode,
+        MacosPopupButton<PhraseCompletionMode>(
+          value: s.completionMode,
+          items: [
+            MacosPopupMenuItem(
+              value: PhraseCompletionMode.hybrid,
+              child: Text(l10n.completionModeHybrid),
+            ),
+            MacosPopupMenuItem(
+              value: PhraseCompletionMode.closeWordOnly,
+              child: Text(l10n.completionModeCloseWordOnly),
+            ),
+            MacosPopupMenuItem(
+              value: PhraseCompletionMode.silenceOnly,
+              child: Text(l10n.completionModeSilenceOnly),
+            ),
+          ],
+          onChanged: (mode) {
+            if (mode != null) _cubit.setCompletionMode(mode);
+          },
+        ),
+      ),
+      const SizedBox(height: Gap.item),
+      SectionTitle(l10n.sectionVoiceCalibration),
+      Hint(l10n.hintVoiceCalibration),
+      const SizedBox(height: Gap.inner),
+      Check(
+        l10n.checkVoiceCalibration,
+        s.voiceCalibrationEnabled,
+        _cubit.setVoiceCalibrationEnabled,
+      ),
+      if (s.voiceCalibrationEnabled) ...[
+        const SizedBox(height: Gap.inner),
+        Row(
+          children: [
+            MacosIcon(
+              s.speakerProfileExists
+                  ? CupertinoIcons.checkmark_seal_fill
+                  : CupertinoIcons.exclamationmark_circle,
+              color: s.speakerProfileExists
+                  ? const Color(0xFF34C759)
+                  : const Color(0xFFFF9500),
+              size: 16,
+            ),
+            const SizedBox(width: Gap.inner),
+            Expanded(
+              child: Text(
+                s.speakerProfileExists
+                    ? l10n.voiceProfileStatusCalibrated(3)
+                    : l10n.voiceProfileStatusNotCalibrated,
+                style: Type.control.copyWith(
+                  color: s.speakerProfileExists
+                      ? const Color(0xFF34C759)
+                      : const Color(0xFFFF9500),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            PushButton(
+              controlSize: ControlSize.regular,
+              secondary: true,
+              onPressed: () => _openVoiceCalibration(s.wakeWord),
+              child: Text(
+                s.speakerProfileExists
+                    ? l10n.buttonRecalibrateVoice
+                    : l10n.buttonCalibrateVoice,
+              ),
+            ),
+            if (s.speakerProfileExists) ...[
+              const SizedBox(width: Gap.inner),
+              PushButton(
+                controlSize: ControlSize.regular,
+                secondary: true,
+                onPressed: _cubit.deleteSpeakerProfile,
+                child: Text(l10n.buttonDeleteVoiceProfile),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: Gap.item),
+        _Field(
+          l10n.fieldSpeakerThreshold,
+          Row(
+            children: [
+              Expanded(
+                child: CupertinoSlider(
+                  value: s.speakerThreshold,
+                  min: 0.30,
+                  max: 0.90,
+                  onChanged: (val) => _cubit.setSpeakerThreshold(val),
+                ),
+              ),
+              const SizedBox(width: Gap.inner),
+              SizedBox(
+                width: 44,
+                child: Text(
+                  s.speakerThreshold.toStringAsFixed(2),
+                  style: Type.control,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Hint(l10n.hintSpeakerThreshold),
+      ],
+    ],
   ];
+
+  Future<void> _openVoiceCalibration(String wakeWord) async {
+    final result = await VoiceCalibrationSheet.show(
+      context,
+      wakeWord: wakeWord.isNotEmpty ? wakeWord : 'Джеф',
+      onProfileCreated: _cubit.refreshSpeakerProfile,
+    );
+    if (result == true) {
+      _cubit.refreshSpeakerProfile();
+    }
+  }
 
   Future<void> _reassignHotkey(String id) =>
       _cubit.reassign(id, confirmExclusive: _confirmExclusiveHotkey);

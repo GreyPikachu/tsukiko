@@ -925,6 +925,24 @@ class Hotkey {
   }
 }
 
+/// Режимы завершения фразы при голосовой активации:
+/// - [hybrid]: мгновенно по слову завершения, но если пользователь забыл его сказать — через 2 с тишины.
+/// - [closeWordOnly]: только по слову завершения (мгновенно, 0 мс).
+/// - [silenceOnly]: только по тишине (через 2 с).
+enum PhraseCompletionMode {
+  hybrid,
+  closeWordOnly,
+  silenceOnly;
+
+  static PhraseCompletionMode fromString(String? name) {
+    if (name == null) return PhraseCompletionMode.hybrid;
+    return PhraseCompletionMode.values.firstWhere(
+      (m) => m.name == name,
+      orElse: () => PhraseCompletionMode.hybrid,
+    );
+  }
+}
+
 /// Настройки диктовки лежат отдельно от общих: панель и главное окно —
 /// разные изоляты, и одним файлом они затирали бы правки друг друга.
 class DictationSettings {
@@ -940,6 +958,13 @@ class DictationSettings {
     this.hud = true,
     this.punctuate = true,
     this.threads = 4,
+    this.wakeWordEnabled = false,
+    this.wakeWord = 'Джеф',
+    this.closeWord = '',
+    this.completionMode = PhraseCompletionMode.hybrid,
+    this.voiceCalibrationEnabled = false,
+    this.speakerProfilePath = '',
+    this.speakerThreshold = 0.60,
   })  : hold = hold ?? Hotkey.holdDefault,
         toggle = toggle ?? Hotkey.toggleDefault,
         cancel = cancel ?? Hotkey.none;
@@ -971,6 +996,15 @@ class DictationSettings {
   bool punctuate;
   int threads;
 
+  /// Голосовая активация (WakeWord / CloseWord).
+  bool wakeWordEnabled;
+  String wakeWord;
+  String closeWord;
+  PhraseCompletionMode completionMode;
+  bool voiceCalibrationEnabled;
+  String speakerProfilePath;
+  double speakerThreshold;
+
   static File get _file => File(os.join(supportDir, 'dictation.json'));
 
   static DictationSettings load() {
@@ -991,6 +1025,13 @@ class DictationSettings {
         hud: (j['hud'] as bool?) ?? true,
         punctuate: (j['punctuate'] as bool?) ?? true,
         threads: (j['threads'] as int?) ?? 4,
+        wakeWordEnabled: (j['wakeWordEnabled'] as bool?) ?? false,
+        wakeWord: (j['wakeWord'] as String?) ?? 'Джеф',
+        closeWord: (j['closeWord'] as String?) ?? '',
+        completionMode: PhraseCompletionMode.fromString(j['completionMode'] as String?),
+        voiceCalibrationEnabled: (j['voiceCalibrationEnabled'] as bool?) ?? false,
+        speakerProfilePath: (j['speakerProfilePath'] as String?) ?? '',
+        speakerThreshold: (j['speakerThreshold'] as num?)?.toDouble() ?? 0.60,
       );
     } catch (_) {
       return DictationSettings();
@@ -1015,6 +1056,13 @@ class DictationSettings {
         'hud': hud,
         'punctuate': punctuate,
         'threads': threads,
+        'wakeWordEnabled': wakeWordEnabled,
+        'wakeWord': wakeWord,
+        'closeWord': closeWord,
+        'completionMode': completionMode.name,
+        'voiceCalibrationEnabled': voiceCalibrationEnabled,
+        'speakerProfilePath': speakerProfilePath,
+        'speakerThreshold': speakerThreshold,
       });
     } catch (e) {
       stderr.writeln('tsukiko: не удалось сохранить настройки диктовки — $e');

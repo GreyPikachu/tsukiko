@@ -19,6 +19,8 @@ import '../../core/text_commands.dart';
 import '../../core/vocabulary.dart';
 import '../../core/app_locale.dart';
 import '../../core/labels.dart';
+import '../../core/wakeword/wakeword_service.dart';
+import '../../core/wakeword/keyword_tokenizer.dart' show stripTrailingCloseWord;
 
 /// Диктовка целиком: перехват клавиш, запись, сервер с моделью, вставка
 /// текста и то, что из этого видно в панели.
@@ -33,12 +35,17 @@ import '../../core/labels.dart';
 class DictationCubit extends Cubit<DictationState> {
   /// [server] подменяют только тесты: настоящий поднимает whisper-server
   /// и читает в память полтора гигабайта, а проверять надо не это.
-  DictationCubit(this.bridge, {WhisperServer? server})
-    : super(const DictationState()) {
+  DictationCubit(
+    this.bridge, {
+    WhisperServer? server,
+    WakeWordService? wakeWordService,
+  }) : super(const DictationState()) {
     _server =
         server ??
         WhisperServer(idleTimeout: Duration(seconds: _settings.idleSeconds));
     _server.onChanged = _onServerChanged;
+    _wakeWordService = wakeWordService;
+    _setupWakeWordCallbacks();
 
     bridge.events.listen(_onHotkey);
     // Кнопки плавающей панели — те же действия, что и клавишами, плюс
@@ -83,9 +90,38 @@ class DictationCubit extends Cubit<DictationState> {
   }
 
   late final WhisperServer _server;
+  WakeWordService? _wakeWordService;
   DictationSettings _settings = DictationSettings.load();
   List<VocabularyItem> _vocabulary = const [];
   bool _commandsEnabled = true;
+
+  WakeWordService _getOrCreateWakeWordService() {
+    if (_wakeWordService == null) {
+      _wakeWordService = WakeWordService();
+      _setupWakeWordCallbacks();
+    }
+    return _wakeWordService!;
+  }
+
+  void _setupWakeWordCallbacks() {
+    final s = _wakeWordService;
+    if (s == null) return;
+    s.onWakeWordTriggered = () {
+      if (state.phase == Phase.idle) {
+        start();
+      }
+    };
+    s.onCloseWordTriggered = () {
+      if (state.recording) {
+        stop();
+      }
+    };
+    s.onSilenceTimeoutTriggered = () {
+      if (state.recording) {
+        stop();
+      }
+    };
+  }
 
   Timer? _ticker;
   Timer? _meter;
@@ -195,6 +231,7 @@ class DictationCubit extends Cubit<DictationState> {
 
   Future<Never> _bye() async {
     _ticker?.cancel();
+    await _wakeWordService?.dispose();
     await _server.shutdown();
     // Свой сервер мы только что погасили; этот проход — на случай, если
     // рядом остался ещё один, о котором мы не знаем.
@@ -222,6 +259,14 @@ class DictationCubit extends Cubit<DictationState> {
     );
     _emit(_withSnapshots(state));
     await _checkPermission();
+    if (_settings.wakeWordEnabled) {
+      final ww = _getOrCreateWakeWordService();
+      unawaited(ww.start(settings: _settings));
+    } else {
+      if (_wakeWordService?.isRunning ?? false) {
+        unawaited(_wakeWordService!.stop());
+      }
+    }
   }
 
   Future<void> _reloadSettings() async {
@@ -431,6 +476,7 @@ class DictationCubit extends Cubit<DictationState> {
     );
     if (_settings.hud) unawaited(bridge.hud(HudState.recording));
     _syncMeter();
+    _wakeWordService?.notifyRecordingStarted();
 
     // Сервер поднимается параллельно записи: пока человек говорит, модель
     // успевает загрузиться, и после отпускания клавиши ждать уже нечего.
@@ -478,6 +524,7 @@ class DictationCubit extends Cubit<DictationState> {
       return;
     }
     if (!state.recording) return;
+    _wakeWordService?.notifyRecordingStopped();
     final duration = _startedAt != null
         ? DateTime.now().difference(_startedAt!)
         : Duration.zero;
@@ -534,9 +581,12 @@ class DictationCubit extends Cubit<DictationState> {
               : currentL10n().dictationFailedSaved(saved);
         } else {
           _discard(path);
-          final text = _commandsEnabled
+          var text = _commandsEnabled
               ? applyVocabularyReplacements(recognized, _vocabulary).text
               : recognized;
+          if (_settings.closeWord.trim().isNotEmpty) {
+            text = stripTrailingCloseWord(text, _settings.closeWord);
+          }
           Log.info('Dictation', 'Dictation transcribed: ${text.length} chars');
           if (text.isNotEmpty) {
             _emit(state.copyWith(last: text));
@@ -608,6 +658,7 @@ class DictationCubit extends Cubit<DictationState> {
       return;
     }
     if (!state.recording) return;
+    _wakeWordService?.notifyRecordingStopped();
     Log.info('Dictation', 'Recording cancelled');
     _stopMeter();
     _emit(state.copyWith(phase: Phase.idle));
@@ -807,10 +858,14 @@ class DictationCubit extends Cubit<DictationState> {
 
   Future<void> quit() => bridge.quit();
 
+  @visibleForTesting
+  WakeWordService? get wakeWordServiceForTesting => _wakeWordService;
+
   @override
   Future<void> close() {
     _ticker?.cancel();
     _meter?.cancel();
+    _wakeWordService?.dispose();
     return super.close();
   }
 }

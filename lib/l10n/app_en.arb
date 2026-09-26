@@ -699,5 +699,51 @@
   "placeholderQuickAddReplacement": "Replace with…",
   "checkMakeReplacement": "Make replacement",
   "tooltipMakeReplacement": "Make an automatic text replacement in vocabulary",
-  "buttonSaveReplacement": "Save replacement"
+  "buttonSaveReplacement": "Save replacement",
+  "sectionWakeWord": "Voice Activation",
+  "hintWakeWordSection": "Dictation starts automatically when the wake word is spoken and finishes on the close word or silence.",
+  "checkWakeWordEnabled": "Enable voice activation (WakeWord)",
+  "fieldWakeWord": "Wake word",
+  "placeholderWakeWord": "Jeff",
+  "fieldCloseWord": "Close word (CloseWord)",
+  "placeholderCloseWord": "done, over",
+  "hintCloseWord": "If specified, dictation immediately stops and pastes text when this word is spoken.",
+  "fieldCompletionMode": "Phrase completion",
+  "completionModeHybrid": "Hybrid (on close word or 2s silence)",
+  "completionModeCloseWordOnly": "Close word only (instant)",
+  "completionModeSilenceOnly": "Silence only (2s silence)",
+  "sectionVoiceCalibration": "Voice Calibration",
+  "checkVoiceCalibration": "Respond only to my voice",
+  "hintVoiceCalibration": "Voice biometric comparison prevents accidental triggers from other voices and videos.",
+  "voiceProfileStatusCalibrated": "Voice calibrated ({count, plural, one{{count} sample} other{{count} samples}})",
+  "@voiceProfileStatusCalibrated": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "voiceProfileStatusNotCalibrated": "Voice not calibrated",
+  "buttonCalibrateVoice": "Calibrate voice…",
+  "buttonRecalibrateVoice": "Recalibrate…",
+  "buttonDeleteVoiceProfile": "Delete profile",
+  "fieldSpeakerThreshold": "Verification sensitivity",
+  "hintSpeakerThreshold": "Voice similarity threshold (default 0.60). Higher is stricter, lower is more forgiving in noise.",
+  "calibrationWizardTitle": "Voice Calibration",
+  "calibrationWizardSubtitle": "Record 3 short samples so Tsukiko learns the sound of your voice.",
+  "calibrationStep1Title": "Step 1 of 3: Normal tempo",
+  "calibrationStep1Prompt": "Speak the activation phrase at your normal, relaxed tempo.",
+  "calibrationStep2Title": "Step 2 of 3: Faster or further",
+  "calibrationStep2Prompt": "Repeat the phrase slightly faster or from a bit further away.",
+  "calibrationStep3Title": "Step 3 of 3: Quiet voice",
+  "calibrationStep3Prompt": "Speak the phrase softly, as you would in everyday use.",
+  "calibrationButtonRecord": "Start Recording",
+  "calibrationButtonStop": "Stop",
+  "calibrationRecordingInProgress": "Listening to microphone… speak",
+  "calibrationProcessing": "Analyzing voiceprint…",
+  "calibrationSampleAccepted": "Sample recorded successfully!",
+  "calibrationSampleFailed": "Too quiet or unclear. Please try again.",
+  "calibrationCompletedTitle": "Calibration Complete",
+  "calibrationCompletedBody": "Your voice profile is saved locally. Tsukiko is ready to respond to your commands.",
+  "buttonDone": "Done"
 }

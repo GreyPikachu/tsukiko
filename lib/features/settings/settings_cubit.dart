@@ -21,6 +21,7 @@ import '../api/api_server.dart';
 import '../../core/skill_install.dart';
 import '../../platform/bridge.dart';
 import '../../platform/os.dart';
+import '../../core/wakeword/speaker_profile.dart';
 import 'settings_state.dart';
 
 /// Окно настроек: расшифровщик, диктовка, склад моделей и приложение.
@@ -147,20 +148,30 @@ class SettingsCubit extends Cubit<SettingsState> {
     );
   }
 
-  void _readDictation() => _emit(
-    state.copyWith(
-      hold: _dictation.hold,
-      toggle: _dictation.toggle,
-      cancel: _dictation.cancel,
-      dictationModel: _dictation.model,
-      threads: _dictation.threads,
-      punctuate: _dictation.punctuate,
-      prompt: _dictation.prompt,
-      idleSeconds: _dictation.idleSeconds,
-      insert: _dictation.insert,
-      hud: _dictation.hud,
-    ),
-  );
+  void _readDictation() {
+    final profileFile = File(SpeakerProfile.defaultProfilePath);
+    _emit(
+      state.copyWith(
+        hold: _dictation.hold,
+        toggle: _dictation.toggle,
+        cancel: _dictation.cancel,
+        dictationModel: _dictation.model,
+        threads: _dictation.threads,
+        punctuate: _dictation.punctuate,
+        prompt: _dictation.prompt,
+        idleSeconds: _dictation.idleSeconds,
+        insert: _dictation.insert,
+        hud: _dictation.hud,
+        wakeWordEnabled: _dictation.wakeWordEnabled,
+        wakeWord: _dictation.wakeWord,
+        closeWord: _dictation.closeWord,
+        completionMode: _dictation.completionMode,
+        voiceCalibrationEnabled: _dictation.voiceCalibrationEnabled,
+        speakerThreshold: _dictation.speakerThreshold,
+        speakerProfileExists: profileFile.existsSync(),
+      ),
+    );
+  }
 
   // ── запись на диск ────────────────────────────────────────────────────────
 
@@ -331,6 +342,35 @@ class SettingsCubit extends Cubit<SettingsState> {
   void setInsert(bool v) => _saveDictation((d) => d.insert = v);
 
   void setHud(bool v) => _saveDictation((d) => d.hud = v);
+
+  void setWakeWordEnabled(bool v) =>
+      _saveDictation((d) => d.wakeWordEnabled = v);
+
+  void setWakeWord(String v) =>
+      _saveDictation((d) => d.wakeWord = v.trim().isEmpty ? 'Джеф' : v);
+
+  void setCloseWord(String v) =>
+      _saveDictation((d) => d.closeWord = v);
+
+  void setCompletionMode(PhraseCompletionMode mode) =>
+      _saveDictation((d) => d.completionMode = mode);
+
+  void setVoiceCalibrationEnabled(bool v) =>
+      _saveDictation((d) => d.voiceCalibrationEnabled = v);
+
+  void setSpeakerThreshold(double v) =>
+      _saveDictation((d) => d.speakerThreshold = v);
+
+  void deleteSpeakerProfile() {
+    SpeakerProfile.delete();
+    _readDictation();
+    unawaited(bridge.settingsChanged());
+  }
+
+  void refreshSpeakerProfile() {
+    _readDictation();
+    unawaited(bridge.settingsChanged());
+  }
 
   void setDictationCommandsEnabled(bool value) =>
       setVocabularyDictationEnabled(value);

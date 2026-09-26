@@ -1542,5 +1542,51 @@
   "placeholderQuickAddReplacement": "Заменять на…",
   "checkMakeReplacement": "Сделать заменой",
   "tooltipMakeReplacement": "Сделать автозаменой текста в словаре",
-  "buttonSaveReplacement": "Сохранить замену"
+  "buttonSaveReplacement": "Сохранить замену",
+  "sectionWakeWord": "Голосовая активация",
+  "hintWakeWordSection": "Диктовка начнётся автоматически при произнесении фразы активации и завершится по слову завершения или паузе.",
+  "checkWakeWordEnabled": "Включить голосовую активацию (WakeWord)",
+  "fieldWakeWord": "Слово активации",
+  "placeholderWakeWord": "Джеф",
+  "fieldCloseWord": "Слово завершения (CloseWord)",
+  "placeholderCloseWord": "готово, конец связи",
+  "hintCloseWord": "Если указано, диктовка сразу остановится и вставит текст при произнесении этого слова.",
+  "fieldCompletionMode": "Завершение фразы",
+  "completionModeHybrid": "Гибридный (по слову или 2 сек. тишины)",
+  "completionModeCloseWordOnly": "Только по слову завершения (мгновенно)",
+  "completionModeSilenceOnly": "Только по тишине (2 сек.)",
+  "sectionVoiceCalibration": "Калибровка голоса",
+  "checkVoiceCalibration": "Реагировать только на мой голос",
+  "hintVoiceCalibration": "Сравнение биометрии голоса предотвратит ложные срабатывания от посторонних голосов и видео.",
+  "voiceProfileStatusCalibrated": "Голос откалиброван ({count, plural, one{{count} образец} few{{count} образца} many{{count} образцов} other{{count} образца}})",
+  "@voiceProfileStatusCalibrated": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "voiceProfileStatusNotCalibrated": "Голос не откалиброван",
+  "buttonCalibrateVoice": "Откалибровать голос…",
+  "buttonRecalibrateVoice": "Перекалибровать…",
+  "buttonDeleteVoiceProfile": "Удалить профиль",
+  "fieldSpeakerThreshold": "Чувствительность верификации",
+  "hintSpeakerThreshold": "Порог сходства голоса (по умолчанию 0.60). Выше — строже проверка, ниже — надёжнее распознавание в шуме.",
+  "calibrationWizardTitle": "Калибровка голоса",
+  "calibrationWizardSubtitle": "Запишите 3 коротких образца, чтобы Tsukiko запомнил звучание вашего голоса.",
+  "calibrationStep1Title": "Шаг 1 из 3: Обычный темп",
+  "calibrationStep1Prompt": "Произнесите фразу активации в обычном спокойном темпе.",
+  "calibrationStep2Title": "Шаг 2 из 3: Быстрее или дальше",
+  "calibrationStep2Prompt": "Повторите фразу чуть быстрее или с чуть большего расстояния от микрофона.",
+  "calibrationStep3Title": "Шаг 3 из 3: Негромкий голос",
+  "calibrationStep3Prompt": "Произнесите фразу негромко, как при повседневной работе.",
+  "calibrationButtonRecord": "Начать запись",
+  "calibrationButtonStop": "Остановить",
+  "calibrationRecordingInProgress": "Слушаем микрофон… говорите",
+  "calibrationProcessing": "Анализ звукового слепка…",
+  "calibrationSampleAccepted": "Образец успешно записан!",
+  "calibrationSampleFailed": "Слишком тихо или неразборчиво. Попробуйте ещё раз.",
+  "calibrationCompletedTitle": "Калибровка завершена",
+  "calibrationCompletedBody": "Профиль вашего голоса сохранён локально. Tsukiko готов откликаться на команды.",
+  "buttonDone": "Готово"
 }

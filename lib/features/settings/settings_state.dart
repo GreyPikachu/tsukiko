@@ -7,7 +7,7 @@ import '../../core/models.dart';
 import '../../core/skill_install.dart';
 import '../../core/text_commands.dart';
 import '../../core/vocabulary.dart';
-import '../../core/whisper_server.dart' show Hotkey;
+import '../../core/whisper_server.dart' show Hotkey, PhraseCompletionMode;
 
 /// Сколько потоков предложить на выбор.
 ///
@@ -63,6 +63,13 @@ class SettingsState extends Equatable {
     this.idleSeconds = 180,
     this.insert = true,
     this.hud = true,
+    this.wakeWordEnabled = false,
+    this.wakeWord = 'Джеф',
+    this.closeWord = '',
+    this.completionMode = PhraseCompletionMode.hybrid,
+    this.voiceCalibrationEnabled = false,
+    this.speakerProfileExists = false,
+    this.speakerThreshold = 0.60,
     // приложение
     this.toLibrary = true,
     this.saveNextToSource = false,
@@ -186,6 +193,13 @@ class SettingsState extends Equatable {
   final bool vocabularyDictationEnabled, vocabularyTranscriberEnabled;
   final int idleSeconds;
   final bool insert, hud;
+  final bool wakeWordEnabled;
+  final String wakeWord;
+  final String closeWord;
+  final PhraseCompletionMode completionMode;
+  final bool voiceCalibrationEnabled;
+  final bool speakerProfileExists;
+  final double speakerThreshold;
 
   // ── приложение ────────────────────────────────────────────────────────────
 
@@ -262,6 +276,13 @@ class SettingsState extends Equatable {
     int? idleSeconds,
     bool? insert,
     bool? hud,
+    bool? wakeWordEnabled,
+    String? wakeWord,
+    String? closeWord,
+    PhraseCompletionMode? completionMode,
+    bool? voiceCalibrationEnabled,
+    bool? speakerProfileExists,
+    double? speakerThreshold,
     bool? toLibrary,
     bool? saveNextToSource,
     bool? timestamps,
@@ -317,6 +338,14 @@ class SettingsState extends Equatable {
     idleSeconds: idleSeconds ?? this.idleSeconds,
     insert: insert ?? this.insert,
     hud: hud ?? this.hud,
+    wakeWordEnabled: wakeWordEnabled ?? this.wakeWordEnabled,
+    wakeWord: wakeWord ?? this.wakeWord,
+    closeWord: closeWord ?? this.closeWord,
+    completionMode: completionMode ?? this.completionMode,
+    voiceCalibrationEnabled:
+        voiceCalibrationEnabled ?? this.voiceCalibrationEnabled,
+    speakerProfileExists: speakerProfileExists ?? this.speakerProfileExists,
+    speakerThreshold: speakerThreshold ?? this.speakerThreshold,
     toLibrary: toLibrary ?? this.toLibrary,
     saveNextToSource: saveNextToSource ?? this.saveNextToSource,
     timestamps: timestamps ?? this.timestamps,
@@ -363,6 +392,13 @@ class SettingsState extends Equatable {
     idleSeconds,
     insert,
     hud,
+    wakeWordEnabled,
+    wakeWord,
+    closeWord,
+    completionMode,
+    voiceCalibrationEnabled,
+    speakerProfileExists,
+    speakerThreshold,
     toLibrary,
     saveNextToSource,
     timestamps,
