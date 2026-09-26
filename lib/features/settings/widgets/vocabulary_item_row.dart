@@ -131,40 +131,6 @@ class _VocabularyItemRowState extends State<VocabularyItemRow> {
         ),
         child: Row(
           children: [
-            // Только звёздочка (приоритет в подсказках модели) в начале строки
-            MacosTooltip(
-              message: item.isPriority
-                  ? l10n.tooltipRemovePriority
-                  : l10n.tooltipSetPriority,
-              child: MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: () => widget.onUpdate(
-                    item.copyWith(isPriority: !item.isPriority),
-                  ),
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    width: 24,
-                    height: 28,
-                    alignment: Alignment.center,
-                    child: Transform.translate(
-                      offset: const Offset(0, -1.5),
-                      child: MacosIcon(
-                        item.isPriority
-                            ? CupertinoIcons.star_fill
-                            : CupertinoIcons.star,
-                        size: 13.5,
-                        color: item.isPriority
-                            ? MacosColors.systemYellowColor
-                            : Surface.secondaryText(context)
-                                .withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: Gap.tight),
             Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,

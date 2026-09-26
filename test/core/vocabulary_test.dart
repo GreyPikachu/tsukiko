@@ -13,7 +13,7 @@ void main() {
     expect(applyVocabularyReplacements('Я сказал tsukiko.', second).text,
         'Я сказал TSUKIKO.');
     expect(promptWithVocabulary('', [second.single.copyWith(isPriority: true)]),
-        'TSUKIKO');
+        isEmpty);
     final replacement = upsertVocabulary(second, 'tsukiko', replacement: 'Цукико');
     expect(replacement, hasLength(1));
     expect(replacement.single.replacement, 'Цукико');
@@ -65,7 +65,7 @@ void main() {
       id: 'tsukiko', phrase: 'tsukiko',
       replacement: 'Tsukiko', isPriority: true,
     );
-    expect(promptWithVocabulary('', [fitu, tsukiko]), 'tsukiko');
+    expect(promptWithVocabulary('', [fitu, tsukiko]), isEmpty);
     const unrelated = 'Это фото и fituistic внутри слов.';
     final result = applyVocabularyReplacements(unrelated, [fitu, tsukiko]);
     expect(result.text, unrelated);
@@ -99,9 +99,9 @@ void main() {
       expect(hint2.type, VocabularyType.hint);
       expect(hint2.usable, isTrue);
 
-      // In promptWithVocabulary, pure acoustic hints marked as priority are included
+      // In promptWithVocabulary, vocabulary items do not leak into the prompt
       final prompt = promptWithVocabulary('Базовый текст', [hint1, hint2]);
-      expect(prompt, 'Базовый текст, TypeScript, Кубернетис');
+      expect(prompt, 'Базовый текст');
 
       // In applyVocabularyReplacements, pure hints do NOT change the recognized text
       final result = applyVocabularyReplacements(
@@ -366,12 +366,9 @@ void main() {
 
       final items = [activeHint, disabledHint, activeRep, disabledRep];
 
-      // In promptWithVocabulary, disabled items are omitted
+      // In promptWithVocabulary, vocabulary items do not leak into prompt
       final prompt = promptWithVocabulary('Инструменты', items);
-      expect(prompt, contains('Flutter'));
-      expect(prompt, isNot(contains('мак')));
-      expect(prompt, isNot(contains('React')));
-      expect(prompt, isNot(contains('винда')));
+      expect(prompt, 'Инструменты');
 
       // In applyVocabularyReplacements, disabled items are not substituted
       final res = applyVocabularyReplacements(
@@ -393,30 +390,30 @@ void main() {
         const VocabularyItem(id: '3', phrase: 'Гамма', isPriority: true),
       ];
 
-      // Base prompt punctuation formatting
+      // Base prompt is preserved without leaking vocabulary items
       expect(
         promptWithVocabulary('Привет.', items),
-        'Привет. Альфа, Бета, Гамма',
+        'Привет.',
       );
       expect(
         promptWithVocabulary('Внимание!', items),
-        'Внимание! Альфа, Бета, Гамма',
+        'Внимание!',
       );
       expect(
         promptWithVocabulary('Вопрос?', items),
-        'Вопрос? Альфа, Бета, Гамма',
+        'Вопрос?',
       );
       expect(
         promptWithVocabulary('Список:', items),
-        'Список: Альфа, Бета, Гамма',
+        'Список:',
       );
       expect(
         promptWithVocabulary('И так далее…', items),
-        'И так далее… Альфа, Бета, Гамма',
+        'И так далее…',
       );
       expect(
         promptWithVocabulary('База', items),
-        'База, Альфа, Бета, Гамма',
+        'База',
       );
 
       // Token estimation
@@ -426,21 +423,13 @@ void main() {
       final singleEst = estimateVocabularyTokens([
         const VocabularyItem(id: '1', phrase: 'Тест', isPriority: true),
       ]);
-      expect(singleEst, greaterThan(0));
+      expect(singleEst, 0);
 
       // Token truncation with strict limit
-      final longList = List.generate(
-        100,
-        (i) => VocabularyItem(
-          id: 'item_$i',
-          phrase: 'ДлинныйТерминНомер$i',
-          isPriority: true,
-        ),
-      );
-
+      final longPrompt = 'ДлинныйТекст' * 20;
       final truncated = promptWithVocabulary(
-        '',
-        longList,
+        longPrompt,
+        const [],
         maxEstimatedTokens: 50,
       );
       expect((truncated.length / 3.8), lessThanOrEqualTo(55));
@@ -675,19 +664,19 @@ void main() {
         const VocabularyItem(id: '2', phrase: 'Слово2', isPriority: true),
       ];
 
-      final prompt200 = promptWithVocabulary('', itemTokens, maxEstimatedTokens: 200);
+      const basePrompt = 'Слово1, Слово2';
+      final prompt200 = promptWithVocabulary(basePrompt, itemTokens, maxEstimatedTokens: 200);
       expect(prompt200, 'Слово1, Слово2');
 
-      final promptSmall = promptWithVocabulary('', itemTokens, maxEstimatedTokens: 1);
-      // The first word alone exceeds one estimated token.
+      final promptSmall = promptWithVocabulary(basePrompt, itemTokens, maxEstimatedTokens: 0);
       expect(promptSmall, '');
 
-      final promptJustFits = promptWithVocabulary('', itemTokens, maxEstimatedTokens: 4);
+      final promptJustFits = promptWithVocabulary(basePrompt, itemTokens, maxEstimatedTokens: 4);
       // The first word fits; two words do not.
       expect(promptJustFits, 'Слово1');
 
       // 500 tokens budget
-      final prompt500 = promptWithVocabulary('', itemTokens, maxEstimatedTokens: 500);
+      final prompt500 = promptWithVocabulary(basePrompt, itemTokens, maxEstimatedTokens: 500);
       expect(prompt500, 'Слово1, Слово2');
     });
 
@@ -712,40 +701,33 @@ void main() {
       expect(resMulti.text, 'Mac и SDK');
     });
 
-    test('Priority Routing: Only starred items go to model prompt context', () {
+    test('Local Dictionary Routing: Vocabulary items do not pollute model prompt context', () {
       final items = [
         const VocabularyItem(
           id: '1',
           phrase: 'StarWord',
           replacement: 'StarReplacement',
-          isPriority: true,
         ),
         const VocabularyItem(
           id: '2',
           phrase: 'NormalWord',
           replacement: 'NormalReplacement',
-          isPriority: false,
         ),
         const VocabularyItem(
           id: '3',
           phrase: 'StarHint',
-          isPriority: true,
         ),
         const VocabularyItem(
           id: '4',
           phrase: 'NormalHint',
-          isPriority: false,
         ),
       ];
 
-      // Default promptWithVocabulary (onlyPriority = true)
+      // promptWithVocabulary keeps the model prompt clean (never leaks vocabulary into model prompt)
       final prompt = promptWithVocabulary('Context', items);
-      expect(prompt, contains('StarWord'));
-      expect(prompt, contains('StarHint'));
-      expect(prompt, isNot(contains('NormalWord')));
-      expect(prompt, isNot(contains('NormalHint')));
+      expect(prompt, 'Context');
 
-      // Non-starred items still work 100% in post-processing!
+      // Items still work 100% in post-processing!
       final replaced = applyVocabularyReplacements(
         'Here is StarWord and NormalWord in text.',
         items,
@@ -755,30 +737,9 @@ void main() {
         'Here is StarReplacement and NormalReplacement in text.',
       );
 
-      // When onlyPriority: false, all items can be included
-      final fullPrompt = promptWithVocabulary(
-        'Context',
-        items,
-        onlyPriority: false,
-      );
-      expect(fullPrompt, contains('StarWord'));
-      expect(fullPrompt, contains('NormalWord'));
-      expect(fullPrompt, contains('StarHint'));
-      expect(fullPrompt, contains('NormalHint'));
-
-      // Token estimation counts only priority tokens
-      final priorityTokens = estimateVocabularyTokens(items);
-      final allTokens =
-          estimateVocabularyTokens(items, onlyPriority: false);
-      expect(priorityTokens, greaterThan(0));
-      expect(allTokens, greaterThan(priorityTokens));
-
-      // If no priority items, 0 extra tokens
-      final zeroTokens = estimateVocabularyTokens([
-        const VocabularyItem(id: 'a', phrase: 'Word1', isPriority: false),
-        const VocabularyItem(id: 'b', phrase: 'Word2', isPriority: false),
-      ]);
-      expect(zeroTokens, 0);
+      // Token estimation returns 0 because vocabulary is purely local
+      final tokens = estimateVocabularyTokens(items);
+      expect(tokens, 0);
     });
 
     test('Global Languages & Scripts: CJK, Nordic, Spanish, Hindi, Swahili, etc.', () {

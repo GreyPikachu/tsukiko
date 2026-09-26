@@ -55,3 +55,5 @@ macos/Engine/
 windows/Engine/
 graphify-out/
 accounts_popover_scrolled.png
+# Личные голосовые записи и локальные результаты проверки распознавания.
+/records/

@@ -25,7 +25,6 @@ import 'widgets/model_row.dart';
 import 'widgets/vocabulary_item_row.dart';
 import 'settings_state.dart';
 import '../../core/labels.dart';
-import '../../core/vocabulary.dart';
 
 /// Окно настроек: своё окно с вкладками, как у всех приложений системы.
 ///
@@ -611,11 +610,6 @@ class _SettingsBodyState extends State<SettingsBody>
       return true;
     }).toList();
 
-    final priorityItems =
-        s.vocabulary.where((item) => item.usable && item.isPriority).toList();
-    final tokens = estimateVocabularyTokens(priorityItems);
-    final isOverBudget = tokens > vocabularyPromptBudget;
-
     return [
       // 1. Область действия (Apple Inset Grouped Settings Box)
       SectionTitle(l10n.sectionVocabularyAndReplacements),
@@ -699,22 +693,6 @@ class _SettingsBodyState extends State<SettingsBody>
         ),
       ],
 
-      if (s.vocabulary.isNotEmpty) ...[
-        // Индикатор бюджета токенов контекста модели — вверху перед глазами
-        _TokenBudgetCard(
-          tokens: tokens,
-          isOverBudget: isOverBudget,
-          priorityItemsCount: priorityItems.length,
-          zeroBudgetNotice:
-              l10n.promptBudgetZeroNotice(vocabularyPromptBudget),
-          budgetNotice:
-              l10n.promptBudgetNotice(tokens, vocabularyPromptBudget),
-          priorityHint: l10n.promptBudgetPriorityHint,
-          budgetWarning: l10n.promptBudgetWarning,
-        ),
-        const SizedBox(height: Gap.item),
-      ],
-
       // Панель поиска, фильтров и массовых действий
       Row(
         children: [
@@ -754,12 +732,6 @@ class _SettingsBodyState extends State<SettingsBody>
                     title: Text(l10n.actionDisableAllVocabulary),
                     label: l10n.actionDisableAllVocabulary,
                     onTap: () => _cubit.setAllVocabularyEnabled(false),
-                  ),
-                  const MacosPulldownMenuDivider(),
-                  MacosPulldownMenuItem(
-                    title: Text(l10n.actionClearAllPriorities),
-                    label: l10n.actionClearAllPriorities,
-                    onTap: () => _cubit.clearAllVocabularyPriorities(),
                   ),
                 ],
               ),
@@ -1673,117 +1645,7 @@ class _FilterSegmentState extends State<_FilterSegment> {
   }
 }
 
-class _TokenBudgetCard extends StatelessWidget {
-  const _TokenBudgetCard({
-    required this.tokens,
-    required this.isOverBudget,
-    required this.priorityItemsCount,
-    required this.zeroBudgetNotice,
-    required this.budgetNotice,
-    required this.priorityHint,
-    required this.budgetWarning,
-  });
 
-  final int tokens;
-  final bool isOverBudget;
-  final int priorityItemsCount;
-  final String zeroBudgetNotice;
-  final String budgetNotice;
-  final String priorityHint;
-  final String budgetWarning;
-
-  @override
-  Widget build(BuildContext context) {
-    final statusColor = isOverBudget
-        ? MacosColors.systemOrangeColor
-        : (priorityItemsCount > 0
-            ? MacosColors.systemYellowColor
-            : Surface.secondaryText(context));
-
-    final percentage = (tokens / 220.0 * 100).clamp(0, 100).toInt();
-
-    return Container(
-      padding: const EdgeInsets.all(Gap.inner),
-      decoration: BoxDecoration(
-        color: Surface.hover(context),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Surface.hairline(context)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              MacosIcon(
-                CupertinoIcons.star_circle,
-                size: IconSize.inline,
-                color: statusColor,
-              ),
-              const SizedBox(width: Gap.hint),
-              Expanded(
-                child: Text(
-                  priorityItemsCount == 0 ? zeroBudgetNotice : budgetNotice,
-                  style: Type.caption.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: isOverBudget
-                        ? MacosColors.systemOrangeColor
-                        : (priorityItemsCount > 0
-                            ? null
-                            : Surface.secondaryText(context)),
-                  ),
-                ),
-              ),
-              Text(
-                '$percentage%',
-                style: Type.caption.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  color: isOverBudget
-                      ? MacosColors.systemOrangeColor
-                      : Surface.secondaryText(context),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: Gap.inner),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: Container(
-              height: 4,
-              width: double.infinity,
-              color: Surface.hairline(context),
-              child: FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: (tokens / 220.0).clamp(0.0, 1.0),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: isOverBudget
-                        ? MacosColors.systemOrangeColor
-                        : (tokens > 150
-                            ? MacosColors.systemYellowColor
-                            : MacosColors.systemGreenColor),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: Gap.hint),
-          Hint(priorityHint),
-          if (isOverBudget) ...[
-            const SizedBox(height: Gap.tight),
-            Text(
-              budgetWarning,
-              style: Type.caption.copyWith(
-                color: MacosColors.systemOrangeColor,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
 
 class _SuggestionChip extends StatefulWidget {
   const _SuggestionChip({required this.label, required this.onTap});

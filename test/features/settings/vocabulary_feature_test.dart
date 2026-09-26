@@ -885,64 +885,29 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('Token budget indicator warns beyond the conservative limit', (
-      tester,
-    ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+    testWidgets(
+      'Settings 5th tab (Словарь) does not show token budget card as vocabulary is purely local',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(580, 1400));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 
-      // Small vocabulary (under budget)
-      final cubitSmall = _TestVocabularyCubit(
-        SettingsState(
-          tab: 'vocabulary',
-          vocabulary: const [
-            VocabularyItem(id: '1', phrase: 'TypeScript', isPriority: true),
-          ],
-        ),
-      );
-      addTearDown(cubitSmall.close);
+        final cubitSmall = _TestVocabularyCubit(
+          SettingsState(
+            tab: 'vocabulary',
+            vocabulary: const [
+              VocabularyItem(id: '1', phrase: 'TypeScript', isPriority: true),
+            ],
+          ),
+        );
+        addTearDown(cubitSmall.close);
 
-      await tester.pumpWidget(buildTestApp(cubitSmall));
-      await tester.pump();
+        await tester.pumpWidget(buildTestApp(cubitSmall));
+        await tester.pump();
 
-      expect(find.textContaining('из 160 токенов'), findsOneWidget);
-      expect(
-        find.text(
-          'Словарь превышает рекомендуемый лимит. Часть подсказок может не попасть в окно контекста модели.',
-        ),
-        findsNothing,
-      );
-
-      await tester.pumpWidget(const SizedBox());
-
-      // Over-budget vocabulary (> 160 estimated tokens)
-      final heavyItems = [
-        VocabularyItem(id: '1', phrase: 'Термин' * 40, isPriority: true),
-        VocabularyItem(id: '2', phrase: 'Определение' * 40, isPriority: true),
-        VocabularyItem(id: '3', phrase: 'Концепция' * 40, isPriority: true),
-      ];
-
-      final cubitHeavy = _TestVocabularyCubit(
-        SettingsState(
-          tab: 'vocabulary',
-          vocabulary: heavyItems,
-        ),
-      );
-      addTearDown(cubitHeavy.close);
-
-      await tester.pumpWidget(buildTestApp(cubitHeavy));
-      await tester.pump();
-
-      expect(
-        find.text(
-          'Словарь слишком велик: модель может игнорировать слова в конце',
-        ),
-        findsOneWidget,
-      );
-
-      await tester.pumpWidget(const SizedBox());
-    });
+        expect(find.textContaining('из 160 токенов'), findsNothing);
+      },
+    );
   });
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -997,10 +962,10 @@ void main() {
       addTearDown(cubit.close);
       await cubit.reloadSettingsForTesting();
 
-      // 1. Check prompt includes vocabulary additions
+      // 1. Check prompt does not leak vocabulary additions
       final effectivePrompt = cubit.optionsForTesting.effectivePrompt;
-      expect(effectivePrompt, contains('TypeScript'));
-      expect(effectivePrompt, contains('юскейс'));
+      expect(effectivePrompt, isNot(contains('TypeScript')));
+      expect(effectivePrompt, isNot(contains('юскейс')));
 
       // 2. Perform dictation with replacement
       server.transcribedText = 'Это отличный юскейс для TypeScript.';

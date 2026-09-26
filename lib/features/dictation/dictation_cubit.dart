@@ -11,6 +11,7 @@ import '../../core/whisper_server.dart';
 import 'dictation_state.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
+import '../../core/recognition.dart';
 import '../../core/whisper.dart';
 import '../../platform/os.dart';
 import '../../core/settings.dart';
@@ -156,6 +157,10 @@ class DictationCubit extends Cubit<DictationState> {
             prompt: promptWithVocabulary(
               options.effectivePrompt,
               _vocabulary,
+              maxEstimatedTokens:
+                  engineForModel(options.model) == RecognitionEngine.whisperCpp
+                      ? vocabularyPromptBudget
+                      : 9999,
             ),
           )
         : options;

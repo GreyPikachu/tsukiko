@@ -993,7 +993,14 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     final selected = state.optionsFor(job);
     final opts = _commandsEnabled
         ? selected.copyWith(
-            prompt: promptWithVocabulary(selected.effectivePrompt, _vocabulary),
+            prompt: promptWithVocabulary(
+              selected.effectivePrompt,
+              _vocabulary,
+              maxEstimatedTokens:
+                  engineForModel(selected.model) == RecognitionEngine.whisperCpp
+                      ? vocabularyPromptBudget
+                      : 9999,
+            ),
           )
         : selected;
     var it = job;

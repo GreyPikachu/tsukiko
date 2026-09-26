@@ -4,13 +4,15 @@ import 'dart:io';
 import 'dart:typed_data' show BytesBuilder;
 
 import '../core/app_locale.dart';
+import '../core/dictated_text.dart';
 import '../core/library.dart';
 import '../core/logger.dart';
 import '../core/recognition.dart';
-import '../core/transcript.dart';
 import '../core/whisper.dart';
 import '../platform/os.dart';
 import '../core/settings.dart';
+
+export 'dictated_text.dart' show tidyDictated;
 
 /// Фоновая диктовка: долгоживущий whisper-server, который держит модель
 /// в памяти между фразами, и состояние самой диктовки.
@@ -244,31 +246,6 @@ String? rescueRecording(String path) {
   } catch (_) {
     return null;
   }
-}
-
-/// Whisper на тишине сочиняет: «(музыка)», «[BLANK_AUDIO]». Всё, что
-/// целиком в скобках, — не речь, а галлюцинация.
-final _bracketed = RegExp(r'^[\[\(\*][^\]\)\*]*[\]\)\*]$');
-
-/// Ведущее тире. Модель открывает им реплику, приняв надиктованное за
-/// прямую речь. Диктуют не диалог, и тире в начале не нужно никогда —
-/// корень беды в подсказке (см. `punctuationPrimer`), но подсказка
-/// направляет модель, а не приказывает ей, и подстраховка нужна.
-final _leadingDash = RegExp(r'^(?:[-—–]\s*)+');
-
-/// Сервер отдаёт текст сегментами, разделёнными переводом строки. В поле
-/// ввода это выглядит рваным — диктовка должна вставлять одну фразу.
-String tidyDictated(String raw) {
-  final text = raw
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim()
-      .replaceFirst(_leadingDash, '')
-      .trim();
-  if (_bracketed.hasMatch(text)) return '';
-  if (looksLikeSilenceHallucination(text)) return '';
-  final cleaned = stripSilenceHallucinations(text).trim();
-  if (cleaned.isEmpty || looksLikeSilenceHallucination(cleaned)) return '';
-  return cleaned;
 }
 
 /// Свободный порт: занимаем его на мгновение и сразу отпускаем. Между

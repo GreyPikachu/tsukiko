@@ -187,72 +187,62 @@ List<VocabularyItem> upsertVocabulary(
 /// Составляет затравку (conditioning prompt) для модели из базовой подсказки
 /// и активных записей словаря.
 ///
-/// По умолчанию в затравку модели попадают только приоритетные (⭐ [isPriority])
-/// записи, чтобы защитить акустическую нейросеть от галлюцинаций, зацикливаний
-/// и переполнения окна контекста (220 токенов). Все остальные записи применяются
-/// на этапе нечёткого постпроцессинга без каких-либо лимитов.
+/// Подсказка модели не дополняется отдельными словами из словаря: словарь
+/// полностью применяется на этапе локального фонетического сопоставления
+/// (VocabularyMatcher), не засоряя окно контекста Whisper и не провоцируя
+/// галлюцинации и зацикливания.
 String promptWithVocabulary(
   String basePrompt,
   Iterable<VocabularyItem> items, {
   int maxEstimatedTokens = vocabularyPromptBudget,
   bool onlyPriority = true,
 }) {
-  final base = basePrompt.trim();
-  final lowerBase = base.toLowerCase();
+  return _boundedPrompt(basePrompt.trim(), maxEstimatedTokens);
+}
 
-  final additions = <String>[];
-  final seen = <String>{};
-
-  for (final item in items) {
-    if (!item.usable) continue;
-    if (onlyPriority && !item.isPriority) continue;
-    final phrase = item.phrase.trim();
-    // Короткий триггер автозамены не является доказательством, что слово
-    // прозвучало. В подсказке он склонял Whisper повторять FITU сам по себе.
-    if (item.isReplacement && phrase.length <= 4) continue;
-    final lower = phrase.toLowerCase();
-
-    // Предотвращаем дублирование
-    if (seen.add(lower) && !lowerBase.contains(lower)) {
-      additions.add(phrase);
+/// Whisper silently keeps only the tail when its initial prompt exceeds the
+/// text context. Keep complete words from the beginning instead, with the same
+/// conservative token estimate already used for vocabulary additions.
+String _boundedPrompt(String prompt, int budget) {
+  if (budget <= 0) return '';
+  if (_estimatePromptTokens(prompt) <= budget) return prompt;
+  var weight = 0.0;
+  var lastSpace = 0;
+  var lastClause = 0;
+  var end = 0;
+  for (final rune in prompt.runes) {
+    final next = weight + (rune < 128 ? 1 / 3 : 2 / 3);
+    if (next.ceil() > budget) break;
+    weight = next;
+    end += rune > 0xFFFF ? 2 : 1;
+    if (rune == 0x20 || rune == 0x0A) lastSpace = end;
+    if (rune == 0x2C ||
+        rune == 0x3B ||
+        rune == 0x2E ||
+        rune == 0x21 ||
+        rune == 0x3F) {
+      lastClause = end;
     }
   }
-
-  if (additions.isEmpty) return base;
-
-  // Защита окна контекста Whisper (~3.8 символа на токен в среднем)
-  final buffer = StringBuffer(base);
-  for (final addition in additions) {
-    final candidate = buffer.isEmpty ? addition : ', $addition';
-    if (_estimatePromptTokens('$buffer$candidate') > maxEstimatedTokens) {
-      continue;
-    }
-    if (buffer.isNotEmpty &&
-        !RegExp(r'[.!?…,:;]\s*$').hasMatch(buffer.toString())) {
-      buffer.write(', ');
-    } else if (buffer.isNotEmpty) {
-      buffer.write(' ');
-    }
-    buffer.write(addition);
-  }
-
-  return buffer.toString();
+  final cut = lastClause >= end * 0.75
+      ? lastClause
+      : lastSpace > 0
+      ? lastSpace
+      : end;
+  return prompt
+      .substring(0, cut)
+      .trimRight()
+      .replaceFirst(RegExp(r'[,;]+$'), '');
 }
 
 /// Оценка количества токенов, занимаемых словарем в контексте модели.
+/// Словарь применяется исключительно локально, поэтому в модель не добавляется (0 токенов).
 int estimateVocabularyTokens(
   Iterable<VocabularyItem> items, {
   String basePrompt = '',
   bool onlyPriority = true,
 }) {
-  final prompt = promptWithVocabulary(
-    basePrompt,
-    items,
-    maxEstimatedTokens: 9999,
-    onlyPriority: onlyPriority,
-  );
-  if (prompt.isEmpty) return 0;
-  return _estimatePromptTokens(prompt);
+  return 0;
 }
 
 int _estimatePromptTokens(String prompt) {
@@ -672,12 +662,14 @@ CommandText _applyVocabulary(String source, VocabularyMatcher matcher) {
       final output = exactMatch.output;
       out.write(output);
       if (original != output) {
-        replacements.add(TextReplacement(
-          start: start,
-          end: start + output.length,
-          original: original,
-          replacement: output,
-        ));
+        replacements.add(
+          TextReplacement(
+            start: start,
+            end: start + output.length,
+            original: original,
+            replacement: output,
+          ),
+        );
       }
       at += exactMatch.charLength;
       continue;

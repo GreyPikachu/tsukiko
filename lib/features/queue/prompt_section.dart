@@ -193,7 +193,9 @@ class _ModelPromptSectionState extends State<ModelPromptSection> {
                     Text(
                       count == 0
                           ? l10n.buttonEditPromptSubtitle(0)
-                          : '${l10n.buttonEditPromptSubtitle(count)} · ~$tokens ток.',
+                          : (tokens > 0
+                              ? '${l10n.buttonEditPromptSubtitle(count)} · ~$tokens ток.'
+                              : l10n.buttonEditPromptSubtitle(count)),
                       style: Type.caption.copyWith(
                         color: Surface.secondaryText(context),
                       ),

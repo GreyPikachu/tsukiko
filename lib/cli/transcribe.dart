@@ -477,7 +477,13 @@ Future<Transcript> _own(String path, Args a, void Function(String) say) async {
         'нет модели. Откройте tsukiko и скачайте её в настройках, или укажите файл ключом --model');
   }
   if (vocabEnabled && vocab.isNotEmpty) {
-    o = o.copyWith(prompt: promptWithVocabulary(o.effectivePrompt, vocab));
+    o = o.copyWith(prompt: promptWithVocabulary(
+      o.effectivePrompt,
+      vocab,
+      maxEstimatedTokens: engineForModel(o.model) == RecognitionEngine.whisperCpp
+          ? vocabularyPromptBudget
+          : 9999,
+    ));
   }
   var t = await transcribeHere(path, o, say);
   if (vocabEnabled && vocab.isNotEmpty) {

@@ -4,6 +4,7 @@ library;
 
 import '../platform/os.dart';
 import 'recognition.dart';
+import 'vocabulary.dart' show promptWithVocabulary;
 
 /// С таймкодами модель на разговорной речи скатывается в сплошной нижний
 /// регистр без знаков препинания. Затравка задаёт стиль — знаки возвращаются,
@@ -113,11 +114,16 @@ class RunOptions {
       );
 
   /// Своя подсказка важнее: она уже задаёт модели и стиль, и словарь.
-  String get effectivePrompt => prompt.trim().isNotEmpty
-      ? prompt.trim()
-      : punctuate && lang != 'auto'
-          ? punctuationPrimer(lang)
-          : '';
+  String get effectivePrompt {
+    final selected = prompt.trim().isNotEmpty
+        ? prompt.trim()
+        : punctuate && lang != 'auto'
+            ? punctuationPrimer(lang)
+            : '';
+    return engineForModel(model) == RecognitionEngine.whisperCpp
+        ? promptWithVocabulary(selected, const [])
+        : selected;
+  }
 }
 
 /// Чем разрывается цепочка повторов: окно не наследует текст предыдущего,

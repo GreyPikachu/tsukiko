@@ -1015,8 +1015,8 @@ void main() {
     final models = findModels();
     if (findWhisperServer() == null || models.isEmpty) return;
 
-    final wav = '${Directory.systemTemp.path}/tsukiko_dictation.wav';
-    await os.toWav('/System/Library/Sounds/Ping.aiff', wav);
+    // Настоящая короткая речь проверяет весь путь ответа сервера.
+    final wav = File('test/fixtures/ru_smoke.wav').absolute.path;
 
     await withTempSupportDir('tsukiko-real-server', () async {
       // И путь модели тоже должен носить временную метку. Старые сборки
@@ -1037,7 +1037,8 @@ void main() {
 
         // Первая фраза уже на прогретой модели: секунда с запасом.
         final started = DateTime.now();
-        await server.transcribe(wav, lang: 'ru');
+        final recognized = await server.transcribe(wav, lang: 'ru');
+        expect(recognized?.toLowerCase(), contains('привет'));
         expect(DateTime.now().difference(started).inSeconds, lessThan(10));
 
         // Таймер простоя сдвигается каждым обращением.
@@ -1058,7 +1059,6 @@ void main() {
         expect(server.up, isFalse);
       } finally {
         await server.shutdown();
-        File(wav).deleteSync();
       }
       expect(server.up, isFalse);
       expect(server.untilUnload, isNull);
