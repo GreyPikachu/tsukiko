@@ -52,7 +52,6 @@ dependencies:
   # (её тянет за собой почти любой плагин). Своими руками пришлось бы
   # звать LocalAlloc через ту же ffi, только длиннее.
   ffi: ^2.2.0
-  sherpa_onnx: ^1.13.8
   record: ^7.1.1
 
 dev_dependencies:

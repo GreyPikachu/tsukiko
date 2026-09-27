@@ -157,18 +157,18 @@ class WakeWordService {
   void _onAudioFrame(Float32List samples) {
     if (_state == WakeWordListeningState.disabled || samples.isEmpty) return;
 
-    // Быстрый фильтр энергии RMS для минимизации CPU в полной тишине
+    // Быстрый замер энергии сигнала
     double sum = 0.0;
     for (var i = 0; i < samples.length; i++) {
-      sum += samples[i] * samples[i];
+      final s = samples[i];
+      sum += s * s;
     }
-    final rms = sum / samples.length;
+    final energy = sum / samples.length;
+    final bool hasAudioEnergy = energy > 0.00005;
 
-    // Если комната абсолютно бесшумна, не грузим нейросеть
-    final bool hasAudioEnergy = rms > 0.00005;
-    if (hasAudioEnergy) {
-      _engine.acceptAudio(samples);
-    }
+    // Всегда передаём аудиопоток движку: он непрерывно калибрует комнатный фон
+    // и отслеживает фазы речи и тишины через AdaptiveNoiseFilter.
+    _engine.acceptAudio(samples);
 
     final now = DateTime.now();
     final bool isSpeech = hasAudioEnergy && _engine.isSpeech(samples);
@@ -176,12 +176,17 @@ class WakeWordService {
       _lastSpeechTime = now;
     }
 
+    final bool speechRecentlyActive = isSpeech ||
+        (_lastSpeechTime != null &&
+            now.difference(_lastSpeechTime!) < const Duration(seconds: 3));
+
     // ── 1. Режим ожидания слова активации (WakeWord) ──────────────────────────
     if (_state == WakeWordListeningState.listeningWakeWord) {
-      if (!hasAudioEnergy) return;
+      if (!hasAudioEnergy && !speechRecentlyActive) return;
 
       final detection = _engine.detectKeyword();
       if (detection != null) {
+        _lastSpeechTime = null;
         final detected = detection.keyword.trim().toLowerCase();
         final expected = (_settings?.wakeWord ?? '').trim().toLowerCase();
 
@@ -191,7 +196,6 @@ class WakeWordService {
           // Верификация по профилю голоса
           final settings = _settings;
           if (settings != null &&
-              settings.voiceCalibrationEnabled &&
               _profile != null &&
               _profile!.embeddings.isNotEmpty &&
               detection.samples != null) {
@@ -225,7 +229,7 @@ class WakeWordService {
       if (closeWord.isNotEmpty &&
           (mode == PhraseCompletionMode.closeWordOnly ||
               mode == PhraseCompletionMode.hybrid)) {
-        if (hasAudioEnergy) {
+        if (hasAudioEnergy || speechRecentlyActive) {
           final detection = _engine.detectKeyword();
           if (detection != null) {
             final detected = detection.keyword.trim().toLowerCase();

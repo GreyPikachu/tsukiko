@@ -1,11 +1,10 @@
-import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
-import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
-import 'keyword_tokenizer.dart';
-import 'wakeword_models.dart';
 import '../logger.dart';
+import 'acoustic_feature_extractor.dart';
+import 'adaptive_noise_filter.dart';
+import 'speech_verifier.dart';
 
 /// Результат распознавания ключевого слова.
 class KeywordDetection {
@@ -18,10 +17,10 @@ class KeywordDetection {
   final Float32List? samples;
 }
 
-/// Абстракция над нативными возможностями sherpa-onnx.
+/// Абстракция над движком распознавания ключевых слов и голоса.
 ///
-/// Позволяет подменять нативный движок в тестах (`FakeSherpaEngine`),
-/// гарантируя изоляцию тестов от нативных библиотек и файловой системы.
+/// Позволяет подменять движок в тестах (`FakeSherpaEngine`),
+/// гарантируя полную изоляцию от микрофона и файловой системы.
 abstract class SherpaEngine {
   bool get isReady;
 
@@ -31,10 +30,10 @@ abstract class SherpaEngine {
     String closeWord = '',
   });
 
-  /// Инициализировать детектор пауз (VAD).
+  /// Инициализировать детектор активности речи (VAD).
   Future<bool> initVad();
 
-  /// Инициализировать извлекатель эмбеддингов спикера (Speaker ID).
+  /// Инициализировать систему верификации спикера.
   Future<bool> initSpeakerRecognition({
     List<Float32List>? enrolledEmbeddings,
   });
@@ -42,7 +41,7 @@ abstract class SherpaEngine {
   /// Передать порцию сэмплов в движок (16 кГц, моно).
   void acceptAudio(Float32List samples);
 
-  /// Проверить наличие речи в аудио через VAD.
+  /// Проверить наличие речи в аудио.
   bool isSpeech(Float32List samples);
 
   /// Проверить, сработало ли ключевое слово на текущем шаге.
@@ -57,295 +56,248 @@ abstract class SherpaEngine {
   /// Проверить, принадлежит ли голос пользователю по порогу сходства.
   bool verifySpeaker(Float32List embedding, double threshold);
 
-  /// Освободить все нативные ресурсы и память.
+  /// Освободить ресурсы.
   void dispose();
 }
 
-/// Реальная реализация на базе библиотеки Sherpa-ONNX через `dart:ffi`.
+/// Реальная реализация на базе встроенного в Tsukiko движка распознавания
+/// и акустического фильтра фонового шума.
 class NativeSherpaEngine implements SherpaEngine {
-  sherpa.KeywordSpotter? _spotter;
-  sherpa.OnlineStream? _kwsStream;
-  sherpa.VoiceActivityDetector? _vad;
-  sherpa.SpeakerEmbeddingExtractor? _speakerExtractor;
-  sherpa.SpeakerEmbeddingManager? _speakerManager;
+  NativeSherpaEngine({
+    SpeechVerifier? verifier,
+    AdaptiveNoiseFilter? noiseFilter,
+  })  : _verifier = verifier ?? SpeechVerifier(),
+        _noiseFilter = noiseFilter ?? AdaptiveNoiseFilter();
 
-  bool _bindingsInitialized = false;
-  final List<Float32List> _recentAudioHistory = [];
-  int _historySamplesCount = 0;
-  static const int _maxHistorySamples = 16000 * 3; // 3 секунды буфера для эмбеддинга
+  final SpeechVerifier _verifier;
+  final AdaptiveNoiseFilter _noiseFilter;
 
-  void _ensureBindings() {
-    if (_bindingsInitialized) return;
-    try {
-      sherpa.initBindings();
-      _bindingsInitialized = true;
-    } catch (e) {
-      Log.error('SherpaEngine', 'Failed to init sherpa bindings: $e');
-    }
-  }
+  String _wakeWord = '';
+  String _closeWord = '';
+  bool _ready = false;
+
+  final List<Float32List> _enrolledEmbeddings = [];
+
+  // Кольцевой пред-буфер для сохранения начала слова (200 мс = 3200 сэмплов)
+  final List<Float32List> _preRoll = [];
+  int _preRollSamples = 0;
+  static const int _maxPreRollSamples = 3200;
+
+  // Буфер для накопления речи при обнаружении активности
+  final List<Float32List> _speechBuffer = [];
+  int _speechBufferSamples = 0;
+  static const int _maxSpeechBufferSamples = 16000 * 3; // до 3 секунд
+  static const int _minSpeechBufferSamples = 16000 ~/ 4; // от 0.25 секунды
+
+  int _silenceSamples = 0;
+  KeywordDetection? _lastDetection;
+  bool _isProcessing = false;
 
   @override
-  bool get isReady => _spotter != null;
+  bool get isReady => _ready;
 
   @override
   Future<bool> initKeywordSpotter({
     required String wakeWord,
     String closeWord = '',
   }) async {
-    _ensureBindings();
-    if (!WakeWordModelPaths.isKwsInstalled) return false;
-
-    try {
-      _kwsStream?.free();
-      _kwsStream = null;
-      _spotter?.free();
-      _spotter = null;
-
-      final tokenizer = File(WakeWordModelPaths.kwsTokens).existsSync()
-          ? KeywordTokenizer.fromTokensFile(
-              File(WakeWordModelPaths.kwsTokens).readAsStringSync())
-          : KeywordTokenizer();
-
-      final keywordsList = [
-        if (wakeWord.trim().isNotEmpty) wakeWord.trim(),
-        if (closeWord.trim().isNotEmpty) closeWord.trim(),
-      ];
-
-      final keywordsStr = tokenizer.buildStreamKeywords(keywordsList);
-      if (keywordsStr.isEmpty) return false;
-
-      final config = sherpa.KeywordSpotterConfig(
-        feat: const sherpa.FeatureConfig(sampleRate: 16000, featureDim: 80),
-        model: sherpa.OnlineModelConfig(
-          transducer: sherpa.OnlineTransducerModelConfig(
-            encoder: WakeWordModelPaths.kwsEncoder,
-            decoder: WakeWordModelPaths.kwsDecoder,
-            joiner: WakeWordModelPaths.kwsJoiner,
-          ),
-          tokens: WakeWordModelPaths.kwsTokens,
-          numThreads: 1,
-          provider: 'cpu',
-          debug: false,
-        ),
-        maxActivePaths: 4,
-        keywordsThreshold: 0.25,
-        keywordsScore: 1.5,
-      );
-
-      _spotter = sherpa.KeywordSpotter(config);
-      _kwsStream = _spotter!.createStream(keywords: keywordsStr);
-      Log.info('SherpaEngine', 'KWS initialized with keywords: $keywordsStr');
-      return true;
-    } catch (e, st) {
-      Log.error('SherpaEngine', 'initKeywordSpotter error: $e', e, st);
-      return false;
-    }
+    _wakeWord = wakeWord.trim();
+    _closeWord = closeWord.trim();
+    _preRoll.clear();
+    _preRollSamples = 0;
+    _speechBuffer.clear();
+    _speechBufferSamples = 0;
+    _silenceSamples = 0;
+    _lastDetection = null;
+    _ready = true;
+    Log.info('NativeWakeWordEngine', 'Initialized with wakeWord: "$_wakeWord", closeWord: "$_closeWord"');
+    return true;
   }
 
   @override
   Future<bool> initVad() async {
-    _ensureBindings();
-    if (!WakeWordModelPaths.isVadInstalled) return false;
-
-    try {
-      _vad?.free();
-      _vad = null;
-
-      final vadConfig = sherpa.VadModelConfig(
-        sileroVad: sherpa.SileroVadModelConfig(
-          model: WakeWordModelPaths.vadOnnxPath,
-          threshold: 0.25,
-          minSilenceDuration: 0.5,
-          minSpeechDuration: 0.25,
-          windowSize: 512,
-        ),
-        sampleRate: 16000,
-        numThreads: 1,
-        provider: 'cpu',
-      );
-
-      _vad = sherpa.VoiceActivityDetector(
-        config: vadConfig,
-        bufferSizeInSeconds: 30,
-      );
-      return true;
-    } catch (e, st) {
-      Log.error('SherpaEngine', 'initVad error: $e', e, st);
-      return false;
-    }
+    _noiseFilter.reset();
+    return true;
   }
 
   @override
   Future<bool> initSpeakerRecognition({
     List<Float32List>? enrolledEmbeddings,
   }) async {
-    _ensureBindings();
-    if (!WakeWordModelPaths.isSpeakerModelInstalled) return false;
-
-    try {
-      _speakerManager?.free();
-      _speakerManager = null;
-      _speakerExtractor?.free();
-      _speakerExtractor = null;
-
-      final extractorConfig = sherpa.SpeakerEmbeddingExtractorConfig(
-        model: WakeWordModelPaths.speakerModelPath,
-        numThreads: 1,
-        provider: 'cpu',
-      );
-
-      final extractor = sherpa.SpeakerEmbeddingExtractor(config: extractorConfig);
-      _speakerExtractor = extractor;
-
-      final manager = sherpa.SpeakerEmbeddingManager(extractor.dim);
-      _speakerManager = manager;
-
-      if (enrolledEmbeddings != null && enrolledEmbeddings.isNotEmpty) {
-        final validEmbeddings = enrolledEmbeddings
-            .where((emb) => emb.length == extractor.dim)
-            .toList();
-        if (validEmbeddings.isNotEmpty) {
-          manager.addMulti(name: 'user', embeddingList: validEmbeddings);
-          Log.info('SherpaEngine', 'Enrolled ${validEmbeddings.length} speaker embeddings');
-        } else {
-          Log.warn('SherpaEngine', 'All speaker embeddings had mismatched dimension (expected ${extractor.dim})');
-        }
-      }
-
-      return true;
-    } catch (e, st) {
-      Log.error('SherpaEngine', 'initSpeakerRecognition error: $e', e, st);
-      return false;
+    _enrolledEmbeddings.clear();
+    if (enrolledEmbeddings != null) {
+      _enrolledEmbeddings.addAll(enrolledEmbeddings);
     }
+    return true;
   }
 
   @override
   void acceptAudio(Float32List samples) {
-    if (samples.isEmpty) return;
+    if (!_ready || samples.isEmpty) return;
 
-    // Ведём кольцевой буфер недавнего аудио для эмбеддинга спикера
-    _recentAudioHistory.add(samples);
-    _historySamplesCount += samples.length;
-    while (_historySamplesCount > _maxHistorySamples && _recentAudioHistory.isNotEmpty) {
-      final removed = _recentAudioHistory.removeAt(0);
-      _historySamplesCount -= removed.length;
+    final speechActive = _noiseFilter.isSpeech(samples);
+
+    if (speechActive) {
+      _silenceSamples = 0;
+
+      // Если речь только началась, прицепляем пред-буфер (чтобы не отрезать начало слова)
+      if (_speechBuffer.isEmpty && _preRoll.isNotEmpty) {
+        _speechBuffer.addAll(_preRoll);
+        _speechBufferSamples += _preRollSamples;
+        _preRoll.clear();
+        _preRollSamples = 0;
+      }
+
+      _speechBuffer.add(samples);
+      _speechBufferSamples += samples.length;
+
+      // Если фраза затянулась дольше максимального окна, обрабатываем накопленное
+      if (_speechBufferSamples >= _maxSpeechBufferSamples && !_isProcessing) {
+        _processSpeechBurst();
+      }
+    } else {
+      // Ведём кольцевой пред-буфер на случай начала речи
+      _preRoll.add(samples);
+      _preRollSamples += samples.length;
+      while (_preRollSamples > _maxPreRollSamples && _preRoll.isNotEmpty) {
+        final removed = _preRoll.removeAt(0);
+        _preRollSamples -= removed.length;
+      }
+
+      if (_speechBufferSamples > 0) {
+        _silenceSamples += samples.length;
+
+        // Захватываем хвостик тишины (до 200 мс), чтобы не обрезать конечное согласное
+        if (_silenceSamples <= 3200) {
+          _speechBuffer.add(samples);
+          _speechBufferSamples += samples.length;
+        }
+
+        // Если после речи наступила пауза >= 300 мс тишины (4800 сэмплов) — фраза завершилась
+        if (_silenceSamples >= 4800 && !_isProcessing) {
+          _processSpeechBurst();
+        }
+      }
+    }
+  }
+
+  void _processSpeechBurst() {
+    if (_speechBufferSamples < _minSpeechBufferSamples) {
+      _speechBuffer.clear();
+      _speechBufferSamples = 0;
+      _silenceSamples = 0;
+      return;
     }
 
-    if (_vad != null) {
-      _vad!.acceptWaveform(samples);
+    final total = _speechBufferSamples;
+    final combined = Float32List(total);
+    var offset = 0;
+    for (final chunk in _speechBuffer) {
+      combined.setAll(offset, chunk);
+      offset += chunk.length;
     }
 
-    if (_spotter != null && _kwsStream != null) {
-      _kwsStream!.acceptWaveform(samples: samples, sampleRate: 16000);
-    }
+    _speechBuffer.clear();
+    _speechBufferSamples = 0;
+    _silenceSamples = 0;
+    _isProcessing = true;
+
+    // Асинхронно проверяем через Whisper
+    _verifier.verifySamples(combined, targetWord: _wakeWord).then((res) {
+      _isProcessing = false;
+      if (res.matched) {
+        _lastDetection = KeywordDetection(keyword: _wakeWord, samples: combined);
+      } else if (_closeWord.isNotEmpty) {
+        // Проверяем CloseWord
+        if (SpeechVerifier.matchesKeyword(res.recognizedText, _closeWord)) {
+          _lastDetection = KeywordDetection(keyword: _closeWord, samples: combined);
+        }
+      }
+    }).catchError((Object e) {
+      _isProcessing = false;
+      Log.error('NativeWakeWordEngine', 'Error verifying speech burst: $e');
+    });
   }
 
   @override
   bool isSpeech(Float32List samples) {
-    if (_vad != null) {
-      return _vad!.isDetected();
-    }
-    // Простой RMS fallback для энергоэффективности
-    if (samples.isEmpty) return false;
-    double sum = 0.0;
-    for (var i = 0; i < samples.length; i++) {
-      sum += samples[i] * samples[i];
-    }
-    final rms = sum / samples.length;
-    return rms > 0.0001; // ~ -40 dB
+    return _noiseFilter.isSpeech(samples);
   }
 
   @override
   KeywordDetection? detectKeyword() {
-    final spotter = _spotter;
-    final stream = _kwsStream;
-    if (spotter == null || stream == null) return null;
-
-    while (spotter.isReady(stream)) {
-      spotter.decode(stream);
-      final res = spotter.getResult(stream);
-      if (res.keyword.isNotEmpty) {
-        final detected = res.keyword;
-        spotter.reset(stream);
-
-        // Собираем недавнее аудио для проверки голоса
-        final totalLen = _historySamplesCount;
-        final audioBuffer = Float32List(totalLen);
-        var offset = 0;
-        for (final chunk in _recentAudioHistory) {
-          audioBuffer.setAll(offset, chunk);
-          offset += chunk.length;
-        }
-
-        return KeywordDetection(keyword: detected, samples: audioBuffer);
-      }
-    }
-    return null;
+    final det = _lastDetection;
+    _lastDetection = null;
+    return det;
   }
 
   @override
   void resetKeywordStream() {
-    if (_spotter != null && _kwsStream != null) {
-      _spotter!.reset(_kwsStream!);
-    }
+    _preRoll.clear();
+    _preRollSamples = 0;
+    _speechBuffer.clear();
+    _speechBufferSamples = 0;
+    _silenceSamples = 0;
+    _lastDetection = null;
   }
 
   @override
   Float32List? extractSpeakerEmbedding(Float32List audio) {
-    final extractor = _speakerExtractor;
-    if (extractor == null || audio.isEmpty) return null;
-
-    sherpa.OnlineStream? stream;
+    if (audio.isEmpty) return null;
     try {
-      stream = extractor.createStream();
-      stream.acceptWaveform(samples: audio, sampleRate: 16000);
-      stream.inputFinished();
-      if (!extractor.isReady(stream)) {
-        return null;
-      }
-      return extractor.compute(stream);
+      return AcousticFeatureExtractor.extract(audio);
     } catch (e) {
-      Log.error('SherpaEngine', 'extractSpeakerEmbedding error: $e');
+      Log.error('NativeWakeWordEngine', 'Error extracting acoustic embedding: $e');
       return null;
-    } finally {
-      stream?.free();
     }
   }
 
   @override
   bool verifySpeaker(Float32List embedding, double threshold) {
-    final manager = _speakerManager;
-    if (manager == null || manager.numSpeakers == 0) return true;
-    try {
-      return manager.verify(
-        name: 'user',
-        embedding: embedding,
-        threshold: threshold,
-      );
-    } catch (e) {
-      Log.error('SherpaEngine', 'verifySpeaker error: $e');
-      return true;
+    if (_enrolledEmbeddings.isEmpty) return true;
+
+    double maxSim = -1.0;
+    double sum = 0.0;
+    for (final enrolled in _enrolledEmbeddings) {
+      final sim = _cosineSimilarity(enrolled, embedding);
+      if (sim > maxSim) maxSim = sim;
+      sum += sim;
     }
+
+    final avg = sum / _enrolledEmbeddings.length;
+    final score = 0.7 * maxSim + 0.3 * avg;
+    return score >= threshold;
+  }
+
+  static double _cosineSimilarity(Float32List a, Float32List b) {
+    if (a.length != b.length || a.isEmpty) return 0.0;
+    double dot = 0.0;
+    double normA = 0.0;
+    double normB = 0.0;
+
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i];
+      final y = b[i];
+      dot += x * y;
+      normA += x * x;
+      normB += y * y;
+    }
+
+    if (normA <= 0.0 || normB <= 0.0) return 0.0;
+    return dot / (math.sqrt(normA) * math.sqrt(normB));
   }
 
   @override
   void dispose() {
-    _kwsStream?.free();
-    _kwsStream = null;
-    _spotter?.free();
-    _spotter = null;
-    _vad?.free();
-    _vad = null;
-    _speakerManager?.free();
-    _speakerManager = null;
-    _speakerExtractor?.free();
-    _speakerExtractor = null;
-    _recentAudioHistory.clear();
-    _historySamplesCount = 0;
+    _ready = false;
+    _speechBuffer.clear();
+    _speechBufferSamples = 0;
+    _enrolledEmbeddings.clear();
+    _lastDetection = null;
   }
 }
 
-/// Тестовая реализация для юнит-тестов (работает полностью офлайн без FFI).
+/// Тестовая реализация для юнит-тестов (офлайн).
 class FakeSherpaEngine implements SherpaEngine {
   bool spotterInitialized = false;
   bool vadInitialized = false;
@@ -403,7 +355,7 @@ class FakeSherpaEngine implements SherpaEngine {
 
   @override
   Float32List? extractSpeakerEmbedding(Float32List audio) {
-    return Float32List(192); // fake 192-dim embedding
+    return Float32List(192);
   }
 
   @override

@@ -441,7 +441,13 @@ class _SettingsBodyState extends State<SettingsBody>
     Check(
       l10n.checkWakeWordEnabled,
       s.wakeWordEnabled,
-      _cubit.setWakeWordEnabled,
+      (enabled) async {
+        if (enabled && !s.speakerProfileExists) {
+          final ok = await _openVoiceCalibration(s.wakeWord);
+          if (ok != true) return;
+        }
+        _cubit.setWakeWordEnabled(enabled);
+      },
     ),
     if (s.wakeWordEnabled) ...[
       const SizedBox(height: Gap.item),
@@ -491,97 +497,69 @@ class _SettingsBodyState extends State<SettingsBody>
       SectionTitle(l10n.sectionVoiceCalibration),
       Hint(l10n.hintVoiceCalibration),
       const SizedBox(height: Gap.inner),
-      Check(
-        l10n.checkVoiceCalibration,
-        s.voiceCalibrationEnabled,
-        _cubit.setVoiceCalibrationEnabled,
-      ),
-      if (s.voiceCalibrationEnabled) ...[
-        const SizedBox(height: Gap.inner),
-        Row(
-          children: [
-            MacosIcon(
+      Row(
+        children: [
+          MacosIcon(
+            s.speakerProfileExists
+                ? CupertinoIcons.checkmark_seal_fill
+                : CupertinoIcons.exclamationmark_circle,
+            color: s.speakerProfileExists
+                ? const Color(0xFF34C759)
+                : const Color(0xFFFF9500),
+            size: 16,
+          ),
+          const SizedBox(width: Gap.inner),
+          Expanded(
+            child: Text(
               s.speakerProfileExists
-                  ? CupertinoIcons.checkmark_seal_fill
-                  : CupertinoIcons.exclamationmark_circle,
-              color: s.speakerProfileExists
-                  ? const Color(0xFF34C759)
-                  : const Color(0xFFFF9500),
-              size: 16,
-            ),
-            const SizedBox(width: Gap.inner),
-            Expanded(
-              child: Text(
-                s.speakerProfileExists
-                    ? l10n.voiceProfileStatusCalibrated(3)
-                    : l10n.voiceProfileStatusNotCalibrated,
-                style: Type.control.copyWith(
-                  color: s.speakerProfileExists
-                      ? const Color(0xFF34C759)
-                      : const Color(0xFFFF9500),
-                  fontWeight: FontWeight.w500,
-                ),
+                  ? l10n.voiceProfileStatusCalibrated(3)
+                  : l10n.voiceProfileStatusNotCalibrated,
+              style: Type.control.copyWith(
+                color: s.speakerProfileExists
+                    ? const Color(0xFF34C759)
+                    : const Color(0xFFFF9500),
+                fontWeight: FontWeight.w500,
               ),
             ),
+          ),
+          PushButton(
+            controlSize: ControlSize.regular,
+            secondary: true,
+            onPressed: () => _openVoiceCalibration(s.wakeWord),
+            child: Text(
+              s.speakerProfileExists
+                  ? l10n.buttonRecalibrateVoice
+                  : l10n.buttonCalibrateVoice,
+            ),
+          ),
+          if (s.speakerProfileExists) ...[
+            const SizedBox(width: Gap.inner),
             PushButton(
               controlSize: ControlSize.regular,
               secondary: true,
-              onPressed: () => _openVoiceCalibration(s.wakeWord),
-              child: Text(
-                s.speakerProfileExists
-                    ? l10n.buttonRecalibrateVoice
-                    : l10n.buttonCalibrateVoice,
-              ),
+              onPressed: () {
+                _cubit.deleteSpeakerProfile();
+                _cubit.setWakeWordEnabled(false);
+              },
+              child: Text(l10n.buttonDeleteVoiceProfile),
             ),
-            if (s.speakerProfileExists) ...[
-              const SizedBox(width: Gap.inner),
-              PushButton(
-                controlSize: ControlSize.regular,
-                secondary: true,
-                onPressed: _cubit.deleteSpeakerProfile,
-                child: Text(l10n.buttonDeleteVoiceProfile),
-              ),
-            ],
           ],
-        ),
-        const SizedBox(height: Gap.item),
-        _Field(
-          l10n.fieldSpeakerThreshold,
-          Row(
-            children: [
-              Expanded(
-                child: CupertinoSlider(
-                  value: s.speakerThreshold,
-                  min: 0.30,
-                  max: 0.90,
-                  onChanged: (val) => _cubit.setSpeakerThreshold(val),
-                ),
-              ),
-              const SizedBox(width: Gap.inner),
-              SizedBox(
-                width: 44,
-                child: Text(
-                  s.speakerThreshold.toStringAsFixed(2),
-                  style: Type.control,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Hint(l10n.hintSpeakerThreshold),
-      ],
+        ],
+      ),
     ],
   ];
 
-  Future<void> _openVoiceCalibration(String wakeWord) async {
+  Future<bool?> _openVoiceCalibration(String wakeWord) async {
     final result = await VoiceCalibrationSheet.show(
       context,
       wakeWord: wakeWord.isNotEmpty ? wakeWord : 'Джеф',
+      bridge: _cubit.bridge,
       onProfileCreated: _cubit.refreshSpeakerProfile,
     );
     if (result == true) {
       _cubit.refreshSpeakerProfile();
     }
+    return result;
   }
 
   Future<void> _reassignHotkey(String id) =>

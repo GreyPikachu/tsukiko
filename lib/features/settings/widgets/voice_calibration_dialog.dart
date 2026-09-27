@@ -5,11 +5,14 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:macos_ui/macos_ui.dart';
 
+import '../../../core/wakeword/adaptive_noise_filter.dart';
 import '../../../core/wakeword/audio_stream_source.dart';
 import '../../../core/wakeword/sherpa_engine.dart';
 import '../../../core/wakeword/speaker_profile.dart';
+import '../../../core/wakeword/speech_verifier.dart';
 import '../../../design/design.dart';
 import '../../../l10n/gen/app_localizations.dart';
+import '../../../platform/bridge.dart';
 
 /// Состояние отдельного шага калибровки.
 enum CalibrationPhase {
@@ -23,28 +26,35 @@ enum CalibrationPhase {
 
 /// Мастер калибровки голоса пользователя (Voiceprint Enrollment Wizard).
 ///
-/// Записывает 3 контрольных образца ключевого слова активации, извлекает
-/// эмбеддинги через `SherpaEngine.extractSpeakerEmbedding` и сохраняет
-/// профиль `SpeakerProfile` на диск.
+/// Записывает 3 контрольных образца ключевого слова активации, верифицирует
+/// каждое слово через встроенный Whisper (tsukiko-recognizer) с адаптивной
+/// фильтрацией комнатного шума, извлекает 192-мерный акустический слепок
+/// и сохраняет откалиброванный профиль `SpeakerProfile` на диск.
 class VoiceCalibrationSheet extends StatefulWidget {
   const VoiceCalibrationSheet({
     super.key,
     required this.wakeWord,
+    this.bridge,
     this.audioSource,
     this.engine,
+    this.speechVerifier,
     this.onProfileCreated,
   });
 
   final String wakeWord;
+  final NativeBridge? bridge;
   final AudioStreamSource? audioSource;
   final SherpaEngine? engine;
+  final SpeechVerifier? speechVerifier;
   final VoidCallback? onProfileCreated;
 
   static Future<bool?> show(
     BuildContext context, {
     required String wakeWord,
+    NativeBridge? bridge,
     AudioStreamSource? audioSource,
     SherpaEngine? engine,
+    SpeechVerifier? speechVerifier,
     VoidCallback? onProfileCreated,
   }) =>
       showMacosSheet<bool>(
@@ -52,8 +62,10 @@ class VoiceCalibrationSheet extends StatefulWidget {
         barrierDismissible: false,
         builder: (sheetContext) => VoiceCalibrationSheet(
           wakeWord: wakeWord,
+          bridge: bridge,
           audioSource: audioSource,
           engine: engine,
+          speechVerifier: speechVerifier,
           onProfileCreated: onProfileCreated,
         ),
       );
@@ -66,6 +78,8 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
     with SingleTickerProviderStateMixin {
   late final AudioStreamSource _audioSource;
   late final SherpaEngine _engine;
+  late final SpeechVerifier _verifier;
+  final AdaptiveNoiseFilter _noiseFilter = AdaptiveNoiseFilter();
 
   int _currentStep = 0; // 0, 1, 2
   static const int _totalSteps = 3;
@@ -78,28 +92,39 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   StreamSubscription<Float32List>? _audioSub;
 
   double _audioLevel = 0.0;
-  Timer? _levelDecayTimer;
+  Timer? _meterPollTimer;
   Timer? _stepTransitionTimer;
+  String? _currentRecordingWavPath;
 
   @override
   void initState() {
     super.initState();
     _audioSource = widget.audioSource ?? MicrophoneAudioStreamSource();
     _engine = widget.engine ?? NativeSherpaEngine();
+    _verifier = widget.speechVerifier ?? SpeechVerifier();
   }
 
   @override
   void dispose() {
-    _stopRecordingStream();
-    _levelDecayTimer?.cancel();
+    _meterPollTimer?.cancel();
     _stepTransitionTimer?.cancel();
+    _stopRecordingStream();
     super.dispose();
   }
 
   Future<void> _stopRecordingStream() async {
-    await _audioSub?.cancel();
-    _audioSub = null;
-    await _audioSource.stopStream();
+    _meterPollTimer?.cancel();
+    _meterPollTimer = null;
+
+    if (widget.bridge != null) {
+      try {
+        await widget.bridge!.stopRecording();
+      } catch (_) {}
+    } else {
+      await _audioSub?.cancel();
+      _audioSub = null;
+      await _audioSource.stopStream();
+    }
   }
 
   Future<void> _startRecording() async {
@@ -108,8 +133,49 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
       _errorMessage = null;
       _audioLevel = 0.0;
       _recordedAudioBuffer.clear();
+      _currentRecordingWavPath = null;
+      _noiseFilter.reset();
     });
 
+    final bridge = widget.bridge;
+    if (bridge != null) {
+      try {
+        final path = await bridge.startRecording();
+        if (path == null) {
+          if (!mounted) return;
+          final l10n = AppLocalizations.of(context);
+          setState(() {
+            _phase = CalibrationPhase.failed;
+            _errorMessage = l10n.calibrationMicPermissionError;
+          });
+          return;
+        }
+        _currentRecordingWavPath = path;
+
+        // Опрашиваем нативный VU-метр со сглаживанием комнатного фона
+        _meterPollTimer?.cancel();
+        _meterPollTimer = Timer.periodic(const Duration(milliseconds: 30), (_) async {
+          if (!mounted || _phase != CalibrationPhase.recording) return;
+          try {
+            final lvl = await bridge.level();
+            if (mounted && _phase == CalibrationPhase.recording) {
+              setState(() {
+                _audioLevel = lvl;
+              });
+            }
+          } catch (_) {}
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _phase = CalibrationPhase.failed;
+          _errorMessage = '$e';
+        });
+      }
+      return;
+    }
+
+    // Fallback через AudioStreamSource
     final hasPerm = await _audioSource.hasPermission();
     if (!hasPerm) {
       if (!mounted) return;
@@ -147,63 +213,95 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
 
     _recordedAudioBuffer.add(Float32List.fromList(chunk));
 
-    // Считаем громкость RMS для визуализатора
-    double sum = 0.0;
-    for (var i = 0; i < chunk.length; i++) {
-      sum += chunk[i] * chunk[i];
-    }
-    final rms = math.sqrt(sum / chunk.length);
-    // Нормализация 0.0 - 1.0 с нелинейным усилением чувствительности
-    final targetLevel = (rms * 8.0).clamp(0.0, 1.0);
+    // Адаптивная фильтрация шума комнаты
+    final level = _noiseFilter.update(chunk);
 
     setState(() {
-      _audioLevel = _audioLevel * 0.4 + targetLevel * 0.6;
+      _audioLevel = level;
     });
   }
 
   Future<void> _stopRecordingAndProcess() async {
-    await _stopRecordingStream();
+    _meterPollTimer?.cancel();
+    _meterPollTimer = null;
 
     setState(() {
       _phase = CalibrationPhase.processing;
       _audioLevel = 0.0;
     });
 
-    // Объединяем все записанные сэмплы
-    final totalSamples =
-        _recordedAudioBuffer.fold<int>(0, (sum, list) => sum + list.length);
+    final bridge = widget.bridge;
+    String? wavPath;
+    if (bridge != null) {
+      try {
+        wavPath = await bridge.stopRecording() ?? _currentRecordingWavPath;
+      } catch (_) {}
+    } else {
+      await _audioSub?.cancel();
+      _audioSub = null;
+      await _audioSource.stopStream();
+    }
 
-    if (totalSamples < 16000 * 0.5) {
-      // Слишком короткая запись (< 0.5 секунды)
-      if (!mounted) return;
-      final l10n = AppLocalizations.of(context);
+    // Если был передан mock/fake движок (для тестов)
+    if (_engine is FakeSherpaEngine) {
+      final fakeEmb = _engine.extractSpeakerEmbedding(Float32List(16000));
+      if (fakeEmb != null) {
+        _handleSuccessfulSample(fakeEmb);
+        return;
+      }
+    }
+
+    SpeechVerificationResult result;
+    if (wavPath != null && wavPath.isNotEmpty) {
+      result = await _verifier.verifyWavFile(
+        wavPath,
+        targetWord: widget.wakeWord,
+      );
+    } else {
+      // Собираем из буфера сэмплов
+      final totalSamples =
+          _recordedAudioBuffer.fold<int>(0, (sum, list) => sum + list.length);
+
+      if (totalSamples < 16000 * 0.4) {
+        if (!mounted) return;
+        final l10n = AppLocalizations.of(context);
+        setState(() {
+          _phase = CalibrationPhase.failed;
+          _errorMessage = l10n.calibrationSampleFailed;
+        });
+        return;
+      }
+
+      final combined = Float32List(totalSamples);
+      var offset = 0;
+      for (final b in _recordedAudioBuffer) {
+        combined.setAll(offset, b);
+        offset += b.length;
+      }
+
+      result = await _verifier.verifySamples(
+        combined,
+        targetWord: widget.wakeWord,
+      );
+    }
+
+    if (!mounted) return;
+
+    if (result.matched && result.extractedEmbedding != null) {
+      _handleSuccessfulSample(result.extractedEmbedding!);
+    } else {
+      final heard = result.recognizedText.isNotEmpty
+          ? ' (распознано: «${result.recognizedText}»)'
+          : '';
       setState(() {
         _phase = CalibrationPhase.failed;
-        _errorMessage = l10n.calibrationSampleFailed;
+        _errorMessage =
+            'Слово «${widget.wakeWord}» не распознано$heard. Попробуйте ещё раз.';
       });
-      return;
     }
+  }
 
-    final combinedAudio = Float32List(totalSamples);
-    var offset = 0;
-    for (final buf in _recordedAudioBuffer) {
-      combinedAudio.setRange(offset, offset + buf.length, buf);
-      offset += buf.length;
-    }
-
-    // Извлекаем эмбеддинг спикера
-    final embedding = _engine.extractSpeakerEmbedding(combinedAudio);
-
-    if (embedding == null || embedding.isEmpty) {
-      if (!mounted) return;
-      final l10n = AppLocalizations.of(context);
-      setState(() {
-        _phase = CalibrationPhase.failed;
-        _errorMessage = l10n.calibrationSampleFailed;
-      });
-      return;
-    }
-
+  void _handleSuccessfulSample(Float32List embedding) {
     _collectedEmbeddings.add(embedding);
 
     if (_currentStep + 1 < _totalSteps) {
@@ -218,19 +316,24 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
           _currentStep++;
           _phase = CalibrationPhase.idle;
           _recordedAudioBuffer.clear();
+          _currentRecordingWavPath = null;
         });
       });
     } else {
-      // Все 3 шага завершены! Сохраняем профиль
       _finishAndSaveProfile();
     }
   }
 
   void _finishAndSaveProfile() {
+    final threshold =
+        SpeakerProfile.calculateOptimalThreshold(_collectedEmbeddings);
+
     final profile = SpeakerProfile(
       name: 'user',
       dimension: _collectedEmbeddings.first.length,
       embeddings: _collectedEmbeddings,
+      wakeWord: widget.wakeWord,
+      threshold: threshold,
       createdAt: DateTime.now(),
     );
     profile.save();

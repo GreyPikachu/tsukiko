@@ -8,20 +8,25 @@ import '../../platform/os.dart' show os;
 
 /// Профиль голоса пользователя (Voiceprint Enrollment).
 ///
-/// Содержит эмбеддинги 3-5 контрольных записей ключевых слов, извлечённых
-/// с помощью `SpeakerEmbeddingExtractor`. При появлении ключевого слова в аудиопотоке
-/// его эмбеддинг сверяется с этим профилем, предотвращая ложные срабатывания от посторонних.
+/// Содержит эмбеддинги 3 контрольных записей ключевого слова активации,
+/// автоматически рассчитанный порог сходства и ссылку на слово активации.
+/// При появлении ключевого слова в аудиопотоке его акустический слепок
+/// сверяется с этим профилем, предотвращая ложные срабатывания от посторонних.
 class SpeakerProfile {
   const SpeakerProfile({
     required this.name,
     required this.dimension,
     required this.embeddings,
+    this.wakeWord = 'Джеф',
+    this.threshold = 0.60,
     this.createdAt,
   });
 
   final String name;
   final int dimension;
   final List<Float32List> embeddings;
+  final String wakeWord;
+  final double threshold;
   final DateTime? createdAt;
 
   static String get defaultPath => os.join(supportDir, 'speaker_profile.json');
@@ -72,6 +77,8 @@ class SpeakerProfile {
   Map<String, dynamic> toJson() => {
         'name': name,
         'dimension': dimension,
+        'wakeWord': wakeWord,
+        'threshold': threshold,
         'createdAt': (createdAt ?? DateTime.now()).toIso8601String(),
         'embeddings': [
           for (final emb in embeddings)
@@ -80,7 +87,7 @@ class SpeakerProfile {
       };
 
   factory SpeakerProfile.fromJson(Map<String, dynamic> json) {
-    final dim = (json['dimension'] as num?)?.toInt() ?? 0;
+    final dim = (json['dimension'] as num?)?.toInt() ?? 192;
     final rawEmbeddings = (json['embeddings'] as List? ?? const []);
     final embeddingsList = <Float32List>[];
 
@@ -103,19 +110,43 @@ class SpeakerProfile {
       }
     }
 
+    final wakeWord = (json['wakeWord'] as String?) ?? 'Джеф';
+    final threshold = (json['threshold'] as num?)?.toDouble() ??
+        calculateOptimalThreshold(embeddingsList);
+
     return SpeakerProfile(
       name: (json['name'] as String?) ?? 'user',
-      dimension: dim > 0 ? dim : (embeddingsList.isNotEmpty ? embeddingsList.first.length : 0),
+      dimension: dim > 0
+          ? dim
+          : (embeddingsList.isNotEmpty ? embeddingsList.first.length : 192),
       embeddings: embeddingsList,
+      wakeWord: wakeWord,
+      threshold: threshold,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String)
           : null,
     );
   }
 
+  /// Автоматический расчёт оптимального порога сходства по калибровочным образцам.
+  static double calculateOptimalThreshold(List<Float32List> samples) {
+    if (samples.length < 2) return 0.60;
+
+    double minSim = 1.0;
+    for (var i = 0; i < samples.length; i++) {
+      for (var j = i + 1; j < samples.length; j++) {
+        final sim = cosineSimilarity(samples[i], samples[j]);
+        if (sim < minSim) minSim = sim;
+      }
+    }
+
+    // Даём 15% запас над минимальным сходством калибровочных фраз,
+    // удерживая порог в разумном диапазоне [0.52, 0.75].
+    final optimal = minSim * 0.85;
+    return optimal.clamp(0.52, 0.75);
+  }
+
   /// Косинусное сходство между двумя векторами эмбеддингов: dot(a, b) / (|a| * |b|).
-  ///
-  /// Диапазон от -1.0 до 1.0. Для одинакового голоса обычно > 0.60..0.75.
   static double cosineSimilarity(Float32List a, Float32List b) {
     if (a.length != b.length || a.isEmpty) return 0.0;
     double dot = 0.0;
@@ -135,7 +166,7 @@ class SpeakerProfile {
     return sim.isNaN ? 0.0 : sim;
   }
 
-  /// Вычислить максимальное и среднее сходство кандидата с зарегистрированными эмбеддингами.
+  /// Вычислить среднее и максимальное сходство кандидата с зарегистрированными эмбеддингами.
   double similarity(Float32List candidate) {
     if (embeddings.isEmpty || candidate.length != dimension) return 0.0;
     double maxScore = -1.0;
@@ -153,8 +184,9 @@ class SpeakerProfile {
   }
 
   /// Верифицировать, принадлежит ли кандидат владельцу профиля.
-  bool verify(Float32List candidate, double threshold) {
-    if (embeddings.isEmpty) return true; // Без калибровки не блокируем
-    return similarity(candidate) >= threshold;
+  bool verify(Float32List candidate, [double? customThreshold]) {
+    if (embeddings.isEmpty) return true;
+    final t = customThreshold ?? threshold;
+    return similarity(candidate) >= t;
   }
 }

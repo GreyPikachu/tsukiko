@@ -1,0 +1,344 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import '../../platform/os.dart';
+import '../library.dart' show findWhisper;
+import '../logger.dart';
+import '../models.dart' show looksLikeSpeechModel;
+import 'acoustic_feature_extractor.dart';
+
+/// Результат проверки произнесённого слова.
+class SpeechVerificationResult {
+  const SpeechVerificationResult({
+    required this.matched,
+    required this.recognizedText,
+    this.extractedEmbedding,
+    this.errorMessage,
+  });
+
+  final bool matched;
+  final String recognizedText;
+  final Float32List? extractedEmbedding;
+  final String? errorMessage;
+}
+
+/// Верификатор речи и ключевых слов на базе встроенного в Tsukiko движка Whisper.
+///
+/// Запускает `tsukiko-recognizer` с быстрой моделью `ggml-tiny.bin` на GPU/CPU,
+/// выполняет точную и устойчивую к шуму проверку произнесённых слов на русском и английском языках,
+/// и извлекает акустический слепок голоса.
+class SpeechVerifier {
+  SpeechVerifier({
+    this.customRecognizerPath,
+    this.customModelPath,
+  });
+
+  final String? customRecognizerPath;
+  final String? customModelPath;
+
+  /// Найти путь к исполняемому файлу распознавателя tsukiko-recognizer.
+  String? get recognizerExe => customRecognizerPath ?? findWhisper();
+
+  /// Найти быструю модель (предпочтительно ggml-tiny.bin, либо любая доступная).
+  String? get fastModelPath {
+    final explicit = customModelPath;
+    if (explicit != null && File(explicit).existsSync()) {
+      return explicit;
+    }
+
+    final tinyPath = os.join(os.modelsDir, 'ggml-tiny.bin');
+    if (File(tinyPath).existsSync()) return tinyPath;
+
+    final basePath = os.join(os.modelsDir, 'ggml-base.bin');
+    if (File(basePath).existsSync()) return basePath;
+
+    // Любая доступная модель в папке моделей
+    try {
+      final dir = Directory(os.modelsDir);
+      if (dir.existsSync()) {
+        final files = dir.listSync().whereType<File>();
+        for (final f in files) {
+          final name = os.basename(f.path);
+          if (looksLikeSpeechModel(name) && name.endsWith('.bin')) {
+            return f.path;
+          }
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  /// Проверить, произнесено ли целевое ключевое слово в аудиофайле WAV.
+  Future<SpeechVerificationResult> verifyWavFile(
+    String wavPath, {
+    required String targetWord,
+    Float32List? audioSamples,
+  }) async {
+    final exe = recognizerExe;
+    final model = fastModelPath;
+
+    if (exe == null || !File(exe).existsSync()) {
+      Log.warn('SpeechVerifier', 'Recognizer executable not found ($exe)');
+      return const SpeechVerificationResult(
+        matched: false,
+        recognizedText: '',
+        errorMessage: 'Recognizer not found',
+      );
+    }
+
+    if (model == null || !File(model).existsSync()) {
+      Log.warn('SpeechVerifier', 'Whisper model not found for verification');
+      return const SpeechVerificationResult(
+        matched: false,
+        recognizedText: '',
+        errorMessage: 'Model not found',
+      );
+    }
+
+    try {
+      final res = await Process.run(exe, [
+        '-m',
+        model,
+        '-l',
+        'ru',
+        '-f',
+        wavPath,
+        '-np',
+        '-nt',
+      ]);
+
+      final rawText = (res.stdout as String? ?? '').trim();
+      final cleanedText = _cleanWhisperText(rawText);
+
+      final matched = matchesKeyword(cleanedText, targetWord);
+
+      Float32List? embedding;
+      if (audioSamples != null && audioSamples.isNotEmpty) {
+        embedding = AcousticFeatureExtractor.extract(audioSamples);
+      } else {
+        final readSamples = readWavSamples(wavPath);
+        if (readSamples.isNotEmpty) {
+          embedding = AcousticFeatureExtractor.extract(readSamples);
+        }
+      }
+
+      Log.info(
+        'SpeechVerifier',
+        'Verification: target="$targetWord", recognized="$cleanedText", matched=$matched',
+      );
+
+      return SpeechVerificationResult(
+        matched: matched,
+        recognizedText: cleanedText,
+        extractedEmbedding: embedding,
+      );
+    } catch (e, st) {
+      Log.error('SpeechVerifier', 'Error verifying speech: $e', e, st);
+      return SpeechVerificationResult(
+        matched: false,
+        recognizedText: '',
+        errorMessage: '$e',
+      );
+    }
+  }
+
+  /// Проверить порцию аудиосэмплов Float32List (сохраняет временный WAV и проверяет).
+  Future<SpeechVerificationResult> verifySamples(
+    Float32List samples, {
+    required String targetWord,
+  }) async {
+    if (samples.isEmpty) {
+      return const SpeechVerificationResult(
+        matched: false,
+        recognizedText: '',
+        errorMessage: 'Empty audio samples',
+      );
+    }
+
+    final tmpPath = os.join(
+      Directory.systemTemp.path,
+      'tsukiko_verify_${DateTime.now().microsecondsSinceEpoch}.wav',
+    );
+
+    try {
+      writeWavFile(tmpPath, samples);
+      final result = await verifyWavFile(
+        tmpPath,
+        targetWord: targetWord,
+        audioSamples: samples,
+      );
+      return result;
+    } finally {
+      try {
+        final f = File(tmpPath);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+    }
+  }
+
+  /// Проверить, совпадает ли распознанный текст с целевым словом активации.
+  static bool matchesKeyword(String recognizedText, String targetWord) {
+    final cleanTarget = targetWord.trim().toLowerCase();
+    if (cleanTarget.isEmpty) return false;
+
+    final cleanRecognized = recognizedText.trim().toLowerCase();
+    if (cleanRecognized.isEmpty) return false;
+
+    // Прямое вхождение или равенство
+    if (cleanRecognized == cleanTarget ||
+        cleanRecognized.contains(cleanTarget)) {
+      return true;
+    }
+
+    // Известные фонетические эквиваленты для популярных WakeWord
+    final equivalents = _getEquivalents(cleanTarget);
+    for (final eq in equivalents) {
+      if (cleanRecognized == eq || cleanRecognized.contains(eq)) {
+        return true;
+      }
+    }
+
+    // Сравнение по словам
+    final words = cleanRecognized.split(RegExp(r'\s+'));
+    for (final w in words) {
+      if (w == cleanTarget || equivalents.contains(w)) return true;
+      if (w.length >= 3 && _levenshtein(w, cleanTarget) <= 1) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /// Фонетические синонимы для устойчивости
+  static Set<String> _getEquivalents(String word) {
+    final w = word.toLowerCase();
+    if (w == 'джеф' || w == 'джефф') {
+      return {'джеф', 'джефф', 'джефа', 'джефу', 'джефом', 'jeff', 'geoff', 'дэф', 'деф'};
+    }
+    if (w == 'выполняй') {
+      return {'выполняй', 'выполни', 'выполнить', 'приём', 'конец'};
+    }
+    return {w};
+  }
+
+  /// Очистить вывод Whisper от спецтегов вроде [Музыка], (Шум), скобок и пунктуации.
+  static String _cleanWhisperText(String raw) {
+    return raw
+        .replaceAll(RegExp(r'\[.*?\]'), '')
+        .replaceAll(RegExp(r'\(.*?\)'), '')
+        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]+', unicode: true), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  /// Расстояние Левенштейна для нечёткого сопоставления коротких слов
+  static int _levenshtein(String s, String t) {
+    if (s == t) return 0;
+    if (s.isEmpty) return t.length;
+    if (t.isEmpty) return s.length;
+
+    List<int> v0 = List<int>.generate(t.length + 1, (i) => i);
+    List<int> v1 = List<int>.filled(t.length + 1, 0);
+
+    for (int i = 0; i < s.length; i++) {
+      v1[0] = i + 1;
+      for (int j = 0; j < t.length; j++) {
+        final cost = (s.codeUnitAt(i) == t.codeUnitAt(j)) ? 0 : 1;
+        v1[j + 1] = math.min(v1[j] + 1, math.min(v0[j + 1] + 1, v0[j] + cost));
+      }
+      for (int j = 0; j <= t.length; j++) {
+        v0[j] = v1[j];
+      }
+    }
+
+    return v1[t.length];
+  }
+
+  /// Чтение PCM Float32List сэмплов из 16 кГц моно 16-битного WAV файла.
+  static Float32List readWavSamples(String path) {
+    try {
+      final file = File(path);
+      if (!file.existsSync() || file.lengthSync() < 44) return Float32List(0);
+      final bytes = file.readAsBytesSync();
+
+      var offset = 12;
+      while (offset + 8 <= bytes.length) {
+        final chunkId = String.fromCharCodes(bytes.sublist(offset, offset + 4));
+        final chunkSize = ByteData.sublistView(bytes, offset + 4, offset + 8)
+            .getUint32(0, Endian.little);
+        if (chunkId == 'data') {
+          final dataStart = offset + 8;
+          final dataEnd = math.min(bytes.length, dataStart + chunkSize);
+          final sampleBytes = bytes.sublist(dataStart, dataEnd);
+          final numSamples = sampleBytes.length ~/ 2;
+          final floats = Float32List(numSamples);
+          final bd = ByteData.sublistView(sampleBytes);
+          for (var i = 0; i < numSamples; i++) {
+            floats[i] = bd.getInt16(i * 2, Endian.little) / 32768.0;
+          }
+          return floats;
+        }
+        offset += 8 + chunkSize;
+      }
+      return Float32List(0);
+    } catch (_) {
+      return Float32List(0);
+    }
+  }
+
+  /// Запись 16 кГц моно 16-битного WAV файла из Float32List сэмплов [-1.0, 1.0].
+  static void writeWavFile(String path, Float32List samples) {
+    final numSamples = samples.length;
+    final byteRate = 16000 * 1 * 2; // sampleRate * channels * bytesPerSample
+    final blockAlign = 1 * 2;
+    final subchunk2Size = numSamples * 2;
+    final chunkSize = 36 + subchunk2Size;
+
+    final header = ByteData(44);
+    // "RIFF"
+    header.setUint8(0, 0x52);
+    header.setUint8(1, 0x49);
+    header.setUint8(2, 0x46);
+    header.setUint8(3, 0x46);
+    header.setUint32(4, chunkSize, Endian.little);
+    // "WAVE"
+    header.setUint8(8, 0x57);
+    header.setUint8(9, 0x41);
+    header.setUint8(10, 0x56);
+    header.setUint8(11, 0x45);
+    // "fmt "
+    header.setUint8(12, 0x66);
+    header.setUint8(13, 0x6D);
+    header.setUint8(14, 0x74);
+    header.setUint8(15, 0x20);
+    header.setUint32(16, 16, Endian.little); // Subchunk1Size (16 for PCM)
+    header.setUint16(20, 1, Endian.little); // AudioFormat (1 for PCM)
+    header.setUint16(22, 1, Endian.little); // NumChannels (1 mono)
+    header.setUint32(24, 16000, Endian.little); // SampleRate (16000)
+    header.setUint32(28, byteRate, Endian.little); // ByteRate
+    header.setUint16(32, blockAlign, Endian.little); // BlockAlign
+    header.setUint16(34, 16, Endian.little); // BitsPerSample
+    // "data"
+    header.setUint8(36, 0x64);
+    header.setUint8(37, 0x61);
+    header.setUint8(38, 0x74);
+    header.setUint8(39, 0x61);
+    header.setUint32(40, subchunk2Size, Endian.little);
+
+    final pcmBytes = Uint8List(subchunk2Size);
+    final pcmBd = ByteData.sublistView(pcmBytes);
+    for (var i = 0; i < numSamples; i++) {
+      final s = (samples[i] * 32767.0).clamp(-32768.0, 32767.0).toInt();
+      pcmBd.setInt16(i * 2, s, Endian.little);
+    }
+
+    final outBytes = Uint8List(44 + subchunk2Size);
+    outBytes.setAll(0, header.buffer.asUint8List());
+    outBytes.setAll(44, pcmBytes);
+
+    File(path).writeAsBytesSync(outBytes);
+  }
+}
