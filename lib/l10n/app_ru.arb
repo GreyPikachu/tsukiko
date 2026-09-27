@@ -1594,5 +1594,17 @@
   "calibrationMicPermissionError": "Нет разрешения на использование микрофона",
   "calibrationCompletedTitle": "Калибровка завершена",
   "calibrationCompletedBody": "Профиль вашего голоса сохранён локально. Tsukiko готов откликаться на команды.",
+  "wakeDiagnosticsTitle": "Для разработчика: голосовая активация",
+  "wakeDiagnosticsRecord": "Записывать диагностическую сессию",
+  "wakeDiagnosticsHint": "Пока включено, сохраняются звук микрофона и оценки детектора. Сессия остановится через 20 минут или при выключении голосовой активации. Файлы остаются только на этом Mac.",
+  "wakeDiagnosticsMarkWake": "Скажу слово активации",
+  "wakeDiagnosticsMarkClose": "Скажу слово завершения",
+  "wakeDiagnosticsMarkOther": "Обычная речь",
+  "wakeDiagnosticsMarkHint": "Нажмите отметку непосредственно перед произнесением слова или обычной речи. После записи выключите переключатель и откройте папку с WAV и журналом событий.",
+  "wakeDiagnosticsOpenFolder": "Открыть папку",
+  "wakeDiagnosticsEnableWakeFirst": "Сначала включите голосовую активацию.",
+  "wakeDiagnosticsRecalibrateFirst": "Сначала откалибруйте оба слова, чтобы записывать оценки персонального детектора.",
+  "wakeDiagnosticsStartFailed": "Не удалось запустить диагностическую запись. Проверьте доступ к микрофону.",
+  "wakeDiagnosticsMarkFailed": "Не удалось сохранить отметку.",
   "buttonDone": "Готово"
 }

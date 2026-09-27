@@ -124,6 +124,11 @@ class _SettingsBodyState extends State<SettingsBody>
   /// настроек и в кубите ему делать нечего: это не настройка, а ответ
   /// на нажатие кнопки.
   bool _keyCopied = false;
+  bool _diagnosticRecording = false;
+  bool _diagnosticBusy = false;
+  String? _diagnosticPath;
+  String? _diagnosticError;
+  Timer? _diagnosticStatusTimer;
 
   SettingsCubit get _cubit => context.read<SettingsCubit>();
   AppLocalizations get l10n => AppLocalizations.of(context);
@@ -139,7 +144,10 @@ class _SettingsBodyState extends State<SettingsBody>
     _syncWakeWordField(_cubit.state.wakeWord);
     _syncCloseWordField(_cubit.state.closeWord);
     // Первый вопрос о разрешении задаём сразу: окно только что открыли.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncVisibility());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncVisibility();
+      unawaited(_refreshDiagnostics());
+    });
   }
 
   @override
@@ -161,6 +169,7 @@ class _SettingsBodyState extends State<SettingsBody>
     _newReplacementCtrl.dispose();
     _newPhraseFocus.dispose();
     _deletedNoticeTimer?.cancel();
+    _diagnosticStatusTimer?.cancel();
     super.dispose();
   }
 
@@ -170,6 +179,73 @@ class _SettingsBodyState extends State<SettingsBody>
     _deletedNoticeTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _showDeletedNotice = false);
     });
+  }
+
+  Future<void> _refreshDiagnostics() async {
+    try {
+      final result = await _cubit.bridge.wakeDiagnostics('status');
+      if (!mounted) return;
+      setState(() {
+        _diagnosticRecording = result['recording'] == true;
+        _diagnosticPath = result['path'] as String?;
+      });
+      _syncDiagnosticTimer();
+    } catch (_) {}
+  }
+
+  void _syncDiagnosticTimer() {
+    _diagnosticStatusTimer?.cancel();
+    if (_diagnosticRecording) {
+      _diagnosticStatusTimer = Timer.periodic(
+        const Duration(seconds: 3),
+        (_) => unawaited(_refreshDiagnostics()),
+      );
+    }
+  }
+
+  Future<void> _toggleDiagnostics(bool enabled) async {
+    if (_diagnosticBusy) return;
+    if (enabled && !_cubit.state.wakeWordEnabled) {
+      setState(() => _diagnosticError = l10n.wakeDiagnosticsEnableWakeFirst);
+      return;
+    }
+    setState(() {
+      _diagnosticBusy = true;
+      _diagnosticError = null;
+    });
+    try {
+      final result = await _cubit.bridge.wakeDiagnostics(
+        enabled ? 'start' : 'stop',
+      );
+      if (!mounted) return;
+      setState(() {
+        _diagnosticRecording = result['recording'] == true;
+        _diagnosticPath = result['path'] as String?;
+        _diagnosticError = switch (result['error']) {
+          'profile' => l10n.wakeDiagnosticsRecalibrateFirst,
+          'wake_disabled' => l10n.wakeDiagnosticsEnableWakeFirst,
+          null => null,
+          _ => l10n.wakeDiagnosticsStartFailed,
+        };
+      });
+      _syncDiagnosticTimer();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _diagnosticError = l10n.wakeDiagnosticsStartFailed);
+      }
+    } finally {
+      if (mounted) setState(() => _diagnosticBusy = false);
+    }
+  }
+
+  Future<void> _markDiagnostics(String word) async {
+    try {
+      await _cubit.bridge.wakeDiagnostics('mark', word);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _diagnosticError = l10n.wakeDiagnosticsMarkFailed);
+      }
+    }
   }
 
   /// Поле подсказки следует за настройкой, но не мешает набору.
@@ -542,6 +618,65 @@ class _SettingsBodyState extends State<SettingsBody>
               child: Text(l10n.buttonDeleteVoiceProfile),
             ),
           ],
+        ],
+      ),
+    ],
+    SectionTitle(l10n.wakeDiagnosticsTitle),
+    Check(l10n.wakeDiagnosticsRecord, _diagnosticRecording, _toggleDiagnostics),
+    Hint(l10n.wakeDiagnosticsHint, under: true),
+    if (_diagnosticRecording) ...[
+      const SizedBox(height: Gap.item),
+      Row(
+        children: [
+          PushButton(
+            controlSize: ControlSize.regular,
+            secondary: true,
+            onPressed: () => _markDiagnostics('wake'),
+            child: Text(l10n.wakeDiagnosticsMarkWake),
+          ),
+          const SizedBox(width: Gap.control),
+          PushButton(
+            controlSize: ControlSize.regular,
+            secondary: true,
+            onPressed: () => _markDiagnostics('close'),
+            child: Text(l10n.wakeDiagnosticsMarkClose),
+          ),
+          const SizedBox(width: Gap.control),
+          PushButton(
+            controlSize: ControlSize.regular,
+            secondary: true,
+            onPressed: () => _markDiagnostics('other'),
+            child: Text(l10n.wakeDiagnosticsMarkOther),
+          ),
+        ],
+      ),
+      Hint(l10n.wakeDiagnosticsMarkHint, under: true),
+    ],
+    if (_diagnosticError != null)
+      Text(
+        _diagnosticError!,
+        style: Type.caption.copyWith(color: const Color(0xFFFF3B30)),
+      ),
+    if (_diagnosticPath != null) ...[
+      const SizedBox(height: Gap.item),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              _diagnosticPath!.replaceFirst(home, '~'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Type.caption.copyWith(
+                color: Surface.secondaryText(context),
+              ),
+            ),
+          ),
+          PushButton(
+            controlSize: ControlSize.regular,
+            secondary: true,
+            onPressed: () => Process.run('open', [_diagnosticPath!]),
+            child: Text(l10n.wakeDiagnosticsOpenFolder),
+          ),
         ],
       ),
     ],

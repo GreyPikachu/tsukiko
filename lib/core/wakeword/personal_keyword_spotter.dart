@@ -130,6 +130,9 @@ class PersonalKeywordSpotter {
   final double wakeThreshold;
   final double closeThreshold;
 
+  /// Only attached during an explicit developer diagnostic recording.
+  void Function(KeywordScore score)? onScore;
+
   Float32List _recent = Float32List(0);
   int _sinceEvaluation = 0;
   String? _candidate;
@@ -188,6 +191,17 @@ class PersonalKeywordSpotter {
       score = close;
       threshold = closeThreshold;
     }
+    onScore?.call(
+      KeywordScore(
+        wake: wake,
+        close: close,
+        wakeNegative: wakeNegative,
+        closeNegative: closeNegative,
+        wakeThreshold: wakeThreshold,
+        closeThreshold: closeThreshold,
+        candidate: detected,
+      ),
+    );
     if (detected == null) {
       _candidate = null;
       _candidateHits = 0;
@@ -195,7 +209,12 @@ class PersonalKeywordSpotter {
     }
     _candidateHits = _candidate == detected ? _candidateHits + 1 : 1;
     _candidate = detected;
-    if (_candidateHits >= 2 || score < threshold * 0.80) {
+    // A single close-word score or two heavily overlapping windows used to
+    // stop dictation mid-sentence. Require three consecutive evaluations for
+    // close, while wake retains the low-latency path.
+    if ((detected == closeWord && _candidateHits >= 3) ||
+        (detected == wakeWord &&
+            (_candidateHits >= 2 || score < threshold * 0.80))) {
       _pending = KeywordTokenizer.normalizeKeywordText(detected);
       _candidate = null;
       _candidateHits = 0;
@@ -226,4 +245,34 @@ class PersonalKeywordSpotter {
     }
     return best;
   }
+}
+
+class KeywordScore {
+  const KeywordScore({
+    required this.wake,
+    required this.close,
+    required this.wakeNegative,
+    required this.closeNegative,
+    required this.wakeThreshold,
+    required this.closeThreshold,
+    required this.candidate,
+  });
+
+  final double wake;
+  final double close;
+  final double wakeNegative;
+  final double closeNegative;
+  final double wakeThreshold;
+  final double closeThreshold;
+  final String? candidate;
+
+  Map<String, Object?> toJson() => {
+    'wake': wake.isFinite ? wake : null,
+    'close': close.isFinite ? close : null,
+    'wakeNegative': wakeNegative.isFinite ? wakeNegative : null,
+    'closeNegative': closeNegative.isFinite ? closeNegative : null,
+    'wakeThreshold': wakeThreshold,
+    'closeThreshold': closeThreshold,
+    'candidate': candidate,
+  };
 }

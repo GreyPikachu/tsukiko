@@ -104,6 +104,8 @@ class NativeBridge {
   String Function()? onStatusAsked;
   Future<void> Function()? onReleaseAsked;
   Future<void> Function(bool active)? onCalibrationActive;
+  Future<Map<String, dynamic>> Function(Map<String, dynamic> request)?
+  onWakeDiagnostics;
 
   Future<Object?> _onCall(MethodCall call) async {
     switch (call.method) {
@@ -153,6 +155,10 @@ class NativeBridge {
         await onReleaseAsked?.call();
       case 'calibrationActive':
         await onCalibrationActive?.call(call.arguments == true);
+      case 'wakeDiagnostics':
+        return await onWakeDiagnostics?.call(
+          (call.arguments as Map).cast<String, dynamic>(),
+        );
     }
     return null;
   }
@@ -252,6 +258,19 @@ class NativeBridge {
   /// Reserve the microphone for voice calibration across Flutter engines.
   Future<void> setCalibrationActive(bool active) =>
       _channel.invokeMethod('calibrationActive', active);
+
+  Future<Map<String, dynamic>> wakeDiagnostics(
+    String action, [
+    String? word,
+  ]) async {
+    final request = <String, dynamic>{'action': action};
+    if (word != null) request['word'] = word;
+    return (await _channel.invokeMapMethod<String, dynamic>(
+          'wakeDiagnostics',
+          request,
+        )) ??
+        <String, dynamic>{};
+  }
 
   Stream<void> get settingsReloaded => _reload.stream;
 

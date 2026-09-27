@@ -20,6 +20,7 @@ import '../../core/vocabulary.dart';
 import '../../core/app_locale.dart';
 import '../../core/labels.dart';
 import '../../core/wakeword/wakeword_service.dart';
+import '../../core/wakeword/speaker_profile.dart';
 import '../../core/wakeword/keyword_tokenizer.dart' show stripTrailingCloseWord;
 
 /// Диктовка целиком: перехват клавиш, запись, сервер с моделью, вставка
@@ -72,6 +73,7 @@ class DictationCubit extends Cubit<DictationState> {
         await _reloadSettings();
       }
     };
+    bridge.onWakeDiagnostics = _handleWakeDiagnostics;
     // Те же настройки правит окно настроек — там они и живут.
     bridge.settingsReloaded.listen((_) => _reloadSettings());
 
@@ -101,6 +103,52 @@ class DictationCubit extends Cubit<DictationState> {
   late final WhisperServer _server;
   WakeWordService? _wakeWordService;
   bool _calibrating = false;
+  String? _lastDiagnosticsPath;
+
+  Future<Map<String, dynamic>> _handleWakeDiagnostics(
+    Map<String, dynamic> request,
+  ) async {
+    final action = request['action'];
+    final service = _wakeWordService;
+    switch (action) {
+      case 'status':
+        return {
+          'recording': service?.isDiagnosing ?? false,
+          'path': service?.diagnosticsPath ?? _lastDiagnosticsPath,
+        };
+      case 'start':
+        if (!_settings.wakeWordEnabled || _calibrating) {
+          return {'recording': false, 'error': 'wake_disabled'};
+        }
+        if (!(SpeakerProfile.load()?.hasPersonalKeywordsFor(
+              _settings.wakeWord,
+              _settings.closeWord,
+            ) ??
+            false)) {
+          return {'recording': false, 'error': 'profile'};
+        }
+        final active = _getOrCreateWakeWordService();
+        if (!active.isRunning && !await active.start(settings: _settings)) {
+          return {'recording': false, 'error': 'detector_unavailable'};
+        }
+        final path = active.startDiagnostics();
+        _lastDiagnosticsPath = path;
+        return {'recording': path != null, 'path': path};
+      case 'mark':
+        service?.markDiagnostics(request['word'] as String? ?? '');
+        return {
+          'recording': service?.isDiagnosing ?? false,
+          'path': service?.diagnosticsPath ?? _lastDiagnosticsPath,
+        };
+      case 'stop':
+        final path = await service?.stopDiagnostics();
+        _lastDiagnosticsPath = path ?? _lastDiagnosticsPath;
+        return {'recording': false, 'path': _lastDiagnosticsPath};
+      default:
+        return {'recording': false, 'error': 'unknown_action'};
+    }
+  }
+
   DictationSettings _settings = DictationSettings.load();
   List<VocabularyItem> _vocabulary = const [];
   bool _commandsEnabled = true;
@@ -274,9 +322,7 @@ class DictationCubit extends Cubit<DictationState> {
       final ww = _getOrCreateWakeWordService();
       unawaited(ww.start(settings: _settings));
     } else {
-      if (_wakeWordService?.isRunning ?? false) {
-        unawaited(_wakeWordService!.stop());
-      }
+      await _wakeWordService?.stop();
     }
   }
 

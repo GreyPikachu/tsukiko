@@ -74,6 +74,10 @@ class StreamingSherpaEngine extends AcousticSpeakerEngine {
   int _recentSamples = 0;
   static const _maxRecentSamples = 16000 * 2;
 
+  void setScoreListener(void Function(KeywordScore)? listener) {
+    if (_personal != null) _personal!.onScore = listener;
+  }
+
   @override
   Future<bool> initKeywordSpotter({
     required String wakeWord,

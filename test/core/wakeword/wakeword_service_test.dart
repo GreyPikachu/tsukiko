@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -80,7 +82,52 @@ void main() {
       await service.stop();
       expect(service.isRunning, isFalse);
       expect(service.state, WakeWordListeningState.disabled);
+      expect(engine.isReady, isFalse);
     });
+
+    test(
+      'diagnostics captures the detector stream and stops with service',
+      () async {
+        final root = Directory.systemTemp.createTempSync('wake-service-diag-');
+        try {
+          final settings = DictationSettings(
+            wakeWordEnabled: true,
+            wakeWord: 'Джефф',
+            closeWord: 'Отбой',
+          );
+          await service.start(settings: settings);
+          final path = service.startDiagnostics(root: root.path)!;
+          service.markDiagnostics('wake');
+          audioSource.pushSamples(makeAudio(length: 1600));
+          await pumpEventQueue();
+          service.notifyRecordingStarted();
+          service.markDiagnostics('close');
+          engine.queuedDetection = const KeywordDetection(keyword: 'Отбой');
+          audioSource.pushSamples(makeAudio(length: 1600));
+          await pumpEventQueue();
+          await service.stop();
+
+          expect(service.isDiagnosing, isFalse);
+          expect(engine.isReady, isFalse);
+          final wav = File('$path/audio.wav').readAsBytesSync();
+          expect(ByteData.sublistView(wav).getUint32(40, Endian.little), 6400);
+          final events = File('$path/events.jsonl')
+              .readAsLinesSync()
+              .map((line) => jsonDecode(line) as Map<String, dynamic>)
+              .toList();
+          expect(
+            events.where((event) => event['type'] == 'mark'),
+            hasLength(2),
+          );
+          expect(
+            events.any((event) => event['type'] == 'close_triggered'),
+            isTrue,
+          );
+        } finally {
+          root.deleteSync(recursive: true);
+        }
+      },
+    );
   });
 
   group('WakeWordService - детекция слова активации', () {

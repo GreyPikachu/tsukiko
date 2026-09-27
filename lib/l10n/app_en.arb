@@ -751,5 +751,17 @@
   "calibrationMicPermissionError": "Microphone permission is required for voice calibration",
   "calibrationCompletedTitle": "Calibration Complete",
   "calibrationCompletedBody": "Your voice profile is saved locally. Tsukiko is ready to respond to your commands.",
+  "wakeDiagnosticsTitle": "Developer: voice activation",
+  "wakeDiagnosticsRecord": "Record a diagnostic session",
+  "wakeDiagnosticsHint": "While enabled, microphone audio and detector scores are saved. The session stops after 20 minutes or when voice activation is disabled. Files stay on this Mac.",
+  "wakeDiagnosticsMarkWake": "About to say wake word",
+  "wakeDiagnosticsMarkClose": "About to say close word",
+  "wakeDiagnosticsMarkOther": "Ordinary speech",
+  "wakeDiagnosticsMarkHint": "Tap a marker immediately before saying a word or ordinary speech. Then turn recording off and open the folder containing the WAV and event log.",
+  "wakeDiagnosticsOpenFolder": "Open folder",
+  "wakeDiagnosticsEnableWakeFirst": "Enable voice activation first.",
+  "wakeDiagnosticsRecalibrateFirst": "Calibrate both words first so the personal detector's scores can be recorded.",
+  "wakeDiagnosticsStartFailed": "Could not start diagnostic recording. Check microphone access.",
+  "wakeDiagnosticsMarkFailed": "Could not save the marker.",
   "buttonDone": "Done"
 }

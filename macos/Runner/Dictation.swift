@@ -459,6 +459,14 @@ final class DictationBridge: NSObject {
       panel.invokeMethod("calibrationActive", arguments: call.arguments, result: { _ in
         reply(nil)
       })
+    case "wakeDiagnostics":
+      guard let panel = channel else {
+        reply(["recording": false, "error": "Dictation panel is unavailable"])
+        return
+      }
+      panel.invokeMethod("wakeDiagnostics", arguments: call.arguments, result: { answer in
+        reply(answer)
+      })
     case "dictationStatus":
       // Спрашивает очередь, отвечает диктовка: только её изолят знает,
       // говорит ли человек прямо сейчас. Без панели отвечать некому —

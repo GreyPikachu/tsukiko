@@ -87,6 +87,19 @@ void main() {
       expect(detect(utterance([430, 250, 390], speed: 0.96)), 'отбой');
       expect(detect(utterance([430, 250, 270])), isNull);
       expect(detect(Float32List(32000)), isNull);
+
+      final oneWindow = PersonalKeywordSpotter(
+        wakeWord: 'Вока',
+        closeWord: 'Отбой',
+        wakeTemplates: wake,
+        closeTemplates: close,
+      );
+      oneWindow.acceptAudio(utterance([430, 250, 390]));
+      expect(
+        oneWindow.takeDetection(),
+        isNull,
+        reason: 'one close-word score must never end dictation',
+      );
     },
   );
 }

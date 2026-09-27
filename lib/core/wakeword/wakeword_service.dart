@@ -7,6 +7,7 @@ import 'audio_stream_source.dart';
 import 'keyword_tokenizer.dart';
 import 'sherpa_engine.dart';
 import 'speaker_profile.dart';
+import 'wake_diagnostics.dart';
 
 /// В каком состоянии находится голосовая активация.
 enum WakeWordListeningState {
@@ -33,6 +34,49 @@ class WakeWordService {
   StreamSubscription<Float32List>? _audioSub;
   DictationSettings? _settings;
   SpeakerProfile? _profile;
+  WakeDiagnosticsSession? _diagnostics;
+
+  bool get isDiagnosing => _diagnostics != null;
+  String? get diagnosticsPath => _diagnostics?.directory;
+
+  String? startDiagnostics({String? root}) {
+    if (!isRunning || _settings == null) return null;
+    if (_diagnostics != null) return _diagnostics!.directory;
+    final session = WakeDiagnosticsSession.start(
+      wakeWord: _settings!.wakeWord,
+      closeWord: _settings!.closeWord,
+      detector:
+          _profile?.hasPersonalKeywordsFor(
+                _settings!.wakeWord,
+                _settings!.closeWord,
+              ) ??
+              false
+          ? 'personal-mfcc-dtw'
+          : 'sherpa-onnx',
+      root: root,
+    );
+    _diagnostics = session;
+    if (_engine is StreamingSherpaEngine) {
+      _engine.setScoreListener(session.score);
+    }
+    return session.directory;
+  }
+
+  void markDiagnostics(String word) {
+    if (word != 'wake' && word != 'close' && word != 'other') return;
+    _diagnostics?.mark(word);
+  }
+
+  Future<String?> stopDiagnostics() async {
+    final session = _diagnostics;
+    if (session == null) return null;
+    _diagnostics = null;
+    if (_engine is StreamingSherpaEngine) {
+      _engine.setScoreListener(null);
+    }
+    await session.stop();
+    return session.directory;
+  }
 
   // Обратные вызовы для кубита диктовки
   void Function()? onWakeWordTriggered;
@@ -147,6 +191,7 @@ class WakeWordService {
     _triggeredInCurrentState = false;
     _lastSpeechTime = DateTime.now();
     _engine.resetKeywordStream();
+    _diagnostics?.event('recording_started');
     Log.info('WakeWord', 'Now listening for CloseWord or silence...');
   }
 
@@ -158,12 +203,26 @@ class WakeWordService {
     _lastCompletionAt = DateTime.now();
     _lastSpeechTime = null;
     _engine.resetKeywordStream();
+    _diagnostics?.event('recording_stopped');
     Log.info('WakeWord', 'Returned to listening for WakeWord');
   }
 
   /// Обработка порции аудио с микрофона.
   void _onAudioFrame(Float32List samples) {
     if (_state == WakeWordListeningState.disabled || samples.isEmpty) return;
+
+    final diagnostics = _diagnostics;
+    if (diagnostics != null) {
+      try {
+        diagnostics.recordAudio(samples);
+        if (diagnostics.samples >= WakeDiagnosticsSession.maxSamples) {
+          unawaited(stopDiagnostics());
+        }
+      } catch (e) {
+        Log.error('WakeWord', 'Diagnostic recording failed: $e');
+        unawaited(stopDiagnostics());
+      }
+    }
 
     // KWS получает и тихие кадры: они нужны для завершения слова.
     // isSpeech ниже отдельно обновляет адаптивный шумовой фон.
@@ -192,6 +251,7 @@ class WakeWordService {
         );
 
         if (detected == expected) {
+          _diagnostics?.event('wake_triggered', {'keyword': detected});
           Log.info(
             'WakeWord',
             'Spotted keyword: "$detected" (expected: "$expected")',
@@ -226,6 +286,7 @@ class WakeWordService {
               detection.keyword,
             );
             if (detected == closeWord) {
+              _diagnostics?.event('close_triggered', {'keyword': detected});
               Log.info(
                 'WakeWord',
                 'CloseWord "$closeWord" detected! Stopping dictation.',
@@ -246,6 +307,7 @@ class WakeWordService {
         if (_lastSpeechTime != null) {
           final silenceDuration = now.difference(_lastSpeechTime!);
           if (silenceDuration >= silenceThreshold) {
+            _diagnostics?.event('silence_timeout');
             Log.info(
               'WakeWord',
               'Silence timeout (${silenceDuration.inMilliseconds}ms >= ${silenceThreshold.inMilliseconds}ms). Stopping dictation.',
@@ -264,12 +326,13 @@ class WakeWordService {
   /// Остановить сервис.
   Future<void> stop({bool invalidate = true}) async {
     if (invalidate) _operationGeneration++;
+    await stopDiagnostics();
     _state = WakeWordListeningState.disabled;
     _triggeredInCurrentState = false;
     await _audioSub?.cancel();
     _audioSub = null;
     await _audioSource.stopStream();
-    _engine.resetKeywordStream();
+    _engine.dispose();
   }
 
   /// Полное освобождение памяти и процессов.
