@@ -180,6 +180,51 @@ void main() {
         Float32List.sublistView(closeAudio, 3200 + 3 * 2880),
       );
       expect(oneWindow.takeDetection(), 'отбой');
+
+      Float32List closeAfterPause(int pauseSamples) {
+        final first = utterance([310, 500, 450]);
+        final closeWord = utterance([430, 250, 390]);
+        return Float32List.fromList([
+          ...first.sublist(0, 3200 + 3 * 2880),
+          ...Float32List(pauseSamples),
+          ...closeWord.sublist(3200),
+        ]);
+      }
+
+      expect(
+        detect(closeAfterPause(3200), closeMode: true),
+        isNull,
+        reason: 'a syllable following a short intra-word gap is not a command',
+      );
+      expect(
+        detect(closeAfterPause(5120), closeMode: true),
+        'отбой',
+        reason: 'an isolated close word after speech must still work',
+      );
+
+      final timely = PersonalKeywordSpotter(
+        wakeWord: 'Вока',
+        closeWord: 'Отбой',
+        wakeTemplates: wake,
+        closeTemplates: close,
+      )..listenForClose = true;
+      final ages = <int>[];
+      timely.onScore = (score) {
+        if (score.closeSegmentAgeMs case final age?) ages.add(age);
+      };
+      final sample = closeAfterPause(5120);
+      for (var i = 0; i < sample.length; i += 1600) {
+        timely.acceptAudio(
+          Float32List.sublistView(sample, i, math.min(i + 1600, sample.length)),
+        );
+        timely.takeDetection();
+      }
+      expect(ages, isNotEmpty);
+      expect(
+        ages.every((age) => age <= 300),
+        isTrue,
+        reason: 'a completed segment must never be rescored much later',
+      );
     },
   );
 }

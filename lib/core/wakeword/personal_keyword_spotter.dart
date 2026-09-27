@@ -183,9 +183,9 @@ class PersonalKeywordSpotter {
   int _sinceEvaluation = 0;
   String? _pending;
   int _totalSamples = 0;
-  int _lastCloseSegmentEnd = 0;
   int _lastWakeSegmentEnd = 0;
   int? _wakeCandidateAt;
+  final _closeSegments = _StreamingSpeechSegments();
 
   String? takeDetection() {
     final result = _pending;
@@ -198,9 +198,9 @@ class PersonalKeywordSpotter {
     _sinceEvaluation = 0;
     _pending = null;
     _totalSamples = 0;
-    _lastCloseSegmentEnd = 0;
     _lastWakeSegmentEnd = 0;
     _wakeCandidateAt = null;
+    _closeSegments.reset();
   }
 
   void acceptAudio(Float32List audio) {
@@ -216,6 +216,7 @@ class PersonalKeywordSpotter {
     next.setRange(oldCount, keep, audio, audio.length - addedCount);
     _recent = next;
     _totalSamples += audio.length;
+    if (listenForClose) _closeSegments.acceptAudio(audio);
     _sinceEvaluation += audio.length;
     if (_sinceEvaluation < 1600) return;
     _sinceEvaluation %= 1600;
@@ -353,12 +354,11 @@ class PersonalKeywordSpotter {
   }
 
   bool _evaluateCompletedCloseSegment() {
-    final segment = _lastCompletedSpeechSegment();
+    final segment = _closeSegments.takeSegment();
     if (segment == null) return false;
-    final (start, end) = segment;
-    final absoluteEnd = _totalSamples - _recent.length + end;
-    if (absoluteEnd <= _lastCloseSegmentEnd) return false;
-    _lastCloseSegmentEnd = absoluteEnd;
+    final start = segment.$1 - (_totalSamples - _recent.length);
+    final end = segment.$2 - (_totalSamples - _recent.length);
+    if (start < 0 || end > _recent.length || start >= end) return false;
     final length = end - start;
     final meanLength = closeTemplates.isEmpty
         ? 0
@@ -371,12 +371,16 @@ class PersonalKeywordSpotter {
     var close = double.infinity;
     var wake = double.infinity;
     var negative = double.infinity;
-    if (meanLength > 0 &&
-        length >= math.max(4800, meanLength * 0.30) &&
+    if (segment.$4 && segment.$3 < 14) {
+      // A close word is a separate command. Syllables carved out of a longer
+      // utterance can score like the template but have no preceding boundary.
+      reason = 'boundary';
+    } else if (meanLength > 0 &&
+        length >= math.max(3520, meanLength * 0.30) &&
         length <= math.min(16000 * 2.4, meanLength * 1.65)) {
       final candidate = KeywordTemplate.fromAudio(
         _segmentAudio(start, end),
-        minActiveSamples: 2400,
+        minActiveSamples: 1600,
       );
       if (candidate != null) {
         close = _distanceTo(candidate, closeTemplates);
@@ -412,6 +416,8 @@ class PersonalKeywordSpotter {
         closeThreshold: closeThreshold,
         candidate: reason == 'accepted' ? closeWord : null,
         closeSegmentMs: durationMs,
+        closeSegmentAgeMs: (_totalSamples - segment.$2) * 1000 ~/ 16000,
+        closePrecedingQuietMs: segment.$3 * 20,
         closeReason: reason,
       ),
     );
@@ -436,8 +442,8 @@ class PersonalKeywordSpotter {
 
   Float32List _segmentAudio(int start, int end) => Float32List.sublistView(
     _recent,
-    math.max(0, start - 640),
-    math.min(_recent.length, end + 640),
+    math.max(0, start - 960),
+    math.min(_recent.length, end + 960),
   );
 
   bool _recentWordBoundary() {
@@ -463,7 +469,10 @@ class PersonalKeywordSpotter {
 
   /// Estimate the local room floor, then find a complete utterance. A fixed
   /// amplitude gate cut quiet words into fragments on the user's recordings.
-  (int, int)? _lastCompletedSpeechSegment({int trailingQuietFrames = 9}) {
+  (int, int)? _lastCompletedSpeechSegment({
+    int trailingQuietFrames = 9,
+    int bridgeFrames = 6,
+  }) {
     const frame = 320;
     final count = _recent.length ~/ frame;
     if (count < 18) return null;
@@ -506,7 +515,7 @@ class PersonalKeywordSpotter {
     var previousActive = -1;
     for (var i = 0; i < count; i++) {
       if (!active[i]) continue;
-      if (previousActive >= 0 && i - previousActive <= 6) {
+      if (previousActive >= 0 && i - previousActive <= bridgeFrames) {
         for (var j = previousActive + 1; j < i; j++) {
           active[j] = true;
         }
@@ -526,6 +535,7 @@ class PersonalKeywordSpotter {
         final peak = levels.getRange(start, i).reduce(math.max);
         if (isolatedStart &&
             i <= count - trailingQuietFrames &&
+            count - i <= 25 &&
             i - start >= 9 &&
             peak > math.max(0.003, noise * 5) &&
             _hasVoicedFrames(start * frame, i * frame)) {
@@ -602,6 +612,123 @@ class PersonalKeywordSpotter {
   }
 }
 
+/// Makes one irrevocable boundary decision per 20 ms frame. Re-scanning a
+/// rolling buffer changed old segment endpoints as its noise quantile moved,
+/// so a word from over a second ago could be accepted during the next word.
+class _StreamingSpeechSegments {
+  static const frameSamples = 320;
+  final _frame = Float32List(frameSamples);
+  final _levels = <double>[];
+  final _completed = <(int, int, int, bool)>[];
+  int _frameFill = 0;
+  int _processedSamples = 0;
+  int? _start;
+  int _lastActiveEnd = 0;
+  int _quietFrames = 0;
+  int _leadingQuietFrames = 0;
+  int? _candidateStart;
+  int _candidateActiveFrames = 0;
+  int _candidateQuietFrames = 0;
+  int _segmentLeadingQuietFrames = 0;
+  bool _hasPriorSpeech = false;
+  bool _segmentHasPriorSpeech = false;
+
+  void reset() {
+    _frameFill = 0;
+    _processedSamples = 0;
+    _levels.clear();
+    _completed.clear();
+    _start = null;
+    _lastActiveEnd = 0;
+    _quietFrames = 0;
+    _leadingQuietFrames = 0;
+    _candidateStart = null;
+    _candidateActiveFrames = 0;
+    _candidateQuietFrames = 0;
+    _segmentLeadingQuietFrames = 0;
+    _hasPriorSpeech = false;
+    _segmentHasPriorSpeech = false;
+  }
+
+  void acceptAudio(Float32List audio) {
+    for (final sample in audio) {
+      _frame[_frameFill++] = sample;
+      if (_frameFill == frameSamples) {
+        _acceptFrame();
+        _frameFill = 0;
+      }
+    }
+  }
+
+  (int, int, int, bool)? takeSegment() =>
+      _completed.isEmpty ? null : _completed.removeAt(0);
+
+  void _acceptFrame() {
+    var power = 0.0;
+    for (final sample in _frame) {
+      power += sample * sample;
+    }
+    final level = math.sqrt(power / frameSamples);
+    final sorted = [..._levels]..sort();
+    final noise = sorted.isEmpty ? 0.001 : sorted[sorted.length ~/ 4];
+    final gate = math.max(0.0015, noise * 2.1);
+    final active = level >= gate;
+    final frameStart = _processedSamples;
+    _processedSamples += frameSamples;
+
+    if (_start == null) {
+      if (active) {
+        if (_candidateStart == null) {
+          _candidateStart = frameStart;
+          _candidateActiveFrames = 0;
+        }
+        _candidateActiveFrames++;
+        _candidateQuietFrames = 0;
+        if (_candidateActiveFrames >= 4 && _leadingQuietFrames >= 5) {
+          _start = _candidateStart;
+          _segmentLeadingQuietFrames = _leadingQuietFrames;
+          _segmentHasPriorSpeech = _hasPriorSpeech;
+          _lastActiveEnd = _processedSamples;
+          _quietFrames = 0;
+          _candidateStart = null;
+          _candidateActiveFrames = 0;
+        }
+      } else {
+        if (_candidateStart == null) {
+          _leadingQuietFrames++;
+        } else if (++_candidateQuietFrames >= 4) {
+          // A brief isolated burst is noise, not the onset of a word.
+          _leadingQuietFrames += _candidateActiveFrames + _candidateQuietFrames;
+          _candidateStart = null;
+          _candidateActiveFrames = 0;
+          _candidateQuietFrames = 0;
+        }
+      }
+    } else if (active) {
+      _lastActiveEnd = _processedSamples;
+      _quietFrames = 0;
+    } else if (++_quietFrames >= 9) {
+      final start = _start!;
+      final end = _lastActiveEnd;
+      if (end - start >= 2880 && end - start <= 16000 * 2) {
+        _completed.add((
+          start,
+          end,
+          _segmentLeadingQuietFrames,
+          _segmentHasPriorSpeech,
+        ));
+      }
+      _hasPriorSpeech = true;
+      _start = null;
+      _leadingQuietFrames = _quietFrames;
+      _quietFrames = 0;
+    }
+
+    _levels.add(level);
+    if (_levels.length > 150) _levels.removeAt(0);
+  }
+}
+
 class KeywordScore {
   const KeywordScore({
     required this.wake,
@@ -612,6 +739,8 @@ class KeywordScore {
     required this.closeThreshold,
     required this.candidate,
     this.closeSegmentMs,
+    this.closeSegmentAgeMs,
+    this.closePrecedingQuietMs,
     this.closeReason,
     this.wakeSegmentMs,
     this.wakeReason,
@@ -625,6 +754,8 @@ class KeywordScore {
   final double closeThreshold;
   final String? candidate;
   final int? closeSegmentMs;
+  final int? closeSegmentAgeMs;
+  final int? closePrecedingQuietMs;
   final String? closeReason;
   final int? wakeSegmentMs;
   final String? wakeReason;
@@ -638,6 +769,9 @@ class KeywordScore {
     'closeThreshold': closeThreshold,
     'candidate': candidate,
     if (closeSegmentMs != null) 'closeSegmentMs': closeSegmentMs,
+    if (closeSegmentAgeMs != null) 'closeSegmentAgeMs': closeSegmentAgeMs,
+    if (closePrecedingQuietMs != null)
+      'closePrecedingQuietMs': closePrecedingQuietMs,
     if (closeReason != null) 'closeReason': closeReason,
     if (wakeSegmentMs != null) 'wakeSegmentMs': wakeSegmentMs,
     if (wakeReason != null) 'wakeReason': wakeReason,
