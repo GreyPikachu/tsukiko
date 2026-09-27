@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/wakeword/speaker_profile.dart';
+import 'package:tsukiko/core/wakeword/personal_keyword_spotter.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/features/settings/settings_cubit.dart';
 import 'package:tsukiko/platform/bridge.dart';
@@ -124,7 +125,14 @@ void main() {
       final profile = SpeakerProfile(
         name: 'user',
         dimension: 192,
-        embeddings: [Float32List(192)],
+        embeddings: const [],
+        wakeTemplates: [
+          for (var i = 0; i < 3; i++)
+            KeywordTemplate(
+              durationSamples: 8000,
+              frames: [for (var f = 0; f < 20; f++) Float32List(12)],
+            ),
+        ],
       );
       profile.save();
 

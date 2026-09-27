@@ -9,6 +9,8 @@ import '../logger.dart';
 import 'acoustic_feature_extractor.dart';
 import 'adaptive_noise_filter.dart';
 import 'keyword_tokenizer.dart';
+import 'personal_keyword_spotter.dart';
+import 'speaker_profile.dart';
 import 'wakeword_models.dart';
 
 /// Результат распознавания ключевого слова.
@@ -30,6 +32,7 @@ abstract class SherpaEngine {
   Future<bool> initKeywordSpotter({
     required String wakeWord,
     String closeWord = '',
+    SpeakerProfile? profile,
   });
 
   /// Инициализировать детектор активности речи (VAD).
@@ -63,6 +66,7 @@ abstract class SherpaEngine {
 /// Streaming KWS. The model consumes every PCM frame, including quiet frames
 /// needed to finalize a keyword. No WAV creation or subprocess is on this path.
 class StreamingSherpaEngine extends AcousticSpeakerEngine {
+  PersonalKeywordSpotter? _personal;
   sherpa.KeywordSpotter? _spotter;
   sherpa.OnlineStream? _stream;
   KeywordDetection? _pending;
@@ -74,9 +78,27 @@ class StreamingSherpaEngine extends AcousticSpeakerEngine {
   Future<bool> initKeywordSpotter({
     required String wakeWord,
     String closeWord = '',
+    SpeakerProfile? profile,
   }) async {
     dispose();
     if (KeywordTokenizer.normalizeKeywordText(wakeWord).isEmpty) return false;
+    if (profile?.hasPersonalKeywordsFor(wakeWord, closeWord) ?? false) {
+      _personal = PersonalKeywordSpotter(
+        wakeWord: wakeWord,
+        closeWord: closeWord,
+        wakeTemplates: profile!.wakeTemplates,
+        closeTemplates: closeWord.trim().isEmpty
+            ? const []
+            : profile.closeTemplates,
+        wakeNegatives: profile.wakeNegatives,
+        closeNegatives: closeWord.trim().isEmpty
+            ? const []
+            : profile.closeNegatives,
+      );
+      await super.initKeywordSpotter(wakeWord: wakeWord, closeWord: closeWord);
+      Log.info('WakeWord', 'Personal wake and close word templates loaded');
+      return true;
+    }
     if (!await WakeWordModelPaths.ensureKwsInstalled()) return false;
     try {
       await sherpa.initBindingsAsync();
@@ -122,6 +144,11 @@ class StreamingSherpaEngine extends AcousticSpeakerEngine {
 
   @override
   void acceptAudio(Float32List samples) {
+    final personal = _personal;
+    if (personal != null) {
+      personal.acceptAudio(samples);
+      return;
+    }
     final spotter = _spotter;
     final stream = _stream;
     if (spotter == null || stream == null || samples.isEmpty) return;
@@ -154,6 +181,11 @@ class StreamingSherpaEngine extends AcousticSpeakerEngine {
 
   @override
   KeywordDetection? detectKeyword() {
+    final personal = _personal;
+    if (personal != null) {
+      final keyword = personal.takeDetection();
+      return keyword == null ? null : KeywordDetection(keyword: keyword);
+    }
     final result = _pending;
     _pending = null;
     return result;
@@ -161,6 +193,7 @@ class StreamingSherpaEngine extends AcousticSpeakerEngine {
 
   @override
   void resetKeywordStream() {
+    _personal?.reset();
     final spotter = _spotter;
     final stream = _stream;
     if (spotter != null && stream != null) spotter.reset(stream);
@@ -171,6 +204,8 @@ class StreamingSherpaEngine extends AcousticSpeakerEngine {
 
   @override
   void dispose() {
+    _personal?.reset();
+    _personal = null;
     _stream?.free();
     _stream = null;
     _spotter?.free();
@@ -199,6 +234,7 @@ class AcousticSpeakerEngine implements SherpaEngine {
   Future<bool> initKeywordSpotter({
     required String wakeWord,
     String closeWord = '',
+    SpeakerProfile? profile,
   }) async {
     _ready = true;
     return true;
@@ -296,6 +332,7 @@ class FakeSherpaEngine implements SherpaEngine {
   Future<bool> initKeywordSpotter({
     required String wakeWord,
     String closeWord = '',
+    SpeakerProfile? profile,
   }) async {
     configuredWakeWord = wakeWord;
     configuredCloseWord = closeWord;

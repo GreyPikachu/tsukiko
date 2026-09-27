@@ -1,0 +1,229 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'acoustic_feature_extractor.dart';
+import 'keyword_tokenizer.dart';
+import 'speech_verifier.dart';
+
+/// One pronunciation recorded by the user. No raw microphone audio is stored.
+class KeywordTemplate {
+  const KeywordTemplate({required this.durationSamples, required this.frames});
+
+  final int durationSamples;
+  final List<Float32List> frames;
+
+  static KeywordTemplate? fromAudio(Float32List audio) {
+    final speech = SpeechVerifier.prepareCalibrationSamples(audio);
+    if (speech.isEmpty) return null;
+    final frames = AcousticFeatureExtractor.keywordFrames(speech);
+    if (frames.length < 10 || frames.length > 120) return null;
+    return KeywordTemplate(durationSamples: speech.length, frames: frames);
+  }
+
+  Map<String, Object> toJson() => {
+    'durationSamples': durationSamples,
+    'frames': [for (final row in frames) row.toList()],
+  };
+
+  static KeywordTemplate? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final length = value['durationSamples'];
+    final rawFrames = value['frames'];
+    if (length is! int ||
+        length < 5600 ||
+        length > 96000 ||
+        rawFrames is! List ||
+        rawFrames.length < 10 ||
+        rawFrames.length > 120) {
+      return null;
+    }
+    final frames = <Float32List>[];
+    for (final raw in rawFrames) {
+      if (raw is! List ||
+          raw.length != 12 ||
+          raw.any((element) => element is! num || !element.isFinite)) {
+        return null;
+      }
+      frames.add(
+        Float32List.fromList(raw.cast<num>().map((n) => n.toDouble()).toList()),
+      );
+    }
+    return KeywordTemplate(durationSamples: length, frames: frames);
+  }
+}
+
+/// Banded dynamic time warping: compare how a phrase evolves, not just its
+/// average timbre. Longer/shorter pronunciations can align locally.
+double keywordDistance(KeywordTemplate a, KeywordTemplate b) {
+  final left = a.frames;
+  final right = b.frames;
+  if (left.isEmpty || right.isEmpty) return double.infinity;
+  final previous = Float64List(right.length + 1);
+  final current = Float64List(right.length + 1);
+  previous.fillRange(0, previous.length, double.infinity);
+  previous[0] = 0;
+  final band = math.max(8, (left.length - right.length).abs() + 8);
+  for (var i = 1; i <= left.length; i++) {
+    current.fillRange(0, current.length, double.infinity);
+    final middle = (i * right.length / left.length).round();
+    final low = math.max(1, middle - band);
+    final high = math.min(right.length, middle + band);
+    for (var j = low; j <= high; j++) {
+      var squared = 0.0;
+      for (var d = 0; d < 12; d++) {
+        final delta = left[i - 1][d] - right[j - 1][d];
+        squared += delta * delta;
+      }
+      final cost = math.sqrt(squared / 12);
+      current[j] =
+          cost +
+          math.min(previous[j - 1], math.min(previous[j], current[j - 1]));
+    }
+    previous.setAll(0, current);
+  }
+  return previous[right.length] / math.max(left.length, right.length);
+}
+
+/// The calibration threshold follows leave-one-out positive distances.
+/// A large outlier is rejected during enrollment instead of making all later
+/// detections permissive.
+double keywordThreshold(List<KeywordTemplate> templates) {
+  if (templates.length < 2) return 0.82;
+  var largestNearest = 0.0;
+  for (var i = 0; i < templates.length; i++) {
+    var nearest = double.infinity;
+    for (var j = 0; j < templates.length; j++) {
+      if (i != j) {
+        nearest = math.min(
+          nearest,
+          keywordDistance(templates[i], templates[j]),
+        );
+      }
+    }
+    largestNearest = math.max(largestNearest, nearest);
+  }
+  return (largestNearest + 0.10).clamp(0.75, 1.05);
+}
+
+/// Scores short overlapping windows so wake/close can fire before a long
+/// utterance ends. Each word has its own positive examples; the other word
+/// serves as a hard negative when choosing between them.
+class PersonalKeywordSpotter {
+  PersonalKeywordSpotter({
+    required this.wakeWord,
+    required this.closeWord,
+    required this.wakeTemplates,
+    required this.closeTemplates,
+    this.wakeNegatives = const [],
+    this.closeNegatives = const [],
+  }) : wakeThreshold = keywordThreshold(wakeTemplates),
+       closeThreshold = closeTemplates.isEmpty
+           ? 0
+           : keywordThreshold(closeTemplates);
+
+  final String wakeWord;
+  final String closeWord;
+  final List<KeywordTemplate> wakeTemplates;
+  final List<KeywordTemplate> closeTemplates;
+  final List<KeywordTemplate> wakeNegatives;
+  final List<KeywordTemplate> closeNegatives;
+  final double wakeThreshold;
+  final double closeThreshold;
+
+  Float32List _recent = Float32List(0);
+  int _sinceEvaluation = 0;
+  String? _candidate;
+  int _candidateHits = 0;
+  String? _pending;
+
+  String? takeDetection() {
+    final result = _pending;
+    _pending = null;
+    return result;
+  }
+
+  void reset() {
+    _recent = Float32List(0);
+    _sinceEvaluation = 0;
+    _candidate = null;
+    _candidateHits = 0;
+    _pending = null;
+  }
+
+  void acceptAudio(Float32List audio) {
+    if (audio.isEmpty || _pending != null) return;
+    const maxSamples = 16000 * 3;
+    final keep = math.min(maxSamples, _recent.length + audio.length).toInt();
+    final next = Float32List(keep);
+    final oldCount = math
+        .min(_recent.length, keep - math.min(audio.length, keep))
+        .toInt();
+    final addedCount = math.min(audio.length, keep).toInt();
+    next.setRange(0, oldCount, _recent, _recent.length - oldCount);
+    next.setRange(oldCount, keep, audio, audio.length - addedCount);
+    _recent = next;
+    _sinceEvaluation += audio.length;
+    if (_sinceEvaluation < 1600) return;
+    _sinceEvaluation %= 1600;
+
+    final wake = _bestDistance(wakeTemplates);
+    final close = closeTemplates.isEmpty
+        ? double.infinity
+        : _bestDistance(closeTemplates);
+    final wakeNegative = _bestDistance(wakeNegatives);
+    final closeNegative = _bestDistance(closeNegatives);
+    String? detected;
+    double score = double.infinity;
+    double threshold = 0;
+    if (wake < wakeThreshold &&
+        close > wake + 0.08 &&
+        wakeNegative > wake + 0.06) {
+      detected = wakeWord;
+      score = wake;
+      threshold = wakeThreshold;
+    } else if (close < closeThreshold &&
+        wake > close + 0.08 &&
+        closeNegative > close + 0.06) {
+      detected = closeWord;
+      score = close;
+      threshold = closeThreshold;
+    }
+    if (detected == null) {
+      _candidate = null;
+      _candidateHits = 0;
+      return;
+    }
+    _candidateHits = _candidate == detected ? _candidateHits + 1 : 1;
+    _candidate = detected;
+    if (_candidateHits >= 2 || score < threshold * 0.80) {
+      _pending = KeywordTokenizer.normalizeKeywordText(detected);
+      _candidate = null;
+      _candidateHits = 0;
+    }
+  }
+
+  double _bestDistance(List<KeywordTemplate> templates) {
+    if (templates.isEmpty) return double.infinity;
+    final meanLength =
+        templates.map((t) => t.durationSamples).reduce((a, b) => a + b) ~/
+        templates.length;
+    var best = double.infinity;
+    for (final ratio in [0.8, 1.0, 1.2]) {
+      final length = (meanLength * ratio).round();
+      for (final offset in [0, 1600, 3200]) {
+        if (_recent.length < length + offset) continue;
+        final end = _recent.length - offset;
+        final chunk = Float32List.sublistView(_recent, end - length, end);
+        final candidate = KeywordTemplate.fromAudio(chunk);
+        if (candidate == null) continue;
+        for (final template in templates) {
+          final lengthRatio =
+              candidate.durationSamples / template.durationSamples;
+          if (lengthRatio < 0.65 || lengthRatio > 1.45) continue;
+          best = math.min(best, keywordDistance(candidate, template));
+        }
+      }
+    }
+    return best;
+  }
+}

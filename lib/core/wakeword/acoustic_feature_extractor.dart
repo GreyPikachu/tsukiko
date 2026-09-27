@@ -20,8 +20,10 @@ class AcousticFeatureExtractor {
   static const int numMfcc = 20;
   static const int embeddingDim = 192;
 
-  static double _hzToMel(double hz) => 2595.0 * math.log(1.0 + hz / 700.0) / math.ln10;
-  static double _melToHz(double mel) => 700.0 * (math.pow(10.0, mel / 2595.0) - 1.0);
+  static double _hzToMel(double hz) =>
+      2595.0 * math.log(1.0 + hz / 700.0) / math.ln10;
+  static double _melToHz(double mel) =>
+      700.0 * (math.pow(10.0, mel / 2595.0) - 1.0);
 
   static List<Float32List> _buildMelFilters(int fftSize) {
     const lowFreq = 50.0;
@@ -60,6 +62,74 @@ class AcousticFeatureExtractor {
   }
 
   static final List<Float32List> _melFilters = _buildMelFilters(512);
+
+  /// Short-time cepstral trajectory for a personalized keyword. Each row
+  /// represents 20 ms; unlike [extract], temporal order is preserved.
+  static List<Float32List> keywordFrames(Float32List samples) {
+    const hop = 320;
+    const fftSize = 512;
+    const dimensions = 12;
+    if (samples.length < frameSize) return const [];
+
+    final rows = <Float32List>[];
+    final real = Float32List(fftSize);
+    final imag = Float32List(fftSize);
+    final power = Float32List(fftSize ~/ 2 + 1);
+    final hamming = Float32List(frameSize);
+    for (var i = 0; i < frameSize; i++) {
+      hamming[i] = 0.54 - 0.46 * math.cos(2 * math.pi * i / (frameSize - 1));
+    }
+    for (var start = 0; start + frameSize <= samples.length; start += hop) {
+      for (var i = 0; i < frameSize; i++) {
+        final previous = i == 0 ? 0.0 : samples[start + i - 1];
+        real[i] = (samples[start + i] - 0.97 * previous) * hamming[i];
+      }
+      real.fillRange(frameSize, fftSize, 0);
+      imag.fillRange(0, fftSize, 0);
+      _fft(real, imag, fftSize);
+      for (var i = 0; i < power.length; i++) {
+        power[i] = real[i] * real[i] + imag[i] * imag[i];
+      }
+      final logMel = Float32List(numMelFilters);
+      for (var m = 0; m < numMelFilters; m++) {
+        var energy = 0.0;
+        final filter = _melFilters[m];
+        for (var k = 0; k < power.length; k++) {
+          energy += power[k] * filter[k];
+        }
+        logMel[m] = math.log(energy + 1e-5);
+      }
+      final row = Float32List(dimensions);
+      for (var n = 1; n <= dimensions; n++) {
+        var sum = 0.0;
+        for (var m = 0; m < numMelFilters; m++) {
+          sum += logMel[m] * math.cos(math.pi * n * (m + 0.5) / numMelFilters);
+        }
+        row[n - 1] = sum / math.sqrt(numMelFilters / 2);
+      }
+      rows.add(row);
+    }
+
+    // Cepstral mean/variance normalization removes microphone gain and
+    // stable room coloration while retaining the shape of the word.
+    for (var d = 0; d < dimensions; d++) {
+      var mean = 0.0;
+      for (final row in rows) {
+        mean += row[d];
+      }
+      mean /= rows.length;
+      var variance = 0.0;
+      for (final row in rows) {
+        final delta = row[d] - mean;
+        variance += delta * delta;
+      }
+      final scale = math.max(1.0, math.sqrt(variance / rows.length));
+      for (final row in rows) {
+        row[d] = (row[d] - mean) / scale;
+      }
+    }
+    return rows;
+  }
 
   /// Извлечь 192-мерный акустический вектор из PCM-сэмплов 16 кГц.
   static Float32List extract(Float32List samples) {
@@ -152,7 +222,9 @@ class AcousticFeatureExtractor {
       for (var n = 0; n < numMfcc; n++) {
         double dctSum = 0.0;
         for (var m = 0; m < numMelFilters; m++) {
-          dctSum += normMelFrames[f][m] * math.cos(math.pi * n * (m + 0.5) / numMelFilters);
+          dctSum +=
+              normMelFrames[f][m] *
+              math.cos(math.pi * n * (m + 0.5) / numMelFilters);
         }
         mfccFrames[f][n] = dctSum;
       }

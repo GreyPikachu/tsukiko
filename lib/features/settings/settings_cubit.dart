@@ -151,9 +151,11 @@ class SettingsCubit extends Cubit<SettingsState> {
   void _readDictation() {
     final profile = SpeakerProfile.load();
     final profileExists =
-        profile != null &&
-        profile.wakeWord.trim().toLowerCase() ==
-            _dictation.wakeWord.trim().toLowerCase();
+        profile?.hasPersonalKeywordsFor(
+          _dictation.wakeWord,
+          _dictation.closeWord,
+        ) ??
+        false;
     _emit(
       state.copyWith(
         hold: _dictation.hold,

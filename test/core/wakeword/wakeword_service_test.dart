@@ -125,8 +125,8 @@ void main() {
     });
   });
 
-  group('WakeWordService - голосовая верификация (Speaker Verification)', () {
-    test('блокирует активацию, если верификация голоса не прошла', () async {
+  group('WakeWordService - личная калибровка', () {
+    test('устаревший голосовой профиль не блокирует найденное слово', () async {
       var triggered = false;
       service.onWakeWordTriggered = () => triggered = true;
 
@@ -149,13 +149,13 @@ void main() {
         keyword: 'Джеф',
         samples: makeAudio(length: 16000),
       );
-      // Сходство ниже порога
+      // Legacy aggregate voiceprints were unreliable on a moving stream.
       engine.forcedVerificationResult = 0.50;
 
       audioSource.pushSamples(makeAudio());
       await pumpEventQueue();
 
-      expect(triggered, isFalse, reason: 'Чужой голос должен быть отклонён');
+      expect(triggered, isTrue);
     });
 
     test('пропускает активацию, если верификация голоса успешна', () async {

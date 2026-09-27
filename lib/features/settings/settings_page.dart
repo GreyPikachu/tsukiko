@@ -440,7 +440,7 @@ class _SettingsBodyState extends State<SettingsBody>
     const SizedBox(height: Gap.inner),
     Check(l10n.checkWakeWordEnabled, s.wakeWordEnabled, (enabled) async {
       if (enabled && !s.speakerProfileExists) {
-        final ok = await _openVoiceCalibration(s.wakeWord);
+        final ok = await _openVoiceCalibration(s.wakeWord, s.closeWord);
         if (ok != true) return;
       }
       _cubit.setWakeWordEnabled(enabled);
@@ -508,7 +508,9 @@ class _SettingsBodyState extends State<SettingsBody>
           Expanded(
             child: Text(
               s.speakerProfileExists
-                  ? l10n.voiceProfileStatusCalibrated(3)
+                  ? l10n.voiceProfileStatusCalibrated(
+                      s.closeWord.trim().isEmpty ? 4 : 8,
+                    )
                   : l10n.voiceProfileStatusNotCalibrated,
               style: Type.control.copyWith(
                 color: s.speakerProfileExists
@@ -521,7 +523,7 @@ class _SettingsBodyState extends State<SettingsBody>
           PushButton(
             controlSize: ControlSize.regular,
             secondary: true,
-            onPressed: () => _openVoiceCalibration(s.wakeWord),
+            onPressed: () => _openVoiceCalibration(s.wakeWord, s.closeWord),
             child: Text(
               s.speakerProfileExists
                   ? l10n.buttonRecalibrateVoice
@@ -545,13 +547,14 @@ class _SettingsBodyState extends State<SettingsBody>
     ],
   ];
 
-  Future<bool?> _openVoiceCalibration(String wakeWord) async {
+  Future<bool?> _openVoiceCalibration(String wakeWord, String closeWord) async {
     await _cubit.bridge.setCalibrationActive(true);
     try {
       if (!mounted) return null;
       final result = await VoiceCalibrationSheet.show(
         context,
         wakeWord: wakeWord.isNotEmpty ? wakeWord : 'Джеф',
+        closeWord: closeWord,
         bridge: _cubit.bridge,
         onProfileCreated: _cubit.refreshSpeakerProfile,
       );

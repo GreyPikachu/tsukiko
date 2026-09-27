@@ -5,19 +5,22 @@ import 'dart:typed_data';
 
 import '../library.dart' show supportDir, writeJsonAtomically;
 import '../../platform/os.dart' show os;
+import 'keyword_tokenizer.dart';
+import 'personal_keyword_spotter.dart';
 
-/// Профиль голоса пользователя (Voiceprint Enrollment).
-///
-/// Содержит эмбеддинги 3 контрольных записей ключевого слова активации,
-/// автоматически рассчитанный порог сходства и ссылку на слово активации.
-/// При появлении ключевого слова в аудиопотоке его акустический слепок
-/// сверяется с этим профилем как дополнительный фильтр ложных срабатываний.
+/// Персональные акустические шаблоны обоих ключевых слов и созвучных слов.
+/// Старые эмбеддинги сохраняются только для чтения прежних профилей.
 class SpeakerProfile {
   const SpeakerProfile({
     required this.name,
     required this.dimension,
     required this.embeddings,
     this.wakeWord = 'Джеф',
+    this.closeWord = '',
+    this.wakeTemplates = const [],
+    this.closeTemplates = const [],
+    this.wakeNegatives = const [],
+    this.closeNegatives = const [],
     this.threshold = 0.60,
     this.createdAt,
   });
@@ -26,8 +29,22 @@ class SpeakerProfile {
   final int dimension;
   final List<Float32List> embeddings;
   final String wakeWord;
+  final String closeWord;
+  final List<KeywordTemplate> wakeTemplates;
+  final List<KeywordTemplate> closeTemplates;
+  final List<KeywordTemplate> wakeNegatives;
+  final List<KeywordTemplate> closeNegatives;
   final double threshold;
   final DateTime? createdAt;
+
+  bool hasPersonalKeywordsFor(String wake, String close) =>
+      wakeTemplates.length >= 3 &&
+      KeywordTokenizer.normalizeKeywordText(wakeWord) ==
+          KeywordTokenizer.normalizeKeywordText(wake) &&
+      (close.trim().isEmpty ||
+          (closeTemplates.length >= 3 &&
+              KeywordTokenizer.normalizeKeywordText(closeWord) ==
+                  KeywordTokenizer.normalizeKeywordText(close)));
 
   static String get defaultPath => os.join(supportDir, 'speaker_profile.json');
   static String get defaultProfilePath => defaultPath;
@@ -56,7 +73,9 @@ class SpeakerProfile {
       if (!file.existsSync() || file.lengthSync() == 0) return null;
       final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
       final profile = SpeakerProfile.fromJson(json);
-      if (profile.embeddings.isEmpty) return null;
+      if (profile.embeddings.isEmpty && profile.wakeTemplates.isEmpty) {
+        return null;
+      }
       return profile;
     } catch (_) {
       return null;
@@ -80,6 +99,19 @@ class SpeakerProfile {
     'name': name,
     'dimension': dimension,
     'wakeWord': wakeWord,
+    'closeWord': closeWord,
+    'wakeTemplates': wakeTemplates
+        .map((template) => template.toJson())
+        .toList(),
+    'closeTemplates': closeTemplates
+        .map((template) => template.toJson())
+        .toList(),
+    'wakeNegatives': wakeNegatives
+        .map((template) => template.toJson())
+        .toList(),
+    'closeNegatives': closeNegatives
+        .map((template) => template.toJson())
+        .toList(),
     'threshold': threshold,
     'createdAt': (createdAt ?? DateTime.now()).toIso8601String(),
     'embeddings': [
@@ -113,6 +145,12 @@ class SpeakerProfile {
     }
 
     final wakeWord = (json['wakeWord'] as String?) ?? 'Джеф';
+    List<KeywordTemplate> readTemplates(Object? raw) => raw is List
+        ? raw
+              .map(KeywordTemplate.fromJson)
+              .whereType<KeywordTemplate>()
+              .toList()
+        : const [];
     final threshold =
         (json['threshold'] as num?)?.toDouble() ??
         calculateOptimalThreshold(embeddingsList);
@@ -124,6 +162,11 @@ class SpeakerProfile {
           : (embeddingsList.isNotEmpty ? embeddingsList.first.length : 192),
       embeddings: embeddingsList,
       wakeWord: wakeWord,
+      closeWord: (json['closeWord'] as String?) ?? '',
+      wakeTemplates: readTemplates(json['wakeTemplates']),
+      closeTemplates: readTemplates(json['closeTemplates']),
+      wakeNegatives: readTemplates(json['wakeNegatives']),
+      closeNegatives: readTemplates(json['closeNegatives']),
       threshold: threshold,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String)

@@ -7,7 +7,7 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../../core/wakeword/adaptive_noise_filter.dart';
 import '../../../core/wakeword/audio_stream_source.dart';
-import '../../../core/wakeword/sherpa_engine.dart';
+import '../../../core/wakeword/personal_keyword_spotter.dart';
 import '../../../core/wakeword/speaker_profile.dart';
 import '../../../core/wakeword/speech_verifier.dart';
 import '../../../design/design.dart';
@@ -26,45 +26,40 @@ enum CalibrationPhase {
 
 /// Мастер калибровки голоса пользователя (Voiceprint Enrollment Wizard).
 ///
-/// Записывает 3 контрольных образца ключевого слова активации, верифицирует
-/// каждое слово через встроенный Whisper (tsukiko-recognizer) с адаптивной
-/// фильтрацией комнатного шума, извлекает 192-мерный акустический слепок
-/// и сохраняет откалиброванный профиль `SpeakerProfile` на диск.
+/// Записывает по три произношения каждого слова и по одному созвучному слову.
+/// Сохраняются только акустические признаки; Whisper не решает, верно ли
+/// пользователь произнёс нестандартное имя или короткое слово.
 class VoiceCalibrationSheet extends StatefulWidget {
   const VoiceCalibrationSheet({
     super.key,
     required this.wakeWord,
+    this.closeWord = '',
     this.bridge,
     this.audioSource,
-    this.engine,
-    this.speechVerifier,
     this.onProfileCreated,
   });
 
   final String wakeWord;
+  final String closeWord;
   final NativeBridge? bridge;
   final AudioStreamSource? audioSource;
-  final SherpaEngine? engine;
-  final SpeechVerifier? speechVerifier;
   final VoidCallback? onProfileCreated;
 
   static Future<bool?> show(
     BuildContext context, {
     required String wakeWord,
+    String closeWord = '',
     NativeBridge? bridge,
     AudioStreamSource? audioSource,
-    SherpaEngine? engine,
-    SpeechVerifier? speechVerifier,
     VoidCallback? onProfileCreated,
   }) => showMacosSheet<bool>(
     context: context,
     barrierDismissible: false,
     builder: (sheetContext) => VoiceCalibrationSheet(
       wakeWord: wakeWord,
+      closeWord: closeWord,
       bridge: bridge,
       audioSource: audioSource,
-      engine: engine,
-      speechVerifier: speechVerifier,
       onProfileCreated: onProfileCreated,
     ),
   );
@@ -76,17 +71,21 @@ class VoiceCalibrationSheet extends StatefulWidget {
 class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
     with SingleTickerProviderStateMixin {
   late final AudioStreamSource _audioSource;
-  late final SherpaEngine _engine;
-  late final SpeechVerifier _verifier;
   final AdaptiveNoiseFilter _noiseFilter = AdaptiveNoiseFilter();
 
-  int _currentStep = 0; // 0, 1, 2
-  static const int _totalSteps = 3;
+  int _currentStep = 0;
+  int get _totalSteps => widget.closeWord.trim().isEmpty ? 4 : 8;
+  bool get _isNegativeStep => _currentStep == 3 || _currentStep == 7;
+  bool get _isCloseStep => _currentStep >= 4;
+  String get _targetWord => _isCloseStep ? widget.closeWord : widget.wakeWord;
 
   CalibrationPhase _phase = CalibrationPhase.idle;
   String? _errorMessage;
 
-  final List<Float32List> _collectedEmbeddings = [];
+  final List<KeywordTemplate> _wakeTemplates = [];
+  final List<KeywordTemplate> _closeTemplates = [];
+  final List<KeywordTemplate> _wakeNegatives = [];
+  final List<KeywordTemplate> _closeNegatives = [];
   final List<Float32List> _recordedAudioBuffer = [];
   StreamSubscription<Float32List>? _audioSub;
 
@@ -99,8 +98,6 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   void initState() {
     super.initState();
     _audioSource = widget.audioSource ?? MicrophoneAudioStreamSource();
-    _engine = widget.engine ?? AcousticSpeakerEngine();
-    _verifier = widget.speechVerifier ?? SpeechVerifier();
   }
 
   @override
@@ -243,15 +240,6 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
       await _audioSource.stopStream();
     }
 
-    // Если был передан mock/fake движок (для тестов)
-    if (_engine is FakeSherpaEngine) {
-      final fakeEmb = _engine.extractSpeakerEmbedding(Float32List(16000));
-      if (fakeEmb != null && mounted) {
-        _handleSuccessfulSample(fakeEmb);
-        return;
-      }
-    }
-
     Float32List raw;
     if (wavPath != null && wavPath.isNotEmpty) {
       raw = SpeechVerifier.readWavSamples(wavPath);
@@ -267,57 +255,61 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
         offset += b.length;
       }
     }
-    final speech = SpeechVerifier.prepareCalibrationSamples(raw);
-    if (speech.isEmpty) {
+    final template = KeywordTemplate.fromAudio(raw);
+    if (template == null) {
       if (!mounted) return;
       setState(() {
         _phase = CalibrationPhase.failed;
         _errorMessage =
             'Образец слишком тихий, короткий, длинный или искажённый. '
-            'Произнесите только «${widget.wakeWord}» и повторите запись.';
+            '${_isNegativeStep ? 'Произнесите одно созвучное слово' : 'Произнесите только «$_targetWord»'} и повторите запись.';
       });
       return;
     }
-    final result = await _verifier.verifySamples(
-      speech,
-      targetWord: widget.wakeWord,
-    );
-
     if (!mounted) return;
-
-    if (SpeechVerifier.matchesOnlyKeyword(
-          result.recognizedText,
-          widget.wakeWord,
-        ) &&
-        result.extractedEmbedding != null) {
-      _handleSuccessfulSample(result.extractedEmbedding!);
-    } else {
-      final heard = result.recognizedText.isNotEmpty
-          ? ' (распознано: «${result.recognizedText}»)'
-          : '';
-      setState(() {
-        _phase = CalibrationPhase.failed;
-        _errorMessage = result.errorMessage != null
-            ? 'Не удалось проверить запись: ${result.errorMessage}'
-            : 'Произнесите только «${widget.wakeWord}»$heard. Попробуйте ещё раз.';
-      });
-    }
+    _handleSuccessfulSample(template);
   }
 
-  void _handleSuccessfulSample(Float32List embedding) {
-    if (_collectedEmbeddings.isNotEmpty &&
-        _collectedEmbeddings.every(
-          (sample) => SpeakerProfile.cosineSimilarity(sample, embedding) < 0.35,
+  void _handleSuccessfulSample(KeywordTemplate template) {
+    final collected = _isCloseStep ? _closeTemplates : _wakeTemplates;
+    if (_isNegativeStep) {
+      final nearest = collected
+          .map((sample) => keywordDistance(sample, template))
+          .reduce(math.min);
+      if (nearest < 0.55) {
+        setState(() {
+          _phase = CalibrationPhase.failed;
+          _errorMessage =
+              'Запись слишком похожа на «$_targetWord». '
+              'Произнесите другое созвучное слово, которое не должно срабатывать.';
+        });
+        return;
+      }
+      (_isCloseStep ? _closeNegatives : _wakeNegatives).add(template);
+    } else if (collected.isNotEmpty &&
+        collected.every((sample) => keywordDistance(sample, template) > 1.12)) {
+      setState(() {
+        _phase = CalibrationPhase.failed;
+        _errorMessage =
+            'Запись звучит иначе, чем предыдущие образцы «$_targetWord». '
+            'Произнесите только это слово и повторите.';
+      });
+      return;
+    }
+    if (!_isNegativeStep &&
+        _isCloseStep &&
+        _wakeTemplates.any(
+          (sample) => keywordDistance(sample, template) < 0.52,
         )) {
       setState(() {
         _phase = CalibrationPhase.failed;
         _errorMessage =
-            'Голос в этом образце сильно отличается от предыдущего. '
-            'Повторите запись в обычной обстановке.';
+            'Слово завершения слишком похоже на слово активации. '
+            'Выберите другое слово или повторите запись.';
       });
       return;
     }
-    _collectedEmbeddings.add(embedding);
+    if (!_isNegativeStep) collected.add(template);
 
     if (_currentStep + 1 < _totalSteps) {
       setState(() {
@@ -340,16 +332,16 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   }
 
   void _finishAndSaveProfile() {
-    final threshold = SpeakerProfile.calculateOptimalThreshold(
-      _collectedEmbeddings,
-    );
-
     final profile = SpeakerProfile(
       name: 'user',
-      dimension: _collectedEmbeddings.first.length,
-      embeddings: _collectedEmbeddings,
+      dimension: 192,
+      embeddings: const [],
       wakeWord: widget.wakeWord,
-      threshold: threshold,
+      closeWord: widget.closeWord,
+      wakeTemplates: _wakeTemplates,
+      closeTemplates: _closeTemplates,
+      wakeNegatives: _wakeNegatives,
+      closeNegatives: _closeNegatives,
       createdAt: DateTime.now(),
     );
     if (!profile.save()) {
@@ -597,17 +589,22 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   }
 
   Widget _buildStepContent(AppLocalizations l10n) {
-    final title = switch (_currentStep) {
-      0 => l10n.calibrationStep1Title,
-      1 => l10n.calibrationStep2Title,
-      _ => l10n.calibrationStep3Title,
-    };
+    final localStep = _currentStep % 4;
+    final title = _isNegativeStep
+        ? l10n.calibrationNegativeTitle
+        : switch (localStep) {
+            0 => l10n.calibrationStep1Title,
+            1 => l10n.calibrationStep2Title,
+            _ => l10n.calibrationStep3Title,
+          };
 
-    final prompt = switch (_currentStep) {
-      0 => l10n.calibrationStep1Prompt,
-      1 => l10n.calibrationStep2Prompt,
-      _ => l10n.calibrationStep3Prompt,
-    };
+    final prompt = _isNegativeStep
+        ? l10n.calibrationNegativePrompt
+        : switch (localStep) {
+            0 => l10n.calibrationStep1Prompt,
+            1 => l10n.calibrationStep2Prompt,
+            _ => l10n.calibrationStep3Prompt,
+          };
 
     return Container(
       key: ValueKey<int>(_currentStep),
@@ -627,6 +624,12 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          Text(
+            _isCloseStep ? l10n.fieldCloseWord : l10n.fieldWakeWord,
+            style: Type.caption,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: Gap.hint),
           Text(title, style: Type.navTitle, textAlign: TextAlign.center),
           const SizedBox(height: Gap.inner),
           Text(
@@ -659,7 +662,9 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                 ),
               ),
               child: Text(
-                '«${widget.wakeWord}»',
+                _isNegativeStep
+                    ? l10n.calibrationNegativeExample(_targetWord)
+                    : '«$_targetWord»',
                 style: Type.emptyTitle.copyWith(
                   color: MacosTheme.of(context).primaryColor,
                   fontWeight: FontWeight.bold,
