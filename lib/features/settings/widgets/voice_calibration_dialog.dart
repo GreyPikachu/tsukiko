@@ -7,6 +7,7 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../../core/wakeword/adaptive_noise_filter.dart';
 import '../../../core/wakeword/audio_stream_source.dart';
+import '../../../core/wakeword/keyword_tokenizer.dart';
 import '../../../core/wakeword/personal_keyword_spotter.dart';
 import '../../../core/wakeword/speaker_profile.dart';
 import '../../../core/wakeword/speech_verifier.dart';
@@ -73,8 +74,13 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   late final AudioStreamSource _audioSource;
   final AdaptiveNoiseFilter _noiseFilter = AdaptiveNoiseFilter();
 
+  late final bool _reuseWake;
+  late final bool _reuseClose;
   int _currentStep = 0;
-  int get _totalSteps => widget.closeWord.trim().isEmpty ? 4 : 8;
+  int get _firstStep => _reuseWake ? 4 : 0;
+  int get _lastStep => _reuseClose || widget.closeWord.trim().isEmpty ? 4 : 8;
+  int get _totalSteps => _lastStep - _firstStep;
+  int get _visibleStep => _currentStep - _firstStep;
   bool get _isNegativeStep => _currentStep == 3 || _currentStep == 7;
   bool get _isCloseStep => _currentStep >= 4;
   String get _targetWord => _isCloseStep ? widget.closeWord : widget.wakeWord;
@@ -98,6 +104,31 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   void initState() {
     super.initState();
     _audioSource = widget.audioSource ?? MicrophoneAudioStreamSource();
+    final previous = SpeakerProfile.load();
+    final wakeUnchanged =
+        previous != null &&
+        previous.wakeTemplates.length >= 3 &&
+        KeywordTokenizer.normalizeKeywordText(previous.wakeWord) ==
+            KeywordTokenizer.normalizeKeywordText(widget.wakeWord);
+    final closeUnchanged =
+        previous != null &&
+        previous.closeTemplates.length >= 3 &&
+        KeywordTokenizer.normalizeKeywordText(previous.closeWord) ==
+            KeywordTokenizer.normalizeKeywordText(widget.closeWord);
+    // Changing one word must not silently replace good examples of the other.
+    // Opening calibration with unchanged words still records both again.
+    _reuseWake =
+        wakeUnchanged && !closeUnchanged && widget.closeWord.isNotEmpty;
+    _reuseClose = closeUnchanged && !wakeUnchanged;
+    if (_reuseWake) {
+      _wakeTemplates.addAll(previous!.wakeTemplates);
+      _wakeNegatives.addAll(previous.wakeNegatives);
+      _currentStep = 4;
+    }
+    if (_reuseClose) {
+      _closeTemplates.addAll(previous!.closeTemplates);
+      _closeNegatives.addAll(previous.closeNegatives);
+    }
   }
 
   @override
@@ -255,7 +286,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
         offset += b.length;
       }
     }
-    final template = KeywordTemplate.fromAudio(raw);
+    final template = KeywordTemplate.fromCalibrationAudio(raw);
     if (template == null) {
       if (!mounted) return;
       setState(() {
@@ -296,22 +327,22 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
       });
       return;
     }
+    final otherTemplates = _isCloseStep ? _wakeTemplates : _closeTemplates;
     if (!_isNegativeStep &&
-        _isCloseStep &&
-        _wakeTemplates.any(
+        otherTemplates.any(
           (sample) => keywordDistance(sample, template) < 0.52,
         )) {
       setState(() {
         _phase = CalibrationPhase.failed;
         _errorMessage =
-            'Слово завершения слишком похоже на слово активации. '
+            'Новое слово слишком похоже на другое ключевое слово. '
             'Выберите другое слово или повторите запись.';
       });
       return;
     }
     if (!_isNegativeStep) collected.add(template);
 
-    if (_currentStep + 1 < _totalSteps) {
+    if (_currentStep + 1 < _lastStep) {
       setState(() {
         _phase = CalibrationPhase.stepCompleted;
       });
@@ -436,7 +467,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                         Expanded(
                           child: Container(
                             height: 2,
-                            color: i <= _currentStep
+                            color: i <= _visibleStep
                                 ? MacosTheme.of(context).primaryColor
                                 : (MacosTheme.brightnessOf(context) ==
                                           Brightness.dark
@@ -450,9 +481,9 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                         width: 24,
                         height: 24,
                         decoration: BoxDecoration(
-                          color: i < _currentStep
+                          color: i < _visibleStep
                               ? MacosTheme.of(context).primaryColor
-                              : (i == _currentStep
+                              : (i == _visibleStep
                                     ? MacosTheme.of(context).primaryColor
                                     : (MacosTheme.brightnessOf(context) ==
                                               Brightness.dark
@@ -460,7 +491,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                                           : const Color(0xFFF2F2F7))),
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: i <= _currentStep
+                            color: i <= _visibleStep
                                 ? MacosTheme.of(context).primaryColor
                                 : (MacosTheme.brightnessOf(context) ==
                                           Brightness.dark
@@ -470,7 +501,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                           ),
                         ),
                         child: Center(
-                          child: i < _currentStep
+                          child: i < _visibleStep
                               ? const MacosIcon(
                                   CupertinoIcons.checkmark,
                                   size: 12,
@@ -481,7 +512,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
-                                    color: i == _currentStep
+                                    color: i == _visibleStep
                                         ? const Color(0xFFFFFFFF)
                                         : (MacosTheme.brightnessOf(context) ==
                                                   Brightness.dark

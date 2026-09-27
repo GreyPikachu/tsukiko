@@ -250,6 +250,71 @@ class SpeechVerifier {
     return Float32List.sublistView(audio, start, end);
   }
 
+  /// Keep one complete word from an enrollment take. Button clicks and short
+  /// breaths otherwise become part of every template and inflate its duration.
+  /// Ambiguous takes with two substantial utterances are rejected.
+  static Float32List prepareIsolatedKeywordSamples(Float32List audio) {
+    if (audio.length < 5600 || audio.length > 16000 * 6) return Float32List(0);
+    var peak = 0.0;
+    var clipped = 0;
+    for (final sample in audio) {
+      final value = sample.abs();
+      if (value > peak) peak = value;
+      if (value >= 0.98) clipped++;
+    }
+    if (peak < 0.008 || clipped > audio.length ~/ 100) return Float32List(0);
+
+    const frame = 320;
+    final count = audio.length ~/ frame;
+    final rms = List<double>.filled(count, 0);
+    for (var i = 0; i < count; i++) {
+      var power = 0.0;
+      for (var j = i * frame; j < (i + 1) * frame; j++) {
+        power += audio[j] * audio[j];
+      }
+      rms[i] = math.sqrt(power / frame);
+    }
+    final sorted = [...rms]..sort();
+    final noise = sorted[count ~/ 4];
+    final loudest = sorted.last;
+    final threshold = math.max(0.0015, math.max(noise * 3, loudest * 0.08));
+    final active = [for (final level in rms) level >= threshold];
+    var previousActive = -1;
+    for (var i = 0; i < count; i++) {
+      if (!active[i]) continue;
+      if (previousActive >= 0 && i - previousActive <= 6) {
+        for (var j = previousActive + 1; j < i; j++) {
+          active[j] = true;
+        }
+      }
+      previousActive = i;
+    }
+    final segments = <(int, int)>[];
+    int? start;
+    for (var i = 0; i <= count; i++) {
+      final speech = i < count && active[i];
+      if (speech && start == null) start = i;
+      if (!speech && start != null) {
+        if (i - start >= 8) segments.add((start, i));
+        start = null;
+      }
+    }
+    if (segments.isEmpty) return Float32List(0);
+    segments.sort((a, b) => (b.$2 - b.$1).compareTo(a.$2 - a.$1));
+    final chosen = segments.first;
+    final chosenFrames = chosen.$2 - chosen.$1;
+    if (chosenFrames < 13 || chosenFrames > 120) return Float32List(0);
+    if (segments.skip(1).any((segment) {
+      final length = segment.$2 - segment.$1;
+      return length >= 13 && length >= chosenFrames * 0.5;
+    })) {
+      return Float32List(0);
+    }
+    final from = math.max(0, chosen.$1 * frame - 960);
+    final to = math.min(audio.length, chosen.$2 * frame + 960);
+    return Float32List.sublistView(audio, from, to);
+  }
+
   /// Очистить вывод Whisper от спецтегов вроде [Музыка], (Шум), скобок и пунктуации.
   static String _cleanWhisperText(String raw) {
     return raw

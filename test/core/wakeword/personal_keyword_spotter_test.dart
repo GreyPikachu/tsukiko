@@ -89,6 +89,16 @@ void main() {
         'вока',
         reason: 'a fast pronunciation must remain detectable',
       );
+      expect(
+        detect(utterance([210, 370, 270], speed: 1.9)),
+        'вока',
+        reason: 'an isolated word with a stretched vowel can match by DTW',
+      );
+      expect(
+        detect(utterance([510, 470, 530, 500, 520, 490])),
+        isNull,
+        reason: 'a long unrelated phrase must not use the stretch fallback',
+      );
       expect(detect(utterance([210, 370, 430])), isNull);
       expect(
         detect(utterance([430, 250, 390], speed: 0.96), closeMode: true),

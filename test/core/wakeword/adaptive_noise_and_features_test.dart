@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/wakeword/acoustic_feature_extractor.dart';
 import 'package:tsukiko/core/wakeword/adaptive_noise_filter.dart';
+import 'package:tsukiko/core/wakeword/personal_keyword_spotter.dart';
 import 'package:tsukiko/core/wakeword/speaker_profile.dart';
 import 'package:tsukiko/core/wakeword/speech_verifier.dart';
 
@@ -179,6 +180,23 @@ void main() {
       final prepared = SpeechVerifier.prepareCalibrationSamples(sample);
       expect(prepared.length, lessThan(sample.length));
       expect(prepared.length, greaterThan(8000));
+    });
+
+    test('выделяет одно слово без нажатия и долгих пауз', () {
+      final sample = Float32List(16000 * 3);
+      for (var i = 3200; i < 3680; i++) {
+        sample[i] = i.isEven ? 0.08 : -0.08; // button click
+      }
+      for (var i = 16000; i < 24000; i++) {
+        sample[i] = 0.16 * math.sin(2 * math.pi * 240 * i / 16000);
+      }
+      final word = SpeechVerifier.prepareIsolatedKeywordSamples(sample);
+      expect(word.length, inInclusiveRange(8000, 11000));
+      expect(KeywordTemplate.fromCalibrationAudio(sample), isNotNull);
+      for (var i = 32000; i < 40000; i++) {
+        sample[i] = 0.16 * math.sin(2 * math.pi * 240 * i / 16000);
+      }
+      expect(SpeechVerifier.prepareIsolatedKeywordSamples(sample), isEmpty);
     });
 
     test(

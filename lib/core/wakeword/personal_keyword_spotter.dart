@@ -26,6 +26,11 @@ class KeywordTemplate {
     return KeywordTemplate(durationSamples: speech.length, frames: frames);
   }
 
+  static KeywordTemplate? fromCalibrationAudio(Float32List audio) {
+    final word = SpeechVerifier.prepareIsolatedKeywordSamples(audio);
+    return word.isEmpty ? null : fromAudio(word);
+  }
+
   Map<String, Object> toJson() => {
     'durationSamples': durationSamples,
     'frames': [for (final row in frames) row.toList()],
@@ -147,6 +152,7 @@ class PersonalKeywordSpotter {
   String? _pending;
   int _totalSamples = 0;
   int _lastCloseSegmentEnd = 0;
+  int _lastWakeSegmentEnd = 0;
 
   String? takeDetection() {
     final result = _pending;
@@ -162,6 +168,7 @@ class PersonalKeywordSpotter {
     _pending = null;
     _totalSamples = 0;
     _lastCloseSegmentEnd = 0;
+    _lastWakeSegmentEnd = 0;
   }
 
   void acceptAudio(Float32List audio) {
@@ -226,14 +233,63 @@ class PersonalKeywordSpotter {
     if (detected == null) {
       _candidate = null;
       _candidateHits = 0;
+    } else {
+      _candidateHits = _candidate == detected ? _candidateHits + 1 : 1;
+      _candidate = detected;
+      if (_candidateHits >= 2 || wake < wakeThreshold * 0.80) {
+        _pending = KeywordTokenizer.normalizeKeywordText(detected);
+        _candidate = null;
+        _candidateHits = 0;
+      }
+    }
+    if (_pending == null) _evaluateCompletedWakeSegment();
+  }
+
+  void _evaluateCompletedWakeSegment() {
+    if (wakeTemplates.isEmpty) return;
+    final segment = _lastCompletedSpeechSegment();
+    if (segment == null) return;
+    final (start, end) = segment;
+    final absoluteEnd = _totalSamples - _recent.length + end;
+    if (absoluteEnd <= _lastWakeSegmentEnd) return;
+    _lastWakeSegmentEnd = absoluteEnd;
+    final meanLength =
+        wakeTemplates.map((t) => t.durationSamples).reduce((a, b) => a + b) ~/
+        wakeTemplates.length;
+    final length = end - start;
+    // Only long isolated words use this fallback. Ordinary wake words still
+    // fire on the low-latency sliding path without waiting for silence.
+    if (length < math.max(7200, meanLength * 1.6) ||
+        length > math.min(16000 * 2.4, meanLength * 2.5)) {
       return;
     }
-    _candidateHits = _candidate == detected ? _candidateHits + 1 : 1;
-    _candidate = detected;
-    if (_candidateHits >= 2 || wake < wakeThreshold * 0.80) {
-      _pending = KeywordTokenizer.normalizeKeywordText(detected);
-      _candidate = null;
-      _candidateHits = 0;
+    final candidate = KeywordTemplate.fromAudio(
+      Float32List.sublistView(_recent, start, end),
+      minActiveSamples: 2400,
+    );
+    if (candidate == null) return;
+    final wake = _distanceTo(candidate, wakeTemplates);
+    final close = _distanceTo(candidate, closeTemplates);
+    final negative = _distanceTo(candidate, wakeNegatives);
+    final accepted =
+        wake < math.min(wakeThreshold, 0.96) &&
+        close > wake + 0.08 &&
+        negative > wake + 0.04;
+    onScore?.call(
+      KeywordScore(
+        wake: wake,
+        close: close,
+        wakeNegative: negative,
+        closeNegative: double.infinity,
+        wakeThreshold: wakeThreshold,
+        closeThreshold: closeThreshold,
+        candidate: accepted ? wakeWord : null,
+        wakeSegmentMs: length * 1000 ~/ 16000,
+        wakeReason: accepted ? 'accepted' : 'rejected',
+      ),
+    );
+    if (accepted) {
+      _pending = KeywordTokenizer.normalizeKeywordText(wakeWord);
     }
   }
 
@@ -257,7 +313,7 @@ class PersonalKeywordSpotter {
     var wake = double.infinity;
     var negative = double.infinity;
     if (meanLength > 0 &&
-        length >= math.max(5600, meanLength * 0.60) &&
+        length >= math.max(4800, meanLength * 0.30) &&
         length <= math.min(16000 * 2.4, meanLength * 1.65)) {
       final candidate = KeywordTemplate.fromAudio(
         Float32List.sublistView(_recent, start, end),
@@ -266,12 +322,16 @@ class PersonalKeywordSpotter {
         close = _distanceTo(candidate, closeTemplates);
         wake = _distanceTo(candidate, wakeTemplates);
         negative = _distanceTo(candidate, closeNegatives);
-        final threshold = math.min(1.06, closeThreshold + 0.03);
+        // Several hard negatives justify a little more timing/noise headroom.
+        // With only one negative, keep the stricter threshold from enrollment.
+        final threshold = closeNegatives.length >= 3
+            ? math.min(1.10, closeThreshold + 0.05)
+            : math.min(1.06, closeThreshold + 0.03);
         if (close >= threshold) {
           reason = 'score';
-        } else if (wake <= close + 0.06) {
+        } else if (wake + 0.03 < close) {
           reason = 'wake_word';
-        } else if (negative + 0.12 < close) {
+        } else if (negative < close) {
           reason = 'negative_word';
         } else {
           reason = 'accepted';
@@ -409,6 +469,8 @@ class KeywordScore {
     required this.candidate,
     this.closeSegmentMs,
     this.closeReason,
+    this.wakeSegmentMs,
+    this.wakeReason,
   });
 
   final double wake;
@@ -420,6 +482,8 @@ class KeywordScore {
   final String? candidate;
   final int? closeSegmentMs;
   final String? closeReason;
+  final int? wakeSegmentMs;
+  final String? wakeReason;
 
   Map<String, Object?> toJson() => {
     'wake': wake.isFinite ? wake : null,
@@ -431,5 +495,7 @@ class KeywordScore {
     'candidate': candidate,
     if (closeSegmentMs != null) 'closeSegmentMs': closeSegmentMs,
     if (closeReason != null) 'closeReason': closeReason,
+    if (wakeSegmentMs != null) 'wakeSegmentMs': wakeSegmentMs,
+    if (wakeReason != null) 'wakeReason': wakeReason,
   };
 }
