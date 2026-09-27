@@ -215,7 +215,10 @@ class SpeechVerifier {
 
   /// Discard leading/trailing room noise before building an enrollment vector.
   /// Returns an empty buffer for silence, clipping, or an implausibly long take.
-  static Float32List prepareCalibrationSamples(Float32List audio) {
+  static Float32List prepareCalibrationSamples(
+    Float32List audio, {
+    int minActiveSamples = 4000,
+  }) {
     if (audio.length < 5600 || audio.length > 16000 * 6) return Float32List(0);
     var peak = 0.0;
     var clipped = 0;
@@ -239,7 +242,7 @@ class SpeechVerifier {
         last = start + frame;
       }
     }
-    if (first == null || last == null || last - first < 4000) {
+    if (first == null || last == null || last - first < minActiveSamples) {
       return Float32List(0);
     }
     final start = math.max(0, first - 1600);

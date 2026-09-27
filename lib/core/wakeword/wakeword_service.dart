@@ -32,6 +32,10 @@ class WakeWordService {
   WakeWordListeningState get state => _state;
 
   StreamSubscription<Float32List>? _audioSub;
+  Timer? _audioWatchdog;
+  DateTime? _lastAudioFrameAt;
+  bool _restartingAudio = false;
+  Completer<void>? _audioRestartDone;
   DictationSettings? _settings;
   SpeakerProfile? _profile;
   WakeDiagnosticsSession? _diagnostics;
@@ -162,16 +166,17 @@ class WakeWordService {
         await _audioSource.stopStream();
         return false;
       }
-      await _audioSub?.cancel();
-      _audioSub = stream.listen(
-        _onAudioFrame,
-        onError: (Object e) {
-          Log.error('WakeWord', 'Audio stream error: $e');
-          onError?.call('$e');
-        },
-      );
+      _listenToAudio(stream, generation);
       _state = WakeWordListeningState.listeningWakeWord;
       _triggeredInCurrentState = false;
+      _audioWatchdog?.cancel();
+      _audioWatchdog = Timer.periodic(const Duration(seconds: 2), (_) {
+        final last = _lastAudioFrameAt;
+        if (last != null &&
+            DateTime.now().difference(last) >= const Duration(seconds: 3)) {
+          unawaited(_restartAudioStream(generation));
+        }
+      });
       Log.info(
         'WakeWord',
         'WakeWord service listening for "${settings.wakeWord}"',
@@ -181,6 +186,61 @@ class WakeWordService {
       Log.error('WakeWord', 'Failed to start audio stream: $e', e, st);
       await stop();
       return false;
+    }
+  }
+
+  void _listenToAudio(Stream<Float32List> stream, int generation) {
+    _lastAudioFrameAt = DateTime.now();
+    _audioSub = stream.listen(
+      _onAudioFrame,
+      onError: (Object error) {
+        Log.error('WakeWord', 'Audio stream error: $error');
+        unawaited(_restartAudioStream(generation));
+      },
+      onDone: () => unawaited(_restartAudioStream(generation)),
+    );
+  }
+
+  Future<void> _restartAudioStream(int generation) async {
+    if (_restartingAudio ||
+        _state == WakeWordListeningState.disabled ||
+        generation != _operationGeneration) {
+      return;
+    }
+    _restartingAudio = true;
+    _audioRestartDone = Completer<void>();
+    _diagnostics?.event('audio_stream_restarting');
+    Log.warn('WakeWord', 'Audio stream stopped delivering samples; restarting');
+    try {
+      await _audioSub?.cancel();
+      _audioSub = null;
+      await _audioSource.stopStream();
+      if (_state == WakeWordListeningState.disabled ||
+          generation != _operationGeneration) {
+        return;
+      }
+      final stream = await _audioSource.startStream(sampleRate: 16000);
+      if (_state == WakeWordListeningState.disabled ||
+          generation != _operationGeneration) {
+        await _audioSource.stopStream();
+        return;
+      }
+      _engine.resetKeywordStream();
+      _listenToAudio(stream, generation);
+      _diagnostics?.event('audio_stream_restarted');
+    } catch (error, stack) {
+      Log.error(
+        'WakeWord',
+        'Audio stream restart failed: $error',
+        error,
+        stack,
+      );
+      _diagnostics?.event('audio_stream_restart_failed', {'error': '$error'});
+      // The watchdog retries while voice activation remains enabled.
+    } finally {
+      _restartingAudio = false;
+      _audioRestartDone?.complete();
+      _audioRestartDone = null;
     }
   }
 
@@ -212,6 +272,7 @@ class WakeWordService {
   /// Обработка порции аудио с микрофона.
   void _onAudioFrame(Float32List samples) {
     if (_state == WakeWordListeningState.disabled || samples.isEmpty) return;
+    _lastAudioFrameAt = DateTime.now();
 
     final diagnostics = _diagnostics;
     if (diagnostics != null) {
@@ -328,9 +389,13 @@ class WakeWordService {
   /// Остановить сервис.
   Future<void> stop({bool invalidate = true}) async {
     if (invalidate) _operationGeneration++;
-    await stopDiagnostics();
+    _audioWatchdog?.cancel();
+    _audioWatchdog = null;
+    _lastAudioFrameAt = null;
     _state = WakeWordListeningState.disabled;
     _triggeredInCurrentState = false;
+    await _audioRestartDone?.future;
+    await stopDiagnostics();
     await _audioSub?.cancel();
     _audioSub = null;
     await _audioSource.stopStream();

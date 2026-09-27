@@ -84,12 +84,26 @@ void main() {
       }
 
       expect(detect(utterance([210, 370, 270], speed: 1.04)), 'вока');
+      expect(
+        detect(utterance([210, 370, 270], speed: 0.62)),
+        'вока',
+        reason: 'a fast pronunciation must remain detectable',
+      );
       expect(detect(utterance([210, 370, 430])), isNull);
       expect(
         detect(utterance([430, 250, 390], speed: 0.96), closeMode: true),
         'отбой',
       );
       expect(detect(utterance([430, 250, 270]), closeMode: true), isNull);
+      final closeWithClick = utterance([430, 250, 390]);
+      for (var i = 1280; i < 1920; i++) {
+        closeWithClick[i] = 0.025 * math.sin(i * 0.13);
+      }
+      expect(
+        detect(closeWithClick, closeMode: true),
+        'отбой',
+        reason: 'a 40 ms noise burst before the word is not speech',
+      );
       expect(
         detect(utterance([430, 250, 390, 210, 310, 220]), closeMode: true),
         isNull,

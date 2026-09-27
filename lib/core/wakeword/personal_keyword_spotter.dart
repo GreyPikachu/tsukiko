@@ -12,8 +12,14 @@ class KeywordTemplate {
   final int durationSamples;
   final List<Float32List> frames;
 
-  static KeywordTemplate? fromAudio(Float32List audio) {
-    final speech = SpeechVerifier.prepareCalibrationSamples(audio);
+  static KeywordTemplate? fromAudio(
+    Float32List audio, {
+    int minActiveSamples = 4000,
+  }) {
+    final speech = SpeechVerifier.prepareCalibrationSamples(
+      audio,
+      minActiveSamples: minActiveSamples,
+    );
     if (speech.isEmpty) return null;
     final frames = AcousticFeatureExtractor.keywordFrames(speech);
     if (frames.length < 10 || frames.length > 120) return null;
@@ -328,6 +334,21 @@ class PersonalKeywordSpotter {
       }
       previousActive = i;
     }
+    // A click or brief breath before the keyword must not revoke its leading
+    // pause. The old gate treated even a single 20 ms spike as speech.
+    int? burstStart;
+    for (var i = 0; i <= count; i++) {
+      final speech = i < count && active[i];
+      if (speech && burstStart == null) burstStart = i;
+      if (!speech && burstStart != null) {
+        if (i - burstStart <= 3) {
+          for (var j = burstStart; j < i; j++) {
+            active[j] = false;
+          }
+        }
+        burstStart = null;
+      }
+    }
     int? start;
     (int, int)? latest;
     for (var i = 0; i <= count; i++) {
@@ -358,7 +379,10 @@ class PersonalKeywordSpotter {
         if (_recent.length < length + offset) continue;
         final end = _recent.length - offset;
         final chunk = Float32List.sublistView(_recent, end - length, end);
-        final candidate = KeywordTemplate.fromAudio(chunk);
+        final candidate = KeywordTemplate.fromAudio(
+          chunk,
+          minActiveSamples: 2400,
+        );
         if (candidate == null) continue;
         for (final template in templates) {
           final lengthRatio =

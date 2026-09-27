@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -8,6 +9,33 @@ import 'package:tsukiko/core/wakeword/sherpa_engine.dart';
 import 'package:tsukiko/core/wakeword/speaker_profile.dart';
 import 'package:tsukiko/core/wakeword/wakeword_service.dart';
 import 'package:tsukiko/core/whisper_server.dart';
+
+class RestartableAudioStreamSource implements AudioStreamSource {
+  StreamController<Float32List>? _controller;
+  int starts = 0;
+
+  @override
+  Future<bool> hasPermission() async => true;
+
+  @override
+  Future<Stream<Float32List>> startStream({int sampleRate = 16000}) async {
+    starts++;
+    _controller = StreamController<Float32List>.broadcast();
+    return _controller!.stream;
+  }
+
+  @override
+  Future<void> stopStream() async {
+    final controller = _controller;
+    _controller = null;
+    if (controller != null && !controller.isClosed) await controller.close();
+  }
+
+  Future<void> finishStream() async => _controller?.close();
+
+  @override
+  Future<void> dispose() => stopStream();
+}
 
 void main() {
   late FakeSherpaEngine engine;
@@ -83,6 +111,46 @@ void main() {
       expect(service.isRunning, isFalse);
       expect(service.state, WakeWordListeningState.disabled);
       expect(engine.isReady, isFalse);
+    });
+
+    test('restarts a stream that yields no microphone frames', () async {
+      final silentSource = RestartableAudioStreamSource();
+      final recovering = WakeWordService(
+        audioSource: silentSource,
+        engine: FakeSherpaEngine(),
+      );
+      try {
+        expect(
+          await recovering.start(
+            settings: DictationSettings(wakeWordEnabled: true),
+          ),
+          isTrue,
+        );
+        expect(silentSource.starts, 1);
+        await Future<void>.delayed(const Duration(milliseconds: 4200));
+        expect(silentSource.starts, greaterThan(1));
+        expect(recovering.isRunning, isTrue);
+      } finally {
+        await recovering.dispose();
+      }
+    });
+
+    test('restarts immediately when the microphone stream ends', () async {
+      final endedSource = RestartableAudioStreamSource();
+      final recovering = WakeWordService(
+        audioSource: endedSource,
+        engine: FakeSherpaEngine(),
+      );
+      try {
+        await recovering.start(
+          settings: DictationSettings(wakeWordEnabled: true),
+        );
+        await endedSource.finishStream();
+        await pumpEventQueue();
+        expect(endedSource.starts, 2);
+      } finally {
+        await recovering.dispose();
+      }
     });
 
     test(
