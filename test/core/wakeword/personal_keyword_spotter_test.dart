@@ -64,7 +64,7 @@ void main() {
       expect(profile.wakeNegatives, hasLength(1));
       expect(profile.closeNegatives, hasLength(1));
 
-      String? detect(Float32List audio) {
+      String? detect(Float32List audio, {bool closeMode = false}) {
         final spotter = PersonalKeywordSpotter(
           wakeWord: 'Вока',
           closeWord: 'Отбой',
@@ -73,6 +73,7 @@ void main() {
           wakeNegatives: [wakeNegative],
           closeNegatives: [closeNegative],
         );
+        spotter.listenForClose = closeMode;
         for (var i = 0; i < audio.length; i += 1600) {
           final end = (i + 1600).clamp(0, audio.length);
           spotter.acceptAudio(Float32List.sublistView(audio, i, end));
@@ -84,8 +85,15 @@ void main() {
 
       expect(detect(utterance([210, 370, 270], speed: 1.04)), 'вока');
       expect(detect(utterance([210, 370, 430])), isNull);
-      expect(detect(utterance([430, 250, 390], speed: 0.96)), 'отбой');
-      expect(detect(utterance([430, 250, 270])), isNull);
+      expect(
+        detect(utterance([430, 250, 390], speed: 0.96), closeMode: true),
+        'отбой',
+      );
+      expect(detect(utterance([430, 250, 270]), closeMode: true), isNull);
+      expect(
+        detect(utterance([430, 250, 390, 210, 310, 220]), closeMode: true),
+        isNull,
+      );
       expect(detect(Float32List(32000)), isNull);
 
       final oneWindow = PersonalKeywordSpotter(
@@ -94,12 +102,20 @@ void main() {
         wakeTemplates: wake,
         closeTemplates: close,
       );
-      oneWindow.acceptAudio(utterance([430, 250, 390]));
+      oneWindow.listenForClose = true;
+      final closeAudio = utterance([430, 250, 390]);
+      oneWindow.acceptAudio(
+        Float32List.sublistView(closeAudio, 0, 3200 + 3 * 2880),
+      );
       expect(
         oneWindow.takeDetection(),
         isNull,
-        reason: 'one close-word score must never end dictation',
+        reason: 'close word must not fire before the utterance ends',
       );
+      oneWindow.acceptAudio(
+        Float32List.sublistView(closeAudio, 3200 + 3 * 2880),
+      );
+      expect(oneWindow.takeDetection(), 'отбой');
     },
   );
 }

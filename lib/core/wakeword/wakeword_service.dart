@@ -191,6 +191,7 @@ class WakeWordService {
     _triggeredInCurrentState = false;
     _lastSpeechTime = DateTime.now();
     _engine.resetKeywordStream();
+    if (_engine is StreamingSherpaEngine) _engine.setListeningForClose(true);
     _diagnostics?.event('recording_started');
     Log.info('WakeWord', 'Now listening for CloseWord or silence...');
   }
@@ -203,6 +204,7 @@ class WakeWordService {
     _lastCompletionAt = DateTime.now();
     _lastSpeechTime = null;
     _engine.resetKeywordStream();
+    if (_engine is StreamingSherpaEngine) _engine.setListeningForClose(false);
     _diagnostics?.event('recording_stopped');
     Log.info('WakeWord', 'Returned to listening for WakeWord');
   }

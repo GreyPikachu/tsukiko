@@ -78,6 +78,10 @@ class StreamingSherpaEngine extends AcousticSpeakerEngine {
     if (_personal != null) _personal!.onScore = listener;
   }
 
+  void setListeningForClose(bool value) {
+    if (_personal != null) _personal!.listenForClose = value;
+  }
+
   @override
   Future<bool> initKeywordSpotter({
     required String wakeWord,
