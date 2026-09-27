@@ -56,19 +56,18 @@ class VoiceCalibrationSheet extends StatefulWidget {
     SherpaEngine? engine,
     SpeechVerifier? speechVerifier,
     VoidCallback? onProfileCreated,
-  }) =>
-      showMacosSheet<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (sheetContext) => VoiceCalibrationSheet(
-          wakeWord: wakeWord,
-          bridge: bridge,
-          audioSource: audioSource,
-          engine: engine,
-          speechVerifier: speechVerifier,
-          onProfileCreated: onProfileCreated,
-        ),
-      );
+  }) => showMacosSheet<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (sheetContext) => VoiceCalibrationSheet(
+      wakeWord: wakeWord,
+      bridge: bridge,
+      audioSource: audioSource,
+      engine: engine,
+      speechVerifier: speechVerifier,
+      onProfileCreated: onProfileCreated,
+    ),
+  );
 
   @override
   State<VoiceCalibrationSheet> createState() => _VoiceCalibrationSheetState();
@@ -100,7 +99,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   void initState() {
     super.initState();
     _audioSource = widget.audioSource ?? MicrophoneAudioStreamSource();
-    _engine = widget.engine ?? NativeSherpaEngine();
+    _engine = widget.engine ?? AcousticSpeakerEngine();
     _verifier = widget.speechVerifier ?? SpeechVerifier();
   }
 
@@ -154,7 +153,9 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
 
         // Опрашиваем нативный VU-метр со сглаживанием комнатного фона
         _meterPollTimer?.cancel();
-        _meterPollTimer = Timer.periodic(const Duration(milliseconds: 30), (_) async {
+        _meterPollTimer = Timer.periodic(const Duration(milliseconds: 30), (
+          _,
+        ) async {
           if (!mounted || _phase != CalibrationPhase.recording) return;
           try {
             final lvl = await bridge.level();
@@ -245,49 +246,50 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
     // Если был передан mock/fake движок (для тестов)
     if (_engine is FakeSherpaEngine) {
       final fakeEmb = _engine.extractSpeakerEmbedding(Float32List(16000));
-      if (fakeEmb != null) {
+      if (fakeEmb != null && mounted) {
         _handleSuccessfulSample(fakeEmb);
         return;
       }
     }
 
-    SpeechVerificationResult result;
+    Float32List raw;
     if (wavPath != null && wavPath.isNotEmpty) {
-      result = await _verifier.verifyWavFile(
-        wavPath,
-        targetWord: widget.wakeWord,
-      );
+      raw = SpeechVerifier.readWavSamples(wavPath);
     } else {
-      // Собираем из буфера сэмплов
-      final totalSamples =
-          _recordedAudioBuffer.fold<int>(0, (sum, list) => sum + list.length);
-
-      if (totalSamples < 16000 * 0.4) {
-        if (!mounted) return;
-        final l10n = AppLocalizations.of(context);
-        setState(() {
-          _phase = CalibrationPhase.failed;
-          _errorMessage = l10n.calibrationSampleFailed;
-        });
-        return;
-      }
-
-      final combined = Float32List(totalSamples);
+      final totalSamples = _recordedAudioBuffer.fold<int>(
+        0,
+        (sum, list) => sum + list.length,
+      );
+      raw = Float32List(totalSamples);
       var offset = 0;
       for (final b in _recordedAudioBuffer) {
-        combined.setAll(offset, b);
+        raw.setAll(offset, b);
         offset += b.length;
       }
-
-      result = await _verifier.verifySamples(
-        combined,
-        targetWord: widget.wakeWord,
-      );
     }
+    final speech = SpeechVerifier.prepareCalibrationSamples(raw);
+    if (speech.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _phase = CalibrationPhase.failed;
+        _errorMessage =
+            'Образец слишком тихий, короткий, длинный или искажённый. '
+            'Произнесите только «${widget.wakeWord}» и повторите запись.';
+      });
+      return;
+    }
+    final result = await _verifier.verifySamples(
+      speech,
+      targetWord: widget.wakeWord,
+    );
 
     if (!mounted) return;
 
-    if (result.matched && result.extractedEmbedding != null) {
+    if (SpeechVerifier.matchesOnlyKeyword(
+          result.recognizedText,
+          widget.wakeWord,
+        ) &&
+        result.extractedEmbedding != null) {
       _handleSuccessfulSample(result.extractedEmbedding!);
     } else {
       final heard = result.recognizedText.isNotEmpty
@@ -295,13 +297,26 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
           : '';
       setState(() {
         _phase = CalibrationPhase.failed;
-        _errorMessage =
-            'Слово «${widget.wakeWord}» не распознано$heard. Попробуйте ещё раз.';
+        _errorMessage = result.errorMessage != null
+            ? 'Не удалось проверить запись: ${result.errorMessage}'
+            : 'Произнесите только «${widget.wakeWord}»$heard. Попробуйте ещё раз.';
       });
     }
   }
 
   void _handleSuccessfulSample(Float32List embedding) {
+    if (_collectedEmbeddings.isNotEmpty &&
+        _collectedEmbeddings.every(
+          (sample) => SpeakerProfile.cosineSimilarity(sample, embedding) < 0.35,
+        )) {
+      setState(() {
+        _phase = CalibrationPhase.failed;
+        _errorMessage =
+            'Голос в этом образце сильно отличается от предыдущего. '
+            'Повторите запись в обычной обстановке.';
+      });
+      return;
+    }
     _collectedEmbeddings.add(embedding);
 
     if (_currentStep + 1 < _totalSteps) {
@@ -325,8 +340,9 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   }
 
   void _finishAndSaveProfile() {
-    final threshold =
-        SpeakerProfile.calculateOptimalThreshold(_collectedEmbeddings);
+    final threshold = SpeakerProfile.calculateOptimalThreshold(
+      _collectedEmbeddings,
+    );
 
     final profile = SpeakerProfile(
       name: 'user',
@@ -336,7 +352,13 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
       threshold: threshold,
       createdAt: DateTime.now(),
     );
-    profile.save();
+    if (!profile.save()) {
+      setState(() {
+        _phase = CalibrationPhase.failed;
+        _errorMessage = 'Не удалось сохранить профиль голоса.';
+      });
+      return;
+    }
 
     widget.onProfileCreated?.call();
 
@@ -371,7 +393,9 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: MacosTheme.of(context).primaryColor.withValues(alpha: 0.12),
+                      color: MacosTheme.of(
+                        context,
+                      ).primaryColor.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
                     child: Center(
@@ -397,7 +421,9 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                         Text(
                           l10n.calibrationWizardSubtitle,
                           style: Type.caption.copyWith(
-                            color: MacosTheme.brightnessOf(context) == Brightness.dark
+                            color:
+                                MacosTheme.brightnessOf(context) ==
+                                    Brightness.dark
                                 ? const Color(0xFF9E9E9E)
                                 : const Color(0xFF757575),
                           ),
@@ -420,9 +446,10 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                             height: 2,
                             color: i <= _currentStep
                                 ? MacosTheme.of(context).primaryColor
-                                : (MacosTheme.brightnessOf(context) == Brightness.dark
-                                    ? const Color(0xFF3A3A3C)
-                                    : const Color(0xFFE5E5EA)),
+                                : (MacosTheme.brightnessOf(context) ==
+                                          Brightness.dark
+                                      ? const Color(0xFF3A3A3C)
+                                      : const Color(0xFFE5E5EA)),
                           ),
                         ),
                       AnimatedContainer(
@@ -434,17 +461,19 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                           color: i < _currentStep
                               ? MacosTheme.of(context).primaryColor
                               : (i == _currentStep
-                                  ? MacosTheme.of(context).primaryColor
-                                  : (MacosTheme.brightnessOf(context) == Brightness.dark
-                                      ? const Color(0xFF2C2C2E)
-                                      : const Color(0xFFF2F2F7))),
+                                    ? MacosTheme.of(context).primaryColor
+                                    : (MacosTheme.brightnessOf(context) ==
+                                              Brightness.dark
+                                          ? const Color(0xFF2C2C2E)
+                                          : const Color(0xFFF2F2F7))),
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: i <= _currentStep
                                 ? MacosTheme.of(context).primaryColor
-                                : (MacosTheme.brightnessOf(context) == Brightness.dark
-                                    ? const Color(0xFF3A3A3C)
-                                    : const Color(0xFFD1D1D6)),
+                                : (MacosTheme.brightnessOf(context) ==
+                                          Brightness.dark
+                                      ? const Color(0xFF3A3A3C)
+                                      : const Color(0xFFD1D1D6)),
                             width: 1.5,
                           ),
                         ),
@@ -462,9 +491,10 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                                     fontWeight: FontWeight.w600,
                                     color: i == _currentStep
                                         ? const Color(0xFFFFFFFF)
-                                        : (MacosTheme.brightnessOf(context) == Brightness.dark
-                                            ? const Color(0xFF8E8E93)
-                                            : const Color(0xFF636366)),
+                                        : (MacosTheme.brightnessOf(context) ==
+                                                  Brightness.dark
+                                              ? const Color(0xFF8E8E93)
+                                              : const Color(0xFF636366)),
                                   ),
                                 ),
                         ),
@@ -597,11 +627,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            title,
-            style: Type.navTitle,
-            textAlign: TextAlign.center,
-          ),
+          Text(title, style: Type.navTitle, textAlign: TextAlign.center),
           const SizedBox(height: Gap.inner),
           Text(
             prompt,
@@ -622,10 +648,14 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                 vertical: Gap.inner,
               ),
               decoration: BoxDecoration(
-                color: MacosTheme.of(context).primaryColor.withValues(alpha: 0.1),
+                color: MacosTheme.of(
+                  context,
+                ).primaryColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: MacosTheme.of(context).primaryColor.withValues(alpha: 0.3),
+                  color: MacosTheme.of(
+                    context,
+                  ).primaryColor.withValues(alpha: 0.3),
                 ),
               ),
               child: Text(
@@ -640,9 +670,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
           const SizedBox(height: Gap.item),
 
           // Индикатор уровня звука и состояния
-          Center(
-            child: _buildAudioMeter(l10n),
-          ),
+          Center(child: _buildAudioMeter(l10n)),
         ],
       ),
     );
@@ -681,10 +709,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
         children: [
           const CupertinoActivityIndicator(radius: 12),
           const SizedBox(height: Gap.inner),
-          Text(
-            l10n.calibrationProcessing,
-            style: Type.caption,
-          ),
+          Text(l10n.calibrationProcessing, style: Type.caption),
         ],
       );
     }
@@ -723,9 +748,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
           Flexible(
             child: Text(
               _errorMessage!,
-              style: Type.caption.copyWith(
-                color: const Color(0xFFFF3B30),
-              ),
+              style: Type.caption.copyWith(color: const Color(0xFFFF3B30)),
               textAlign: TextAlign.center,
             ),
           ),
@@ -786,10 +809,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
 
 /// Визуализатор звуковых волн микрофона на базе Canvas.
 class _AudioWavePainter extends CustomPainter {
-  const _AudioWavePainter({
-    required this.level,
-    required this.color,
-  });
+  const _AudioWavePainter({required this.level, required this.color});
 
   final double level;
   final Color color;

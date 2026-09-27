@@ -63,6 +63,15 @@ class DictationCubit extends Cubit<DictationState> {
     // главнее — она короткая, а очередь подождёт и продолжит сама.
     bridge.onStatusAsked = _statusForQueue;
     bridge.onReleaseAsked = _releaseModel;
+    bridge.onCalibrationActive = (active) async {
+      _calibrating = active;
+      if (active) {
+        await _wakeWordService?.stop();
+        if (state.recording) await stop();
+      } else {
+        await _reloadSettings();
+      }
+    };
     // Те же настройки правит окно настроек — там они и живут.
     bridge.settingsReloaded.listen((_) => _reloadSettings());
 
@@ -91,6 +100,7 @@ class DictationCubit extends Cubit<DictationState> {
 
   late final WhisperServer _server;
   WakeWordService? _wakeWordService;
+  bool _calibrating = false;
   DictationSettings _settings = DictationSettings.load();
   List<VocabularyItem> _vocabulary = const [];
   bool _commandsEnabled = true;
@@ -195,8 +205,8 @@ class DictationCubit extends Cubit<DictationState> {
               _vocabulary,
               maxEstimatedTokens:
                   engineForModel(options.model) == RecognitionEngine.whisperCpp
-                      ? vocabularyPromptBudget
-                      : 9999,
+                  ? vocabularyPromptBudget
+                  : 9999,
             ),
           )
         : options;
@@ -214,7 +224,8 @@ class DictationCubit extends Cubit<DictationState> {
     final app = Settings.load();
     final queueModel = (app['model'] as String?) ?? '';
     _vocabulary = loadAndMigrateVocabulary(app);
-    _commandsEnabled = (app[vocabularyDictationEnabledSetting] as bool?) ??
+    _commandsEnabled =
+        (app[vocabularyDictationEnabledSetting] as bool?) ??
         (app[dictationCommandsEnabledSetting] as bool?) ??
         true;
     return from.copyWith(
@@ -259,7 +270,7 @@ class DictationCubit extends Cubit<DictationState> {
     );
     _emit(_withSnapshots(state));
     await _checkPermission();
-    if (_settings.wakeWordEnabled) {
+    if (_settings.wakeWordEnabled && !_calibrating) {
       final ww = _getOrCreateWakeWordService();
       unawaited(ww.start(settings: _settings));
     } else {
@@ -558,7 +569,12 @@ class DictationCubit extends Cubit<DictationState> {
           try {
             await _bringingUp;
           } catch (e, st) {
-            Log.error('Dictation', 'Waiting for engine bringup failed: $e', e, st);
+            Log.error(
+              'Dictation',
+              'Waiting for engine bringup failed: $e',
+              e,
+              st,
+            );
           }
         }
         Log.info(
@@ -582,11 +598,12 @@ class DictationCubit extends Cubit<DictationState> {
               : currentL10n().dictationFailedSaved(saved);
         } else {
           _discard(path);
-          var text = _commandsEnabled
-              ? applyVocabularyReplacements(recognized, _vocabulary).text
-              : recognized;
+          var text = recognized;
           if (_settings.closeWord.trim().isNotEmpty) {
             text = stripTrailingCloseWord(text, _settings.closeWord);
+          }
+          if (_commandsEnabled) {
+            text = applyVocabularyReplacements(text, _vocabulary).text;
           }
           Log.info('Dictation', 'Dictation transcribed: ${text.length} chars');
           if (text.isNotEmpty) {
@@ -609,7 +626,12 @@ class DictationCubit extends Cubit<DictationState> {
         }
       }
     } catch (e, st) {
-      Log.error('Dictation', 'Unexpected error during stop/transcription: $e', e, st);
+      Log.error(
+        'Dictation',
+        'Unexpected error during stop/transcription: $e',
+        e,
+        st,
+      );
       if (path != null && failurePath == null && !silent) {
         final saved = rescueRecording(path);
         failurePath = saved ?? path;

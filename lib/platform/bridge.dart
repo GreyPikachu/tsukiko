@@ -36,9 +36,6 @@ class HotkeyEvent {
   final bool cancel;
 }
 
-
-
-
 /// Что показывает плавающая панель записи.
 ///
 /// [failed] — записи не стало текстом, и она спасена в файл. [copied] —
@@ -59,7 +56,6 @@ enum HudState {
   silent,
 }
 
-
 /// Один канал на всё приложение.
 ///
 /// Экземпляр должен быть один на изолят: конструктор вешает обработчик
@@ -68,8 +64,10 @@ class NativeBridge {
   NativeBridge() {
     assert(() {
       if (_installed) {
-        throw StateError('NativeBridge создан дважды в одном изоляте: '
-            'второй экземпляр отбирает обработчик канала у первого.');
+        throw StateError(
+          'NativeBridge создан дважды в одном изоляте: '
+          'второй экземпляр отбирает обработчик канала у первого.',
+        );
       }
       _installed = true;
       return true;
@@ -105,23 +103,28 @@ class NativeBridge {
   /// прямо сейчас. Нет обработчика — значит это не она, и отвечать некому.
   String Function()? onStatusAsked;
   Future<void> Function()? onReleaseAsked;
+  Future<void> Function(bool active)? onCalibrationActive;
 
   Future<Object?> _onCall(MethodCall call) async {
     switch (call.method) {
       case 'hotkey':
         final a = (call.arguments as Map).cast<String, dynamic>();
-        _hotkeys.add(HotkeyEvent(
-          a['id'] as String,
-          a['down'] as bool ? HotkeyEdge.down : HotkeyEdge.up,
-          cancel: (a['cancel'] as bool?) ?? false,
-        ));
+        _hotkeys.add(
+          HotkeyEvent(
+            a['id'] as String,
+            a['down'] as bool ? HotkeyEdge.down : HotkeyEdge.up,
+            cancel: (a['cancel'] as bool?) ?? false,
+          ),
+        );
       case 'captured':
         final a = (call.arguments as Map).cast<String, dynamic>();
-        _capture?.complete(Hotkey(
-          (a['mods'] as List).map((e) => '$e').toList(),
-          keys: ((a['keys'] as List?) ?? const []).map((e) => '$e').toList(),
-          taps: (a['taps'] as num?)?.toInt() ?? 1,
-        ));
+        _capture?.complete(
+          Hotkey(
+            (a['mods'] as List).map((e) => '$e').toList(),
+            keys: ((a['keys'] as List?) ?? const []).map((e) => '$e').toList(),
+            taps: (a['taps'] as num?)?.toInt() ?? 1,
+          ),
+        );
         _capture = null;
       case 'panelShown':
         _shown.add(null);
@@ -131,10 +134,12 @@ class NativeBridge {
         _hudActions.add(call.arguments as String);
       case 'hudState':
         final name = call.arguments as String;
-        _hudStates.add(HudState.values.firstWhere(
-          (s) => s.name == name,
-          orElse: () => HudState.hidden,
-        ));
+        _hudStates.add(
+          HudState.values.firstWhere(
+            (s) => s.name == name,
+            orElse: () => HudState.hidden,
+          ),
+        );
       case 'reload':
         // Язык интерфейса перечитываем здесь, а не в каждом блоке: окон
         // три, а правит настройки одно, и переключиться должны все сразу.
@@ -146,6 +151,8 @@ class NativeBridge {
         return onStatusAsked?.call() ?? 'away';
       case 'releaseModel':
         await onReleaseAsked?.call();
+      case 'calibrationActive':
+        await onCalibrationActive?.call(call.arguments == true);
     }
     return null;
   }
@@ -194,12 +201,11 @@ class NativeBridge {
     required Hotkey hold,
     required Hotkey toggle,
     required Hotkey cancel,
-  }) =>
-      _channel.invokeMethod('bind', {
-        'hold': hold.toJson(),
-        'toggle': toggle.toJson(),
-        'cancel': cancel.toJson(),
-      });
+  }) => _channel.invokeMethod('bind', {
+    'hold': hold.toJson(),
+    'toggle': toggle.toJson(),
+    'cancel': cancel.toJson(),
+  });
 
   Future<Hotkey?> capture() {
     // Прошлый захват мог уже завершиться по времени: его completer тогда
@@ -210,14 +216,17 @@ class NativeBridge {
     final c = _capture = Completer<Hotkey?>();
     _channel.invokeMethod<void>('capture');
     // Ждать вечно нельзя: пользователь может передумать и уйти.
-    return c.future.timeout(const Duration(seconds: 8), onTimeout: () {
-      _channel.invokeMethod<void>('cancelCapture');
-      // Только своё: пока мы ждали, человек мог щёлкнуть по чипу ещё раз,
-      // и в поле уже лежит новый completer. Обнулив его здесь, мы оставили
-      // бы второй захват висеть навсегда.
-      if (identical(_capture, c)) _capture = null;
-      return null;
-    });
+    return c.future.timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        _channel.invokeMethod<void>('cancelCapture');
+        // Только своё: пока мы ждали, человек мог щёлкнуть по чипу ещё раз,
+        // и в поле уже лежит новый completer. Обнулив его здесь, мы оставили
+        // бы второй захват висеть навсегда.
+        if (identical(_capture, c)) _capture = null;
+        return null;
+      },
+    );
   }
 
   Future<bool> permission() async =>
@@ -240,6 +249,10 @@ class NativeBridge {
   /// Настройки диктовки правит и главное окно — панели надо перечитать файл.
   Future<void> settingsChanged() => _channel.invokeMethod('settingsChanged');
 
+  /// Reserve the microphone for voice calibration across Flutter engines.
+  Future<void> setCalibrationActive(bool active) =>
+      _channel.invokeMethod('calibrationActive', active);
+
   Stream<void> get settingsReloaded => _reload.stream;
 
   Future<void> quit() => _channel.invokeMethod('quit');
@@ -255,7 +268,8 @@ class NativeBridge {
 
   Future<String?> startRecording() => _channel.invokeMethod<String>('record');
 
-  Future<String?> stopRecording() => _channel.invokeMethod<String>('stopRecord');
+  Future<String?> stopRecording() =>
+      _channel.invokeMethod<String>('stopRecord');
 
   Future<double> level() async =>
       await _channel.invokeMethod<double>('level') ?? 0;

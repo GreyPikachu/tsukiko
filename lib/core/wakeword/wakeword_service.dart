@@ -4,8 +4,10 @@ import 'dart:typed_data';
 import '../logger.dart';
 import '../whisper_server.dart' show DictationSettings, PhraseCompletionMode;
 import 'audio_stream_source.dart';
+import 'keyword_tokenizer.dart';
 import 'sherpa_engine.dart';
 import 'speaker_profile.dart';
+import 'speech_verifier.dart';
 
 /// В каком состоянии находится голосовая активация.
 enum WakeWordListeningState {
@@ -19,11 +21,9 @@ enum WakeWordListeningState {
 /// Управляет аудиопотоком, распознаванием ключевых слов через Sherpa-ONNX,
 /// верификацией профиля голоса и таймером тишины для завершения фразы.
 class WakeWordService {
-  WakeWordService({
-    AudioStreamSource? audioSource,
-    SherpaEngine? engine,
-  })  : _audioSource = audioSource ?? MicrophoneAudioStreamSource(),
-        _engine = engine ?? NativeSherpaEngine();
+  WakeWordService({AudioStreamSource? audioSource, SherpaEngine? engine})
+    : _audioSource = audioSource ?? MicrophoneAudioStreamSource(),
+      _engine = engine ?? StreamingSherpaEngine();
 
   final AudioStreamSource _audioSource;
   final SherpaEngine _engine;
@@ -49,6 +49,9 @@ class WakeWordService {
   bool get isRunning => _state != WakeWordListeningState.disabled;
 
   int _operationGeneration = 0;
+  bool _triggeredInCurrentState = false;
+  DateTime? _lastCompletionAt;
+  static const Duration retriggerDelay = Duration(milliseconds: 700);
 
   /// Запустить сервис голосовой активации с указанными настройками.
   Future<bool> start({
@@ -64,9 +67,17 @@ class WakeWordService {
     if (_state != WakeWordListeningState.disabled &&
         _settings?.wakeWord == settings.wakeWord &&
         _settings?.closeWord == settings.closeWord &&
-        _settings?.voiceCalibrationEnabled == settings.voiceCalibrationEnabled) {
+        _settings?.voiceCalibrationEnabled ==
+            settings.voiceCalibrationEnabled) {
       _settings = settings;
-      _profile = profile ?? _profile;
+      final nextProfile = profile ?? SpeakerProfile.load();
+      if (nextProfile?.createdAt != _profile?.createdAt ||
+          nextProfile?.wakeWord != _profile?.wakeWord) {
+        _profile = nextProfile;
+        await _engine.initSpeakerRecognition(
+          enrolledEmbeddings: _usableProfile(settings)?.embeddings,
+        );
+      }
       return true;
     }
 
@@ -103,12 +114,10 @@ class WakeWordService {
     if (_operationGeneration != generation) return false;
 
     // Инициализируем верификацию спикера (если есть профиль)
-    if (_profile != null && _profile!.embeddings.isNotEmpty) {
-      await _engine.initSpeakerRecognition(
-        enrolledEmbeddings: _profile!.embeddings,
-      );
-      if (_operationGeneration != generation) return false;
-    }
+    await _engine.initSpeakerRecognition(
+      enrolledEmbeddings: _usableProfile(settings)?.embeddings,
+    );
+    if (_operationGeneration != generation) return false;
 
     // Запускаем аудиопоток
     try {
@@ -126,7 +135,11 @@ class WakeWordService {
         },
       );
       _state = WakeWordListeningState.listeningWakeWord;
-      Log.info('WakeWord', 'WakeWord service listening for "${settings.wakeWord}"');
+      _triggeredInCurrentState = false;
+      Log.info(
+        'WakeWord',
+        'WakeWord service listening for "${settings.wakeWord}"',
+      );
       return true;
     } catch (e, st) {
       Log.error('WakeWord', 'Failed to start audio stream: $e', e, st);
@@ -139,6 +152,7 @@ class WakeWordService {
   void notifyRecordingStarted() {
     if (_state == WakeWordListeningState.disabled) return;
     _state = WakeWordListeningState.listeningCloseWordOrSilence;
+    _triggeredInCurrentState = false;
     _lastSpeechTime = DateTime.now();
     _engine.resetKeywordStream();
     Log.info('WakeWord', 'Now listening for CloseWord or silence...');
@@ -148,6 +162,8 @@ class WakeWordService {
   void notifyRecordingStopped() {
     if (_state == WakeWordListeningState.disabled) return;
     _state = WakeWordListeningState.listeningWakeWord;
+    _triggeredInCurrentState = false;
+    _lastCompletionAt = DateTime.now();
     _lastSpeechTime = null;
     _engine.resetKeywordStream();
     Log.info('WakeWord', 'Returned to listening for WakeWord');
@@ -157,60 +173,59 @@ class WakeWordService {
   void _onAudioFrame(Float32List samples) {
     if (_state == WakeWordListeningState.disabled || samples.isEmpty) return;
 
-    // Быстрый замер энергии сигнала
-    double sum = 0.0;
-    for (var i = 0; i < samples.length; i++) {
-      final s = samples[i];
-      sum += s * s;
-    }
-    final energy = sum / samples.length;
-    final bool hasAudioEnergy = energy > 0.00005;
-
-    // Всегда передаём аудиопоток движку: он непрерывно калибрует комнатный фон
-    // и отслеживает фазы речи и тишины через AdaptiveNoiseFilter.
+    // KWS получает и тихие кадры: они нужны для завершения слова.
+    // isSpeech ниже отдельно обновляет адаптивный шумовой фон.
     _engine.acceptAudio(samples);
 
     final now = DateTime.now();
-    final bool isSpeech = hasAudioEnergy && _engine.isSpeech(samples);
+    final bool isSpeech = _engine.isSpeech(samples);
     if (isSpeech) {
       _lastSpeechTime = now;
     }
 
-    final bool speechRecentlyActive = isSpeech ||
-        (_lastSpeechTime != null &&
-            now.difference(_lastSpeechTime!) < const Duration(seconds: 3));
-
     // ── 1. Режим ожидания слова активации (WakeWord) ──────────────────────────
     if (_state == WakeWordListeningState.listeningWakeWord) {
-      if (!hasAudioEnergy && !speechRecentlyActive) return;
-
       final detection = _engine.detectKeyword();
-      if (detection != null) {
+      if (detection != null && !_triggeredInCurrentState) {
+        if (_lastCompletionAt != null &&
+            now.difference(_lastCompletionAt!) < retriggerDelay) {
+          return;
+        }
         _lastSpeechTime = null;
-        final detected = detection.keyword.trim().toLowerCase();
-        final expected = (_settings?.wakeWord ?? '').trim().toLowerCase();
+        final detected = KeywordTokenizer.normalizeKeywordText(
+          detection.keyword,
+        );
+        final expected = KeywordTokenizer.normalizeKeywordText(
+          _settings?.wakeWord ?? '',
+        );
 
-        if (detected == expected || detected.isNotEmpty) {
-          Log.info('WakeWord', 'Spotted keyword: "$detected" (expected: "$expected")');
+        if (detected == expected) {
+          Log.info(
+            'WakeWord',
+            'Spotted keyword: "$detected" (expected: "$expected")',
+          );
 
           // Верификация по профилю голоса
           final settings = _settings;
-          if (settings != null &&
-              _profile != null &&
-              _profile!.embeddings.isNotEmpty &&
-              detection.samples != null) {
-            final emb = _engine.extractSpeakerEmbedding(detection.samples!);
-            if (emb != null) {
-              final verified = _engine.verifySpeaker(emb, settings.speakerThreshold);
-              if (!verified) {
-                Log.info('WakeWord', 'Keyword detected but speaker verification failed (rejected)');
-                return;
-              }
-              Log.info('WakeWord', 'Speaker verified successfully');
+          final usable = settings == null ? null : _usableProfile(settings);
+          if (usable != null) {
+            final audio = detection.samples;
+            final emb = audio == null
+                ? null
+                : _engine.extractSpeakerEmbedding(
+                    SpeechVerifier.prepareCalibrationSamples(audio),
+                  );
+            final threshold = settings!.speakerThreshold == 0.60
+                ? usable.threshold
+                : settings.speakerThreshold;
+            if (emb == null || !_engine.verifySpeaker(emb, threshold)) {
+              Log.info('WakeWord', 'Keyword rejected by voice profile');
+              return;
             }
           }
 
           // Активируем диктовку
+          _triggeredInCurrentState = true;
           onWakeWordTriggered?.call();
         }
       }
@@ -223,18 +238,27 @@ class WakeWordService {
       if (settings == null) return;
 
       final mode = settings.completionMode;
-      final closeWord = settings.closeWord.trim().toLowerCase();
+      final closeWord = KeywordTokenizer.normalizeKeywordText(
+        settings.closeWord,
+      );
 
       // Проверка на CloseWord
       if (closeWord.isNotEmpty &&
           (mode == PhraseCompletionMode.closeWordOnly ||
               mode == PhraseCompletionMode.hybrid)) {
-        if (hasAudioEnergy || speechRecentlyActive) {
+        if (!_triggeredInCurrentState) {
           final detection = _engine.detectKeyword();
           if (detection != null) {
-            final detected = detection.keyword.trim().toLowerCase();
+            final detected = KeywordTokenizer.normalizeKeywordText(
+              detection.keyword,
+            );
             if (detected == closeWord) {
-              Log.info('WakeWord', 'CloseWord "$closeWord" detected! Stopping dictation.');
+              Log.info(
+                'WakeWord',
+                'CloseWord "$closeWord" detected! Stopping dictation.',
+              );
+              _triggeredInCurrentState = true;
+              _lastCompletionAt = now;
               onCloseWordTriggered?.call();
               return;
             }
@@ -254,6 +278,8 @@ class WakeWordService {
               'Silence timeout (${silenceDuration.inMilliseconds}ms >= ${silenceThreshold.inMilliseconds}ms). Stopping dictation.',
             );
             _lastSpeechTime = null;
+            _triggeredInCurrentState = true;
+            _lastCompletionAt = now;
             onSilenceTimeoutTriggered?.call();
             return;
           }
@@ -266,10 +292,23 @@ class WakeWordService {
   Future<void> stop({bool invalidate = true}) async {
     if (invalidate) _operationGeneration++;
     _state = WakeWordListeningState.disabled;
+    _triggeredInCurrentState = false;
     await _audioSub?.cancel();
     _audioSub = null;
     await _audioSource.stopStream();
     _engine.resetKeywordStream();
+  }
+
+  SpeakerProfile? _usableProfile(DictationSettings settings) {
+    final profile = _profile;
+    if (!settings.voiceCalibrationEnabled ||
+        profile == null ||
+        profile.embeddings.isEmpty ||
+        profile.wakeWord.trim().toLowerCase() !=
+            settings.wakeWord.trim().toLowerCase()) {
+      return null;
+    }
+    return profile;
   }
 
   /// Полное освобождение памяти и процессов.

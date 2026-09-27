@@ -475,6 +475,21 @@ void DictationBridge::RegisterHandler(
     } else if (method == "settingsChanged") {
       SendReloadSettings();
       result->Success();
+    } else if (method == "calibrationActive") {
+      std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> shared(
+          result.release());
+      if (!panel_channel_) {
+        shared->Success();
+      } else {
+        panel_channel_->InvokeMethod(
+            "calibrationActive",
+            std::make_unique<flutter::EncodableValue>(*call.arguments()),
+            std::make_unique<flutter::MethodResultFunctions<flutter::EncodableValue>>(
+                [shared](const flutter::EncodableValue*) { shared->Success(); },
+                [shared](const std::string&, const std::string&,
+                         const flutter::EncodableValue*) { shared->Success(); },
+                [shared]() { shared->Success(); }));
+      }
     } else if (method == "dictationStatus") {
       // Спрашивает очередь, отвечает диктовка: только её изолят знает,
       // говорит ли человек прямо сейчас. Прежде здесь возвращалось

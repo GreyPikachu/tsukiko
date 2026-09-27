@@ -149,7 +149,11 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   void _readDictation() {
-    final profileExists = SpeakerProfile.exists();
+    final profile = SpeakerProfile.load();
+    final profileExists =
+        profile != null &&
+        profile.wakeWord.trim().toLowerCase() ==
+            _dictation.wakeWord.trim().toLowerCase();
     _emit(
       state.copyWith(
         hold: _dictation.hold,
@@ -247,10 +251,15 @@ class SettingsCubit extends Cubit<SettingsState> {
   }) async {
     if (os.needsAccessibilityPermission && !await bridge.permission()) {
       _denied = 3;
-      _emit(state.copyWith(
-        allowed: false,
-        problem: currentL10n().permissionMissing(os.accessibilityName, appName),
-      ));
+      _emit(
+        state.copyWith(
+          allowed: false,
+          problem: currentL10n().permissionMissing(
+            os.accessibilityName,
+            appName,
+          ),
+        ),
+      );
       await bridge.requestPermission();
       return;
     }
@@ -343,14 +352,15 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   void setHud(bool v) => _saveDictation((d) => d.hud = v);
 
-  void setWakeWordEnabled(bool v) =>
-      _saveDictation((d) => d.wakeWordEnabled = v);
+  void setWakeWordEnabled(bool v) => _saveDictation((d) {
+    d.wakeWordEnabled = v;
+    if (v && state.speakerProfileExists) d.voiceCalibrationEnabled = true;
+  });
 
   void setWakeWord(String v) =>
       _saveDictation((d) => d.wakeWord = v.trim().isEmpty ? 'Джеф' : v);
 
-  void setCloseWord(String v) =>
-      _saveDictation((d) => d.closeWord = v);
+  void setCloseWord(String v) => _saveDictation((d) => d.closeWord = v);
 
   void setCompletionMode(PhraseCompletionMode mode) =>
       _saveDictation((d) => d.completionMode = mode);
@@ -363,13 +373,11 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   void deleteSpeakerProfile() {
     SpeakerProfile.delete();
-    _readDictation();
-    unawaited(bridge.settingsChanged());
+    _saveDictation((d) => d.voiceCalibrationEnabled = false);
   }
 
   void refreshSpeakerProfile() {
-    _readDictation();
-    unawaited(bridge.settingsChanged());
+    _saveDictation((d) => d.voiceCalibrationEnabled = true);
   }
 
   void setDictationCommandsEnabled(bool value) =>

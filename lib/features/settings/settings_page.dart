@@ -438,17 +438,13 @@ class _SettingsBodyState extends State<SettingsBody>
     SectionTitle(l10n.sectionWakeWord),
     Hint(l10n.hintWakeWordSection),
     const SizedBox(height: Gap.inner),
-    Check(
-      l10n.checkWakeWordEnabled,
-      s.wakeWordEnabled,
-      (enabled) async {
-        if (enabled && !s.speakerProfileExists) {
-          final ok = await _openVoiceCalibration(s.wakeWord);
-          if (ok != true) return;
-        }
-        _cubit.setWakeWordEnabled(enabled);
-      },
-    ),
+    Check(l10n.checkWakeWordEnabled, s.wakeWordEnabled, (enabled) async {
+      if (enabled && !s.speakerProfileExists) {
+        final ok = await _openVoiceCalibration(s.wakeWord);
+        if (ok != true) return;
+      }
+      _cubit.setWakeWordEnabled(enabled);
+    }),
     if (s.wakeWordEnabled) ...[
       const SizedBox(height: Gap.item),
       _Field(
@@ -550,16 +546,22 @@ class _SettingsBodyState extends State<SettingsBody>
   ];
 
   Future<bool?> _openVoiceCalibration(String wakeWord) async {
-    final result = await VoiceCalibrationSheet.show(
-      context,
-      wakeWord: wakeWord.isNotEmpty ? wakeWord : 'Джеф',
-      bridge: _cubit.bridge,
-      onProfileCreated: _cubit.refreshSpeakerProfile,
-    );
-    if (result == true) {
-      _cubit.refreshSpeakerProfile();
+    await _cubit.bridge.setCalibrationActive(true);
+    try {
+      if (!mounted) return null;
+      final result = await VoiceCalibrationSheet.show(
+        context,
+        wakeWord: wakeWord.isNotEmpty ? wakeWord : 'Джеф',
+        bridge: _cubit.bridge,
+        onProfileCreated: _cubit.refreshSpeakerProfile,
+      );
+      if (result == true) {
+        _cubit.refreshSpeakerProfile();
+      }
+      return result;
+    } finally {
+      await _cubit.bridge.setCalibrationActive(false);
     }
-    return result;
   }
 
   Future<void> _reassignHotkey(String id) =>
@@ -605,8 +607,9 @@ class _SettingsBodyState extends State<SettingsBody>
   bool get _isDuplicatePhrase {
     final phrase = _newPhraseCtrl.text.trim().toLowerCase();
     if (phrase.isEmpty) return false;
-    return _cubit.state.vocabulary
-        .any((i) => i.phrase.trim().toLowerCase() == phrase);
+    return _cubit.state.vocabulary.any(
+      (i) => i.phrase.trim().toLowerCase() == phrase,
+    );
   }
 
   void _addVocabularyEntry() {
@@ -650,8 +653,9 @@ class _SettingsBodyState extends State<SettingsBody>
                   child: MacosIcon(
                     CupertinoIcons.arrow_right,
                     size: 11,
-                    color:
-                        Surface.secondaryText(context).withValues(alpha: 0.5),
+                    color: Surface.secondaryText(
+                      context,
+                    ).withValues(alpha: 0.5),
                   ),
                 ),
                 Expanded(
@@ -720,9 +724,7 @@ class _SettingsBodyState extends State<SettingsBody>
         const SizedBox(height: Gap.hint),
         Text(
           l10n.emptyVocabularySubtitle,
-          style: Type.caption.copyWith(
-            color: Surface.secondaryText(context),
-          ),
+          style: Type.caption.copyWith(color: Surface.secondaryText(context)),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: Gap.section),
@@ -868,8 +870,9 @@ class _SettingsBodyState extends State<SettingsBody>
             selectedFilter: _vocabFilter,
             totalCount: s.vocabulary.length,
             hintsCount: s.vocabulary.where((i) => i.isHintOnly).length,
-            replacementsCount:
-                s.vocabulary.where((i) => i.isReplacement).length,
+            replacementsCount: s.vocabulary
+                .where((i) => i.isReplacement)
+                .length,
             allLabel: l10n.filterAll,
             hintsLabel: l10n.filterHints,
             replacementsLabel: l10n.filterReplacements,
@@ -1560,9 +1563,7 @@ class _SettingsBodyState extends State<SettingsBody>
             Log.logsDir.replaceFirst(home, '~'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Type.caption.copyWith(
-              color: Surface.secondaryText(context),
-            ),
+            style: Type.caption.copyWith(color: Surface.secondaryText(context)),
           ),
         ),
         const SizedBox(width: Gap.inner),
@@ -1771,10 +1772,10 @@ class _FilterSegmentState extends State<_FilterSegment> {
             color: widget.selected
                 ? (isDark ? const Color(0xFF3A3A3C) : const Color(0xFFFFFFFF))
                 : (_hover
-                    ? (isDark
-                        ? const Color(0x10FFFFFF)
-                        : const Color(0x08000000))
-                    : MacosColors.transparent),
+                      ? (isDark
+                            ? const Color(0x10FFFFFF)
+                            : const Color(0x08000000))
+                      : MacosColors.transparent),
             borderRadius: BorderRadius.circular(5),
             boxShadow: widget.selected
                 ? [
@@ -1793,9 +1794,7 @@ class _FilterSegmentState extends State<_FilterSegment> {
             '${widget.label} (${widget.count})',
             style: Type.caption.copyWith(
               fontWeight: widget.selected ? FontWeight.w600 : FontWeight.normal,
-              color: widget.selected
-                  ? null
-                  : Surface.secondaryText(context),
+              color: widget.selected ? null : Surface.secondaryText(context),
             ),
           ),
         ),
@@ -1803,8 +1802,6 @@ class _FilterSegmentState extends State<_FilterSegment> {
     );
   }
 }
-
-
 
 class _SuggestionChip extends StatefulWidget {
   const _SuggestionChip({required this.label, required this.onTap});
@@ -1848,13 +1845,13 @@ class _SuggestionChipState extends State<_SuggestionChip> {
             decoration: BoxDecoration(
               color: Surface.isDark(context)
                   ? (_hover ? const Color(0xFF48484C) : const Color(0xFF38383B))
-                  : (_hover ? const Color(0xFFE5E5E9) : const Color(0xFFF0F0F2)),
+                  : (_hover
+                        ? const Color(0xFFE5E5E9)
+                        : const Color(0xFFF0F0F2)),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: _hover
-                    ? MacosTheme.of(context)
-                        .primaryColor
-                        .withValues(alpha: 0.5)
+                    ? MacosTheme.of(context).primaryColor.withValues(alpha: 0.5)
                     : Surface.hairline(context),
               ),
             ),

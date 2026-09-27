@@ -11,7 +11,7 @@ import '../../platform/os.dart' show os;
 /// Содержит эмбеддинги 3 контрольных записей ключевого слова активации,
 /// автоматически рассчитанный порог сходства и ссылку на слово активации.
 /// При появлении ключевого слова в аудиопотоке его акустический слепок
-/// сверяется с этим профилем, предотвращая ложные срабатывания от посторонних.
+/// сверяется с этим профилем как дополнительный фильтр ложных срабатываний.
 class SpeakerProfile {
   const SpeakerProfile({
     required this.name,
@@ -64,27 +64,29 @@ class SpeakerProfile {
   }
 
   /// Сохранить профиль атомарно.
-  void save([String? path]) {
+  bool save([String? path]) {
     try {
       final file = File(path ?? defaultPath);
       file.parent.createSync(recursive: true);
       writeJsonAtomically(file, toJson());
+      return true;
     } catch (e) {
       stderr.writeln('tsukiko: не удалось сохранить профиль голоса — $e');
+      return false;
     }
   }
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'dimension': dimension,
-        'wakeWord': wakeWord,
-        'threshold': threshold,
-        'createdAt': (createdAt ?? DateTime.now()).toIso8601String(),
-        'embeddings': [
-          for (final emb in embeddings)
-            [for (var i = 0; i < emb.length; i++) emb[i]],
-        ],
-      };
+    'name': name,
+    'dimension': dimension,
+    'wakeWord': wakeWord,
+    'threshold': threshold,
+    'createdAt': (createdAt ?? DateTime.now()).toIso8601String(),
+    'embeddings': [
+      for (final emb in embeddings)
+        [for (var i = 0; i < emb.length; i++) emb[i]],
+    ],
+  };
 
   factory SpeakerProfile.fromJson(Map<String, dynamic> json) {
     final dim = (json['dimension'] as num?)?.toInt() ?? 192;
@@ -111,7 +113,8 @@ class SpeakerProfile {
     }
 
     final wakeWord = (json['wakeWord'] as String?) ?? 'Джеф';
-    final threshold = (json['threshold'] as num?)?.toDouble() ??
+    final threshold =
+        (json['threshold'] as num?)?.toDouble() ??
         calculateOptimalThreshold(embeddingsList);
 
     return SpeakerProfile(

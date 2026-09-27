@@ -449,6 +449,16 @@ final class DictationBridge: NSObject {
         other.invokeMethod("reload", arguments: nil)
       }
       reply(nil)
+    case "calibrationActive":
+      // Wait for the dictation engine to release its microphone before the
+      // settings window starts recording a calibration sample.
+      guard let panel = channel else {
+        reply(nil)
+        return
+      }
+      panel.invokeMethod("calibrationActive", arguments: call.arguments, result: { _ in
+        reply(nil)
+      })
     case "dictationStatus":
       // Спрашивает очередь, отвечает диктовка: только её изолят знает,
       // говорит ли человек прямо сейчас. Без панели отвечать некому —

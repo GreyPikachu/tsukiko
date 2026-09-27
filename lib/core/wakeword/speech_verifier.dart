@@ -29,10 +29,7 @@ class SpeechVerificationResult {
 /// выполняет точную и устойчивую к шуму проверку произнесённых слов на русском и английском языках,
 /// и извлекает акустический слепок голоса.
 class SpeechVerifier {
-  SpeechVerifier({
-    this.customRecognizerPath,
-    this.customModelPath,
-  });
+  SpeechVerifier({this.customRecognizerPath, this.customModelPath});
 
   final String? customRecognizerPath;
   final String? customModelPath;
@@ -102,7 +99,7 @@ class SpeechVerifier {
         '-m',
         model,
         '-l',
-        'ru',
+        targetWord.contains(RegExp(r'[А-Яа-яЁё]')) ? 'ru' : 'en',
         '-f',
         wavPath,
         '-np',
@@ -180,48 +177,74 @@ class SpeechVerifier {
 
   /// Проверить, совпадает ли распознанный текст с целевым словом активации.
   static bool matchesKeyword(String recognizedText, String targetWord) {
-    final cleanTarget = targetWord.trim().toLowerCase();
+    final cleanTarget = _cleanWhisperText(targetWord).toLowerCase();
     if (cleanTarget.isEmpty) return false;
 
-    final cleanRecognized = recognizedText.trim().toLowerCase();
+    final cleanRecognized = _cleanWhisperText(recognizedText).toLowerCase();
     if (cleanRecognized.isEmpty) return false;
 
-    // Прямое вхождение или равенство
-    if (cleanRecognized == cleanTarget ||
-        cleanRecognized.contains(cleanTarget)) {
-      return true;
-    }
-
-    // Известные фонетические эквиваленты для популярных WakeWord
-    final equivalents = _getEquivalents(cleanTarget);
-    for (final eq in equivalents) {
-      if (cleanRecognized == eq || cleanRecognized.contains(eq)) {
-        return true;
-      }
-    }
-
-    // Сравнение по словам
+    // A substring and edit-distance-one check accepts confusable words such
+    // as "деф" or "стопка". Compare complete word sequences instead.
     final words = cleanRecognized.split(RegExp(r'\s+'));
-    for (final w in words) {
-      if (w == cleanTarget || equivalents.contains(w)) return true;
-      if (w.length >= 3 && _levenshtein(w, cleanTarget) <= 1) {
-        return true;
+    final candidates = cleanTarget == 'джеф' || cleanTarget == 'джефф'
+        ? const {'джеф', 'джефф', 'jeff', 'geoff'}
+        : {cleanTarget};
+    return candidates.any((candidate) {
+      final targetWords = candidate.split(' ');
+      for (var i = 0; i + targetWords.length <= words.length; i++) {
+        if (words.skip(i).take(targetWords.length).join(' ') == candidate) {
+          return true;
+        }
       }
-    }
+      return false;
+    });
+  }
 
+  /// Enrollment must contain the keyword alone; an occurrence somewhere in
+  /// a sentence would produce a voice profile for the entire sentence.
+  static bool matchesOnlyKeyword(String recognizedText, String targetWord) {
+    final recognized = _cleanWhisperText(recognizedText).toLowerCase();
+    final target = _cleanWhisperText(targetWord).toLowerCase();
+    if (recognized.isEmpty || target.isEmpty) return false;
+    if (recognized == target) return true;
+    if (target == 'джеф' || target == 'джефф') {
+      return const {'джеф', 'джефф', 'jeff', 'geoff'}.contains(recognized);
+    }
     return false;
   }
 
-  /// Фонетические синонимы для устойчивости
-  static Set<String> _getEquivalents(String word) {
-    final w = word.toLowerCase();
-    if (w == 'джеф' || w == 'джефф') {
-      return {'джеф', 'джефф', 'джефа', 'джефу', 'джефом', 'jeff', 'geoff', 'дэф', 'деф'};
+  /// Discard leading/trailing room noise before building an enrollment vector.
+  /// Returns an empty buffer for silence, clipping, or an implausibly long take.
+  static Float32List prepareCalibrationSamples(Float32List audio) {
+    if (audio.length < 5600 || audio.length > 16000 * 6) return Float32List(0);
+    var peak = 0.0;
+    var clipped = 0;
+    for (final sample in audio) {
+      final value = sample.abs();
+      if (value > peak) peak = value;
+      if (value >= 0.98) clipped++;
     }
-    if (w == 'выполняй') {
-      return {'выполняй', 'выполни', 'выполнить', 'приём', 'конец'};
+    if (peak < 0.008 || clipped > audio.length ~/ 100) return Float32List(0);
+    const frame = 320; // 20 ms
+    final threshold = math.max(0.006, peak * 0.07);
+    int? first;
+    int? last;
+    for (var start = 0; start + frame <= audio.length; start += frame) {
+      var power = 0.0;
+      for (var i = start; i < start + frame; i++) {
+        power += audio[i] * audio[i];
+      }
+      if (math.sqrt(power / frame) >= threshold) {
+        first ??= start;
+        last = start + frame;
+      }
     }
-    return {w};
+    if (first == null || last == null || last - first < 4000) {
+      return Float32List(0);
+    }
+    final start = math.max(0, first - 1600);
+    final end = math.min(audio.length, last + 1600);
+    return Float32List.sublistView(audio, start, end);
   }
 
   /// Очистить вывод Whisper от спецтегов вроде [Музыка], (Шум), скобок и пунктуации.
@@ -234,29 +257,6 @@ class SpeechVerifier {
         .trim();
   }
 
-  /// Расстояние Левенштейна для нечёткого сопоставления коротких слов
-  static int _levenshtein(String s, String t) {
-    if (s == t) return 0;
-    if (s.isEmpty) return t.length;
-    if (t.isEmpty) return s.length;
-
-    List<int> v0 = List<int>.generate(t.length + 1, (i) => i);
-    List<int> v1 = List<int>.filled(t.length + 1, 0);
-
-    for (int i = 0; i < s.length; i++) {
-      v1[0] = i + 1;
-      for (int j = 0; j < t.length; j++) {
-        final cost = (s.codeUnitAt(i) == t.codeUnitAt(j)) ? 0 : 1;
-        v1[j + 1] = math.min(v1[j] + 1, math.min(v0[j + 1] + 1, v0[j] + cost));
-      }
-      for (int j = 0; j <= t.length; j++) {
-        v0[j] = v1[j];
-      }
-    }
-
-    return v1[t.length];
-  }
-
   /// Чтение PCM Float32List сэмплов из 16 кГц моно 16-битного WAV файла.
   static Float32List readWavSamples(String path) {
     try {
@@ -267,8 +267,11 @@ class SpeechVerifier {
       var offset = 12;
       while (offset + 8 <= bytes.length) {
         final chunkId = String.fromCharCodes(bytes.sublist(offset, offset + 4));
-        final chunkSize = ByteData.sublistView(bytes, offset + 4, offset + 8)
-            .getUint32(0, Endian.little);
+        final chunkSize = ByteData.sublistView(
+          bytes,
+          offset + 4,
+          offset + 8,
+        ).getUint32(0, Endian.little);
         if (chunkId == 'data') {
           final dataStart = offset + 8;
           final dataEnd = math.min(bytes.length, dataStart + chunkSize);

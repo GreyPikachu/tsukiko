@@ -83,10 +83,7 @@ void main() {
   });
 
   group('AcousticFeatureExtractor & Speaker Verification', () {
-    Float32List makeVoiceSignal({
-      required double f0,
-      int length = 16000,
-    }) {
+    Float32List makeVoiceSignal({required double f0, int length = 16000}) {
       final list = Float32List(length);
       for (var i = 0; i < length; i++) {
         // Синтезируем голос с основным тоном F0 и гармониками
@@ -115,7 +112,10 @@ void main() {
 
     test('один и тот же голос даёт высокое косинусное сходство (> 0.85)', () {
       final sample1 = makeVoiceSignal(f0: 160, length: 16000);
-      final sample2 = makeVoiceSignal(f0: 162, length: 16000); // чуть варьируется тон
+      final sample2 = makeVoiceSignal(
+        f0: 162,
+        length: 16000,
+      ); // чуть варьируется тон
 
       final emb1 = AcousticFeatureExtractor.extract(sample1);
       final emb2 = AcousticFeatureExtractor.extract(sample2);
@@ -124,46 +124,92 @@ void main() {
       expect(sim, greaterThan(0.85));
     });
 
-    test('разные голоса (низкий мужской vs высокий женский) дают низкое сходство', () {
-      final male = makeVoiceSignal(f0: 110, length: 16000); // 110 Гц
-      final female = makeVoiceSignal(f0: 250, length: 16000); // 250 Гц
+    test(
+      'разные голоса (низкий мужской vs высокий женский) дают низкое сходство',
+      () {
+        final male = makeVoiceSignal(f0: 110, length: 16000); // 110 Гц
+        final female = makeVoiceSignal(f0: 250, length: 16000); // 250 Гц
 
-      final embMale = AcousticFeatureExtractor.extract(male);
-      final embFemale = AcousticFeatureExtractor.extract(female);
+        final embMale = AcousticFeatureExtractor.extract(male);
+        final embFemale = AcousticFeatureExtractor.extract(female);
 
-      final sim = SpeakerProfile.cosineSimilarity(embMale, embFemale);
-      expect(sim, lessThan(0.65));
-    });
+        final sim = SpeakerProfile.cosineSimilarity(embMale, embFemale);
+        expect(sim, lessThan(0.65));
+      },
+    );
 
-    test('SpeakerProfile.calculateOptimalThreshold корректно вычисляет порог', () {
-      final s1 = makeVoiceSignal(f0: 150);
-      final s2 = makeVoiceSignal(f0: 152);
-      final s3 = makeVoiceSignal(f0: 148);
+    test(
+      'SpeakerProfile.calculateOptimalThreshold корректно вычисляет порог',
+      () {
+        final s1 = makeVoiceSignal(f0: 150);
+        final s2 = makeVoiceSignal(f0: 152);
+        final s3 = makeVoiceSignal(f0: 148);
 
-      final emb1 = AcousticFeatureExtractor.extract(s1);
-      final emb2 = AcousticFeatureExtractor.extract(s2);
-      final emb3 = AcousticFeatureExtractor.extract(s3);
+        final emb1 = AcousticFeatureExtractor.extract(s1);
+        final emb2 = AcousticFeatureExtractor.extract(s2);
+        final emb3 = AcousticFeatureExtractor.extract(s3);
 
-      final threshold = SpeakerProfile.calculateOptimalThreshold([emb1, emb2, emb3]);
-      expect(threshold, inInclusiveRange(0.52, 0.75));
-    });
+        final threshold = SpeakerProfile.calculateOptimalThreshold([
+          emb1,
+          emb2,
+          emb3,
+        ]);
+        expect(threshold, inInclusiveRange(0.52, 0.75));
+      },
+    );
   });
 
   group('SpeechVerifier Keyword Matching', () {
-    test('распознаёт варианты слова «Джеф» и «Джефф» на русском и английском', () {
-      expect(SpeechVerifier.matchesKeyword('Джефф', 'Джеф'), isTrue);
-      expect(SpeechVerifier.matchesKeyword('джеф', 'Джефф'), isTrue);
-      expect(SpeechVerifier.matchesKeyword('Джеф привет', 'Джеф'), isTrue);
-      expect(SpeechVerifier.matchesKeyword('скажи jeff пожалуйста', 'Джеф'), isTrue);
-      expect(SpeechVerifier.matchesKeyword('деф', 'Джеф'), isTrue);
-      expect(SpeechVerifier.matchesKeyword('привет как дела', 'Джеф'), isFalse);
+    test('калибровка требует только ключевое слово', () {
+      expect(SpeechVerifier.matchesOnlyKeyword('Джеф.', 'Джеф'), isTrue);
+      expect(SpeechVerifier.matchesOnlyKeyword('Джефф', 'Джеф'), isTrue);
+      expect(SpeechVerifier.matchesOnlyKeyword('Джеф привет', 'Джеф'), isFalse);
+      expect(SpeechVerifier.matchesOnlyKeyword('стопка', 'стоп'), isFalse);
     });
+
+    test('отбрасывает тишину и ограничивает длину образца', () {
+      expect(
+        SpeechVerifier.prepareCalibrationSamples(Float32List(16000)),
+        isEmpty,
+      );
+      final sample = Float32List(16000);
+      for (var i = 4000; i < 12000; i++) {
+        sample[i] = i.isEven ? 0.2 : -0.2;
+      }
+      final prepared = SpeechVerifier.prepareCalibrationSamples(sample);
+      expect(prepared.length, lessThan(sample.length));
+      expect(prepared.length, greaterThan(8000));
+    });
+
+    test(
+      'распознаёт варианты слова «Джеф» и «Джефф» на русском и английском',
+      () {
+        expect(SpeechVerifier.matchesKeyword('Джефф', 'Джеф'), isTrue);
+        expect(SpeechVerifier.matchesKeyword('джеф', 'Джефф'), isTrue);
+        expect(SpeechVerifier.matchesKeyword('Джеф привет', 'Джеф'), isTrue);
+        expect(
+          SpeechVerifier.matchesKeyword('скажи jeff пожалуйста', 'Джеф'),
+          isTrue,
+        );
+        expect(SpeechVerifier.matchesKeyword('деф', 'Джеф'), isFalse);
+        expect(
+          SpeechVerifier.matchesKeyword('привет как дела', 'Джеф'),
+          isFalse,
+        );
+      },
+    );
 
     test('распознаёт слово завершения «выполняй»', () {
       expect(SpeechVerifier.matchesKeyword('выполняй', 'выполняй'), isTrue);
-      expect(SpeechVerifier.matchesKeyword('текст фразы выполняй', 'выполняй'), isTrue);
-      expect(SpeechVerifier.matchesKeyword('выполни', 'выполняй'), isTrue);
-      expect(SpeechVerifier.matchesKeyword('текст без ключевого', 'выполняй'), isFalse);
+      expect(
+        SpeechVerifier.matchesKeyword('текст фразы выполняй', 'выполняй'),
+        isTrue,
+      );
+      expect(SpeechVerifier.matchesKeyword('выполни', 'выполняй'), isFalse);
+      expect(
+        SpeechVerifier.matchesKeyword('текст без ключевого', 'выполняй'),
+        isFalse,
+      );
     });
   });
 }

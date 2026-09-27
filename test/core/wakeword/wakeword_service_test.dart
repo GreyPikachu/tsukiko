@@ -15,10 +15,7 @@ void main() {
   setUp(() {
     engine = FakeSherpaEngine();
     audioSource = FakeAudioStreamSource(permissionGranted: true);
-    service = WakeWordService(
-      audioSource: audioSource,
-      engine: engine,
-    );
+    service = WakeWordService(audioSource: audioSource, engine: engine);
   });
 
   tearDown(() async {
@@ -98,9 +95,7 @@ void main() {
       await service.start(settings: settings);
 
       // Очередь на распознавание слова
-      engine.queuedDetection = const KeywordDetection(
-        keyword: 'Джеф',
-      );
+      engine.queuedDetection = const KeywordDetection(keyword: 'Джеф');
 
       // Подаём аудиофрейм
       audioSource.pushSamples(makeAudio());
@@ -109,7 +104,7 @@ void main() {
       expect(triggered, isTrue);
     });
 
-    test('полная тишина (RMS < 0.00005) не передаётся в нейросеть', () async {
+    test('результат KWS на тихом хвосте речи не теряется', () async {
       var triggered = false;
       service.onWakeWordTriggered = () => triggered = true;
 
@@ -125,8 +120,8 @@ void main() {
       audioSource.pushSamples(makeSilence());
       await pumpEventQueue();
 
-      // Не должно сработать, так как тишина фильтруется до проверки KWS
-      expect(triggered, isFalse);
+      // Потоковой модели нужны тихие кадры для завершения слова.
+      expect(triggered, isTrue);
     });
   });
 
@@ -152,7 +147,7 @@ void main() {
 
       engine.queuedDetection = KeywordDetection(
         keyword: 'Джеф',
-        samples: makeAudio(),
+        samples: makeAudio(length: 16000),
       );
       // Сходство ниже порога
       engine.forcedVerificationResult = 0.50;
@@ -184,7 +179,7 @@ void main() {
 
       engine.queuedDetection = KeywordDetection(
         keyword: 'Джеф',
-        samples: makeAudio(),
+        samples: makeAudio(length: 16000),
       );
       // Сходство выше порога
       engine.forcedVerificationResult = 0.85;
@@ -197,40 +192,49 @@ void main() {
   });
 
   group('WakeWordService - детекция CloseWord и таймер тишины', () {
-    test('notifyRecordingStarted переводит состояние в listeningCloseWordOrSilence', () async {
-      final settings = DictationSettings(
-        wakeWordEnabled: true,
-        wakeWord: 'Джеф',
-        closeWord: 'стоп',
-      );
-      await service.start(settings: settings);
+    test(
+      'notifyRecordingStarted переводит состояние в listeningCloseWordOrSilence',
+      () async {
+        final settings = DictationSettings(
+          wakeWordEnabled: true,
+          wakeWord: 'Джеф',
+          closeWord: 'стоп',
+        );
+        await service.start(settings: settings);
 
-      service.notifyRecordingStarted();
-      expect(service.state, WakeWordListeningState.listeningCloseWordOrSilence);
+        service.notifyRecordingStarted();
+        expect(
+          service.state,
+          WakeWordListeningState.listeningCloseWordOrSilence,
+        );
 
-      service.notifyRecordingStopped();
-      expect(service.state, WakeWordListeningState.listeningWakeWord);
-    });
+        service.notifyRecordingStopped();
+        expect(service.state, WakeWordListeningState.listeningWakeWord);
+      },
+    );
 
-    test('вызывает onCloseWordTriggered при обнаружении слова завершения', () async {
-      var closeTriggered = false;
-      service.onCloseWordTriggered = () => closeTriggered = true;
+    test(
+      'вызывает onCloseWordTriggered при обнаружении слова завершения',
+      () async {
+        var closeTriggered = false;
+        service.onCloseWordTriggered = () => closeTriggered = true;
 
-      final settings = DictationSettings(
-        wakeWordEnabled: true,
-        wakeWord: 'Джеф',
-        closeWord: 'стоп',
-        completionMode: PhraseCompletionMode.hybrid,
-      );
-      await service.start(settings: settings);
-      service.notifyRecordingStarted();
+        final settings = DictationSettings(
+          wakeWordEnabled: true,
+          wakeWord: 'Джеф',
+          closeWord: 'стоп',
+          completionMode: PhraseCompletionMode.hybrid,
+        );
+        await service.start(settings: settings);
+        service.notifyRecordingStarted();
 
-      engine.queuedDetection = KeywordDetection(keyword: 'стоп');
-      audioSource.pushSamples(makeAudio());
-      await pumpEventQueue();
+        engine.queuedDetection = KeywordDetection(keyword: 'стоп');
+        audioSource.pushSamples(makeAudio());
+        await pumpEventQueue();
 
-      expect(closeTriggered, isTrue);
-    });
+        expect(closeTriggered, isTrue);
+      },
+    );
 
     test('в режиме silenceOnly детекция CloseWord игнорируется', () async {
       var closeTriggered = false;
@@ -252,61 +256,67 @@ void main() {
       expect(closeTriggered, isFalse);
     });
 
-    test('срабатывает onSilenceTimeoutTriggered при паузе более 2 секунд', () async {
-      var silenceTriggered = false;
-      service.onSilenceTimeoutTriggered = () => silenceTriggered = true;
+    test(
+      'срабатывает onSilenceTimeoutTriggered при паузе более 2 секунд',
+      () async {
+        var silenceTriggered = false;
+        service.onSilenceTimeoutTriggered = () => silenceTriggered = true;
 
-      final settings = DictationSettings(
-        wakeWordEnabled: true,
-        wakeWord: 'Джеф',
-        completionMode: PhraseCompletionMode.silenceOnly,
-      );
-      await service.start(settings: settings);
-      service.notifyRecordingStarted();
+        final settings = DictationSettings(
+          wakeWordEnabled: true,
+          wakeWord: 'Джеф',
+          completionMode: PhraseCompletionMode.silenceOnly,
+        );
+        await service.start(settings: settings);
+        service.notifyRecordingStarted();
 
-      // Обозначаем начало речи
-      engine.speechDetected = true;
-      audioSource.pushSamples(makeAudio());
-      await pumpEventQueue();
+        // Обозначаем начало речи
+        engine.speechDetected = true;
+        audioSource.pushSamples(makeAudio());
+        await pumpEventQueue();
 
-      // Речь прекратилась
-      engine.speechDetected = false;
+        // Речь прекратилась
+        engine.speechDetected = false;
 
-      // Ждём 2100мс
-      await Future<void>.delayed(const Duration(milliseconds: 2100));
+        // Ждём 2100мс
+        await Future<void>.delayed(const Duration(milliseconds: 2100));
 
-      // Приходит следующий аудиофрейм тишины/шума
-      audioSource.pushSamples(makeAudio());
-      await pumpEventQueue();
+        // Приходит следующий аудиофрейм тишины/шума
+        audioSource.pushSamples(makeAudio());
+        await pumpEventQueue();
 
-      expect(silenceTriggered, isTrue);
-    });
+        expect(silenceTriggered, isTrue);
+      },
+    );
 
-    test('в режиме closeWordOnly таймер тишины не останавливает запись', () async {
-      var silenceTriggered = false;
-      service.onSilenceTimeoutTriggered = () => silenceTriggered = true;
+    test(
+      'в режиме closeWordOnly таймер тишины не останавливает запись',
+      () async {
+        var silenceTriggered = false;
+        service.onSilenceTimeoutTriggered = () => silenceTriggered = true;
 
-      final settings = DictationSettings(
-        wakeWordEnabled: true,
-        wakeWord: 'Джеф',
-        closeWord: 'стоп',
-        completionMode: PhraseCompletionMode.closeWordOnly,
-      );
-      await service.start(settings: settings);
-      service.notifyRecordingStarted();
+        final settings = DictationSettings(
+          wakeWordEnabled: true,
+          wakeWord: 'Джеф',
+          closeWord: 'стоп',
+          completionMode: PhraseCompletionMode.closeWordOnly,
+        );
+        await service.start(settings: settings);
+        service.notifyRecordingStarted();
 
-      // Обозначаем начало речи
-      engine.speechDetected = true;
-      audioSource.pushSamples(makeAudio());
-      await pumpEventQueue();
+        // Обозначаем начало речи
+        engine.speechDetected = true;
+        audioSource.pushSamples(makeAudio());
+        await pumpEventQueue();
 
-      engine.speechDetected = false;
-      await Future<void>.delayed(const Duration(milliseconds: 2100));
+        engine.speechDetected = false;
+        await Future<void>.delayed(const Duration(milliseconds: 2100));
 
-      audioSource.pushSamples(makeAudio());
-      await pumpEventQueue();
+        audioSource.pushSamples(makeAudio());
+        await pumpEventQueue();
 
-      expect(silenceTriggered, isFalse);
-    });
+        expect(silenceTriggered, isFalse);
+      },
+    );
   });
 }

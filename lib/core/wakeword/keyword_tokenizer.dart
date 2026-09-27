@@ -1,3 +1,5 @@
+import 'package:dart_sentencepiece_tokenizer/dart_sentencepiece_tokenizer.dart';
+
 /// Токенизатор ключевых слов для Sherpa-ONNX KeywordSpotter.
 ///
 /// Преобразует пользовательские слова (русские, английские) в последовательность
@@ -11,9 +13,43 @@
 /// - `@оригинал` — возвращаемое имя ключевого слова при срабатывании.
 class KeywordTokenizer {
   KeywordTokenizer({Set<String>? vocabulary})
-      : _vocabulary = vocabulary ?? defaultVocabulary;
+    : _vocabulary = vocabulary ?? defaultVocabulary;
 
   final Set<String> _vocabulary;
+
+  static String normalizeKeywordText(String text) => text
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^\p{L}\p{N}\s]+', unicode: true), ' ')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
+
+  /// Encode with the model's own SentencePiece ranks. KWS token IDs must
+  /// match the model; a greedy split of tokens.txt changes those IDs.
+  static String formatForModel(
+    String keyword,
+    SentencePieceTokenizer tokenizer, {
+    double boostingScore = 1.5,
+    double threshold = 0.25,
+  }) {
+    final original = normalizeKeywordText(keyword);
+    if (original.isEmpty) return '';
+    final spoken = _englishPronunciation(original);
+    final tokens = tokenizer.encode(spoken).tokens;
+    if (tokens.isEmpty || tokens.any((token) => token == '<unk>')) return '';
+    final label = original.replaceAll(' ', '_');
+    return '${tokens.join(' ')} @$label '
+        ':${boostingScore.toStringAsFixed(2)} '
+        '#${threshold.toStringAsFixed(2)}';
+  }
+
+  static String _englishPronunciation(String text) {
+    const common = {'джеф': 'JEFF', 'джефф': 'JEFF'};
+    final lower = text.toLowerCase();
+    if (common.containsKey(lower)) return common[lower]!;
+    return text.runes.any((r) => r >= 0x0400 && r <= 0x052f)
+        ? transliterate(text).replaceAll(RegExp(r'\s+'), ' ')
+        : text.toUpperCase();
+  }
 
   /// Стандартный словарь базовых токенов (латинские буквы + спецсимволы BPE).
   static final Set<String> defaultVocabulary = {
@@ -167,7 +203,11 @@ class KeywordTokenizer {
   }) {
     final formatted = <String>[];
     for (final kw in keywords) {
-      final f = formatKeyword(kw, boostingScore: boostingScore, threshold: threshold);
+      final f = formatKeyword(
+        kw,
+        boostingScore: boostingScore,
+        threshold: threshold,
+      );
       if (f.isNotEmpty) formatted.add(f);
     }
     return formatted.join('/');
@@ -186,19 +226,23 @@ String stripTrailingCloseWord(String text, String closeWord) {
   final trailingPunctuationRegex = RegExp(r'[\s.,!?;:\-—…]+$');
   final match = trailingPunctuationRegex.firstMatch(trimmed);
   final endPunctuation = match?.group(0) ?? '';
-  final withoutEndPunct =
-      trimmed.substring(0, trimmed.length - endPunctuation.length);
+  final withoutEndPunct = trimmed.substring(
+    0,
+    trimmed.length - endPunctuation.length,
+  );
 
   final lowerWithoutEnd = withoutEndPunct.toLowerCase();
   if (lowerWithoutEnd.endsWith(target)) {
     final wordStartIdx = withoutEndPunct.length - target.length;
     // Убеждаемся, что это отдельное слово или фраза
     if (wordStartIdx == 0 ||
-        RegExp(r'[\s.,!?;:\-—…]$')
-            .hasMatch(withoutEndPunct.substring(0, wordStartIdx))) {
+        RegExp(
+          r'[\s.,!?;:\-—…]$',
+        ).hasMatch(withoutEndPunct.substring(0, wordStartIdx))) {
       final stripped = withoutEndPunct.substring(0, wordStartIdx).trimRight();
-      final cleaned =
-          stripped.replaceAll(RegExp(r'[,:\-—]+\s*$'), '').trimRight();
+      final cleaned = stripped
+          .replaceAll(RegExp(r'[,:\-—]+\s*$'), '')
+          .trimRight();
       return cleaned;
     }
   }

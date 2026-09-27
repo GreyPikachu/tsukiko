@@ -31,15 +31,18 @@ void main() {
   Future<void> settle() =>
       Future<void>.delayed(const Duration(milliseconds: 30));
 
-  test('начальные настройки голосовой активации соответствуют значениям по умолчанию', () {
-    expect(cubit.state.wakeWordEnabled, isFalse);
-    expect(cubit.state.wakeWord, 'Джеф');
-    expect(cubit.state.closeWord, isEmpty);
-    expect(cubit.state.completionMode, PhraseCompletionMode.hybrid);
-    expect(cubit.state.voiceCalibrationEnabled, isFalse);
-    expect(cubit.state.speakerThreshold, 0.60);
-    expect(cubit.state.speakerProfileExists, isFalse);
-  });
+  test(
+    'начальные настройки голосовой активации соответствуют значениям по умолчанию',
+    () {
+      expect(cubit.state.wakeWordEnabled, isFalse);
+      expect(cubit.state.wakeWord, 'Джеф');
+      expect(cubit.state.closeWord, isEmpty);
+      expect(cubit.state.completionMode, PhraseCompletionMode.hybrid);
+      expect(cubit.state.voiceCalibrationEnabled, isFalse);
+      expect(cubit.state.speakerThreshold, 0.60);
+      expect(cubit.state.speakerProfileExists, isFalse);
+    },
+  );
 
   test('setWakeWordEnabled включает и выключает активацию', () async {
     cubit.setWakeWordEnabled(true);
@@ -56,17 +59,20 @@ void main() {
     expect(DictationSettings.load().wakeWordEnabled, isFalse);
   });
 
-  test('setWakeWord обновляет слово активации и сбрасывает пустое на «Джеф»', () async {
-    cubit.setWakeWord('Ассистент');
-    await settle();
-    expect(cubit.state.wakeWord, 'Ассистент');
-    expect(DictationSettings.load().wakeWord, 'Ассистент');
+  test(
+    'setWakeWord обновляет слово активации и сбрасывает пустое на «Джеф»',
+    () async {
+      cubit.setWakeWord('Ассистент');
+      await settle();
+      expect(cubit.state.wakeWord, 'Ассистент');
+      expect(DictationSettings.load().wakeWord, 'Ассистент');
 
-    cubit.setWakeWord('   ');
-    await settle();
-    expect(cubit.state.wakeWord, 'Джеф');
-    expect(DictationSettings.load().wakeWord, 'Джеф');
-  });
+      cubit.setWakeWord('   ');
+      await settle();
+      expect(cubit.state.wakeWord, 'Джеф');
+      expect(DictationSettings.load().wakeWord, 'Джеф');
+    },
+  );
 
   test('setCloseWord обновляет завершающее слово', () async {
     cubit.setCloseWord('готово');
@@ -79,48 +85,61 @@ void main() {
     cubit.setCompletionMode(PhraseCompletionMode.closeWordOnly);
     await settle();
     expect(cubit.state.completionMode, PhraseCompletionMode.closeWordOnly);
-    expect(DictationSettings.load().completionMode, PhraseCompletionMode.closeWordOnly);
+    expect(
+      DictationSettings.load().completionMode,
+      PhraseCompletionMode.closeWordOnly,
+    );
 
     cubit.setCompletionMode(PhraseCompletionMode.silenceOnly);
     await settle();
     expect(cubit.state.completionMode, PhraseCompletionMode.silenceOnly);
-    expect(DictationSettings.load().completionMode, PhraseCompletionMode.silenceOnly);
-  });
-
-  test('setVoiceCalibrationEnabled и setSpeakerThreshold сохраняют параметры калибровки', () async {
-    cubit.setVoiceCalibrationEnabled(true);
-    cubit.setSpeakerThreshold(0.72);
-    await settle();
-
-    expect(cubit.state.voiceCalibrationEnabled, isTrue);
-    expect(cubit.state.speakerThreshold, 0.72);
-
-    final loaded = DictationSettings.load();
-    expect(loaded.voiceCalibrationEnabled, isTrue);
-    expect(loaded.speakerThreshold, closeTo(0.72, 0.001));
-  });
-
-  test('создание, обнаружение и удаление профиля голоса обновляет speakerProfileExists', () async {
-    expect(cubit.state.speakerProfileExists, isFalse);
-
-    // Создаём и сохраняем профиль
-    final profile = SpeakerProfile(
-      name: 'user',
-      dimension: 192,
-      embeddings: [Float32List(192)],
+    expect(
+      DictationSettings.load().completionMode,
+      PhraseCompletionMode.silenceOnly,
     );
-    profile.save();
-
-    cubit.refreshSpeakerProfile();
-    await settle();
-    expect(cubit.state.speakerProfileExists, isTrue);
-
-    // Удаляем через кубит
-    cubit.deleteSpeakerProfile();
-    await settle();
-    expect(cubit.state.speakerProfileExists, isFalse);
-    expect(SpeakerProfile.exists(), isFalse);
   });
+
+  test(
+    'setVoiceCalibrationEnabled и setSpeakerThreshold сохраняют параметры калибровки',
+    () async {
+      cubit.setVoiceCalibrationEnabled(true);
+      cubit.setSpeakerThreshold(0.72);
+      await settle();
+
+      expect(cubit.state.voiceCalibrationEnabled, isTrue);
+      expect(cubit.state.speakerThreshold, 0.72);
+
+      final loaded = DictationSettings.load();
+      expect(loaded.voiceCalibrationEnabled, isTrue);
+      expect(loaded.speakerThreshold, closeTo(0.72, 0.001));
+    },
+  );
+
+  test(
+    'создание, обнаружение и удаление профиля голоса обновляет speakerProfileExists',
+    () async {
+      expect(cubit.state.speakerProfileExists, isFalse);
+
+      // Создаём и сохраняем профиль
+      final profile = SpeakerProfile(
+        name: 'user',
+        dimension: 192,
+        embeddings: [Float32List(192)],
+      );
+      profile.save();
+
+      cubit.refreshSpeakerProfile();
+      await settle();
+      expect(cubit.state.voiceCalibrationEnabled, isTrue);
+      expect(cubit.state.speakerProfileExists, isTrue);
+
+      // Удаляем через кубит
+      cubit.deleteSpeakerProfile();
+      await settle();
+      expect(cubit.state.speakerProfileExists, isFalse);
+      expect(SpeakerProfile.exists(), isFalse);
+    },
+  );
 }
 
 class _FakeNative {
