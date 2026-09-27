@@ -101,6 +101,11 @@ void main() {
       );
       expect(detect(utterance([210, 370, 430])), isNull);
       expect(
+        detect(utterance([210, 370])),
+        isNull,
+        reason: 'a word missing its final sound is not the wake word',
+      );
+      expect(
         detect(utterance([430, 250, 390], speed: 0.96), closeMode: true),
         'отбой',
       );
@@ -119,6 +124,41 @@ void main() {
         isNull,
       );
       expect(detect(Float32List(32000)), isNull);
+
+      final sustained = utterance([210, 370, 270], speed: 1.9);
+      final beforeLastSoundEnds = 3200 + (16000 * 0.18 * 1.9 * 2.75).round();
+      final streaming = PersonalKeywordSpotter(
+        wakeWord: 'Вока',
+        closeWord: 'Отбой',
+        wakeTemplates: wake,
+        closeTemplates: close,
+        wakeNegatives: [wakeNegative],
+      );
+      for (var i = 0; i < beforeLastSoundEnds; i += 1600) {
+        streaming.acceptAudio(
+          Float32List.sublistView(
+            sustained,
+            i,
+            (i + 1600).clamp(0, beforeLastSoundEnds),
+          ),
+        );
+        expect(
+          streaming.takeDetection(),
+          isNull,
+          reason: 'a matching prefix must wait for the final sound',
+        );
+      }
+
+      final random = math.Random(42);
+      final interference = Float32List.fromList([
+        for (var i = 0; i < 16000 * 3; i++)
+          (random.nextDouble() * 2 - 1) * 0.045,
+      ]);
+      expect(
+        detect(interference),
+        isNull,
+        reason: 'room-like broadband noise must not activate the word',
+      );
 
       final oneWindow = PersonalKeywordSpotter(
         wakeWord: 'Вока',
