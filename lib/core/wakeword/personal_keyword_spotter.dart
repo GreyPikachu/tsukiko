@@ -204,10 +204,12 @@ class PersonalKeywordSpotter {
         ? double.infinity
         : _bestDistance(closeTemplates);
     final wakeNegative = _bestDistance(wakeNegatives);
+    // A strict hard-negative gap discarded genuine quiet/fast wake words
+    // when both template scores were close. The negative must still lose.
     final detected =
         wake < wakeThreshold &&
             close > wake + 0.08 &&
-            wakeNegative > wake + 0.06
+            wakeNegative > wake + 0.04
         ? wakeWord
         : null;
     onScore?.call(
