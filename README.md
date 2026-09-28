@@ -2,7 +2,7 @@
 
 <img src="assets/mascot/happy.webp" width="128" height="128" alt="Tsukiko Mascot" />
 
-# Tsukiko (月子)
+# Tsukiko
 
 **Private, local audio transcription, smart dictation, and voice activation for macOS and Windows.**  
 *Not a single byte of audio or text leaves your machine. 100% offline, zero network latency, and absolute privacy.*
@@ -383,5 +383,5 @@ Tsukiko is released under the **[MIT License](LICENSE)**.
 ---
 
 <div align="center">
-  <sub>Built with a passion for privacy and precision engineering. Tsukiko (月子) © 2026.</sub>
+  <sub>Built with a passion for privacy and precision engineering. Tsukiko © 2026.</sub>
 </div>
