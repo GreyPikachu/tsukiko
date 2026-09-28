@@ -137,7 +137,9 @@ jobs:
           security find-identity -v -p codesigning "$keychain" | grep -q 'Apple Development'
           rm -f "$certificate"
           echo "TSUKIKO_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
-          echo "TSUKIKO_EXPECTED_TEAM=YOUR_TEAM_ID" >> "$GITHUB_ENV"
+          if [ -n "${{ secrets.MACOS_TEAM_ID }}" ]; then
+            echo "TSUKIKO_EXPECTED_TEAM=${{ secrets.MACOS_TEAM_ID }}" >> "$GITHUB_ENV"
+          fi
 
       - name: Подпись и вложенные программы
         id: sign
