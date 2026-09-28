@@ -109,3 +109,9 @@ Run the export script to update all images in `renders/`:
 ```bash
 ./icon/scripts/export_icons.sh
 ```
+
+---
+
+## Credits
+
+Tsukiko mascot and character design based on artwork by [Feyza (feyzart.com)](https://feyzart.com/).

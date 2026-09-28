@@ -1044,7 +1044,7 @@
   "statusStopped": "Остановлено",
   "statusIdle": "Готово",
   "buttonContinue": "Продолжить",
-  "aboutBody": "Локальная расшифровка и диктовка.\nWhisper.cpp и NeMo-Speech.cpp обрабатывают записи и текст на этом компьютере.",
+  "aboutBody": "Локальная расшифровка и диктовка.\nWhisper.cpp и NeMo-Speech.cpp обрабатывают записи и текст на этом компьютере.\n\nДизайн персонажа и иллюстрации маскота: Feyza.\nОгромная благодарность автору за чудесный арт!",
   "buttonClose": "Закрыть",
   "fileTypeAudioVideo": "Аудио и видео",
   "fileTypeTranscripts": "Расшифровки",

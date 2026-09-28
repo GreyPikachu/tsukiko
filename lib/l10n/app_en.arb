@@ -361,7 +361,7 @@
   "statusStopped": "Stopped",
   "statusIdle": "Done",
   "buttonContinue": "Continue",
-  "aboutBody": "Local transcription and dictation.\nWhisper.cpp and NeMo-Speech.cpp process recordings and text on this computer.",
+  "aboutBody": "Local transcription and dictation.\nWhisper.cpp and NeMo-Speech.cpp process recordings and text on this computer.\n\nCharacter design & mascot illustrations by Feyza.\nSpecial thanks for the wonderful artwork!",
   "buttonClose": "Close",
   "fileTypeAudioVideo": "Audio and Video",
   "fileTypeTranscripts": "Transcripts",

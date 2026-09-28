@@ -425,10 +425,31 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
           ),
         ),
         title: const Text(appName, style: Type.emptyTitle),
-        message: Text(
-          l10n.aboutBody,
-          textAlign: TextAlign.center,
-          style: Type.control,
+        message: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              l10n.aboutBody,
+              textAlign: TextAlign.center,
+              style: Type.control,
+            ),
+            const SizedBox(height: 8),
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: CupertinoButton(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                onPressed: () => os.openUrl('https://feyzart.com/'),
+                child: Text(
+                  'feyzart.com',
+                  style: Type.control.copyWith(
+                    color: MacosTheme.of(context).primaryColor,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
         primaryButton: PushButton(
           controlSize: ControlSize.large,

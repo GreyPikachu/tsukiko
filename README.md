@@ -110,7 +110,7 @@ Zero heavy external dependencies like Python, PyTorch, or separate CUDA runtimes
 ### Desktop Interface & Mascot
 - Beautiful Flutter desktop interface honoring Apple Human Interface Guidelines and modern Windows fluent designs.
 - Native light and dark themes with fluid micro-animations.
-- Interactive animated **Tsukiko (Moon Cat)** mascot dynamically expressing app state (idle, listening, processing, success).
+- Interactive animated **Tsukiko (Moon Cat)** mascot (character design & artwork by [Feyza](https://feyzart.com/)) dynamically expressing app state (idle, listening, processing, success).
 
 ---
 
@@ -376,6 +376,9 @@ Tsukiko is released under the **[MIT License](LICENSE)**.
 - **whisper.cpp** — MIT License (ggml-org/whisper.cpp)
 - **NeMo-Speech.cpp** — Apache 2.0 License (NVIDIA Corporation)
 - **sherpa-onnx** — Apache 2.0 License (k2-fsa/sherpa-onnx)
+
+### Acknowledgements & Artwork
+- **Tsukiko Mascot & Character Artwork** — Created by [Feyza (feyzart.com)](https://feyzart.com/). Special thanks to the artist for the wonderful character design and expressive animations that bring Tsukiko to life!
 
 ---
 
