@@ -158,7 +158,7 @@ Transcription engines are compiled as native standalone binaries bundled inside 
 ```
 
 > [!NOTE]
-> For deep architectural explanations, audio pipelines, and memory lifecycles, refer to [docs/архитектура.md](docs/архитектура.md).
+> For deep architectural explanations, audio pipelines, and memory lifecycles, refer to [docs/architecture.md](docs/architecture.md).
 
 ---
 
@@ -361,16 +361,10 @@ python3 tool/version.py check
 
 ## Documentation Index
 
-Deep-dive documentation is available in the [`docs/`](docs/) directory:
+Deep-dive technical documentation is available in the [`docs/`](docs/) directory:
 
-- [System Architecture](docs/архитектура.md) — IPC protocols, audio pipelines, and memory lifecycles.
-- [Voice Activation & Calibration](docs/голосовая-активация.md) — Mathematical formulation of MFCC, DTW, and gating thresholds.
-- [Voice Activation Diagnostics](docs/диагностика-голосовой-активации.md) — Audio waveform analysis and trigger verification.
-- [Vocabulary & Prompt Hinting](docs/словарь-распознавания.md) — Context-aware biasing and homophone replacement.
-- [Accuracy Research & Benchmarks](docs/исследование-распознавания.md) — Conformer and Whisper comparative evaluations.
-- [Versioning & Release Procedures](docs/версионирование.md) — Semantic versioning guidelines.
-- [Packaging & Release Guide](docs/сборка-и-выпуск.md) — Binary packaging and signing pipelines.
-- [ASR Terminology Glossary](docs/словарь-терминов.md) — Speech-to-text technical glossary.
+- [System Architecture](docs/architecture.md) — Multi-engine Flutter desktop design, IPC protocols, audio pipelines, and memory lifecycles.
+- [Building & Release Guide](docs/building-and-release.md) — Toolchain prerequisites, packaging, code signing, and CI/CD pipelines for macOS and Windows.
 
 ---
 

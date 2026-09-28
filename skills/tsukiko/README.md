@@ -1,91 +1,54 @@
-# Скилл tsukiko: как поставить
+# Tsukiko Agent Skill: Installation Guide
 
-**Проще всего — не руками.** Откройте tsukiko → настройки (⌘, или Ctrl+,)
-→ «Приложение» → «Скилл для нейросетей» → кнопка. Приложение само найдёт,
-какие агенты стоят на компьютере, и положит скилл только им — папок
-«на всякий случай» не появится. Заодно так скилл всегда останется той же
-версии, что и программа, которую он зовёт.
+This skill allows terminal AI coding assistants (Claude Code, OpenAI Codex, Google Antigravity, OpenClaw, Hermes) to automatically transcribe audio attachments and voice notes using your local machine's Tsukiko installation.
 
-Ниже — на случай, если хочется руками или поставить на машину, где
-приложения нет.
+---
 
-Один и тот же `SKILL.md` годится всем перечисленным ниже инструментам.
-Это не совпадение: формат сложился как общий — папка с файлом `SKILL.md`,
-в шапке которого YAML с `name` и `description`, а ниже обычный markdown
-с указаниями. Так его читают и Claude Code, и Codex, и Antigravity,
-и OpenClaw, и Hermes; расходятся они только в том, **где** эту папку
-искать. Пути ниже сверены с реестром `vercel-labs/skills` — тем самым,
-по которому раскладывает `npx skills add`.
+## One-Click Installation via Desktop App
 
-Поэтому здесь нет ни `openai.yaml`, ни `agents/`, ни прочих необязательных
-файлов, которые понимает только один инструмент: без них скилл работает
-везде, а с ними — ровно так же, только с лишними файлами.
+The easiest way to install the skill is through the Tsukiko UI:
+1. Open **Tsukiko → Settings (`⌘,` / `Ctrl+,`)**.
+2. Go to **Application → AI Agent Skill**.
+3. Click **"Install Skill"**.
 
-## Куда класть
+Tsukiko automatically discovers installed agent environments and links the skill manifest directly.
 
-Скопируйте папку `skills/tsukiko` целиком (важно, чтобы получилось
-`<куда-то>/tsukiko/SKILL.md`, а не `<куда-то>/tsukiko/tsukiko/SKILL.md`).
+---
 
-| Инструмент | Для себя | Для одного проекта |
-|---|---|---|
+## Manual Installation
+
+The skill follows the universal `SKILL.md` specification with standard YAML frontmatter:
+
+Copy the `skills/tsukiko` directory to your agent's skill directory:
+
+| Agent / Tool | User Scope | Project Scope |
+| :--- | :--- | :--- |
 | **Claude Code** | `~/.claude/skills/tsukiko/` | `.claude/skills/tsukiko/` |
 | **OpenAI Codex** | `~/.codex/skills/tsukiko/` | `.agents/skills/tsukiko/` |
 | **Google Antigravity** | `~/.gemini/config/skills/tsukiko/` | `.agents/skills/tsukiko/` |
-| **AI Skills (Единый репозиторий)** | `~/ai-skills/tsukiko/` | — |
-| **OpenClaw** | `~/.openclaw/skills/tsukiko/` | `skills/tsukiko/` в рабочей папке |
 | **OpenCode** | `~/.config/opencode/skills/tsukiko/` | `.agents/skills/tsukiko/` |
-| **Hermes** | `~/.hermes/skills/tsukiko/` | `skills/tsukiko/` в рабочей папке |
+| **OpenClaw** | `~/.openclaw/skills/tsukiko/` | `skills/tsukiko/` |
+| **Hermes** | `~/.hermes/skills/tsukiko/` | `skills/tsukiko/` |
 
-Например, для Claude Code, Codex и Antigravity сразу:
+### Quick Installation Command
 
 ```sh
-mkdir -p ~/.claude/skills ~/.codex/skills ~/.gemini/config/skills ~/.config/opencode/skills
+mkdir -p ~/.claude/skills ~/.codex/skills ~/.gemini/config/skills
 cp -R skills/tsukiko ~/.claude/skills/
 cp -R skills/tsukiko ~/.codex/skills/
 cp -R skills/tsukiko ~/.gemini/config/skills/
 ```
 
-Перезапускать инструмент обычно не нужно — список скиллов он перечитывает
-сам; если новый не появился, начните новый разговор.
+Restarting your agent is usually not required; start a new conversation to load the new skill.
 
-## Как проверить, что он работает
+---
 
-Дайте агенту звуковой файл и **не просите** его расшифровывать — просто
-спросите, что там сказано:
+## Verification
+
+Provide an audio file to your agent and ask a question about its contents:
 
 ```
-вот голосовое от коллеги, ~/Downloads/voice.ogg — о чём он просит?
+Here is a voice note from a colleague, ~/Downloads/voice.ogg — what are they requesting?
 ```
 
-Если скилл поставлен и tsukiko установлен, агент сам вызовет
-`tsukiko-transcribe` и ответит по содержанию. Если ответит «я не могу
-прослушать аудио» — скилл лежит не там, где инструмент его ищет.
-
-## Почему описание написано именно так
-
-В шапке `SKILL.md` есть поле `description`, и оно решает всё: инструмент
-показывает модели только имя и описание, а полный текст скилла даёт лишь
-тогда, когда модель сама решит, что он к делу. То есть от одной этой
-строки зависит, догадается ли агент расшифровать голосовое — или ответит
-привычным «я не умею слушать звук».
-
-Отсюда то, как оно составлено.
-
-**Первым делом — что скилл делает, а не как называется.** Модель читает
-описание в ряду десятков других и решает по первым словам.
-
-**Слова, которые действительно будут в разговоре.** Не «аудиоконтент»,
-а «голосовое сообщение», «запись встречи», «лекция», и расширения файлов
-(`.ogg`, `.m4a`) — в чат приходят именно они. По-русски и по-английски
-сразу: разговор бывает и на том, и на другом, а имена файлов почти всегда
-латиницей.
-
-**Прямо сказано, что применять надо самому.** Замысел скилла в том, что
-человек ничего не просит: он просто прислал голосовое и ждёт ответа по
-существу. Модели склонны недоиспользовать скиллы, поэтому в описании
-стоит отдельная фраза: не отвечай «я не могу прослушать аудио», не
-попробовав.
-
-**Сказано и когда не надо.** Синтез речи, перевод готового текста, видео,
-где важна картинка. Без этой границы скилл начинает срабатывать на всё,
-где мелькнуло слово «аудио», и мешает.
+The agent will autonomously invoke `tsukiko-transcribe` locally and summarize or answer based on the transcribed text.
