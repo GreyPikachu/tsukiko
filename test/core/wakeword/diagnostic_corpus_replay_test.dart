@@ -6,18 +6,39 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/wakeword/keyword_tokenizer.dart';
 import 'package:tsukiko/core/wakeword/personal_keyword_spotter.dart';
 import 'package:tsukiko/core/wakeword/speaker_profile.dart';
+import 'package:tsukiko/core/wakeword/speech_verifier.dart';
 
 // Opt-in, local corpus audit. WAVs and reports never enter the repository.
 // TSUKIKO_WAKE_CORPUS=<diagnostics directory>
 // TSUKIKO_WAKE_REPORT=<output JSON>
 // TSUKIKO_WAKE_PROFILE_DIR=<support directory, for legacy sessions>
+// TSUKIKO_WAKE_VERIFY=1 replays the whisper second stage as well
+// TSUKIKO_WAKE_VERIFY_MODEL=<ggml file> picks the verifier model
 // Optional expectations.json in the corpus:
 // [{"session":"...","mode":"wake","from":1,"to":3,"detected":true}]
+String _sherpaLibraryDir() {
+  final configFile = File('.dart_tool/package_config.json');
+  final packages =
+      (jsonDecode(configFile.readAsStringSync())
+              as Map<String, dynamic>)['packages']
+          as List<dynamic>;
+  final macos = packages.cast<Map<String, dynamic>>().firstWhere(
+    (entry) => entry['name'] == 'sherpa_onnx_macos',
+  );
+  return '${configFile.uri.resolve(macos['rootUri'] as String).toFilePath()}/macos';
+}
+
 void main() {
   final corpus = Platform.environment['TSUKIKO_WAKE_CORPUS'];
+  final verifier = Platform.environment['TSUKIKO_WAKE_VERIFY'] == '1'
+      ? SpeechVerifier(
+          customModelPath: Platform.environment['TSUKIKO_WAKE_VERIFY_MODEL'],
+          sherpaLibraryDir: _sherpaLibraryDir(),
+        )
+      : null;
   test(
     'replay every diagnostic WAV from first to last PCM sample',
-    () {
+    () async {
       final directories =
           Directory(corpus!)
               .listSync()
@@ -77,6 +98,11 @@ void main() {
         final scores = <Map<String, Object?>>[];
         final detectors = <String, PersonalKeywordSpotter>{};
         var seconds = 0.0;
+        final candidates = <(String, double, KeywordCandidate)>[];
+        // TSUKIKO_WAKE_VERIFY_MODEL forces the whisper path for comparison.
+        if (Platform.environment['TSUKIKO_WAKE_VERIFY_MODEL'] == null) {
+          await verifier?.prepare(wakeWord: wakeWord, closeWord: closeWord);
+        }
         if (profile != null) {
           for (final mode in ['wake', 'close']) {
             if (mode == 'wake' ? !wakeComparable : !closeComparable) continue;
@@ -98,6 +124,7 @@ void main() {
                         : const [],
                   )
                   ..listenForClose = mode == 'close'
+                  ..proposeCandidates = verifier != null
                   ..onScore = (score) {
                     if (score.wakeReason != null ||
                         (score.closeReason != null &&
@@ -122,10 +149,23 @@ void main() {
           }
           for (final entry in detectors.entries) {
             entry.value.acceptAudio(chunk);
-            if (entry.value.takeDetection() != null) {
+            if (verifier != null) {
+              final candidate = entry.value.takeCandidate();
+              if (candidate != null) {
+                candidates.add((entry.key, seconds, candidate));
+              }
+            } else if (entry.value.takeDetection() != null) {
               detections[entry.key]!.add(seconds);
             }
           }
+        }
+        for (final (mode, at, candidate) in candidates) {
+          final confirmed = await verifier!.confirmKeyword(
+            candidate.audio,
+            mode == 'close' ? closeWord : wakeWord,
+            isClose: mode == 'close',
+          );
+          if (confirmed ?? candidate.strict) detections[mode]!.add(at);
         }
         final events = File('${dir.path}/events.jsonl')
             .readAsLinesSync()
@@ -206,6 +246,6 @@ void main() {
       }
     },
     skip: corpus == null,
-    timeout: const Timeout(Duration(minutes: 10)),
+    timeout: const Timeout(Duration(minutes: 60)),
   );
 }

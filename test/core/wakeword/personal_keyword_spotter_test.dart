@@ -74,6 +74,8 @@ void main() {
           closeNegatives: [closeNegative],
         );
         spotter.listenForClose = closeMode;
+        // A live stream keeps delivering silence after the word.
+        audio = Float32List(audio.length + 8000)..setAll(0, audio);
         for (var i = 0; i < audio.length; i += 1600) {
           final end = (i + 1600).clamp(0, audio.length);
           spotter.acceptAudio(Float32List.sublistView(audio, i, end));
@@ -213,6 +215,11 @@ void main() {
       );
       expect(
         detect(closeAfterPause(5120), closeMode: true),
+        isNull,
+        reason: 'a 320 ms pause is still inside a phrase ("я пока в...")',
+      );
+      expect(
+        detect(closeAfterPause(7200), closeMode: true),
         'отбой',
         reason: 'an isolated close word after speech must still work',
       );
@@ -227,7 +234,7 @@ void main() {
       timely.onScore = (score) {
         if (score.closeSegmentAgeMs case final age?) ages.add(age);
       };
-      final sample = closeAfterPause(5120);
+      final sample = closeAfterPause(7200);
       for (var i = 0; i < sample.length; i += 1600) {
         timely.acceptAudio(
           Float32List.sublistView(sample, i, math.min(i + 1600, sample.length)),
@@ -236,7 +243,8 @@ void main() {
       }
       expect(ages, isNotEmpty);
       expect(
-        ages.every((age) => age <= 300),
+        // 400 ms closing silence plus one 100 ms evaluation step.
+        ages.every((age) => age <= 500),
         isTrue,
         reason: 'a completed segment must never be rescored much later',
       );

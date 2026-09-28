@@ -161,6 +161,20 @@ void main() {
   });
 
   group('SpeechVerifier Keyword Matching', () {
+    test('второй этап: слово активации — с допуском, завершение — одно', () {
+      // Spellings whisper base produced for the spoken wake word "Джев".
+      for (final heard in ['Дев', 'Джев.', '- Джеев.', 'Древ.', 'Джефф,']) {
+        expect(SpeechVerifier.matchesSpokenKeyword(heard, 'Джев'), isTrue);
+      }
+      expect(SpeechVerifier.matchesSpokenKeyword('Джинсы', 'Джев'), isFalse);
+      expect(SpeechVerifier.matchesSpokenKeyword('М-м-м', 'Джев'), isFalse);
+      expect(SpeechVerifier.matchesOnlyCommand('Пока.', 'Пока'), isTrue);
+      expect(SpeechVerifier.matchesOnlyCommand('Пока. Пока!', 'Пока'), isTrue);
+      for (final phrase in ['Всем пока.', 'Я пока', 'Пока что', 'Пора']) {
+        expect(SpeechVerifier.matchesOnlyCommand(phrase, 'Пока'), isFalse);
+      }
+    });
+
     test('калибровка требует только ключевое слово', () {
       expect(SpeechVerifier.matchesOnlyKeyword('Джеф.', 'Джеф'), isTrue);
       expect(SpeechVerifier.matchesOnlyKeyword('Джефф', 'Джеф'), isTrue);

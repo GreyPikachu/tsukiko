@@ -6,9 +6,38 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/wakeword/audio_stream_source.dart';
 import 'package:tsukiko/core/wakeword/sherpa_engine.dart';
+import 'package:tsukiko/core/wakeword/personal_keyword_spotter.dart';
 import 'package:tsukiko/core/wakeword/speaker_profile.dart';
+import 'package:tsukiko/core/wakeword/speech_verifier.dart';
 import 'package:tsukiko/core/wakeword/wakeword_service.dart';
 import 'package:tsukiko/core/whisper_server.dart';
+
+class FakeVerifier extends SpeechVerifier {
+  FakeVerifier(this.answer);
+  bool? answer;
+  Completer<void>? gate;
+  final calls = <bool>[];
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<void> prepare({
+    required String wakeWord,
+    String closeWord = '',
+  }) async {}
+
+  @override
+  Future<bool?> confirmKeyword(
+    Float32List samples,
+    String keyword, {
+    required bool isClose,
+  }) async {
+    calls.add(isClose);
+    await gate?.future;
+    return answer;
+  }
+}
 
 class RestartableAudioStreamSource implements AudioStreamSource {
   StreamController<Float32List>? _controller;
@@ -515,5 +544,102 @@ void main() {
         expect(silenceTriggered, isFalse);
       },
     );
+  });
+
+  group('WakeWordService - второй этап проверки', () {
+    final template = KeywordTemplate(
+      durationSamples: 8000,
+      frames: [for (var i = 0; i < 20; i++) Float32List(12)],
+    );
+    final profile = SpeakerProfile(
+      name: 'user',
+      dimension: 192,
+      embeddings: const [],
+      wakeWord: 'Джев',
+      closeWord: 'Пока',
+      wakeTemplates: [template, template, template],
+      closeTemplates: [template, template, template],
+    );
+    final settings = DictationSettings(
+      wakeWordEnabled: true,
+      wakeWord: 'Джев',
+      closeWord: 'Пока',
+      completionMode: PhraseCompletionMode.closeWordOnly,
+    );
+
+    Future<(WakeWordService, FakeVerifier)> startWith(bool? answer) async {
+      final verifier = FakeVerifier(answer);
+      final verified = WakeWordService(
+        audioSource: audioSource,
+        engine: engine,
+        verifier: verifier,
+      );
+      await verified.start(settings: settings, profile: profile);
+      return (verified, verifier);
+    }
+
+    test('отклонённый верификатором строгий кандидат не будит', () async {
+      final (verified, verifier) = await startWith(false);
+      var woke = false;
+      verified.onWakeWordTriggered = () => woke = true;
+      engine.queuedDetection = KeywordDetection(
+        keyword: 'джев',
+        samples: makeAudio(length: 16000),
+      );
+      audioSource.pushSamples(makeAudio());
+      await pumpEventQueue();
+      expect(verifier.calls, [false]);
+      expect(woke, isFalse);
+      await verified.dispose();
+    });
+
+    test('мягкий кандидат будит только после подтверждения', () async {
+      final (verified, _) = await startWith(true);
+      var woke = false;
+      verified.onWakeWordTriggered = () => woke = true;
+      engine.queuedDetection = KeywordDetection(
+        keyword: 'джев',
+        samples: makeAudio(length: 16000),
+        strict: false,
+      );
+      audioSource.pushSamples(makeAudio());
+      await pumpEventQueue();
+      expect(woke, isTrue);
+      await verified.dispose();
+    });
+
+    test('подтверждение после смены состояния отбрасывается', () async {
+      final (verified, verifier) = await startWith(true);
+      verifier.gate = Completer<void>();
+      var closed = false;
+      verified.onCloseWordTriggered = () => closed = true;
+      verified.notifyRecordingStarted(startedByVoice: true);
+      engine.queuedDetection = KeywordDetection(
+        keyword: 'пока',
+        samples: makeAudio(length: 16000),
+      );
+      audioSource.pushSamples(makeAudio());
+      await pumpEventQueue();
+      expect(verifier.calls, [true]);
+      verified.notifyRecordingStopped();
+      verifier.gate!.complete();
+      await pumpEventQueue();
+      expect(closed, isFalse);
+      await verified.dispose();
+    });
+
+    test('сломанный распознаватель оставляет строгие решения', () async {
+      final (verified, _) = await startWith(null);
+      var woke = false;
+      verified.onWakeWordTriggered = () => woke = true;
+      engine.queuedDetection = KeywordDetection(
+        keyword: 'джев',
+        samples: makeAudio(length: 16000),
+      );
+      audioSource.pushSamples(makeAudio());
+      await pumpEventQueue();
+      expect(woke, isTrue);
+      await verified.dispose();
+    });
   });
 }

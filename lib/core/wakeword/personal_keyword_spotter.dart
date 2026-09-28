@@ -178,19 +178,30 @@ class PersonalKeywordSpotter {
   final double closeEndingThreshold;
   bool listenForClose = false;
 
+  /// With a second-stage verifier the acoustic stage only proposes
+  /// candidates. Diagnostic replay: MFCC-DTW distances of spoken keywords
+  /// (median 0.94) overlap the 1–5th percentile of ordinary speech, so no
+  /// threshold here separates them; recall is recovered by the verifier.
+  bool proposeCandidates = false;
+  static const looseWakeGate = 1.12;
+  static const looseCloseGate = 1.14;
+
   /// Only attached during an explicit developer diagnostic recording.
   void Function(KeywordScore score)? onScore;
 
   Float32List _recent = Float32List(0);
   int _sinceEvaluation = 0;
   String? _pending;
+  KeywordCandidate? _candidate;
   int _totalSamples = 0;
   final _wakeSegments = _StreamingSpeechSegments(
     minQuietFrames: 9,
     minGate: 0.0015,
   );
+  // 400 ms of silence after a close word: mid-phrase pauses are shorter, so
+  // "я пока в бургеркинге" no longer ends as a standalone "пока".
   final _closeSegments = _StreamingSpeechSegments(
-    minQuietFrames: 9,
+    minQuietFrames: 20,
     minGate: 0.0045,
   );
 
@@ -200,10 +211,20 @@ class PersonalKeywordSpotter {
     return result;
   }
 
+  /// Strict detections and, with [proposeCandidates], loose ones, each with
+  /// the audio around the segment for verification.
+  KeywordCandidate? takeCandidate() {
+    final result = _candidate;
+    _candidate = null;
+    _pending = null;
+    return result;
+  }
+
   void reset() {
     _recent = Float32List(0);
     _sinceEvaluation = 0;
     _pending = null;
+    _candidate = null;
     _totalSamples = 0;
     _wakeSegments.reset();
     _closeSegments.reset();
@@ -268,7 +289,11 @@ class PersonalKeywordSpotter {
       16000 * 1.25,
       math.max(16000 * 0.85, (meanLength * 2.4).round()),
     );
-    if (length < minWakeDuration || length > maxWakeDuration) {
+    final strictDuration =
+        length >= minWakeDuration && length <= maxWakeDuration;
+    // Merged segments ("смотри, Джев") are left to the verifier.
+    if (!strictDuration &&
+        !(proposeCandidates && length >= 4000 && length <= 16000 * 1.6)) {
       _emitRejectedWake(length, 'duration');
       return true;
     }
@@ -296,14 +321,11 @@ class PersonalKeywordSpotter {
     if (isolated && strongNegativeMargin) {
       final passingEndingCount = wakeTemplates
           .where(
-            (t) =>
-                keywordEndingDistance(candidate, t) < wakeEndingThreshold,
+            (t) => keywordEndingDistance(candidate, t) < wakeEndingThreshold,
           )
           .length;
       final rawDists =
-          wakeTemplates
-              .map((t) => keywordDistance(candidate, t))
-              .toList()
+          wakeTemplates.map((t) => keywordDistance(candidate, t)).toList()
             ..sort();
       final hasWholeWordMatch =
           rawDists.isNotEmpty &&
@@ -328,14 +350,21 @@ class PersonalKeywordSpotter {
     final scoreThreshold = longPronunciation && !strongNegativeMargin
         ? math.min(threshold, 0.96)
         : threshold;
+    final voiced = _hasVoicedFrames(start, end);
     final accepted =
+        strictDuration &&
         wake < scoreThreshold &&
         boundaryOkay &&
         (closeTemplates.isEmpty ||
             close > wake + 0.04 ||
             (isolated && strongNegativeMargin)) &&
         negative > wake + 0.04 &&
-        _hasVoicedFrames(start, end);
+        voiced;
+    final loose =
+        !accepted &&
+        proposeCandidates &&
+        voiced &&
+        _rawDistance(candidate, wakeTemplates) < looseWakeGate;
     onScore?.call(
       KeywordScore(
         wake: wake,
@@ -344,12 +373,14 @@ class PersonalKeywordSpotter {
         closeNegative: double.infinity,
         wakeThreshold: scoreThreshold,
         closeThreshold: closeThreshold,
-        candidate: accepted ? wakeWord : null,
+        candidate: accepted || loose ? wakeWord : null,
         wakeSegmentMs: length * 1000 ~/ 16000,
         wakeSegmentAgeMs: (_totalSamples - segment.$2) * 1000 ~/ 16000,
         wakePrecedingQuietMs: segment.$3 * 20,
         wakeReason: accepted
             ? 'accepted'
+            : loose
+            ? 'candidate'
             : boundaryOkay
             ? 'score'
             : 'boundary',
@@ -357,6 +388,13 @@ class PersonalKeywordSpotter {
     );
     if (accepted) {
       _pending = KeywordTokenizer.normalizeKeywordText(wakeWord);
+    }
+    if (accepted || loose) {
+      _candidate = KeywordCandidate(
+        keyword: KeywordTokenizer.normalizeKeywordText(wakeWord),
+        strict: accepted,
+        audio: _verificationAudio(start, end),
+      );
     }
     return true;
   }
@@ -396,10 +434,12 @@ class PersonalKeywordSpotter {
     var wake = double.infinity;
     var negative = double.infinity;
     var threshold = closeThreshold;
-    final maxDuration = math.min(
-      16000 * 0.9,
-      math.max(16000 * 0.65, (meanLength * 1.4).round()),
-    );
+    final maxDuration = proposeCandidates
+        ? 16000 * 1.5
+        : math.min(
+            16000 * 0.9,
+            math.max(16000 * 0.65, (meanLength * 1.4).round()),
+          );
     if (segment.$4 && segment.$3 < 14) {
       // A close word is a separate command. Syllables carved out of a longer
       // utterance can score like the template but have no preceding boundary.
@@ -432,17 +472,28 @@ class PersonalKeywordSpotter {
             : (isolated && negative > close + 0.06)
             ? math.min(1.01, closeThreshold)
             : math.min(0.99, closeThreshold);
-        if (close >= threshold) {
-          reason = 'score';
+        final looseOk =
+            proposeCandidates &&
+            _rawDistance(candidate, closeTemplates) < looseCloseGate &&
+            _hasVoicedFrames(start, end);
+        if (close >= threshold || length > 16000 * 0.9) {
+          reason = looseOk ? 'candidate' : 'score';
         } else if (wake < wakeThreshold && wake + 0.04 < close) {
-          reason = 'wake_word';
+          reason = looseOk ? 'candidate' : 'wake_word';
         } else if (negative <= close + (closeNegatives.isEmpty ? 0 : 0.05)) {
-          reason = 'negative_word';
+          reason = looseOk ? 'candidate' : 'negative_word';
         } else if (!_hasVoicedFrames(start, end)) {
           reason = 'unvoiced';
         } else {
           reason = 'accepted';
           _pending = KeywordTokenizer.normalizeKeywordText(closeWord);
+        }
+        if (reason == 'accepted' || reason == 'candidate') {
+          _candidate = KeywordCandidate(
+            keyword: KeywordTokenizer.normalizeKeywordText(closeWord),
+            strict: reason == 'accepted',
+            audio: _verificationAudio(start, end),
+          );
         }
       } else {
         reason = 'invalid_audio';
@@ -456,7 +507,9 @@ class PersonalKeywordSpotter {
         closeNegative: negative,
         wakeThreshold: wakeThreshold,
         closeThreshold: threshold,
-        candidate: reason == 'accepted' ? closeWord : null,
+        candidate: reason == 'accepted' || reason == 'candidate'
+            ? closeWord
+            : null,
         closeSegmentMs: durationMs,
         closeSegmentAgeMs: (_totalSamples - segment.$2) * 1000 ~/ 16000,
         closePrecedingQuietMs: segment.$3 * 20,
@@ -500,6 +553,25 @@ class PersonalKeywordSpotter {
     }
     return best;
   }
+
+  /// Plain nearest-template DTW: the ending veto and spread penalty rejected
+  /// real keywords outright (the verifier makes the final decision).
+  double _rawDistance(
+    KeywordTemplate candidate,
+    List<KeywordTemplate> templates,
+  ) => templates.isEmpty
+      ? double.infinity
+      : templates.map((t) => keywordDistance(candidate, t)).reduce(math.min);
+
+  /// Half a second of context before the word: a verifier needs to hear
+  /// whether it was a separate utterance. Copied, since [_recent] rotates.
+  Float32List _verificationAudio(int start, int end) => Float32List.fromList(
+    Float32List.sublistView(
+      _recent,
+      math.max(0, start - 8000),
+      math.min(_recent.length, end + 3200),
+    ),
+  );
 
   Float32List _segmentAudio(int start, int end, {int padding = 960}) =>
       Float32List.sublistView(
@@ -554,10 +626,7 @@ class PersonalKeywordSpotter {
 /// rolling buffer changed old segment endpoints as its noise quantile moved,
 /// so a word from over a second ago could be accepted during the next word.
 class _StreamingSpeechSegments {
-  _StreamingSpeechSegments({
-    this.minQuietFrames = 9,
-    this.minGate = 0.0015,
-  });
+  _StreamingSpeechSegments({this.minQuietFrames = 9, this.minGate = 0.0015});
 
   final int minQuietFrames;
   final double minGate;
@@ -673,6 +742,20 @@ class _StreamingSpeechSegments {
     _levels.add(level);
     if (_levels.length > 150) _levels.removeAt(0);
   }
+}
+
+class KeywordCandidate {
+  const KeywordCandidate({
+    required this.keyword,
+    required this.strict,
+    required this.audio,
+  });
+
+  final String keyword;
+
+  /// Passed the standalone acoustic thresholds (used without a verifier).
+  final bool strict;
+  final Float32List audio;
 }
 
 class KeywordScore {

@@ -15,10 +15,17 @@ import 'wakeword_models.dart';
 
 /// Результат распознавания ключевого слова.
 class KeywordDetection {
-  const KeywordDetection({required this.keyword, this.samples});
+  const KeywordDetection({
+    required this.keyword,
+    this.samples,
+    this.strict = true,
+  });
 
   final String keyword;
   final Float32List? samples;
+
+  /// False for a loose acoustic candidate that is valid only once verified.
+  final bool strict;
 }
 
 /// Абстракция над движком распознавания ключевых слов и голоса.
@@ -80,6 +87,10 @@ class StreamingSherpaEngine extends AcousticSpeakerEngine {
 
   void setListeningForClose(bool value) {
     if (_personal != null) _personal!.listenForClose = value;
+  }
+
+  void setProposeCandidates(bool value) {
+    if (_personal != null) _personal!.proposeCandidates = value;
   }
 
   @override
@@ -191,8 +202,14 @@ class StreamingSherpaEngine extends AcousticSpeakerEngine {
   KeywordDetection? detectKeyword() {
     final personal = _personal;
     if (personal != null) {
-      final keyword = personal.takeDetection();
-      return keyword == null ? null : KeywordDetection(keyword: keyword);
+      final candidate = personal.takeCandidate();
+      return candidate == null
+          ? null
+          : KeywordDetection(
+              keyword: candidate.keyword,
+              samples: candidate.audio,
+              strict: candidate.strict,
+            );
     }
     final result = _pending;
     _pending = null;

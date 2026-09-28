@@ -21,6 +21,7 @@ import '../../core/app_locale.dart';
 import '../../core/labels.dart';
 import '../../core/wakeword/wakeword_service.dart';
 import '../../core/wakeword/speaker_profile.dart';
+import '../../core/wakeword/speech_verifier.dart';
 import '../../core/wakeword/keyword_tokenizer.dart' show stripTrailingCloseWord;
 
 /// Диктовка целиком: перехват клавиш, запись, сервер с моделью, вставка
@@ -155,7 +156,7 @@ class DictationCubit extends Cubit<DictationState> {
 
   WakeWordService _getOrCreateWakeWordService() {
     if (_wakeWordService == null) {
-      _wakeWordService = WakeWordService();
+      _wakeWordService = WakeWordService(verifier: SpeechVerifier());
       _setupWakeWordCallbacks();
     }
     return _wakeWordService!;

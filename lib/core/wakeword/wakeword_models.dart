@@ -43,19 +43,78 @@ class WakeWordModelPaths {
   /// The KWS model is downloaded only when voice activation is enabled.
   /// Extract into a temporary directory so a cancelled download cannot look
   /// like a valid installation on the next launch.
-  static Future<bool> ensureKwsInstalled() async {
-    if (isKwsInstalled) return true;
-    final archive = File('$kwsDir.download');
-    final staging = Directory('$kwsDir.staging');
+  static Future<bool> ensureKwsInstalled() =>
+      _ensureArchive(kwsDir, kwsArchiveUrl, _validKwsDirectory);
+
+  // ── Russian keyword verifier (small offline zipformer, Vosk-derived) ──────
+  // Second stage for Russian keywords: 26 ms per candidate in-process versus
+  // ~0.2 s for a whisper process, with the same accuracy on diagnostic replay.
+  static const ruAsrArchiveUrl =
+      'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/'
+      'sherpa-onnx-small-zipformer-ru-2024-09-18.tar.bz2';
+  static String get ruAsrDir => modelPathFor('asr_zipformer_ru_small');
+  static String get ruAsrEncoder => '$ruAsrDir/encoder.int8.onnx';
+  static String get ruAsrDecoder => '$ruAsrDir/decoder.onnx';
+  static String get ruAsrJoiner => '$ruAsrDir/joiner.int8.onnx';
+  static String get ruAsrTokens => '$ruAsrDir/tokens.txt';
+
+  static bool get isRuAsrInstalled => _validRuAsrDirectory(ruAsrDir);
+
+  static bool _validRuAsrDirectory(String directory) {
+    final files = <String, int>{
+      'encoder.int8.onnx': 20 * 1024 * 1024,
+      'decoder.onnx': 1024 * 1024,
+      'joiner.int8.onnx': 100 * 1024,
+      'tokens.txt': 1000,
+    };
+    return files.entries.every((entry) {
+      final file = File('$directory/${entry.key}');
+      return file.existsSync() && file.lengthSync() >= entry.value;
+    });
+  }
+
+  static Future<bool> ensureRuAsrInstalled() async {
+    if (!await _ensureArchive(
+      ruAsrDir,
+      ruAsrArchiveUrl,
+      _validRuAsrDirectory,
+    )) {
+      return false;
+    }
+    // The archive also ships a 90 MB fp32 encoder and test audio.
+    for (final name in [
+      'encoder.onnx',
+      'joiner.onnx',
+      'decoder.int8.onnx',
+      'test_wavs',
+    ]) {
+      final entity = FileSystemEntity.typeSync('$ruAsrDir/$name');
+      if (entity == FileSystemEntityType.notFound) continue;
+      await (entity == FileSystemEntityType.directory
+              ? Directory('$ruAsrDir/$name')
+              : File('$ruAsrDir/$name'))
+          .delete(recursive: true);
+    }
+    return isRuAsrInstalled;
+  }
+
+  static Future<bool> _ensureArchive(
+    String targetDir,
+    String url,
+    bool Function(String directory) valid,
+  ) async {
+    if (valid(targetDir)) return true;
+    final archive = File('$targetDir.download');
+    final staging = Directory('$targetDir.staging');
     final client = HttpClient();
     try {
       await archive.parent.create(recursive: true);
       if (staging.existsSync()) await staging.delete(recursive: true);
       await staging.create(recursive: true);
-      final request = await client.getUrl(Uri.parse(kwsArchiveUrl));
+      final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
       if (response.statusCode != HttpStatus.ok) {
-        throw HttpException('KWS download returned ${response.statusCode}');
+        throw HttpException('Download returned ${response.statusCode}: $url');
       }
       await response.pipe(archive.openWrite());
       final result = await Process.run('tar', [
@@ -73,15 +132,15 @@ class WakeWordModelPaths {
           result.exitCode,
         );
       }
-      if (!_validKwsDirectory(staging.path)) {
-        throw const FormatException('Incomplete KWS model archive');
+      if (!valid(staging.path)) {
+        throw FormatException('Incomplete model archive: $url');
       }
-      final installed = Directory(kwsDir);
+      final installed = Directory(targetDir);
       if (installed.existsSync()) await installed.delete(recursive: true);
-      await staging.rename(kwsDir);
-      return isKwsInstalled;
+      await staging.rename(targetDir);
+      return valid(targetDir);
     } catch (e, st) {
-      Log.error('WakeWord', 'Failed to install KWS model: $e', e, st);
+      Log.error('WakeWord', 'Failed to install model $url: $e', e, st);
       return false;
     } finally {
       client.close(force: true);

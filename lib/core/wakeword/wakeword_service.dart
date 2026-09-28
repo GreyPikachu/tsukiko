@@ -7,6 +7,7 @@ import 'audio_stream_source.dart';
 import 'keyword_tokenizer.dart';
 import 'sherpa_engine.dart';
 import 'speaker_profile.dart';
+import 'speech_verifier.dart';
 import 'wake_diagnostics.dart';
 
 /// В каком состоянии находится голосовая активация.
@@ -21,12 +22,23 @@ enum WakeWordListeningState {
 /// Управляет аудиопотоком, персональным детектором ключевых слов и таймером
 /// тишины для завершения фразы. Для старого профиля возможен Sherpa fallback.
 class WakeWordService {
-  WakeWordService({AudioStreamSource? audioSource, SherpaEngine? engine})
-    : _audioSource = audioSource ?? MicrophoneAudioStreamSource(),
-      _engine = engine ?? StreamingSherpaEngine();
+  WakeWordService({
+    AudioStreamSource? audioSource,
+    SherpaEngine? engine,
+    this.verifier,
+  }) : _audioSource = audioSource ?? MicrophoneAudioStreamSource(),
+       _engine = engine ?? StreamingSherpaEngine();
 
   final AudioStreamSource _audioSource;
   final SherpaEngine _engine;
+
+  /// Second stage: every acoustic detection with audio is re-recognized by
+  /// whisper before it starts or ends a recording. Without it only strict
+  /// acoustic detections count.
+  final SpeechVerifier? verifier;
+  bool _verifierReady = false;
+  bool _verifying = false;
+  int _stateEpoch = 0;
 
   WakeWordListeningState _state = WakeWordListeningState.disabled;
   WakeWordListeningState get state => _state;
@@ -161,6 +173,28 @@ class WakeWordService {
       return false;
     }
 
+    // Only the personal detector proposes short candidate windows; the
+    // legacy Sherpa path keeps its own decisions.
+    _verifierReady =
+        (_profile?.hasPersonalKeywordsFor(
+              settings.wakeWord,
+              settings.closeWord,
+            ) ??
+            false) &&
+        (verifier?.isAvailable ?? false);
+    if (_engine is StreamingSherpaEngine) {
+      _engine.setProposeCandidates(_verifierReady);
+    }
+    if (_verifierReady) {
+      // Downloads once, then loads in the background; whisper covers the gap.
+      unawaited(
+        verifier!.prepare(
+          wakeWord: settings.wakeWord,
+          closeWord: settings.closeWord,
+        ),
+      );
+    }
+
     // Инициализируем VAD
     await _engine.initVad();
     if (_operationGeneration != generation) return false;
@@ -264,13 +298,16 @@ class WakeWordService {
   void notifyRecordingStarted({bool startedByVoice = false}) {
     if (_state == WakeWordListeningState.disabled) return;
     _startedByVoice = startedByVoice;
+    _stateEpoch++;
     _state = WakeWordListeningState.listeningCloseWordOrSilence;
     _triggeredInCurrentState = false;
     _wakeSuspended = false;
     _lastSpeechTime = DateTime.now();
     _engine.resetKeywordStream();
     if (_engine is StreamingSherpaEngine) _engine.setListeningForClose(true);
-    _diagnostics?.event('recording_started', {'started_by_voice': startedByVoice});
+    _diagnostics?.event('recording_started', {
+      'started_by_voice': startedByVoice,
+    });
     Log.info(
       'WakeWord',
       'Now listening for CloseWord or silence... (startedByVoice: $startedByVoice)',
@@ -281,6 +318,7 @@ class WakeWordService {
   void notifyRecordingStopped() {
     if (_state == WakeWordListeningState.disabled) return;
     _startedByVoice = false;
+    _stateEpoch++;
     _state = WakeWordListeningState.listeningWakeWord;
     _triggeredInCurrentState = false;
     _lastCompletionAt = DateTime.now();
@@ -353,20 +391,21 @@ class WakeWordService {
         );
 
         if (detected == expected) {
-          if (!(canTriggerWakeWord?.call() ?? true)) {
-            _diagnostics?.event('wake_ignored_busy', {'keyword': detected});
-            _engine.resetKeywordStream();
-            return;
-          }
-          _diagnostics?.event('wake_triggered', {'keyword': detected});
-          Log.info(
-            'WakeWord',
-            'Spotted keyword: "$detected" (expected: "$expected")',
+          _confirm(
+            detection,
+            isClose: false,
+            fire: () {
+              if (!(canTriggerWakeWord?.call() ?? true)) {
+                _diagnostics?.event('wake_ignored_busy', {'keyword': detected});
+                _engine.resetKeywordStream();
+                return;
+              }
+              _diagnostics?.event('wake_triggered', {'keyword': detected});
+              Log.info('WakeWord', 'Spotted keyword: "$detected"');
+              _triggeredInCurrentState = true;
+              onWakeWordTriggered?.call();
+            },
           );
-
-          // Активируем диктовку
-          _triggeredInCurrentState = true;
-          onWakeWordTriggered?.call();
         }
       }
       return;
@@ -393,14 +432,17 @@ class WakeWordService {
               detection.keyword,
             );
             if (detected == closeWord) {
-              _diagnostics?.event('close_triggered', {'keyword': detected});
-              Log.info(
-                'WakeWord',
-                'CloseWord "$closeWord" detected! Stopping dictation.',
+              _confirm(
+                detection,
+                isClose: true,
+                fire: () {
+                  _diagnostics?.event('close_triggered', {'keyword': detected});
+                  Log.info('WakeWord', 'CloseWord "$closeWord" detected');
+                  _triggeredInCurrentState = true;
+                  _lastCompletionAt = DateTime.now();
+                  onCloseWordTriggered?.call();
+                },
               );
-              _triggeredInCurrentState = true;
-              _lastCompletionAt = now;
-              onCloseWordTriggered?.call();
               return;
             }
           }
@@ -435,6 +477,47 @@ class WakeWordService {
     }
   }
 
+  /// Run [fire] for a detection once the verifier agrees. The result is
+  /// dropped if the recording state changed while whisper was running.
+  void _confirm(
+    KeywordDetection detection, {
+    required bool isClose,
+    required void Function() fire,
+  }) {
+    final audio = detection.samples;
+    final v = verifier;
+    if (!_verifierReady || v == null || audio == null) {
+      if (detection.strict) fire();
+      return;
+    }
+    if (_verifying) return;
+    _verifying = true;
+    final generation = _operationGeneration;
+    final epoch = _stateEpoch;
+    final word = isClose
+        ? _settings?.closeWord ?? ''
+        : _settings?.wakeWord ?? '';
+    unawaited(
+      v.confirmKeyword(audio, word, isClose: isClose).then((confirmed) {
+        _verifying = false;
+        if (generation != _operationGeneration ||
+            epoch != _stateEpoch ||
+            _triggeredInCurrentState ||
+            _state == WakeWordListeningState.disabled) {
+          return;
+        }
+        // A broken recognizer must not disable voice activation entirely.
+        final accept = confirmed ?? detection.strict;
+        _diagnostics?.event('verified', {
+          'close': isClose,
+          'strict': detection.strict,
+          'confirmed': confirmed,
+        });
+        if (accept) fire();
+      }),
+    );
+  }
+
   /// Остановить сервис.
   Future<void> stop({bool invalidate = true}) async {
     if (invalidate) _operationGeneration++;
@@ -445,12 +528,14 @@ class WakeWordService {
     _triggeredInCurrentState = false;
     _wakeSuspended = false;
     _startedByVoice = false;
+    _stateEpoch++;
     await _audioRestartDone?.future;
     await stopDiagnostics();
     await _audioSub?.cancel();
     _audioSub = null;
     await _audioSource.stopStream();
     _engine.dispose();
+    verifier?.release();
   }
 
   /// Полное освобождение памяти и процессов.

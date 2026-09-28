@@ -2,11 +2,14 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+
 import '../../platform/os.dart';
 import '../library.dart' show findWhisper;
 import '../logger.dart';
 import '../models.dart' show looksLikeSpeechModel;
 import 'acoustic_feature_extractor.dart';
+import 'wakeword_models.dart';
 
 /// Результат проверки произнесённого слова.
 class SpeechVerificationResult {
@@ -29,10 +32,17 @@ class SpeechVerificationResult {
 /// выполняет точную и устойчивую к шуму проверку произнесённых слов на русском и английском языках,
 /// и извлекает акустический слепок голоса.
 class SpeechVerifier {
-  SpeechVerifier({this.customRecognizerPath, this.customModelPath});
+  SpeechVerifier({
+    this.customRecognizerPath,
+    this.customModelPath,
+    this.sherpaLibraryDir,
+  });
 
   final String? customRecognizerPath;
   final String? customModelPath;
+
+  /// flutter_test does not link plugin binaries; the app leaves this null.
+  final String? sherpaLibraryDir;
 
   /// Найти путь к исполняемому файлу распознавателя tsukiko-recognizer.
   String? get recognizerExe => customRecognizerPath ?? findWhisper();
@@ -44,11 +54,13 @@ class SpeechVerifier {
       return explicit;
     }
 
-    final tinyPath = os.join(os.modelsDir, 'ggml-tiny.bin');
-    if (File(tinyPath).existsSync()) return tinyPath;
-
+    // Same latency as tiny on diagnostic replay, but 11/12 wake words
+    // recognized instead of 7/12.
     final basePath = os.join(os.modelsDir, 'ggml-base.bin');
     if (File(basePath).existsSync()) return basePath;
+
+    final tinyPath = os.join(os.modelsDir, 'ggml-tiny.bin');
+    if (File(tinyPath).existsSync()) return tinyPath;
 
     // Любая доступная модель в папке моделей
     try {
@@ -139,6 +151,188 @@ class SpeechVerifier {
         errorMessage: '$e',
       );
     }
+  }
+
+  bool get isAvailable {
+    final exe = recognizerExe;
+    return exe != null && File(exe).existsSync() && fastModelPath != null;
+  }
+
+  /// In-process recognizer for Russian keywords; loaded only while voice
+  /// activation runs (~116 MB resident). Until it is downloaded and loaded,
+  /// the whisper process below does the same job, only slower.
+  sherpa.OfflineRecognizer? _russian;
+  int _prepareGeneration = 0;
+
+  static bool isRussian(String word) => word.contains(RegExp(r'[А-Яа-яЁё]'));
+
+  Future<void> prepare({
+    required String wakeWord,
+    String closeWord = '',
+  }) async {
+    final generation = ++_prepareGeneration;
+    if (!isRussian(wakeWord) && !isRussian(closeWord)) {
+      release();
+      return;
+    }
+    if (_russian != null) return;
+    if (!await WakeWordModelPaths.ensureRuAsrInstalled()) return;
+    if (generation != _prepareGeneration) return;
+    try {
+      await sherpa.initBindingsAsync(sherpaLibraryDir);
+      if (generation != _prepareGeneration) return;
+      _russian = sherpa.OfflineRecognizer(
+        sherpa.OfflineRecognizerConfig(
+          model: sherpa.OfflineModelConfig(
+            transducer: sherpa.OfflineTransducerModelConfig(
+              encoder: WakeWordModelPaths.ruAsrEncoder,
+              decoder: WakeWordModelPaths.ruAsrDecoder,
+              joiner: WakeWordModelPaths.ruAsrJoiner,
+            ),
+            tokens: WakeWordModelPaths.ruAsrTokens,
+            numThreads: 1,
+            debug: false,
+          ),
+        ),
+      );
+      Log.info('SpeechVerifier', 'Russian keyword verifier loaded');
+    } catch (e, st) {
+      Log.error('SpeechVerifier', 'Russian verifier failed: $e', e, st);
+    }
+  }
+
+  void release() {
+    _prepareGeneration++;
+    _russian?.free();
+    _russian = null;
+  }
+
+  String? _recognizeRussian(Float32List samples) {
+    final recognizer = _russian;
+    if (recognizer == null) return null;
+    final stream = recognizer.createStream();
+    try {
+      stream.acceptWaveform(samples: samples, sampleRate: 16000);
+      // synchronous FFI on the audio isolate, 26 ms on M5; move to
+      // a worker isolate if slow machines show dropped audio frames.
+      recognizer.decode(stream);
+      return recognizer.getResult(stream).text;
+    } finally {
+      stream.free();
+    }
+  }
+
+  /// Second stage of voice activation: recognize a short candidate window.
+  /// Returns null when no recognizer is available or it fails.
+  Future<bool?> confirmKeyword(
+    Float32List samples,
+    String keyword, {
+    required bool isClose,
+  }) async {
+    if (samples.isEmpty) return null;
+    bool matches(String text) => isClose
+        ? matchesOnlyCommand(text, keyword)
+        : matchesSpokenKeyword(text, keyword);
+    if (isRussian(keyword)) {
+      final text = _recognizeRussian(samples);
+      if (text != null) return matches(text);
+    }
+    final exe = recognizerExe;
+    final model = fastModelPath;
+    if (exe == null || model == null) return null;
+    final wav = os.join(
+      Directory.systemTemp.path,
+      'tsukiko_kws_${DateTime.now().microsecondsSinceEpoch}.wav',
+    );
+    try {
+      writeWavFile(wav, samples);
+      final process = await Process.start(exe, [
+        '-m',
+        model,
+        '-l',
+        keyword.contains(RegExp(r'[А-Яа-яЁё]')) ? 'ru' : 'en',
+        '-t',
+        '2',
+        '-f',
+        wav,
+        '-np',
+        '-nt',
+      ]);
+      final stdoutText = process.stdout
+          .transform(const SystemEncoding().decoder)
+          .join();
+      process.stderr.drain<void>();
+      final code = await process.exitCode.timeout(
+        const Duration(seconds: 4),
+        onTimeout: () {
+          process.kill();
+          return -1;
+        },
+      );
+      if (code != 0) return null;
+      return matches(await stdoutText);
+    } catch (e) {
+      Log.warn('SpeechVerifier', 'Keyword confirmation failed: $e');
+      return null;
+    } finally {
+      try {
+        File(wav).deleteSync();
+      } catch (_) {}
+    }
+  }
+
+  static List<String> _words(String text) => _cleanWhisperText(text)
+      .toLowerCase()
+      .replaceAll('ё', 'е')
+      .split(' ')
+      .where((w) => w.isNotEmpty)
+      .toList();
+
+  /// A wake word is usually an invented name; whisper spells it variously
+  /// ("Джев", "Дев", "Джеев", "Древ"), so one edit per word is tolerated.
+  static bool matchesSpokenKeyword(String recognizedText, String keyword) {
+    final target = _words(keyword);
+    final words = _words(recognizedText);
+    if (target.isEmpty) return false;
+    const jeff = {'джеф', 'джефф', 'джев', 'jeff', 'geoff'};
+    bool same(String heard, String expected) =>
+        (jeff.contains(expected) && jeff.contains(heard)) ||
+        _editDistance(heard, expected) <= (expected.length >= 4 ? 1 : 0);
+    for (var i = 0; i + target.length <= words.length; i++) {
+      var all = true;
+      for (var j = 0; j < target.length && all; j++) {
+        all = same(words[i + j], target[j]);
+      }
+      if (all) return true;
+    }
+    return false;
+  }
+
+  /// A close word is a common word ("пока"), so it must be exact and be the
+  /// only thing said: "всем пока" or "я пока" is dictation, not a command.
+  static bool matchesOnlyCommand(String recognizedText, String keyword) {
+    final target = _words(keyword).join(' ');
+    final words = _words(recognizedText);
+    if (target.isEmpty || words.isEmpty) return false;
+    final spoken = words.join(' ');
+    return RegExp('^(${RegExp.escape(target)} ?)+\$').hasMatch(spoken);
+  }
+
+  static int _editDistance(String a, String b) {
+    var previous = List<int>.generate(b.length + 1, (i) => i);
+    for (var i = 1; i <= a.length; i++) {
+      final current = [i];
+      for (var j = 1; j <= b.length; j++) {
+        current.add(
+          math.min(
+            math.min(previous[j] + 1, current[j - 1] + 1),
+            previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1),
+          ),
+        );
+      }
+      previous = current;
+    }
+    return previous[b.length];
   }
 
   /// Проверить порцию аудиосэмплов Float32List (сохраняет временный WAV и проверяет).
