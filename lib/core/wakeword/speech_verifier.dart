@@ -213,7 +213,7 @@ class SpeechVerifier {
     final stream = recognizer.createStream();
     try {
       stream.acceptWaveform(samples: samples, sampleRate: 16000);
-      // synchronous FFI on the audio isolate, 26 ms on M5; move to
+      // Synchronous FFI on the audio isolate, 26 ms on M5; move to
       // a worker isolate if slow machines show dropped audio frames.
       recognizer.decode(stream);
       return recognizer.getResult(stream).text;
