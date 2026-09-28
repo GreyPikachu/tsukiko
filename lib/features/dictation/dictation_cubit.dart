@@ -164,6 +164,8 @@ class DictationCubit extends Cubit<DictationState> {
   void _setupWakeWordCallbacks() {
     final s = _wakeWordService;
     if (s == null) return;
+    s.canTriggerWakeWord = () =>
+        state.phase == Phase.idle && _startingRecording == null;
     s.onWakeWordTriggered = () {
       if (state.phase == Phase.idle) {
         start();

@@ -199,6 +199,31 @@ void main() {
   });
 
   group('WakeWordService - детекция слова активации', () {
+    test(
+      'busy transcription does not consume the next wake activation',
+      () async {
+        var busy = true;
+        var triggers = 0;
+        service.canTriggerWakeWord = () => !busy;
+        service.onWakeWordTriggered = () => triggers++;
+        await service.start(
+          settings: DictationSettings(wakeWordEnabled: true, wakeWord: 'Джеф'),
+        );
+
+        engine.queuedDetection = const KeywordDetection(keyword: 'Джеф');
+        audioSource.pushSamples(makeAudio());
+        await pumpEventQueue();
+        expect(triggers, 0);
+        expect(service.state, WakeWordListeningState.listeningWakeWord);
+
+        busy = false;
+        engine.queuedDetection = const KeywordDetection(keyword: 'Джеф');
+        audioSource.pushSamples(makeAudio());
+        await pumpEventQueue();
+        expect(triggers, 1);
+      },
+    );
+
     test('вызывает onWakeWordTriggered при распознавании wakeWord', () async {
       var triggered = false;
       service.onWakeWordTriggered = () => triggered = true;

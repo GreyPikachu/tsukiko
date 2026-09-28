@@ -99,6 +99,11 @@ void main() {
         isNull,
         reason: 'a long unrelated phrase must not use the stretch fallback',
       );
+      expect(
+        detect(utterance([210, 370, 270, 430, 250])),
+        isNull,
+        reason: 'a wake-like prefix inside a longer phrase is not the word',
+      );
       expect(detect(utterance([210, 370, 430])), isNull);
       expect(
         detect(utterance([210, 370])),
@@ -110,6 +115,16 @@ void main() {
         'отбой',
       );
       expect(detect(utterance([430, 250, 270]), closeMode: true), isNull);
+      expect(
+        detect(utterance([430, 250]), closeMode: true),
+        isNull,
+        reason: 'the close word also requires its final sound',
+      );
+      expect(
+        detect(utterance([210, 370, 270]), closeMode: true),
+        isNull,
+        reason: 'the wake word must not stop dictation',
+      );
       final closeWithClick = utterance([430, 250, 390]);
       for (var i = 1280; i < 1920; i++) {
         closeWithClick[i] = 0.025 * math.sin(i * 0.13);

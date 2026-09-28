@@ -4,9 +4,51 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tsukiko/core/wakeword/personal_keyword_spotter.dart';
+import 'package:tsukiko/core/wakeword/speaker_profile.dart';
 import 'package:tsukiko/core/wakeword/wake_diagnostics.dart';
 
 void main() {
+  test('session preserves templates without speaker identity', () async {
+    final root = Directory.systemTemp.createTempSync('wake-profile-test-');
+    try {
+      final template = KeywordTemplate(
+        durationSamples: 6400,
+        frames: [for (var i = 0; i < 20; i++) Float32List(12)],
+      );
+      final session = WakeDiagnosticsSession.start(
+        wakeWord: 'wake',
+        closeWord: 'close',
+        detector: 'personal-mfcc-dtw',
+        profile: SpeakerProfile(
+          name: 'private identity',
+          dimension: 192,
+          embeddings: [Float32List(192)],
+          wakeWord: 'wake',
+          closeWord: 'close',
+          wakeTemplates: [template, template, template],
+          closeTemplates: [template, template, template],
+        ),
+        root: root.path,
+      );
+      await session.stop();
+      final snapshot =
+          jsonDecode(
+                File('${session.directory}/profile.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(snapshot.containsKey('name'), isFalse);
+      expect(snapshot.containsKey('embeddings'), isFalse);
+      expect(
+        SpeakerProfile.fromJson(
+          snapshot,
+        ).hasPersonalKeywordsFor('wake', 'close'),
+        isTrue,
+      );
+    } finally {
+      root.deleteSync(recursive: true);
+    }
+  });
+
   test('writes playable PCM WAV and sample-aligned marks and scores', () async {
     final root = Directory.systemTemp.createTempSync('wake-diagnostics-test-');
     try {

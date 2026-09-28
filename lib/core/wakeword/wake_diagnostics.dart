@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import '../../platform/os.dart' show appVersion, os;
 import '../library.dart' show supportDir;
 import 'personal_keyword_spotter.dart';
+import 'speaker_profile.dart';
 
 /// An explicit, local developer session. It records the same PCM frames that
 /// reach the keyword detector, with sample-aligned scores and user marks.
@@ -24,6 +25,7 @@ class WakeDiagnosticsSession {
     required String wakeWord,
     required String closeWord,
     required String detector,
+    SpeakerProfile? profile,
     String? root,
   }) {
     final base = Directory(root ?? os.join(supportDir, 'wake-diagnostics'));
@@ -35,6 +37,18 @@ class WakeDiagnosticsSession {
         .replaceAll('.', '-');
     final dir = Directory(os.join(base.path, stamp));
     dir.createSync();
+    // Preserve the actual templates: changing words or recalibrating later
+    // must not change the meaning of a replay of this session.
+    if (profile != null &&
+        profile.hasPersonalKeywordsFor(wakeWord, closeWord)) {
+      final snapshot = profile.toJson()
+        ..remove('name')
+        ..remove('embeddings')
+        ..remove('dimension');
+      File(
+        os.join(dir.path, 'profile.json'),
+      ).writeAsStringSync(jsonEncode(snapshot));
+    }
     File(os.join(dir.path, 'metadata.json')).writeAsStringSync(
       const JsonEncoder.withIndent('  ').convert({
         'version': appVersion,

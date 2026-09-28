@@ -49,6 +49,7 @@ class WakeWordService {
     final session = WakeDiagnosticsSession.start(
       wakeWord: _settings!.wakeWord,
       closeWord: _settings!.closeWord,
+      profile: _profile,
       detector:
           _profile?.hasPersonalKeywordsFor(
                 _settings!.wakeWord,
@@ -84,6 +85,11 @@ class WakeWordService {
 
   // Обратные вызовы для кубита диктовки
   void Function()? onWakeWordTriggered;
+
+  /// The UI may still be transcribing the previous phrase even though the
+  /// microphone is already back in wake mode. Ignore such detections without
+  /// locking the detector until the next manual recording.
+  bool Function()? canTriggerWakeWord;
   void Function()? onCloseWordTriggered;
   void Function()? onSilenceTimeoutTriggered;
   void Function(String error)? onError;
@@ -97,6 +103,7 @@ class WakeWordService {
 
   int _operationGeneration = 0;
   bool _triggeredInCurrentState = false;
+  bool _wakeSuspended = false;
   DateTime? _lastCompletionAt;
   static const Duration retriggerDelay = Duration(milliseconds: 700);
 
@@ -249,6 +256,7 @@ class WakeWordService {
     if (_state == WakeWordListeningState.disabled) return;
     _state = WakeWordListeningState.listeningCloseWordOrSilence;
     _triggeredInCurrentState = false;
+    _wakeSuspended = false;
     _lastSpeechTime = DateTime.now();
     _engine.resetKeywordStream();
     if (_engine is StreamingSherpaEngine) _engine.setListeningForClose(true);
@@ -287,6 +295,23 @@ class WakeWordService {
       }
     }
 
+    // While transcription is finishing, a trailing word must not latch the
+    // next wake cycle. Resume from a fresh stream once the UI is idle.
+    if (_state == WakeWordListeningState.listeningWakeWord &&
+        !(canTriggerWakeWord?.call() ?? true)) {
+      if (!_wakeSuspended) {
+        _wakeSuspended = true;
+        _engine.resetKeywordStream();
+        _diagnostics?.event('wake_suspended_busy');
+      }
+      return;
+    }
+    if (_wakeSuspended) {
+      _wakeSuspended = false;
+      _engine.resetKeywordStream();
+      _diagnostics?.event('wake_resumed');
+    }
+
     // KWS получает и тихие кадры: они нужны для завершения слова.
     // isSpeech ниже отдельно обновляет адаптивный шумовой фон.
     _engine.acceptAudio(samples);
@@ -314,6 +339,11 @@ class WakeWordService {
         );
 
         if (detected == expected) {
+          if (!(canTriggerWakeWord?.call() ?? true)) {
+            _diagnostics?.event('wake_ignored_busy', {'keyword': detected});
+            _engine.resetKeywordStream();
+            return;
+          }
           _diagnostics?.event('wake_triggered', {'keyword': detected});
           Log.info(
             'WakeWord',
@@ -394,6 +424,7 @@ class WakeWordService {
     _lastAudioFrameAt = null;
     _state = WakeWordListeningState.disabled;
     _triggeredInCurrentState = false;
+    _wakeSuspended = false;
     await _audioRestartDone?.future;
     await stopDiagnostics();
     await _audioSub?.cancel();
