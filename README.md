@@ -4,141 +4,141 @@
 
 # Tsukiko (月子)
 
-**Приватная локальная расшифровка аудио, умная диктовка и голосовая активация для macOS и Windows.**  
-*Ни единого байта звука или текста не покидает ваш компьютер. Полная автономность, нулевая задержка сети и абсолютная конфиденциальность.*
+**Private, local audio transcription, smart dictation, and voice activation for macOS and Windows.**  
+*Not a single byte of audio or text leaves your machine. 100% offline, zero network latency, and absolute privacy.*
 
 <p align="center">
-  <b>Русский</b> •
-  <a href="README.en.md">English</a>
+  <b>English</b> •
+  <a href="README.ru.md">Русский</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Yukovsky/tsukiko/releases"><img src="https://img.shields.io/badge/version-0.10.13-blue.svg?style=flat-square" alt="Версия" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%2012%2B%20%7C%20Windows%2010%2F11-lightgrey.svg?style=flat-square" alt="Платформы" />
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="Лицензия" /></a>
+  <a href="https://github.com/Yukovsky/tsukiko/releases"><img src="https://img.shields.io/badge/version-0.10.13-blue.svg?style=flat-square" alt="Version" /></a>
+  <img src="https://img.shields.io/badge/platform-macOS%2012%2B%20%7C%20Windows%2010%2F11-lightgrey.svg?style=flat-square" alt="Platforms" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/privacy-100%25%20Offline-success.svg?style=flat-square" alt="100% Offline" />
-  <img src="https://img.shields.io/badge/hardware-Metal%20%7C%20Vulkan-orange.svg?style=flat-square" alt="Аппаратное ускорение" />
-  <img src="https://img.shields.io/badge/tests-544%20passed-brightgreen.svg?style=flat-square" alt="Тесты" />
+  <img src="https://img.shields.io/badge/hardware-Metal%20%7C%20Vulkan-orange.svg?style=flat-square" alt="Hardware Acceleration" />
+  <img src="https://img.shields.io/badge/tests-544%20passed-brightgreen.svg?style=flat-square" alt="Tests" />
 </p>
 
 <br />
 
-<img src="docs/images/main_window_ru.png" width="95%" alt="Tsukiko — Главное окно программы" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);" />
+<img src="docs/images/main_window_en.png" width="95%" alt="Tsukiko — Main Application Interface" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);" />
 
 </div>
 
 ---
 
-## Содержание
+## Table of Contents
 
-- [Почему Tsukiko](#почему-tsukiko)
-- [Ключевые возможности](#ключевые-возможности)
-- [Интерфейс приложения](#интерфейс-приложения)
-- [Архитектура системы](#архитектура-системы)
-- [Стек технологий и зависимости](#стек-технологий-и-зависимости)
-- [Установка и быстрый старт](#установка-и-быстрый-старт)
-  - [Готовые сборки](#готовые-сборки)
-  - [Первый запуск на macOS](#первый-запуск-на-macos)
-  - [Запуск на Windows](#запуск-на-windows)
-- [Руководство по использованию](#руководство-по-использованию)
-  - [1. Пакетная расшифровка файлов](#1-пакетная-расшифровка-файлов)
-  - [2. Глобальная системная диктовка](#2-глобальная-системная-диктовка)
-  - [3. Голосовая активация без рук](#3-голосовая-активация-без-рук)
-  - [4. Персональный словарь и подсказки](#4-персональный-словарь-и-подсказки)
-- [CLI и локальный API](#cli-и-локальный-api)
-  - [Утилита командной строки](#утилита-командной-строки)
-  - [Локальный защищённый API](#локальный-защищённый-api)
-- [Интеграция с ИИ-агентами](#интеграция-с-ии-агентами)
-- [Сборка из исходников](#сборка-из-исходников)
-- [Тестирование и контроль качества](#тестирование-и-контроль-качества)
-- [Документация](#документация)
-- [Лицензия](#лицензия)
+- [Why Tsukiko](#why-tsukiko)
+- [Key Features](#key-features)
+- [Application Interface](#application-interface)
+- [System Architecture](#system-architecture)
+- [Tech Stack & Dependencies](#tech-stack--dependencies)
+- [Installation & Quick Start](#installation--quick-start)
+  - [Pre-built Releases](#pre-built-releases)
+  - [First Launch on macOS](#first-launch-on-macos)
+  - [Launch on Windows](#launch-on-windows)
+- [User Guide & Workflows](#user-guide--workflows)
+  - [1. Batch Audio & Video Transcription](#1-batch-audio--video-transcription)
+  - [2. System-wide Global Dictation](#2-system-wide-global-dictation)
+  - [3. Hands-Free Voice Activation](#3-hands-free-voice-activation)
+  - [4. Custom Vocabulary & Prompt Hinting](#4-custom-vocabulary--prompt-hinting)
+- [CLI Utility & Local API](#cli-utility--local-api)
+  - [Command-line Tool](#command-line-tool)
+  - [Local Secured REST API](#local-secured-rest-api)
+- [AI Coding Agent Integration](#ai-coding-agent-integration)
+- [Building from Source](#building-from-source)
+- [Testing & Quality Assurance](#testing--quality-assurance)
+- [Documentation Index](#documentation-index)
+- [License](#license)
 
 ---
 
-## Почему Tsukiko
+## Why Tsukiko
 
-Большинство современных инструментов диктовки и транскрипции либо зависят от облачных серверов (передавая ваши приватные аудиозаписи третьим лицам и требуя постоянной подписки), либо представляют собой сырые консольные утилиты без удобного настольного интерфейса, системной интеграции и адаптации под голос пользователя.
+Most contemporary speech-to-text tools either send your private audio recordings to external cloud providers (compromising data confidentiality and incurring recurring subscription fees) or exist solely as raw terminal binaries lacking native desktop integration, floating HUDs, and personalized voice adaptation.
 
-Tsukiko объединяет максимальную производительность нативных C/C++ движков с продуманным настольным приложением:
+Tsukiko unites bare-metal C/C++ engine performance with an intuitive, native desktop experience:
 
-| Характеристика | Tsukiko | Облачные сервисы *(Whisper API, AssemblyAI)* | Системная диктовка *(Apple / Windows)* | Консольный whisper.cpp |
+| Feature | Tsukiko | Cloud ASR APIs *(Whisper API, AssemblyAI)* | Built-in OS Dictation *(Apple / Windows)* | Vanilla whisper.cpp CLI |
 | :--- | :--- | :--- | :--- | :--- |
-| **Приватность данных** | 🟢 **100% локально (0 телеметрии)** | 🔴 Передача на внешние серверы | 🟡 Зависит от настроек ОС | 🟢 100% локально |
-| **Стоимость** | 🟢 **Бесплатно (MIT)** | 🔴 Поминутная тарификация / подписка | 🟢 Бесплатно (в составе ОС) | 🟢 Бесплатно (MIT) |
-| **Работа без интернета** | 🟢 **Полная (offline-first)** | 🔴 Невозможна | 🟡 Ограниченная | 🟢 Полная |
-| **Аппаратное ускорение** | 🟢 **Metal (Apple Silicon) & Vulkan** | ⚪ Серверные GPU | 🟢 Встроенный NPU / чип | 🟢 Metal, Vulkan, CUDA |
-| **Пакетная очередь файлов** | 🟢 **Drag & Drop аудио и видео** | 🟡 Через веб-кабинет | 🔴 Не поддерживается | 🟡 Только bash-скрипты |
-| **Глобальная диктовка** | 🟢 **Хоткей + нативный плавающий HUD** | 🔴 Требуются сторонние утилиты | 🟢 Базовый ввод текста | 🔴 Не поддерживается |
-| **Голосовая активация** | 🟢 **Hands-Free (MFCC + DTW калибровка)**| 🔴 Не поддерживается | 🟡 Только стандартная фраза ОС | 🔴 Не поддерживается |
-| **Экспорт субтитров** | 🟢 **SRT, VTT, Markdown, JSON, TXT** | 🟡 Зависит от тарифа API | 🔴 Только неразмеченный текст | 🟢 SRT, VTT, TXT |
-| **Интеграция с агентами** | 🟢 **CLI, локальный REST API, скилл** | 🟡 Через внешние API-токены | 🔴 Не поддерживается | 🟡 Запуск бинарника через bash |
-| **Пользовательский словарь** | 🟢 **Промпты + нечёткая автозамена** | 🟡 Ограниченный параметр prompt | 🔴 Базовый словарь ОС | 🟡 Только флаг `--prompt` |
+| **Data Privacy** | 🟢 **100% Local (Zero Telemetry)** | 🔴 Uploaded to remote servers | 🟡 Subject to OS telemetry | 🟢 100% Local |
+| **Cost** | 🟢 **Free Forever (MIT)** | 🔴 Monthly subscription / per-minute fees | 🟢 Free (bundled with OS) | 🟢 Free (MIT) |
+| **Offline Operation** | 🟢 **Complete (offline-first)** | 🔴 Requires active internet connection | 🟡 Limited offline models | 🟢 Complete |
+| **Hardware Acceleration** | 🟢 **Metal (Apple Silicon) & Vulkan** | ⚪ Server-side GPU clusters | 🟢 Built-in NPU / SoC | 🟢 Metal, Vulkan, CUDA |
+| **Batch File Queue** | 🟢 **Drag & Drop audio/video** | 🟡 Web dashboard uploads | 🔴 Not supported | 🟡 Shell scripts required |
+| **Global System Dictation** | 🟢 **Hotkey + Native Floating HUD** | 🔴 Requires third-party plugins | 🟢 Basic text input | 🔴 Not supported |
+| **Voice Activation** | 🟢 **Hands-Free (MFCC + DTW Calibration)** | 🔴 Not supported | 🟡 Standard OS phrase only | 🔴 Not supported |
+| **Subtitle Export** | 🟢 **SRT, VTT, Markdown, JSON, TXT** | 🟡 Depends on API tier | 🔴 Plain text only | 🟢 SRT, VTT, TXT |
+| **AI Agent Integration** | 🟢 **CLI, Local REST API, Built-in Skill** | 🟡 External cloud tokens | 🔴 Not supported | 🟡 Binary execution via bash |
+| **Custom Vocabulary** | 🟢 **Prompt hints + Fuzzy replacer** | 🟡 Restricted prompt field | 🔴 Primitive OS dictionary | 🟡 Raw `--prompt` flag only |
 
 ---
 
-## Ключевые возможности
+## Key Features
 
-### Полная автономность и приватность
-Все этапы обработки звука — от захвата с микрофона и детекции ключевых слов до нейросетевого инференса и расстановки пунктуации — выполняются исключительно на вашем компьютере. Ни один байт медиаданных не передаётся во внешние облака или сторонние сервисы.
+### Complete Autonomy & Privacy
+Every processing step—from microphone capture and wake-word keyword spotting to neural acoustic decoding and punctuation restoration—is computed entirely on your local machine. No telemetry, no cloud relays, and no third-party network requests.
 
-### Нативные движки Whisper.cpp и Conformer GGUF
-В приложении отсутствуют тяжеловесные зависимости вроде Python, PyTorch или отдельных CUDA-рантаймов:
-- **Whisper.cpp** — оптимизированный C/C++ инференс моделей OpenAI Whisper. Поддерживает линейку моделей от компактной `tiny` до флагманской `large-v3-turbo` с аппаратным ускорением через **Apple Silicon Metal** на macOS и **Vulkan** на Windows.
-- **NeMo-Speech.cpp** — высокоскоростной инференс моделей Conformer (Nemotron, Parakeet) в формате GGUF для быстрого потокового распознавания речи.
+### Native Whisper.cpp & Conformer GGUF Engines
+Zero heavy external dependencies like Python, PyTorch, or separate CUDA runtimes:
+- **Whisper.cpp** — Ultra-optimized C/C++ inference for OpenAI Whisper models. Supports models from the lightweight `tiny` up to `large-v3-turbo` with full hardware acceleration via **Apple Silicon Metal** on macOS and **Vulkan** on Windows.
+- **NeMo-Speech.cpp** — High-speed inference for Conformer-based models (Nemotron, Parakeet) in GGUF format for real-time streaming audio transcription.
 
-### Системная диктовка и плавающий HUD
-- Вызов из любого окна по настраиваемому глобальному сочетанию клавиш (по умолчанию: правый `Command` на macOS или `F8` на Windows).
-- Компактный плавающий оверлей (HUD) с плавной индикацией уровня звука, таймера записи и статуса инференса.
-- Автоматическая эмуляция ввода и вставка распознанного текста в активное поле фокусного приложения (IDE, браузер, текстовый процессор, мессенджер).
+### System-Wide Dictation & Floating HUD
+- Activate from any window using a customizable global shortcut (default: right `Command` on macOS or `F8` on Windows).
+- Clean, non-intrusive floating HUD with real-time waveform level monitoring, elapsed timer, and inference progress.
+- Automatic text synthesis and simulated keystroke insertion directly into your focused application (IDE, browser, terminal, notes, chat).
 
-### Голосовая активация без рук
-- Бесконтактная диктовка: запуск записи кодовой фразой (например, *«Джефф»*) и завершение фразой закрытия (*«Пока»*, *«Отбой»*).
-- **Персональная калибровка под голос владельца**: 13-полосные коэффициенты MFCC в сочетании с динамической трансформацией шкалы времени (DTW), ансамблевым согласованием эталонов, контролем длительности и адаптивной оценкой фонового шума.
-- Защита от ложных срабатываний: калибровка созвучных слов-ловушек исключает реакцию на случайные фразы и фоновые разговоры.
+### Hands-Free Voice Activation
+- True touchless dictation: trigger recording with a custom wake phrase (*e.g., "Jeff"*) and stop with a close phrase (*e.g., "Over and out"*).
+- **Personalized Voice Calibration**: 13-band Mel-Frequency Cepstral Coefficients (MFCC) combined with Dynamic Time Warping (DTW), multi-template ensemble agreement, duration constraints, and adaptive ambient noise estimation.
+- Impostor rejection: trains against similar-sounding phonemes to prevent false triggers from background conversations or television audio.
 
-### Персональный словарь и подсказки
-- Добавление специализированных терминов, названий библиотек, имён и проектных акронимов.
-- Передача приоритетных слов в контекст `initial_prompt` модели с автоматическим контролем бюджета токенов.
-- Механизм нечёткой автозамены (fuzzy replacement) на этапе пост-обработки исправляет омофоны и специфические ошибки ASR.
+### Custom Vocabulary & Prompt Hinting
+- Add technical terminology, framework names, acronyms, and proper nouns (*e.g., Kubernetes, PostgreSQL, Tsukiko*).
+- Injects priority terms into Whisper's `initial_prompt` with automatic token window budget management.
+- Post-processing fuzzy replacement engine catches homophones and specific acoustic misclassifications.
 
-### Инструменты разработчика и локальный API
-- Автономная утилита командной строки **`tsukiko-transcribe`** для скриптов автоматизации и работы в терминале.
-- Защищённый локальный HTTP/WebSocket API (`127.0.0.1:8756`) с токенами авторизации.
-- Официальный встроенный скилл для терминальных ИИ-ассистентов (**Claude Code**, **Antigravity**, **OpenAI Codex**, **OpenClaw**, **Hermes**).
+### Developer CLI, Local API & Agent Skill
+- Standalone command-line tool **`tsukiko-transcribe`** for terminal power users and automated shell scripts.
+- Secure local HTTP/WebSocket API server (`127.0.0.1:8756`) protected with bearer token authorization.
+- Official built-in agent skill for autonomous coding assistants (**Claude Code**, **Antigravity**, **OpenAI Codex**, **OpenClaw**, **Hermes**).
 
-### Графический интерфейс и маскот
-- Современный настольный интерфейс на Flutter, спроектированный по гайдлайнам Apple Human Interface Guidelines и современным стандартам Windows.
-- Поддержка системной тёмной и светлой темы, плавных анимаций и адаптивной компоновки.
-- Анимированный маскот **Tsukiko (Лунный кот)**, наглядно отображающий текущее состояние работы (ожидание, запись, распознавание, успех).
+### Desktop Interface & Mascot
+- Beautiful Flutter desktop interface honoring Apple Human Interface Guidelines and modern Windows fluent designs.
+- Native light and dark themes with fluid micro-animations.
+- Interactive animated **Tsukiko (Moon Cat)** mascot dynamically expressing app state (idle, listening, processing, success).
 
 ---
 
-## Интерфейс приложения
+## Application Interface
 
 <table align="center" width="100%">
   <tr>
     <td width="65%" align="center" valign="top">
-      <b>Главное окно: пакетная очередь и плеер транскриптов</b><br /><br />
-      <img src="docs/images/main_window_ru.png" alt="Tsukiko Главное окно" width="100%" style="border-radius: 8px;" />
+      <b>Main Window: Batch Queue & Transcript Inspector</b><br /><br />
+      <img src="docs/images/main_window_en.png" alt="Tsukiko Main Window" width="100%" style="border-radius: 8px;" />
     </td>
     <td width="35%" align="center" valign="top">
-      <b>Окно настроек: диктовка и калибровка</b><br /><br />
-      <img src="docs/images/settings_ru.png" alt="Tsukiko Окно настроек" width="100%" style="border-radius: 8px;" />
+      <b>Settings Window: Transcription & Voice Calibration</b><br /><br />
+      <img src="docs/images/settings_en.png" alt="Tsukiko Settings Window" width="100%" style="border-radius: 8px;" />
     </td>
   </tr>
 </table>
 
 ---
 
-## Архитектура системы
+## System Architecture
 
-Движки распознавания скомпилированы в нативные бинарные модули, упакованы внутрь бандла приложения и взаимодействуют с графическим интерфейсом через изолированные каналы межпроцессного взаимодействия (IPC), гарантируя плавность основного UI-потока:
+Transcription engines are compiled as native standalone binaries bundled inside the application package and orchestrated via isolated Inter-Process Communication (IPC), guaranteeing that heavy neural compute never blocks the 60fps Flutter UI:
 
 ```
                             ┌──────────────────────────────────────────────┐
                             │              Tsukiko Flutter UI              │
-                            │   (Главное окно, Очередь, Настройки, HUD)    │
+                            │   (Main Window, Queue, Settings, HUD)        │
                             └───────┬──────────────────────────────┬───────┘
                                     │                              │
                     MethodChannels / IPC                           │ Local HTTP / WS
@@ -147,10 +147,10 @@ Tsukiko объединяет максимальную производитель
             ▼                                            ▼         ▼
     ┌───────────────────┐                        ┌───────────────────────┐
     │    whisper-cli    │                        │  tsukiko-transcribe   │
-    │  (Пакетная очередь)                        │     (CLI утилита)     │
+    │   (Batch Queue)   │                        │     (CLI Utility)     │
     ├───────────────────┤                        └───────────────────────┘
     │  whisper-server   │
-    │ (Потоковая диктовка)
+    │(Streaming Dictate)│
     ├───────────────────┤
     │    nemo-speech    │
     │  (Conformer GGUF) │
@@ -158,182 +158,182 @@ Tsukiko объединяет максимальную производитель
 ```
 
 > [!NOTE]
-> Полное техническое описание компонентов, структур данных и протокола приведено в документе [docs/архитектура.md](docs/архитектура.md).
+> For deep architectural explanations, audio pipelines, and memory lifecycles, refer to [docs/архитектура.md](docs/архитектура.md).
 
 ---
 
-## Стек технологий и зависимости
+## Tech Stack & Dependencies
 
-Tsukiko построен на базе высокопроизводительных нативных компонентов и современных библиотек:
+Tsukiko is built with high-performance native engines and modern desktop application frameworks:
 
-| Категория | Технологии и библиотеки | Назначение |
+| Category | Technologies & Libraries | Role |
 | :--- | :--- | :--- |
-| **Движки ASR** | `whisper.cpp`, `NeMo-Speech.cpp`, `sherpa-onnx` | Высокоскоростной нейросетевой инференс на C/C++ без внешних рантаймов Python. |
-| **Графический стек** | `Flutter Desktop`, `macos_ui`, `desktop_drop` | Кроссплатформенный UI со скоростью 60 fps, соблюдением системных гайдлайнов и поддержкой Drag & Drop. |
-| **Архитектура UI** | `flutter_bloc`, `bloc_concurrency`, `equatable` | Надёжное реактивное управление состоянием и конкурентная обработка событий очереди. |
-| **Аппаратное ускорение** | Apple Silicon Metal, Vulkan SDK, ARM NEON, AVX2 | Прямой инференс на видеокартах и специализированных векторных инструкциях процессора. |
-| **Аудио и DSP** | `record`, CoreAudio, WASAPI, `libsamplerate`, FFmpeg | Низколатентный захват с микрофона, конвертация медиаконтейнеров, ресемплинг 16 кГц и акустический анализ MFCC. |
-| **Системная интеграция** | macOS Accessibility APIs, `CGEventTap`, Windows Hooks | Глобальный перехват сочетаний клавиш и автоматическая эмуляция ввода текста. |
-| **Интероп C/C++** | `dart:ffi`, `package:ffi` | Прямые вызовы нативного системного API и библиотек без накладных расходов. |
+| **Speech Inference** | `whisper.cpp`, `NeMo-Speech.cpp`, `sherpa-onnx` | C/C++ bare-metal inference without separate Python or PyTorch runtimes. |
+| **Desktop UI Stack** | `Flutter Desktop`, `macos_ui`, `desktop_drop` | 60 fps cross-platform UI, native HIG aesthetics, and OS drag-and-drop handling. |
+| **State Management** | `flutter_bloc`, `bloc_concurrency`, `equatable` | Robust event-driven state orchestration and concurrent queue processing. |
+| **Hardware Compute** | Apple Silicon Metal, Vulkan SDK, ARM NEON, AVX2 | Direct GPU acceleration and optimized CPU SIMD vector processing. |
+| **Audio & DSP** | `record`, CoreAudio, WASAPI, `libsamplerate`, FFmpeg | Low-latency mic capture, media container decoding, 16 kHz resampling, and custom MFCC acoustic DSP. |
+| **OS Integration** | macOS Accessibility APIs, `CGEventTap`, Windows Hooks | System-wide global shortcut monitoring and simulated keystroke synthesis. |
+| **Native Interop** | `dart:ffi`, `package:ffi` | Zero-overhead direct C/C++ library invocations. |
 
 ---
 
-## Установка и быстрый старт
+## Installation & Quick Start
 
-### Готовые сборки
+### Pre-built Releases
 
-Скачайте релизный дистрибутив на странице **[Releases](https://github.com/Yukovsky/tsukiko/releases)**:
+Download pre-compiled binaries from the **[Releases](https://github.com/Yukovsky/tsukiko/releases)** page:
 
-| Платформа | Файл | Описание |
+| Operating System | Package | Details |
 | :--- | :--- | :--- |
-| **macOS** | `tsukiko.dmg` | Универсальный образ (Apple Silicon M1–M4 & Intel x86_64), подписанный Developer ID. |
-| **Windows** | `tsukiko-setup.exe` | Инсталлятор с автоматической конфигурацией Vulkan GPU и fallback на CPU. |
+| **macOS** | `tsukiko.dmg` | Universal DMG (Apple Silicon M1–M4 & Intel x86_64), signed with Apple Developer ID. |
+| **Windows** | `tsukiko-setup.exe` | Native installer with automatic Vulkan GPU detection and CPU fallback. |
 
 ---
 
-### Первый запуск на macOS
+### First Launch on macOS
 
-Приложение подписано сертификатом разработчика и распространяется независимо от Mac App Store:
+Tsukiko is signed with an Apple Developer certificate and distributed outside the Mac App Store:
 
-1. Откройте загруженный `tsukiko.dmg` и перетащите иконку **Tsukiko** в папку **«Программы» (`/Applications`)**.
+1. Mount `tsukiko.dmg` and drag the **Tsukiko** icon into your **Applications (`/Applications`)** folder.
    > [!IMPORTANT]
-   > Запуск приложения напрямую из папки «Загрузки» активирует macOS App Translocation, что приведёт к сбросу выданных системных разрешений при перезапуске.
-2. При первом запуске macOS Gatekeeper может предупредить о стороннем приложении. Откройте **Системные настройки → Конфиденциальность и безопасность**, прокрутите вниз до раздела «Безопасность» и нажмите **«Открыть всё равно»**.  
-   *Либо выполните команду в Терминале:*
+   > Running directly from `Downloads` invokes macOS App Translocation, which resets granted permissions on application relaunch.
+2. If macOS Gatekeeper presents a security prompt, navigate to **System Settings → Privacy & Security**, scroll down to "Security", and click **"Open Anyway"**.  
+   *Or remove the quarantine flag via Terminal:*
    ```sh
    xattr -d com.apple.quarantine /Applications/Tsukiko.app
    ```
-3. **Системные разрешения**:
-   - **Микрофон**: для записи голоса при диктовке и калибровке.
-   - **Универсальный доступ (Accessibility)**: необходим для отслеживания глобального сочетания клавиш и автоматической вставки текста в активное окно.
+3. **Required Permissions**:
+   - **Microphone**: Needed for voice recording during dictation and calibration.
+   - **Accessibility**: Required to register the global shortcut and simulate keystrokes to insert transcribed text into active fields.
 
 ---
 
-### Запуск на Windows
+### Launch on Windows
 
-1. Запустите инсталлятор `tsukiko-setup.exe` и следуйте инструкциям мастера установки.
-2. При наличии видеокарты NVIDIA/AMD/Intel приложение автоматически задействует аппаратное ускорение Vulkan.
-3. Разрешите доступ к микрофону при появлении системного запроса Windows 10/11.
-
----
-
-## Руководство по использованию
-
-### 1. Пакетная расшифровка файлов
-1. Перетащите один или несколько аудио- или видеофайлов прямо в окно программы.  
-   *Поддерживаемые форматы*: `.wav`, `.mp3`, `.m4a`, `.ogg`, `.flac`, `.aac`, `.opus`, `.mp4`, `.mkv`, `.mov`, `.webm` и др.
-2. В панели инспектора справа выберите:
-   - **Движок**: Whisper.cpp или NeMo Conformer.
-   - **Модель**: от легковесной `tiny` до высокоточной `large-v3-turbo`.
-   - **Язык**: автоопределение или фиксация конкретного языка.
-3. Нажмите кнопку **«Начать расшифровку»**.
-4. После завершения просматривайте текст с таймкодами, переключайтесь по репликам аудиофайла и экспортируйте результат в форматах **TXT**, **Markdown**, **SRT**, **VTT** или **JSON**.
+1. Run `tsukiko-setup.exe` and follow the setup wizard prompts.
+2. If an NVIDIA, AMD, or Intel GPU is present, Vulkan acceleration will automatically be engaged.
+3. Grant microphone permissions when prompted by Windows 10/11.
 
 ---
 
-### 2. Глобальная системная диктовка
-1. Нажмите настроенную горячую клавишу (по умолчанию: правый `Command` на macOS или `F8` на Windows).
-2. На экране появится нативный плавающий HUD. Произнесите нужный текст.
-3. Отпустите или нажмите хоткей повторно (либо сделайте паузу, если включен VAD).
-4. Tsukiko распознает речь и вставит готовый текст под курсор в открытое приложение.
+## User Guide & Workflows
+
+### 1. Batch Audio & Video Transcription
+1. Drag and drop audio or video files into the application window.  
+   *Supported formats*: `.wav`, `.mp3`, `.m4a`, `.ogg`, `.flac`, `.aac`, `.opus`, `.mp4`, `.mkv`, `.mov`, `.webm`, etc.
+2. In the right-hand inspector panel, configure:
+   - **Engine**: Whisper.cpp or NeMo Conformer.
+   - **Model**: From lightweight `tiny` to state-of-the-art `large-v3-turbo`.
+   - **Language**: Auto-detect or select a fixed language.
+3. Click **"Start Transcription"**.
+4. Review timestamped segments, navigate audio playback per segment, and export in **TXT**, **Markdown**, **SRT**, **VTT**, or **JSON** formats.
 
 ---
 
-### 3. Голосовая активация без рук
-1. Откройте **Настройки → Диктовка → Голосовая активация**.
-2. Включите опцию и задайте фразы (например, *«Джефф»* для старта и *«Пока»* для завершения).
-3. Нажмите кнопку **«Калибровать»** и следуйте шагам мастера:
-   - Запишите три чистых образца кодового слова.
-   - Запишите одно похожее слово-ловушку (для проверки отсутствия ложных срабатываний).
-4. Диктуйте длинные заметки и сообщения полностью без касания клавиатуры.
+### 2. System-wide Global Dictation
+1. Press the configured global hotkey (default: right `Command` on macOS or `F8` on Windows).
+2. The floating HUD appears on your screen. Speak your thoughts naturally.
+3. Release or press the hotkey again (or pause speaking if Voice Activity Detection is enabled).
+4. Tsukiko transcribes your speech and pastes the text directly at your cursor location.
 
 ---
 
-### 4. Персональный словарь и подсказки
-1. В настройках перейдите во вкладку **«Словарь»**.
-2. Добавьте специализированные термины, названия библиотек, имена или проектные акронимы (*например, Kubernetes, PostgreSQL, Tsukiko*).
-3. При необходимости настройте правила автозамены омофонов.
-4. Все термины автоматически передаются в модель при следующем инференсе.
+### 3. Hands-Free Voice Activation
+1. Go to **Settings → Dictation → Voice Activation**.
+2. Enable voice activation and set your trigger words (*e.g., "Jeff" to start, "Stop" to finish*).
+3. Click **"Calibrate"** and complete the guided 4-step wizard:
+   - Record 3 clear samples of your trigger phrase.
+   - Record 1 similar impostor word (ensuring zero false alarms).
+4. Dictate long emails, code comments, and messages completely hands-free.
 
 ---
 
-## CLI и локальный API
+### 4. Custom Vocabulary & Prompt Hinting
+1. Open **Settings → Vocabulary**.
+2. Add your project terms, acronyms, and names (*e.g., Kubernetes, PostgreSQL, Tsukiko*).
+3. Define optional fuzzy replacement pairs for frequent homophone errors.
+4. All entries will automatically bias the decoder model during subsequent transcriptions.
 
-### Утилита командной строки
+---
 
-Tsukiko включает автономный инструмент командной строки для скриптов автоматизации:
+## CLI Utility & Local API
+
+### Command-line Tool
+
+Tsukiko bundles a standalone CLI utility for terminal workflows and automated batch scripting:
 
 ```sh
-# На macOS:
-/Applications/Tsukiko.app/Contents/Helpers/tsukiko-transcribe meeting.m4a --model medium --lang ru
+# On macOS:
+/Applications/Tsukiko.app/Contents/Helpers/tsukiko-transcribe meeting.m4a --model medium --lang en
 
-# На Windows:
-"C:\Program Files\Tsukiko\helpers\tsukiko-transcribe.exe" meeting.m4a --model medium --lang ru
+# On Windows:
+"C:\Program Files\Tsukiko\helpers\tsukiko-transcribe.exe" meeting.m4a --model medium --lang en
 ```
 
 > [!TIP]
-> **Умная маршрутизация**: Если графическое приложение Tsukiko уже открыто, `tsukiko-transcribe` отправит задачу в существующую очередь через локальный IPC, избегая дублирования модели в памяти. Если приложение закрыто, утилита самостоятельно инициализирует движок и выведет результат в `stdout`.
+> **Smart Routing**: When the Tsukiko desktop application is open, `tsukiko-transcribe` routes the job to the running app's worker queue via local IPC, eliminating redundant model loading. If the desktop app is closed, it executes autonomously and writes output to `stdout`.
 
 ---
 
-### Локальный защищённый API
+### Local Secured REST API
 
-Tsukiko поднимает локальный HTTP/WebSocket сервер по адресу `http://127.0.0.1:8756`:
+Tsukiko serves a local HTTP/WebSocket API at `http://127.0.0.1:8756`:
 
 ```sh
-# Пример отправки аудиофайла на расшифровку через curl:
+# Example: Transcribe an audio file using curl:
 curl -X POST http://127.0.0.1:8756/transcribe \
-  -H "Authorization: Bearer <ВАШ_API_КЛЮЧ>" \
-  -F "file=@voice_note.ogg" \
-  -F "language=ru"
+  -H "Authorization: Bearer <YOUR_LOCAL_API_KEY>" \
+  -F "file=@voice_memo.m4a" \
+  -F "language=en"
 ```
 
-API-ключ генерируется локально и доступен в разделе **Настройки → Приложение → Локальный API**.
+Your API key is generated locally and accessible under **Settings → Application → Local API**.
 
 ---
 
-## Интеграция с ИИ-агентами
+## AI Coding Agent Integration
 
-Tsukiko позволяет кодовым ассистентам локально расшифровывать голосовые инструкции и медиафайлы:
+Tsukiko lets coding assistants transcribe voice notes and instructions directly from terminal chats:
 
-1. Откройте **Настройки → Приложение → Скилл для нейросетей**.
-2. Нажмите **«Установить скилл»** — Tsukiko автоматически обнаружит установленные среды (Claude Code, Antigravity, Codex, OpenClaw, Hermes) и зарегистрирует манифест.
-3. Либо подключите скилл вручную из каталога [`skills/tsukiko/`](skills/tsukiko/README.md).
+1. Open **Settings → Application → AI Agent Skill**.
+2. Click **"Install Skill"** — Tsukiko auto-detects installed coding agents (Claude Code, Antigravity, OpenAI Codex, OpenClaw, Hermes) and copies the skill manifest.
+3. Or manually link the skill definition located in [`skills/tsukiko/`](skills/tsukiko/README.md).
 
 ---
 
-## Сборка из исходников
+## Building from Source
 
-### Требования к окружению
+### Prerequisites
 - **Flutter SDK** (`>=3.12.2`)
 - **CMake** (`>=3.20`)
-- **Xcode & Command Line Tools** (для сборки под macOS)
-- **Visual Studio 2022 C++ & Windows 10/11 SDK** (для сборки под Windows)
-- **Python 3** (для вспомогательных скриптов валидации и сборки)
+- **Xcode & Command Line Tools** (for macOS builds)
+- **Visual Studio 2022 C++ & Windows 10/11 SDK** (for Windows builds)
+- **Python 3** (for packaging and validation tooling)
 
-### Сборка под macOS
+### macOS Build Instructions
 
 ```sh
-# 1. Сборка нативных C/C++ движков (whisper.cpp и nemo-speech):
+# 1. Compile native C/C++ engines (whisper.cpp and nemo-speech):
 ./tool/engine.sh
 
-# 2. Получение Flutter-зависимостей:
+# 2. Fetch Flutter packages:
 flutter pub get
 
-# 3. Сборка релизного приложения:
+# 3. Build release desktop application:
 flutter build macos --release
 
-# 4. Комплектация вспомогательных утилит и подпись бандла:
+# 4. Package native helper tools and code-sign bundle:
 ./tool/sign.sh
 
-# 5. Генерация установочного DMG-образа:
+# 5. Generate distributable DMG image:
 ./tool/dmg.sh
 ```
 
-### Сборка под Windows
+### Windows Build Instructions
 
 ```powershell
-# В окне PowerShell от имени Администратора:
+# In PowerShell (Run as Administrator):
 .\tool\engine-win.ps1
 flutter pub get
 flutter build windows --release
@@ -342,43 +342,43 @@ flutter build windows --release
 
 ---
 
-## Тестирование и контроль качества
+## Testing & Quality Assurance
 
-Проект покрыт всесторонним набором автоматизированных тестов:
+Tsukiko maintains rigorous automated test coverage:
 
 ```sh
-# Статический анализ кода:
+# Static code analysis:
 flutter analyze
 
-# Запуск полного набора юнит-, интеграционных и виджет-тестов (544 теста):
+# Execute complete unit, integration, and widget test suite (544 tests):
 flutter test
 
-# Проверка согласованности версий во всех манифестах:
+# Validate version consistency across all project manifests:
 python3 tool/version.py check
 ```
 
 ---
 
-## Документация
+## Documentation Index
 
-В директории [`docs/`](docs/) собраны подробные материалы по внутреннему устройству системы:
+Deep-dive documentation is available in the [`docs/`](docs/) directory:
 
-- [Архитектура и внутреннее устройство](docs/архитектура.md) — детальный разбор IPC, потоков аудио и управления памятью.
-- [Голосовая активация: алгоритмы и калибровка](docs/голосовая-активация.md) — математическое описание MFCC, DTW и пороговых фильтров.
-- [Диагностика голосовой активации](docs/диагностика-голосовой-активации.md) — анализ записей и профилирования откликов.
-- [Словарь и контекстные подсказки](docs/словарь-распознавания.md) — работа с `initial_prompt` и омофонами.
-- [Исследование точности распознавания](docs/исследование-распознавания.md) — бенчмарки моделей Conformer и Whisper.
-- [Версионирование и релизный регламент](docs/версионирование.md) — правила семантического версионирования.
-- [Сборка, подпись и выпуск релизов](docs/сборка-и-выпуск.md) — пайплайн упаковки дистрибутивов.
-- [Глоссарий терминов ASR](docs/словарь-терминов.md) — справочник терминов распознавания речи.
+- [System Architecture](docs/архитектура.md) — IPC protocols, audio pipelines, and memory lifecycles.
+- [Voice Activation & Calibration](docs/голосовая-активация.md) — Mathematical formulation of MFCC, DTW, and gating thresholds.
+- [Voice Activation Diagnostics](docs/диагностика-голосовой-активации.md) — Audio waveform analysis and trigger verification.
+- [Vocabulary & Prompt Hinting](docs/словарь-распознавания.md) — Context-aware biasing and homophone replacement.
+- [Accuracy Research & Benchmarks](docs/исследование-распознавания.md) — Conformer and Whisper comparative evaluations.
+- [Versioning & Release Procedures](docs/версионирование.md) — Semantic versioning guidelines.
+- [Packaging & Release Guide](docs/сборка-и-выпуск.md) — Binary packaging and signing pipelines.
+- [ASR Terminology Glossary](docs/словарь-терминов.md) — Speech-to-text technical glossary.
 
 ---
 
-## Лицензия
+## License
 
-Исходный код проекта распространяется под свободной лицензией **[MIT](LICENSE)**.
+Tsukiko is released under the **[MIT License](LICENSE)**.
 
-### Сторонние компоненты
+### Third-Party Components
 - **whisper.cpp** — MIT License (ggml-org/whisper.cpp)
 - **NeMo-Speech.cpp** — Apache 2.0 License (NVIDIA Corporation)
 - **sherpa-onnx** — Apache 2.0 License (k2-fsa/sherpa-onnx)
@@ -386,5 +386,5 @@ python3 tool/version.py check
 ---
 
 <div align="center">
-  <sub>Разработано с заботой о приватности и вниманием к деталям. Tsukiko (月子) © 2026.</sub>
+  <sub>Built with a passion for privacy and precision engineering. Tsukiko (月子) © 2026.</sub>
 </div>

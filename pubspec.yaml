@@ -1,5 +1,5 @@
 name: tsukiko
-description: "Расшифровка аудио и диктовка: macOS и Windows. Всё считается локально, whisper.cpp."
+description: "Private local audio transcription and smart dictation for macOS and Windows. Powered by whisper.cpp."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
