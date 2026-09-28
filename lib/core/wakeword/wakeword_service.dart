@@ -104,8 +104,12 @@ class WakeWordService {
   int _operationGeneration = 0;
   bool _triggeredInCurrentState = false;
   bool _wakeSuspended = false;
+  bool _startedByVoice = false;
   DateTime? _lastCompletionAt;
   static const Duration retriggerDelay = Duration(milliseconds: 700);
+
+  /// Была ли текущая запись инициирована голосом (WakeWord).
+  bool get startedByVoice => _startedByVoice;
 
   /// Запустить сервис голосовой активации с указанными настройками.
   Future<bool> start({
@@ -252,21 +256,31 @@ class WakeWordService {
   }
 
   /// Уведомить сервис, что началась запись фразы (диктовка активна).
-  void notifyRecordingStarted() {
+  ///
+  /// [startedByVoice] указывает, была ли запись инициирована голосом (WakeWord).
+  /// Согласно логике tsukiko, таймаут простоя/тишины (2-3 сек) работает
+  /// исключительно для записей, инициированных голосом. Записи, начатые
+  /// клавишей или UI, не должны прерываться по тишине.
+  void notifyRecordingStarted({bool startedByVoice = false}) {
     if (_state == WakeWordListeningState.disabled) return;
+    _startedByVoice = startedByVoice;
     _state = WakeWordListeningState.listeningCloseWordOrSilence;
     _triggeredInCurrentState = false;
     _wakeSuspended = false;
     _lastSpeechTime = DateTime.now();
     _engine.resetKeywordStream();
     if (_engine is StreamingSherpaEngine) _engine.setListeningForClose(true);
-    _diagnostics?.event('recording_started');
-    Log.info('WakeWord', 'Now listening for CloseWord or silence...');
+    _diagnostics?.event('recording_started', {'started_by_voice': startedByVoice});
+    Log.info(
+      'WakeWord',
+      'Now listening for CloseWord or silence... (startedByVoice: $startedByVoice)',
+    );
   }
 
   /// Уведомить сервис, что запись завершилась (диктовка остановлена).
   void notifyRecordingStopped() {
     if (_state == WakeWordListeningState.disabled) return;
+    _startedByVoice = false;
     _state = WakeWordListeningState.listeningWakeWord;
     _triggeredInCurrentState = false;
     _lastCompletionAt = DateTime.now();
@@ -393,10 +407,15 @@ class WakeWordService {
         }
       }
 
-      // Проверка на тишину (2.0 секунды)
-      if (mode == PhraseCompletionMode.silenceOnly ||
-          mode == PhraseCompletionMode.hybrid ||
-          closeWord.isEmpty) {
+      // Проверка на тишину (2.0 секунды).
+      // ВАЖНО: Согласно правилам tsukiko, таймаут тишины/простоя (2-3 сек)
+      // работает ТОЛЬКО если запись была инициирована голосом (startedByVoice).
+      // Если запись была начата с клавиатуры или UI, таймаут тишины НЕ должен
+      // останавливать диктовку!
+      if (_startedByVoice &&
+          (mode == PhraseCompletionMode.silenceOnly ||
+              mode == PhraseCompletionMode.hybrid ||
+              closeWord.isEmpty)) {
         if (_lastSpeechTime != null) {
           final silenceDuration = now.difference(_lastSpeechTime!);
           if (silenceDuration >= silenceThreshold) {
@@ -425,6 +444,7 @@ class WakeWordService {
     _state = WakeWordListeningState.disabled;
     _triggeredInCurrentState = false;
     _wakeSuspended = false;
+    _startedByVoice = false;
     await _audioRestartDone?.future;
     await stopDiagnostics();
     await _audioSub?.cancel();

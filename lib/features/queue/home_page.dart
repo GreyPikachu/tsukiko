@@ -1736,7 +1736,7 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         }),
         if (o.vad)
           Padding(
-            padding: const EdgeInsets.only(left: 25, top: Gap.hint),
+            padding: const EdgeInsets.only(top: Gap.hint),
             child: Text(
               o.vadModel.isEmpty
                   ? l10n.hintNeedVadFile

@@ -1567,8 +1567,8 @@
     }
   },
   "voiceProfileStatusNotCalibrated": "Ключевые слова не откалиброваны",
-  "buttonCalibrateVoice": "Откалибровать голос…",
-  "buttonRecalibrateVoice": "Перекалибровать…",
+  "buttonCalibrateVoice": "Откалибровать",
+  "buttonRecalibrateVoice": "Перекалибровать",
   "buttonDeleteVoiceProfile": "Удалить профиль",
   "fieldSpeakerThreshold": "Чувствительность верификации",
   "hintSpeakerThreshold": "Порог сходства голоса (по умолчанию 0.60). Выше — строже проверка, ниже — надёжнее распознавание в шуме.",
@@ -1606,5 +1606,18 @@
   "wakeDiagnosticsRecalibrateFirst": "Сначала откалибруйте оба слова, чтобы записывать оценки персонального детектора.",
   "wakeDiagnosticsStartFailed": "Не удалось запустить диагностическую запись. Проверьте доступ к микрофону.",
   "wakeDiagnosticsMarkFailed": "Не удалось сохранить отметку.",
-  "buttonDone": "Готово"
+  "buttonDone": "Готово",
+  "calibrationWakeTitle": "Калибровка слова активации",
+  "calibrationWakeSubtitle": "Запишите 3 произношения слова активации и одно созвучное слово, которое не должно срабатывать.",
+  "calibrationCloseTitle": "Калибровка слова завершения",
+  "calibrationCloseSubtitle": "Запишите 3 произношения слова завершения и одно созвучное слово, которое не должно срабатывать.",
+  "voiceProfileWakeCalibrated": "Слово активации откалибровано",
+  "voiceProfileWakeNotCalibrated": "Слово активации не откалибровано",
+  "voiceProfileCloseCalibrated": "Слово завершения откалибровано",
+  "voiceProfileCloseNotCalibrated": "Слово завершения не откалибровано",
+  "voiceProfileCloseEmpty": "Слово завершения не указано",
+  "calibrationWakeSectionTitle": "Калибровка слова активации",
+  "calibrationCloseSectionTitle": "Калибровка слова завершения",
+  "buttonDeleteWakeProfile": "Удалить профиль активации",
+  "buttonDeleteCloseProfile": "Удалить профиль завершения"
 }

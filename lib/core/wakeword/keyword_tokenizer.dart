@@ -215,37 +215,61 @@ class KeywordTokenizer {
 }
 
 /// Удалить слово завершения (CloseWord) из конца распознанного текста,
-/// если оно попало в расшифровку Whisper.
+/// если оно попало в расшифровку Whisper (в том числе повторенное несколько раз,
+/// в кавычках, скобках, через запятую, тире или отдельными предложениями).
 String stripTrailingCloseWord(String text, String closeWord) {
   final target = closeWord.trim().toLowerCase();
   if (target.isEmpty || text.trim().isEmpty) return text;
 
-  final trimmed = text.trimRight();
+  // Регулярка для хвостовых знаков препинания, кавычек и скобок
+  final trailingPunctuationRegex = RegExp(r'[\s.,!?;:\-—…""«»”’‘)\]}>„]+$');
+  final boundarySeparators = RegExp(r'[\s.,!?;:\-—…""«»“”‘’()[\]{}<>„]$');
 
-  // Отделяем хвостовую пунктуацию
-  final trailingPunctuationRegex = RegExp(r'[\s.,!?;:\-—…]+$');
-  final match = trailingPunctuationRegex.firstMatch(trimmed);
-  final endPunctuation = match?.group(0) ?? '';
-  final withoutEndPunct = trimmed.substring(
-    0,
-    trimmed.length - endPunctuation.length,
-  );
+  var current = text;
+  bool changed = true;
 
-  final lowerWithoutEnd = withoutEndPunct.toLowerCase();
-  if (lowerWithoutEnd.endsWith(target)) {
-    final wordStartIdx = withoutEndPunct.length - target.length;
-    // Убеждаемся, что это отдельное слово или фраза
-    if (wordStartIdx == 0 ||
-        RegExp(
-          r'[\s.,!?;:\-—…]$',
-        ).hasMatch(withoutEndPunct.substring(0, wordStartIdx))) {
-      final stripped = withoutEndPunct.substring(0, wordStartIdx).trimRight();
-      final cleaned = stripped
-          .replaceAll(RegExp(r'[,:\-—]+\s*$'), '')
-          .trimRight();
-      return cleaned;
+  while (changed) {
+    changed = false;
+    final trimmed = current.trimRight();
+    if (trimmed.isEmpty) return '';
+
+    // Снимаем хвостовую пунктуацию, кавычки и скобки
+    final trailingMatch = trailingPunctuationRegex.firstMatch(trimmed);
+    final endPunct = trailingMatch?.group(0) ?? '';
+    final core = trimmed.substring(0, trimmed.length - endPunct.length);
+    final coreLower = core.toLowerCase();
+
+    int? matchStartIdx;
+    if (coreLower.endsWith(target)) {
+      matchStartIdx = core.length - target.length;
+    } else {
+      // Проверяем случай с открывающей кавычкой или скобкой перед target
+      for (final quote in ['"', "'", '«', '“', '‘', '(', '[', '{']) {
+        if (coreLower.endsWith('$quote$target')) {
+          matchStartIdx = core.length - target.length - quote.length;
+          break;
+        }
+      }
+    }
+
+    if (matchStartIdx != null) {
+      final isAtStart = matchStartIdx == 0;
+      final hasWordBoundary = isAtStart ||
+          boundarySeparators.hasMatch(core.substring(0, matchStartIdx));
+
+      if (hasWordBoundary) {
+        var before = core.substring(0, matchStartIdx).trimRight();
+        // Убираем висячие знаки препинания, кавычки и скобки перед вырезанным словом
+        final danglingRegex = RegExp(r'[,:\-—"«“‘(\[{<„]+$');
+        while (danglingRegex.hasMatch(before)) {
+          before = before.replaceAll(danglingRegex, '').trimRight();
+        }
+
+        current = before;
+        changed = true;
+      }
     }
   }
 
-  return text;
+  return current;
 }

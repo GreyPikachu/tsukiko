@@ -341,12 +341,8 @@ class Hint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        // Отступ слева не на глаз: галка macos_ui шириной ровно в
-        // [IconSize.button], между ней и подписью стоит [Gap.inner], —
-        // сумма и есть левый край подписи, под который встаёт пояснение.
-        padding: EdgeInsets.only(
+        padding: const EdgeInsets.only(
           top: Gap.hint,
-          left: under ? IconSize.button + Gap.inner : 0,
         ),
         child: Text(
           text,

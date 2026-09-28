@@ -69,6 +69,8 @@ class SettingsState extends Equatable {
     this.completionMode = PhraseCompletionMode.hybrid,
     this.voiceCalibrationEnabled = false,
     this.speakerProfileExists = false,
+    this.wakeProfileExists = false,
+    this.closeProfileExists = false,
     this.speakerThreshold = 0.60,
     // приложение
     this.toLibrary = true,
@@ -199,6 +201,8 @@ class SettingsState extends Equatable {
   final PhraseCompletionMode completionMode;
   final bool voiceCalibrationEnabled;
   final bool speakerProfileExists;
+  final bool wakeProfileExists;
+  final bool closeProfileExists;
   final double speakerThreshold;
 
   // ── приложение ────────────────────────────────────────────────────────────
@@ -282,6 +286,8 @@ class SettingsState extends Equatable {
     PhraseCompletionMode? completionMode,
     bool? voiceCalibrationEnabled,
     bool? speakerProfileExists,
+    bool? wakeProfileExists,
+    bool? closeProfileExists,
     double? speakerThreshold,
     bool? toLibrary,
     bool? saveNextToSource,
@@ -345,6 +351,8 @@ class SettingsState extends Equatable {
     voiceCalibrationEnabled:
         voiceCalibrationEnabled ?? this.voiceCalibrationEnabled,
     speakerProfileExists: speakerProfileExists ?? this.speakerProfileExists,
+    wakeProfileExists: wakeProfileExists ?? this.wakeProfileExists,
+    closeProfileExists: closeProfileExists ?? this.closeProfileExists,
     speakerThreshold: speakerThreshold ?? this.speakerThreshold,
     toLibrary: toLibrary ?? this.toLibrary,
     saveNextToSource: saveNextToSource ?? this.saveNextToSource,
@@ -398,6 +406,8 @@ class SettingsState extends Equatable {
     completionMode,
     voiceCalibrationEnabled,
     speakerProfileExists,
+    wakeProfileExists,
+    closeProfileExists,
     speakerThreshold,
     toLibrary,
     saveNextToSource,

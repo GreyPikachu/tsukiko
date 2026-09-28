@@ -185,8 +185,14 @@ class PersonalKeywordSpotter {
   int _sinceEvaluation = 0;
   String? _pending;
   int _totalSamples = 0;
-  final _wakeSegments = _StreamingSpeechSegments();
-  final _closeSegments = _StreamingSpeechSegments();
+  final _wakeSegments = _StreamingSpeechSegments(
+    minQuietFrames: 9,
+    minGate: 0.0015,
+  );
+  final _closeSegments = _StreamingSpeechSegments(
+    minQuietFrames: 9,
+    minGate: 0.0045,
+  );
 
   String? takeDetection() {
     final result = _pending;
@@ -257,13 +263,18 @@ class PersonalKeywordSpotter {
         wakeTemplates.map((t) => t.durationSamples).reduce((a, b) => a + b) ~/
         wakeTemplates.length;
     final length = end - start;
-    if (length < math.max(2880, meanLength * 0.40) || length > 16000 * 2.4) {
+    final minWakeDuration = math.max(3800, (meanLength * 0.40).round());
+    final maxWakeDuration = math.min(
+      16000 * 1.25,
+      math.max(16000 * 0.85, (meanLength * 2.4).round()),
+    );
+    if (length < minWakeDuration || length > maxWakeDuration) {
       _emitRejectedWake(length, 'duration');
       return true;
     }
     final candidate = KeywordTemplate.fromAudio(
       _segmentAudio(start, end, padding: 1600),
-      minActiveSamples: 1600,
+      minActiveSamples: 2400,
     );
     if (candidate == null) {
       _emitRejectedWake(length, 'invalid_audio');
@@ -281,24 +292,48 @@ class PersonalKeywordSpotter {
     final isolated = segment.$3 >= 35;
     final strongNegativeMargin =
         wakeNegatives.isNotEmpty && negative > wake + 0.12;
-    var threshold = isolated && strongNegativeMargin
-        ? math.min(1.09, wakeThreshold + 0.07)
-        : wakeThreshold;
+    var threshold = wakeThreshold;
+    if (isolated && strongNegativeMargin) {
+      final passingEndingCount = wakeTemplates
+          .where(
+            (t) =>
+                keywordEndingDistance(candidate, t) < wakeEndingThreshold,
+          )
+          .length;
+      final rawDists =
+          wakeTemplates
+              .map((t) => keywordDistance(candidate, t))
+              .toList()
+            ..sort();
+      final hasWholeWordMatch =
+          rawDists.isNotEmpty &&
+          rawDists.first < wakeThreshold &&
+          (rawDists.length < 2 || rawDists.last - rawDists.first <= 0.08);
+      if (wakeTemplates.length < 2 ||
+          passingEndingCount >= 2 ||
+          hasWholeWordMatch) {
+        threshold = math.min(1.09, wakeThreshold + 0.07);
+      }
+    }
     if (segment.$4 && !isolated) {
       threshold = math.min(threshold, 0.99);
     }
     final longPronunciation = length > meanLength * 1.5;
     final boundaryOkay =
         !segment.$4 ||
-        segment.$3 >= 14 ||
-        (wake < 0.90 && strongNegativeMargin && close > wake + 0.08);
+        segment.$3 >= 8 ||
+        (wake < 0.92 &&
+            strongNegativeMargin &&
+            (closeTemplates.isEmpty || close > wake + 0.08));
     final scoreThreshold = longPronunciation && !strongNegativeMargin
         ? math.min(threshold, 0.96)
         : threshold;
     final accepted =
         wake < scoreThreshold &&
         boundaryOkay &&
-        (close > wake + 0.08 || (isolated && strongNegativeMargin)) &&
+        (closeTemplates.isEmpty ||
+            close > wake + 0.04 ||
+            (isolated && strongNegativeMargin)) &&
         negative > wake + 0.04 &&
         _hasVoicedFrames(start, end);
     onScore?.call(
@@ -361,13 +396,17 @@ class PersonalKeywordSpotter {
     var wake = double.infinity;
     var negative = double.infinity;
     var threshold = closeThreshold;
+    final maxDuration = math.min(
+      16000 * 0.9,
+      math.max(16000 * 0.65, (meanLength * 1.4).round()),
+    );
     if (segment.$4 && segment.$3 < 14) {
       // A close word is a separate command. Syllables carved out of a longer
       // utterance can score like the template but have no preceding boundary.
       reason = 'boundary';
     } else if (meanLength > 0 &&
-        length >= math.max(3520, meanLength * 0.30) &&
-        length <= math.min(16000 * 2.4, meanLength * 1.65)) {
+        length >= math.max(3200, (meanLength * 0.40).round()) &&
+        length <= maxDuration) {
       final candidate = KeywordTemplate.fromAudio(
         _segmentAudio(start, end),
         minActiveSamples: 1600,
@@ -379,24 +418,25 @@ class PersonalKeywordSpotter {
           // A short ending is more sensitive to framing than whole-word DTW.
           // Keep it a completeness veto; the full score and both competing
           // words below still decide whether this is a command.
-          maxEndingDistance: math.max(1.15, closeEndingThreshold),
+          maxEndingDistance: math.max(1.15, closeEndingThreshold + 0.08),
         );
         wake = _distanceTo(candidate, wakeTemplates);
         negative = _distanceTo(candidate, closeNegatives);
+        final isolated = segment.$3 >= 15;
         // Extra timing/noise headroom requires separation from BOTH the other
         // command and the recorded confusable word, not just a low raw score.
-        final strongMargin =
-            closeNegatives.isNotEmpty &&
-            negative > close + 0.08 &&
-            wake > close + 0.08;
-        threshold = strongMargin
-            ? math.min(1.10, closeThreshold + 0.08)
-            : math.min(1.06, closeThreshold + 0.03);
+        final strongNegativeMargin =
+            closeNegatives.isNotEmpty && negative > close + 0.12;
+        threshold = strongNegativeMargin
+            ? math.min(1.05, closeThreshold)
+            : (isolated && negative > close + 0.06)
+            ? math.min(1.01, closeThreshold)
+            : math.min(0.99, closeThreshold);
         if (close >= threshold) {
           reason = 'score';
-        } else if (wake <= close + 0.08) {
+        } else if (wake < wakeThreshold && wake + 0.04 < close) {
           reason = 'wake_word';
-        } else if (negative <= close + (closeNegatives.isEmpty ? 0 : 0.06)) {
+        } else if (negative <= close + (closeNegatives.isEmpty ? 0 : 0.05)) {
           reason = 'negative_word';
         } else if (!_hasVoicedFrames(start, end)) {
           reason = 'unvoiced';
@@ -431,13 +471,32 @@ class PersonalKeywordSpotter {
     List<KeywordTemplate> templates, {
     double? maxEndingDistance,
   }) {
-    var best = double.infinity;
+    if (templates.isEmpty) return double.infinity;
+    final validDists = <double>[];
+    final allDists = <double>[];
     for (final template in templates) {
+      final d = keywordDistance(candidate, template);
+      allDists.add(d);
       if (maxEndingDistance != null &&
           keywordEndingDistance(candidate, template) >= maxEndingDistance) {
         continue;
       }
-      best = math.min(best, keywordDistance(candidate, template));
+      validDists.add(d);
+    }
+    if (validDists.isEmpty) return double.infinity;
+    validDists.sort();
+    allDists.sort();
+    var best = validDists[0];
+    if (validDists.length >= 2) {
+      final spread = validDists[1] - validDists[0];
+      if (spread > 0.08) {
+        best += (spread - 0.08) * 1.5;
+      }
+    } else if (allDists.length >= 2) {
+      final spread = allDists[1] - allDists[0];
+      if (spread > 0.08) {
+        best += (spread - 0.08) * 1.5;
+      }
     }
     return best;
   }
@@ -457,7 +516,7 @@ class PersonalKeywordSpotter {
         final sample = _recent[at + j];
         energy += sample * sample;
       }
-      if (energy < 0.002) continue;
+      if (energy < 0.008) continue;
       var strongest = 0.0;
       for (var lag = 40; lag <= 200; lag += 4) {
         var dot = 0.0;
@@ -473,7 +532,19 @@ class PersonalKeywordSpotter {
         final correlation = dot / math.sqrt(left * right + 1e-12);
         strongest = math.max(strongest, correlation);
       }
-      if (strongest >= 0.52 && ++voiced >= 2) return true;
+      var dot15 = 0.0;
+      var left15 = 0.0;
+      var right15 = 0.0;
+      for (var j = 0; j < 400 - 15; j++) {
+        final a = _recent[at + j];
+        final b = _recent[at + j + 15];
+        dot15 += a * b;
+        left15 += a * a;
+        right15 += b * b;
+      }
+      final corr15 = dot15 / math.sqrt(left15 * right15 + 1e-12);
+      final isDrone = corr15 >= 0.72 && strongest <= corr15 + 0.03;
+      if (!isDrone && strongest >= 0.50 && ++voiced >= 2) return true;
     }
     return false;
   }
@@ -483,6 +554,13 @@ class PersonalKeywordSpotter {
 /// rolling buffer changed old segment endpoints as its noise quantile moved,
 /// so a word from over a second ago could be accepted during the next word.
 class _StreamingSpeechSegments {
+  _StreamingSpeechSegments({
+    this.minQuietFrames = 9,
+    this.minGate = 0.0015,
+  });
+
+  final int minQuietFrames;
+  final double minGate;
   static const frameSamples = 320;
   final _frame = Float32List(frameSamples);
   final _levels = <double>[];
@@ -538,7 +616,7 @@ class _StreamingSpeechSegments {
     final level = math.sqrt(power / frameSamples);
     final sorted = [..._levels]..sort();
     final noise = sorted.isEmpty ? 0.001 : sorted[sorted.length ~/ 4];
-    final gate = math.max(0.0015, noise * 2.1);
+    final gate = math.max(minGate, noise * 2.1);
     final active = level >= gate;
     final frameStart = _processedSamples;
     _processedSamples += frameSamples;
@@ -548,6 +626,7 @@ class _StreamingSpeechSegments {
         if (_candidateStart == null) {
           _candidateStart = frameStart;
           _candidateActiveFrames = 0;
+          _candidateQuietFrames = 0;
         }
         _candidateActiveFrames++;
         _candidateQuietFrames = 0;
@@ -574,10 +653,10 @@ class _StreamingSpeechSegments {
     } else if (active) {
       _lastActiveEnd = _processedSamples;
       _quietFrames = 0;
-    } else if (++_quietFrames >= 9) {
+    } else if (++_quietFrames >= minQuietFrames) {
       final start = _start!;
       final end = _lastActiveEnd;
-      if (end - start >= 2880 && end - start <= 16000 * 2.4) {
+      if (end - start >= 2400 && end - start <= 16000 * 2.4) {
         _completed.add((
           start,
           end,

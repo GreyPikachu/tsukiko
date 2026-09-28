@@ -166,6 +166,76 @@ void main() {
     await settle();
     expect(wakeWordService.isRunning, isFalse);
   });
+
+  group('комбинации запуска и остановки (голос / клавиатура)', () {
+    test('старт голосом (WakeWord) -> финиш клавиатурой', () async {
+      DictationSettings(
+        wakeWordEnabled: true,
+        wakeWord: 'Джеф',
+        closeWord: 'стоп',
+      ).save();
+      await cubit.reloadSettingsForTesting();
+      await settle();
+
+      // Старт голосом
+      wakeWordService.onWakeWordTriggered?.call();
+      await settle();
+      expect(cubit.state.recording, isTrue);
+      expect(wakeWordService.startedByVoice, isTrue);
+
+      // Финиш клавиатурой
+      await cubit.stop();
+
+      expect(cubit.state.recording, isFalse);
+      expect(cubit.state.phase, Phase.idle);
+      expect(wakeWordService.startedByVoice, isFalse);
+      expect(wakeWordService.state, WakeWordListeningState.listeningWakeWord);
+    });
+
+    test('старт клавиатурой -> финиш голосом (CloseWord)', () async {
+      server.text = 'текст с клавиатуры стоп.';
+      DictationSettings(
+        wakeWordEnabled: true,
+        wakeWord: 'Джеф',
+        closeWord: 'стоп',
+      ).save();
+      await cubit.reloadSettingsForTesting();
+      await settle();
+
+      // Старт клавиатурой (startedByVoice = false)
+      await cubit.start();
+      await settle();
+      expect(cubit.state.recording, isTrue);
+      expect(wakeWordService.startedByVoice, isFalse);
+
+      // Финиш голосом по CloseWord
+      wakeWordService.onCloseWordTriggered?.call();
+      await cubit.stream.firstWhere((s) => s.phase == Phase.idle);
+
+      expect(cubit.state.recording, isFalse);
+      expect(cubit.state.last, 'текст с клавиатуры');
+      expect(wakeWordService.startedByVoice, isFalse);
+      expect(wakeWordService.state, WakeWordListeningState.listeningWakeWord);
+    });
+
+    test('старт клавиатурой -> сервис отмечает startedByVoice = false', () async {
+      DictationSettings(
+        wakeWordEnabled: true,
+        wakeWord: 'Джеф',
+      ).save();
+      await cubit.reloadSettingsForTesting();
+      await settle();
+
+      await cubit.start();
+      await settle();
+      expect(cubit.state.recording, isTrue);
+      expect(wakeWordService.startedByVoice, isFalse);
+
+      await cubit.stop();
+      expect(cubit.state.recording, isFalse);
+      expect(cubit.state.phase, Phase.idle);
+    });
+  });
 }
 
 class _FakeServer extends WhisperServer {

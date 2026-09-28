@@ -37,14 +37,74 @@ class SpeakerProfile {
   final double threshold;
   final DateTime? createdAt;
 
-  bool hasPersonalKeywordsFor(String wake, String close) =>
+  bool get hasWakeCalibration => wakeTemplates.length >= 3;
+  bool get hasCloseCalibration => closeTemplates.length >= 3;
+
+  bool hasWakeTemplatesFor(String wake) =>
       wakeTemplates.length >= 3 &&
       KeywordTokenizer.normalizeKeywordText(wakeWord) ==
-          KeywordTokenizer.normalizeKeywordText(wake) &&
+          KeywordTokenizer.normalizeKeywordText(wake);
+
+  bool hasCloseTemplatesFor(String close) =>
+      close.trim().isNotEmpty &&
+      closeTemplates.length >= 3 &&
+      KeywordTokenizer.normalizeKeywordText(closeWord) ==
+          KeywordTokenizer.normalizeKeywordText(close);
+
+  bool hasPersonalKeywordsFor(String wake, [String close = '']) =>
+      hasWakeTemplatesFor(wake) &&
       (close.trim().isEmpty ||
-          (closeTemplates.length >= 3 &&
-              KeywordTokenizer.normalizeKeywordText(closeWord) ==
-                  KeywordTokenizer.normalizeKeywordText(close)));
+          closeTemplates.isEmpty ||
+          hasCloseTemplatesFor(close));
+
+  SpeakerProfile copyWith({
+    String? name,
+    int? dimension,
+    List<Float32List>? embeddings,
+    String? wakeWord,
+    String? closeWord,
+    List<KeywordTemplate>? wakeTemplates,
+    List<KeywordTemplate>? closeTemplates,
+    List<KeywordTemplate>? wakeNegatives,
+    List<KeywordTemplate>? closeNegatives,
+    double? threshold,
+    DateTime? createdAt,
+  }) => SpeakerProfile(
+    name: name ?? this.name,
+    dimension: dimension ?? this.dimension,
+    embeddings: embeddings ?? this.embeddings,
+    wakeWord: wakeWord ?? this.wakeWord,
+    closeWord: closeWord ?? this.closeWord,
+    wakeTemplates: wakeTemplates ?? this.wakeTemplates,
+    closeTemplates: closeTemplates ?? this.closeTemplates,
+    wakeNegatives: wakeNegatives ?? this.wakeNegatives,
+    closeNegatives: closeNegatives ?? this.closeNegatives,
+    threshold: threshold ?? this.threshold,
+    createdAt: createdAt ?? this.createdAt,
+  );
+
+  /// Удалить калибровку слова активации, сохранив слово завершения (если есть).
+  bool clearWakeCalibration([String? path]) {
+    if (closeTemplates.isEmpty && embeddings.isEmpty) {
+      return delete(path);
+    }
+    return copyWith(
+      wakeTemplates: const [],
+      wakeNegatives: const [],
+    ).save(path);
+  }
+
+  /// Удалить калибровку слова завершения, сохранив слово активации (если есть).
+  bool clearCloseCalibration([String? path]) {
+    if (wakeTemplates.isEmpty && embeddings.isEmpty) {
+      return delete(path);
+    }
+    return copyWith(
+      closeWord: '',
+      closeTemplates: const [],
+      closeNegatives: const [],
+    ).save(path);
+  }
 
   static String get defaultPath => os.join(supportDir, 'speaker_profile.json');
   static String get defaultProfilePath => defaultPath;
@@ -73,7 +133,9 @@ class SpeakerProfile {
       if (!file.existsSync() || file.lengthSync() == 0) return null;
       final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
       final profile = SpeakerProfile.fromJson(json);
-      if (profile.embeddings.isEmpty && profile.wakeTemplates.isEmpty) {
+      if (profile.embeddings.isEmpty &&
+          profile.wakeTemplates.isEmpty &&
+          profile.closeTemplates.isEmpty) {
         return null;
       }
       return profile;

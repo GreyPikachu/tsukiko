@@ -515,8 +515,8 @@ class _SettingsBodyState extends State<SettingsBody>
     Hint(l10n.hintWakeWordSection),
     const SizedBox(height: Gap.inner),
     Check(l10n.checkWakeWordEnabled, s.wakeWordEnabled, (enabled) async {
-      if (enabled && !s.speakerProfileExists) {
-        final ok = await _openVoiceCalibration(s.wakeWord, s.closeWord);
+      if (enabled && !s.wakeProfileExists) {
+        final ok = await _openWakeCalibration(s.wakeWord);
         if (ok != true) return;
       }
       _cubit.setWakeWordEnabled(enabled);
@@ -569,56 +569,26 @@ class _SettingsBodyState extends State<SettingsBody>
       SectionTitle(l10n.sectionVoiceCalibration),
       Hint(l10n.hintVoiceCalibration),
       const SizedBox(height: Gap.inner),
-      Row(
-        children: [
-          MacosIcon(
-            s.speakerProfileExists
-                ? CupertinoIcons.checkmark_seal_fill
-                : CupertinoIcons.exclamationmark_circle,
-            color: s.speakerProfileExists
-                ? const Color(0xFF34C759)
-                : const Color(0xFFFF9500),
-            size: 16,
-          ),
-          const SizedBox(width: Gap.inner),
-          Expanded(
-            child: Text(
-              s.speakerProfileExists
-                  ? l10n.voiceProfileStatusCalibrated(
-                      s.closeWord.trim().isEmpty ? 4 : 8,
-                    )
-                  : l10n.voiceProfileStatusNotCalibrated,
-              style: Type.control.copyWith(
-                color: s.speakerProfileExists
-                    ? const Color(0xFF34C759)
-                    : const Color(0xFFFF9500),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          PushButton(
-            controlSize: ControlSize.regular,
-            secondary: true,
-            onPressed: () => _openVoiceCalibration(s.wakeWord, s.closeWord),
-            child: Text(
-              s.speakerProfileExists
-                  ? l10n.buttonRecalibrateVoice
-                  : l10n.buttonCalibrateVoice,
-            ),
-          ),
-          if (s.speakerProfileExists) ...[
-            const SizedBox(width: Gap.inner),
-            PushButton(
-              controlSize: ControlSize.regular,
-              secondary: true,
-              onPressed: () {
-                _cubit.deleteSpeakerProfile();
-                _cubit.setWakeWordEnabled(false);
-              },
-              child: Text(l10n.buttonDeleteVoiceProfile),
-            ),
-          ],
-        ],
+      _buildCalibrationCard(
+        context: context,
+        title: l10n.calibrationWakeSectionTitle,
+        word: s.wakeWord,
+        isCalibrated: s.wakeProfileExists,
+        isWordEmpty: false,
+        onCalibrate: () => _openWakeCalibration(s.wakeWord),
+        onDelete: () => _cubit.deleteWakeProfile(),
+        l10n: l10n,
+      ),
+      const SizedBox(height: Gap.inner),
+      _buildCalibrationCard(
+        context: context,
+        title: l10n.calibrationCloseSectionTitle,
+        word: s.closeWord,
+        isCalibrated: s.closeProfileExists,
+        isWordEmpty: s.closeWord.trim().isEmpty,
+        onCalibrate: () => _openCloseCalibration(s.closeWord),
+        onDelete: () => _cubit.deleteCloseProfile(),
+        l10n: l10n,
       ),
     ],
     SectionTitle(l10n.wakeDiagnosticsTitle),
@@ -682,13 +652,150 @@ class _SettingsBodyState extends State<SettingsBody>
     ],
   ];
 
-  Future<bool?> _openVoiceCalibration(String wakeWord, String closeWord) async {
+  Widget _buildCalibrationCard({
+    required BuildContext context,
+    required String title,
+    required String word,
+    required bool isCalibrated,
+    required bool isWordEmpty,
+    required VoidCallback onCalibrate,
+    required VoidCallback? onDelete,
+    required AppLocalizations l10n,
+  }) {
+    final isDark = MacosTheme.brightnessOf(context) == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF9F9FB);
+    final borderColor =
+        isDark ? const Color(0xFF333333) : const Color(0xFFE5E5EA);
+    final statusColor = isWordEmpty
+        ? const Color(0xFF8E8E93)
+        : (isCalibrated ? const Color(0xFF34C759) : const Color(0xFFFF9500));
+    final statusIcon = isWordEmpty
+        ? CupertinoIcons.minus_circle
+        : (isCalibrated
+            ? CupertinoIcons.checkmark_seal_fill
+            : CupertinoIcons.exclamationmark_circle);
+    final statusText = isWordEmpty
+        ? l10n.voiceProfileCloseEmpty
+        : (isCalibrated
+            ? l10n.voiceProfileStatusCalibrated(4)
+            : l10n.voiceProfileStatusNotCalibrated);
+
+    return Container(
+      padding: const EdgeInsets.all(Gap.item),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              MacosIcon(
+                statusIcon,
+                color: statusColor,
+                size: 20,
+              ),
+              const SizedBox(width: Gap.item),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            title,
+                            style: Type.control.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (word.isNotEmpty) ...[
+                          const SizedBox(width: Gap.hint),
+                          Text(
+                            '«$word»',
+                            style: Type.control.copyWith(
+                              color: MacosTheme.of(context).primaryColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      statusText,
+                      style: Type.caption.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Gap.item),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              PushButton(
+                controlSize: ControlSize.regular,
+                secondary: true,
+                onPressed: isWordEmpty ? null : onCalibrate,
+                child: Text(
+                  isCalibrated
+                      ? l10n.buttonRecalibrateVoice
+                      : l10n.buttonCalibrateVoice,
+                ),
+              ),
+              if (isCalibrated && onDelete != null) ...[
+                const SizedBox(width: Gap.inner),
+                PushButton(
+                  controlSize: ControlSize.regular,
+                  secondary: true,
+                  onPressed: onDelete,
+                  child: Text(l10n.buttonDeleteVoiceProfile),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _openWakeCalibration(String wakeWord) async {
     await _cubit.bridge.setCalibrationActive(true);
     try {
       if (!mounted) return null;
-      final result = await VoiceCalibrationSheet.show(
+      final result = await VoiceCalibrationSheet.showWake(
         context,
         wakeWord: wakeWord.isNotEmpty ? wakeWord : 'Джеф',
+        bridge: _cubit.bridge,
+        onProfileCreated: _cubit.refreshSpeakerProfile,
+      );
+      if (result == true) {
+        _cubit.refreshSpeakerProfile();
+      }
+      return result;
+    } finally {
+      await _cubit.bridge.setCalibrationActive(false);
+    }
+  }
+
+  Future<bool?> _openCloseCalibration(String closeWord) async {
+    await _cubit.bridge.setCalibrationActive(true);
+    try {
+      if (!mounted) return null;
+      final result = await VoiceCalibrationSheet.showClose(
+        context,
         closeWord: closeWord,
         bridge: _cubit.bridge,
         onProfileCreated: _cubit.refreshSpeakerProfile,

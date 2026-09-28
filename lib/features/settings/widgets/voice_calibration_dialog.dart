@@ -7,7 +7,6 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../../core/wakeword/adaptive_noise_filter.dart';
 import '../../../core/wakeword/audio_stream_source.dart';
-import '../../../core/wakeword/keyword_tokenizer.dart';
 import '../../../core/wakeword/personal_keyword_spotter.dart';
 import '../../../core/wakeword/speaker_profile.dart';
 import '../../../core/wakeword/speech_verifier.dart';
@@ -27,12 +26,21 @@ enum CalibrationPhase {
 
 /// Мастер калибровки голоса пользователя (Voiceprint Enrollment Wizard).
 ///
-/// Записывает по три произношения каждого слова и по одному созвучному слову.
+/// Цель калибровки: слово активации (wake word) или слово завершения (close word).
+enum VoiceCalibrationTarget {
+  wake,
+  close,
+}
+
+/// Мастер калибровки голоса пользователя (Voiceprint Enrollment Wizard).
+///
+/// Записывает три произношения целевого слова и одно созвучное слово.
 /// Сохраняются только акустические признаки; Whisper не решает, верно ли
 /// пользователь произнёс нестандартное имя или короткое слово.
 class VoiceCalibrationSheet extends StatefulWidget {
   const VoiceCalibrationSheet({
     super.key,
+    this.target = VoiceCalibrationTarget.wake,
     required this.wakeWord,
     this.closeWord = '',
     this.bridge,
@@ -40,14 +48,53 @@ class VoiceCalibrationSheet extends StatefulWidget {
     this.onProfileCreated,
   });
 
+  final VoiceCalibrationTarget target;
   final String wakeWord;
   final String closeWord;
   final NativeBridge? bridge;
   final AudioStreamSource? audioSource;
   final VoidCallback? onProfileCreated;
 
+  static Future<bool?> showWake(
+    BuildContext context, {
+    required String wakeWord,
+    NativeBridge? bridge,
+    AudioStreamSource? audioSource,
+    VoidCallback? onProfileCreated,
+  }) => showMacosSheet<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (sheetContext) => VoiceCalibrationSheet(
+      target: VoiceCalibrationTarget.wake,
+      wakeWord: wakeWord,
+      bridge: bridge,
+      audioSource: audioSource,
+      onProfileCreated: onProfileCreated,
+    ),
+  );
+
+  static Future<bool?> showClose(
+    BuildContext context, {
+    required String closeWord,
+    NativeBridge? bridge,
+    AudioStreamSource? audioSource,
+    VoidCallback? onProfileCreated,
+  }) => showMacosSheet<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (sheetContext) => VoiceCalibrationSheet(
+      target: VoiceCalibrationTarget.close,
+      wakeWord: '',
+      closeWord: closeWord,
+      bridge: bridge,
+      audioSource: audioSource,
+      onProfileCreated: onProfileCreated,
+    ),
+  );
+
   static Future<bool?> show(
     BuildContext context, {
+    VoiceCalibrationTarget target = VoiceCalibrationTarget.wake,
     required String wakeWord,
     String closeWord = '',
     NativeBridge? bridge,
@@ -57,6 +104,7 @@ class VoiceCalibrationSheet extends StatefulWidget {
     context: context,
     barrierDismissible: false,
     builder: (sheetContext) => VoiceCalibrationSheet(
+      target: target,
       wakeWord: wakeWord,
       closeWord: closeWord,
       bridge: bridge,
@@ -74,24 +122,19 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   late final AudioStreamSource _audioSource;
   final AdaptiveNoiseFilter _noiseFilter = AdaptiveNoiseFilter();
 
-  late final bool _reuseWake;
-  late final bool _reuseClose;
   int _currentStep = 0;
-  int get _firstStep => _reuseWake ? 4 : 0;
-  int get _lastStep => _reuseClose || widget.closeWord.trim().isEmpty ? 4 : 8;
-  int get _totalSteps => _lastStep - _firstStep;
-  int get _visibleStep => _currentStep - _firstStep;
-  bool get _isNegativeStep => _currentStep == 3 || _currentStep == 7;
-  bool get _isCloseStep => _currentStep >= 4;
+  static const int _totalSteps = 4;
+  int get _visibleStep => _currentStep;
+  bool get _isNegativeStep => _currentStep == 3;
+  bool get _isCloseStep => widget.target == VoiceCalibrationTarget.close;
   String get _targetWord => _isCloseStep ? widget.closeWord : widget.wakeWord;
 
   CalibrationPhase _phase = CalibrationPhase.idle;
   String? _errorMessage;
 
-  final List<KeywordTemplate> _wakeTemplates = [];
-  final List<KeywordTemplate> _closeTemplates = [];
-  final List<KeywordTemplate> _wakeNegatives = [];
-  final List<KeywordTemplate> _closeNegatives = [];
+  final List<KeywordTemplate> _templates = [];
+  final List<KeywordTemplate> _negatives = [];
+  final List<KeywordTemplate> _otherTemplates = [];
   final List<Float32List> _recordedAudioBuffer = [];
   StreamSubscription<Float32List>? _audioSub;
 
@@ -105,29 +148,12 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
     super.initState();
     _audioSource = widget.audioSource ?? MicrophoneAudioStreamSource();
     final previous = SpeakerProfile.load();
-    final wakeUnchanged =
-        previous != null &&
-        previous.wakeTemplates.length >= 3 &&
-        KeywordTokenizer.normalizeKeywordText(previous.wakeWord) ==
-            KeywordTokenizer.normalizeKeywordText(widget.wakeWord);
-    final closeUnchanged =
-        previous != null &&
-        previous.closeTemplates.length >= 3 &&
-        KeywordTokenizer.normalizeKeywordText(previous.closeWord) ==
-            KeywordTokenizer.normalizeKeywordText(widget.closeWord);
-    // Changing one word must not silently replace good examples of the other.
-    // Opening calibration with unchanged words still records both again.
-    _reuseWake =
-        wakeUnchanged && !closeUnchanged && widget.closeWord.isNotEmpty;
-    _reuseClose = closeUnchanged && !wakeUnchanged;
-    if (_reuseWake) {
-      _wakeTemplates.addAll(previous!.wakeTemplates);
-      _wakeNegatives.addAll(previous.wakeNegatives);
-      _currentStep = 4;
-    }
-    if (_reuseClose) {
-      _closeTemplates.addAll(previous!.closeTemplates);
-      _closeNegatives.addAll(previous.closeNegatives);
+    if (previous != null) {
+      if (_isCloseStep) {
+        _otherTemplates.addAll(previous.wakeTemplates);
+      } else {
+        _otherTemplates.addAll(previous.closeTemplates);
+      }
     }
   }
 
@@ -302,9 +328,8 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   }
 
   void _handleSuccessfulSample(KeywordTemplate template) {
-    final collected = _isCloseStep ? _closeTemplates : _wakeTemplates;
     if (_isNegativeStep) {
-      final nearest = collected
+      final nearest = _templates
           .map((sample) => keywordDistance(sample, template))
           .reduce(math.min);
       if (nearest < 0.55) {
@@ -316,9 +341,9 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
         });
         return;
       }
-      (_isCloseStep ? _closeNegatives : _wakeNegatives).add(template);
-    } else if (collected.isNotEmpty &&
-        collected.every((sample) => keywordDistance(sample, template) > 1.12)) {
+      _negatives.add(template);
+    } else if (_templates.isNotEmpty &&
+        _templates.every((sample) => keywordDistance(sample, template) > 1.12)) {
       setState(() {
         _phase = CalibrationPhase.failed;
         _errorMessage =
@@ -327,9 +352,8 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
       });
       return;
     }
-    final otherTemplates = _isCloseStep ? _wakeTemplates : _closeTemplates;
     if (!_isNegativeStep &&
-        otherTemplates.any(
+        _otherTemplates.any(
           (sample) => keywordDistance(sample, template) < 0.52,
         )) {
       setState(() {
@@ -340,9 +364,9 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
       });
       return;
     }
-    if (!_isNegativeStep) collected.add(template);
+    if (!_isNegativeStep) _templates.add(template);
 
-    if (_currentStep + 1 < _lastStep) {
+    if (_currentStep + 1 < _totalSteps) {
       setState(() {
         _phase = CalibrationPhase.stepCompleted;
       });
@@ -363,18 +387,49 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   }
 
   void _finishAndSaveProfile() {
-    final profile = SpeakerProfile(
-      name: 'user',
-      dimension: 192,
-      embeddings: const [],
-      wakeWord: widget.wakeWord,
-      closeWord: widget.closeWord,
-      wakeTemplates: _wakeTemplates,
-      closeTemplates: _closeTemplates,
-      wakeNegatives: _wakeNegatives,
-      closeNegatives: _closeNegatives,
-      createdAt: DateTime.now(),
-    );
+    final previous = SpeakerProfile.load();
+    final SpeakerProfile profile;
+    if (_isCloseStep) {
+      profile = previous != null
+          ? previous.copyWith(
+              closeWord: widget.closeWord,
+              closeTemplates: _templates,
+              closeNegatives: _negatives,
+              createdAt: DateTime.now(),
+            )
+          : SpeakerProfile(
+              name: 'user',
+              dimension: 192,
+              embeddings: const [],
+              wakeWord: '',
+              closeWord: widget.closeWord,
+              wakeTemplates: const [],
+              closeTemplates: _templates,
+              wakeNegatives: const [],
+              closeNegatives: _negatives,
+              createdAt: DateTime.now(),
+            );
+    } else {
+      profile = previous != null
+          ? previous.copyWith(
+              wakeWord: widget.wakeWord,
+              wakeTemplates: _templates,
+              wakeNegatives: _negatives,
+              createdAt: DateTime.now(),
+            )
+          : SpeakerProfile(
+              name: 'user',
+              dimension: 192,
+              embeddings: const [],
+              wakeWord: widget.wakeWord,
+              closeWord: '',
+              wakeTemplates: _templates,
+              closeTemplates: const [],
+              wakeNegatives: _negatives,
+              closeNegatives: const [],
+              createdAt: DateTime.now(),
+            );
+    }
     if (!profile.save()) {
       setState(() {
         _phase = CalibrationPhase.failed;
@@ -437,12 +492,16 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          l10n.calibrationWizardTitle,
+                          _isCloseStep
+                              ? l10n.calibrationCloseTitle
+                              : l10n.calibrationWakeTitle,
                           style: Type.emptyTitle,
                         ),
                         const SizedBox(height: Gap.hint),
                         Text(
-                          l10n.calibrationWizardSubtitle,
+                          _isCloseStep
+                              ? l10n.calibrationCloseSubtitle
+                              : l10n.calibrationWakeSubtitle,
                           style: Type.caption.copyWith(
                             color:
                                 MacosTheme.brightnessOf(context) ==
@@ -620,10 +679,9 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
   }
 
   Widget _buildStepContent(AppLocalizations l10n) {
-    final localStep = _currentStep % 4;
     final title = _isNegativeStep
         ? l10n.calibrationNegativeTitle
-        : switch (localStep) {
+        : switch (_currentStep) {
             0 => l10n.calibrationStep1Title,
             1 => l10n.calibrationStep2Title,
             _ => l10n.calibrationStep3Title,
@@ -631,7 +689,7 @@ class _VoiceCalibrationSheetState extends State<VoiceCalibrationSheet>
 
     final prompt = _isNegativeStep
         ? l10n.calibrationNegativePrompt
-        : switch (localStep) {
+        : switch (_currentStep) {
             0 => l10n.calibrationStep1Prompt,
             1 => l10n.calibrationStep2Prompt,
             _ => l10n.calibrationStep3Prompt,

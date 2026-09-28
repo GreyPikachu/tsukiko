@@ -397,7 +397,7 @@ void main() {
     });
 
     test(
-      'срабатывает onSilenceTimeoutTriggered при паузе более 2 секунд',
+      'срабатывает onSilenceTimeoutTriggered при паузе более 2 секунд, если запись начата голосом',
       () async {
         var silenceTriggered = false;
         service.onSilenceTimeoutTriggered = () => silenceTriggered = true;
@@ -408,7 +408,7 @@ void main() {
           completionMode: PhraseCompletionMode.silenceOnly,
         );
         await service.start(settings: settings);
-        service.notifyRecordingStarted();
+        service.notifyRecordingStarted(startedByVoice: true);
 
         // Обозначаем начало речи
         engine.speechDetected = true;
@@ -430,6 +430,63 @@ void main() {
     );
 
     test(
+      'таймер тишины НЕ срабатывает, если запись начата не голосом (startedByVoice: false)',
+      () async {
+        var silenceTriggered = false;
+        service.onSilenceTimeoutTriggered = () => silenceTriggered = true;
+
+        final settings = DictationSettings(
+          wakeWordEnabled: true,
+          wakeWord: 'Джеф',
+          completionMode: PhraseCompletionMode.silenceOnly,
+        );
+        await service.start(settings: settings);
+        service.notifyRecordingStarted(startedByVoice: false);
+
+        // Обозначаем начало речи
+        engine.speechDetected = true;
+        audioSource.pushSamples(makeAudio());
+        await pumpEventQueue();
+
+        // Речь прекратилась
+        engine.speechDetected = false;
+
+        // Ждём 2100мс
+        await Future<void>.delayed(const Duration(milliseconds: 2100));
+
+        // Приходит аудиофрейм тишины
+        audioSource.pushSamples(makeAudio());
+        await pumpEventQueue();
+
+        // Не должно сработать, так как запись начата не голосом (например, с клавиатуры)
+        expect(silenceTriggered, isFalse);
+      },
+    );
+
+    test(
+      'CloseWord срабатывает, даже если запись начата не голосом (startedByVoice: false)',
+      () async {
+        var closeTriggered = false;
+        service.onCloseWordTriggered = () => closeTriggered = true;
+
+        final settings = DictationSettings(
+          wakeWordEnabled: true,
+          wakeWord: 'Джеф',
+          closeWord: 'стоп',
+          completionMode: PhraseCompletionMode.closeWordOnly,
+        );
+        await service.start(settings: settings);
+        service.notifyRecordingStarted(startedByVoice: false);
+
+        engine.queuedDetection = KeywordDetection(keyword: 'стоп');
+        audioSource.pushSamples(makeAudio());
+        await pumpEventQueue();
+
+        expect(closeTriggered, isTrue);
+      },
+    );
+
+    test(
       'в режиме closeWordOnly таймер тишины не останавливает запись',
       () async {
         var silenceTriggered = false;
@@ -442,7 +499,7 @@ void main() {
           completionMode: PhraseCompletionMode.closeWordOnly,
         );
         await service.start(settings: settings);
-        service.notifyRecordingStarted();
+        service.notifyRecordingStarted(startedByVoice: true);
 
         // Обозначаем начало речи
         engine.speechDetected = true;

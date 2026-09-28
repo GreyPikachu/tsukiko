@@ -150,12 +150,12 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   void _readDictation() {
     final profile = SpeakerProfile.load();
+    final wakeExists =
+        profile?.hasWakeTemplatesFor(_dictation.wakeWord) ?? false;
+    final closeExists =
+        profile?.hasCloseTemplatesFor(_dictation.closeWord) ?? false;
     final profileExists =
-        profile?.hasPersonalKeywordsFor(
-          _dictation.wakeWord,
-          _dictation.closeWord,
-        ) ??
-        false;
+        wakeExists && (_dictation.closeWord.trim().isEmpty || closeExists);
     _emit(
       state.copyWith(
         hold: _dictation.hold,
@@ -175,6 +175,8 @@ class SettingsCubit extends Cubit<SettingsState> {
         voiceCalibrationEnabled: _dictation.voiceCalibrationEnabled,
         speakerThreshold: _dictation.speakerThreshold,
         speakerProfileExists: profileExists,
+        wakeProfileExists: wakeExists,
+        closeProfileExists: closeExists,
       ),
     );
   }
@@ -376,6 +378,23 @@ class SettingsCubit extends Cubit<SettingsState> {
   void deleteSpeakerProfile() {
     SpeakerProfile.delete();
     _saveDictation((d) => d.voiceCalibrationEnabled = false);
+  }
+
+  void deleteWakeProfile() {
+    final profile = SpeakerProfile.load();
+    profile?.clearWakeCalibration();
+    _saveDictation((d) {
+      final remaining = SpeakerProfile.load();
+      if (remaining == null || !remaining.hasWakeTemplatesFor(d.wakeWord)) {
+        d.voiceCalibrationEnabled = false;
+      }
+    });
+  }
+
+  void deleteCloseProfile() {
+    final profile = SpeakerProfile.load();
+    profile?.clearCloseCalibration();
+    _saveDictation((d) {});
   }
 
   void refreshSpeakerProfile() {

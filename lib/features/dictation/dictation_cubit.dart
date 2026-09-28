@@ -168,7 +168,7 @@ class DictationCubit extends Cubit<DictationState> {
         state.phase == Phase.idle && _startingRecording == null;
     s.onWakeWordTriggered = () {
       if (state.phase == Phase.idle) {
-        start();
+        start(startedByVoice: true);
       }
     };
     s.onCloseWordTriggered = () {
@@ -502,10 +502,10 @@ class DictationCubit extends Cubit<DictationState> {
     }
   }
 
-  Future<void> start() async {
+  Future<void> start({bool startedByVoice = false}) async {
     if (state.phase != Phase.idle || _startingRecording != null) return;
     _finishAfterStart = null;
-    _startingRecording = _beginRecording();
+    _startingRecording = _beginRecording(startedByVoice: startedByVoice);
     try {
       await _startingRecording;
     } finally {
@@ -518,7 +518,7 @@ class DictationCubit extends Cubit<DictationState> {
     if (finish != null) await finish();
   }
 
-  Future<void> _beginRecording() async {
+  Future<void> _beginRecording({bool startedByVoice = false}) async {
     _aborted = false;
     // Реакция на клавишу должна быть мгновенной. На Windows один только
     // подъём WASAPI занимает заметное время; прежде всё это время панель
@@ -535,7 +535,7 @@ class DictationCubit extends Cubit<DictationState> {
     );
     if (_settings.hud) unawaited(bridge.hud(HudState.recording));
     _syncMeter();
-    _wakeWordService?.notifyRecordingStarted();
+    _wakeWordService?.notifyRecordingStarted(startedByVoice: startedByVoice);
 
     // Сервер поднимается параллельно записи: пока человек говорит, модель
     // успевает загрузиться, и после отпускания клавиши ждать уже нечего.

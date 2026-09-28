@@ -620,6 +620,7 @@
   "tooltipEnableItem": "Enable entry",
   "tooltipDisableItem": "Disable entry",
   "emptyVocabularyTitle": "Vocabulary is empty",
+  "emptyVocabularySubtitle": "Add rare terms, names, or configure phrase replacements.",
   "tooltipSetPriority": "Send to model prompt context (priority)",
   "tooltipRemovePriority": "Remove from model prompt context (post-processing only)",
   "promptBudgetNotice": "~{tokens} of {max} model tokens used (priority)",
@@ -724,8 +725,8 @@
     }
   },
   "voiceProfileStatusNotCalibrated": "Keywords not calibrated",
-  "buttonCalibrateVoice": "Calibrate voice…",
-  "buttonRecalibrateVoice": "Recalibrate…",
+  "buttonCalibrateVoice": "Calibrate",
+  "buttonRecalibrateVoice": "Recalibrate",
   "buttonDeleteVoiceProfile": "Delete profile",
   "fieldSpeakerThreshold": "Verification sensitivity",
   "hintSpeakerThreshold": "Voice similarity threshold (default 0.60). Higher is stricter, lower is more forgiving in noise.",
@@ -763,5 +764,18 @@
   "wakeDiagnosticsRecalibrateFirst": "Calibrate both words first so the personal detector's scores can be recorded.",
   "wakeDiagnosticsStartFailed": "Could not start diagnostic recording. Check microphone access.",
   "wakeDiagnosticsMarkFailed": "Could not save the marker.",
-  "buttonDone": "Done"
+  "buttonDone": "Done",
+  "calibrationWakeTitle": "Wake Word Calibration",
+  "calibrationWakeSubtitle": "Record 3 pronunciations of the wake word and one similar word that must not trigger it.",
+  "calibrationCloseTitle": "Close Word Calibration",
+  "calibrationCloseSubtitle": "Record 3 pronunciations of the close word and one similar word that must not trigger it.",
+  "voiceProfileWakeCalibrated": "Wake word calibrated",
+  "voiceProfileWakeNotCalibrated": "Wake word not calibrated",
+  "voiceProfileCloseCalibrated": "Close word calibrated",
+  "voiceProfileCloseNotCalibrated": "Close word not calibrated",
+  "voiceProfileCloseEmpty": "Close word is not set",
+  "calibrationWakeSectionTitle": "Wake Word Calibration",
+  "calibrationCloseSectionTitle": "Close Word Calibration",
+  "buttonDeleteWakeProfile": "Delete wake profile",
+  "buttonDeleteCloseProfile": "Delete close profile"
 }
