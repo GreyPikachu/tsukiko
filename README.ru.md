@@ -13,12 +13,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Yukovsky/tsukiko/releases"><img src="https://img.shields.io/badge/version-0.10.13-blue.svg?style=flat-square" alt="Версия" /></a>
+  <a href="https://github.com/Yukovsky/tsukiko/releases"><img src="https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square" alt="Версия" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%2012%2B%20%7C%20Windows%2010%2F11-lightgrey.svg?style=flat-square" alt="Платформы" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="Лицензия" /></a>
   <img src="https://img.shields.io/badge/privacy-100%25%20Offline-success.svg?style=flat-square" alt="100% Offline" />
   <img src="https://img.shields.io/badge/hardware-Metal%20%7C%20Vulkan-orange.svg?style=flat-square" alt="Аппаратное ускорение" />
-  <img src="https://img.shields.io/badge/tests-544%20passed-brightgreen.svg?style=flat-square" alt="Тесты" />
+  <img src="https://img.shields.io/badge/tests-549%20passed-brightgreen.svg?style=flat-square" alt="Тесты" />
 </p>
 
 <br />
