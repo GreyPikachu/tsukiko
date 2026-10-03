@@ -869,7 +869,11 @@ void DictationBridge::ShowContextMenu() {
 bool DictationBridge::HandleWindowMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
   if (message == WM_TIMER && wparam == ID_HUD_TIMER) {
     KillTimer(main_window_, ID_HUD_TIMER);
-    if (hud_ && current_hud_state_ != "recording" && current_hud_state_ != "transcribing") hud_->Hide();
+    if (hud_ && !hud_->editing() && current_hud_state_ != "recording" &&
+        current_hud_state_ != "transcribing") {
+      hud_->Hide();
+      current_hud_state_ = "hidden";
+    }
     return true;
   }
   if (message == WM_TIMER && wparam == ID_PREWARM_TIMER) {
