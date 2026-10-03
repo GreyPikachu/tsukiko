@@ -55,3 +55,14 @@ macos/Engine/
 windows/Engine/
 # Личные голосовые записи и локальные результаты проверки распознавания.
 /records/
+
+# Multi-agent system & memory bank
+.agents
+.agents/
+/.agents/
+.memory_bank
+.memory_bank/
+/.memory_bank/
+.memorybank
+.memorybank/
+/.memorybank/

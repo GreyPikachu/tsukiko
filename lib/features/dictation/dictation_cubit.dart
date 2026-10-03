@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../../platform/bridge.dart';
 import '../../core/logger.dart';
 import '../../core/whisper_server.dart';
+import 'dictation_history.dart';
 import 'dictation_state.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
@@ -36,12 +37,27 @@ import '../../core/wakeword/keyword_tokenizer.dart' show stripTrailingCloseWord;
 /// наружу уходит только [DictationState], в котором одни значения.
 class DictationCubit extends Cubit<DictationState> {
   /// [server] подменяют только тесты: настоящий поднимает whisper-server
+  static DictationState _initialState(List<DictationEntry>? initialHistory) {
+    try {
+      final history = initialHistory ?? DictationHistory.load();
+      return DictationState(
+        history: history,
+        last: history.isNotEmpty ? history.first.text : '',
+      );
+    } catch (e, st) {
+      Log.warn('Dictation', 'Не удалось инициализировать историю диктовок: $e', e, st);
+      return const DictationState();
+    }
+  }
+
+  /// [server] подменяют только тесты: настоящий поднимает whisper-server
   /// и читает в память полтора гигабайта, а проверять надо не это.
   DictationCubit(
     this.bridge, {
     WhisperServer? server,
     WakeWordService? wakeWordService,
-  }) : super(const DictationState()) {
+    List<DictationEntry>? initialHistory,
+  }) : super(_initialState(initialHistory)) {
     _server =
         server ??
         WhisperServer(idleTimeout: Duration(seconds: _settings.idleSeconds));
@@ -656,7 +672,16 @@ class DictationCubit extends Cubit<DictationState> {
           }
           Log.info('Dictation', 'Dictation transcribed: ${text.length} chars');
           if (text.isNotEmpty) {
-            _emit(state.copyWith(last: text));
+            final entry = DictationEntry(
+              id: DateTime.now().microsecondsSinceEpoch.toString(),
+              text: text,
+              createdAt: DateTime.now(),
+            );
+            final updatedHistory = [entry, ...state.history]
+                .take(DictationHistory.maxEntries)
+                .toList();
+            DictationHistory.save(updatedHistory);
+            _emit(state.copyWith(last: text, history: updatedHistory));
             // «Только в буфер» — для тех, кто вставит сам и туда, куда решит.
             if (!_settings.insert) {
               await copyLast();
@@ -839,6 +864,46 @@ class DictationCubit extends Cubit<DictationState> {
   Future<void> copyLast() async {
     if (state.last.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: state.last));
+  }
+
+  /// Скопировать запись из истории по её идентификатору.
+  Future<void> copyEntry(String id) async {
+    if (id.trim().isEmpty) return;
+    final entry = state.history.where((e) => e.id == id).firstOrNull;
+    if (entry == null || entry.text.trim().isEmpty) return;
+    try {
+      await Clipboard.setData(ClipboardData(text: entry.text));
+      Log.info('Dictation', 'Скопирована запись из истории: ${entry.id}');
+    } catch (e, st) {
+      Log.warn('Dictation', 'Не удалось скопировать запись $id в буфер: $e', e, st);
+    }
+  }
+
+  /// Полностью очистить историю диктовок.
+  Future<void> clearHistory() async {
+    try {
+      DictationHistory.clear();
+      _emit(state.copyWith(clearHistory: true));
+      Log.info('Dictation', 'История диктовок очищена');
+    } catch (e, st) {
+      Log.warn('Dictation', 'Ошибка при очистке истории диктовок: $e', e, st);
+    }
+  }
+
+  /// Удалить одну запись из истории.
+  Future<void> deleteHistoryEntry(String id) async {
+    if (id.trim().isEmpty) return;
+    try {
+      final updated = state.history.where((e) => e.id != id).toList();
+      DictationHistory.save(updated);
+      _emit(state.copyWith(
+        history: updated,
+        last: updated.isNotEmpty ? updated.first.text : '',
+      ));
+      Log.info('Dictation', 'Запись $id удалена из истории');
+    } catch (e, st) {
+      Log.warn('Dictation', 'Ошибка при удалении записи $id из истории: $e', e, st);
+    }
   }
 
   void unload() => unawaited(_server.shutdown());
