@@ -12,6 +12,7 @@ import '../../design/design.dart';
 import '../../core/logger.dart';
 import '../../core/whisper_server.dart' show sweepRecordings;
 import 'dictation_cubit.dart';
+import 'dictation_history.dart';
 import 'dictation_state.dart';
 import '../../core/app_locale.dart';
 import '../../core/models.dart';
@@ -141,7 +142,7 @@ class _PanelState extends State<_Panel> {
           _Live(s),
           _Notices(s),
           const _Divider(),
-          _Last(s),
+          _History(s),
           const _Divider(),
           _Model(s),
           // Действия ухода живут внизу и отделены — так во всех поповерах
@@ -494,49 +495,376 @@ class _Notices extends StatelessWidget {
   }
 }
 
-class _Last extends StatelessWidget {
-  const _Last(this.s);
+/// Блок истории диктовок: последняя запись на виду, предыдущие — под аккуратным
+/// спойлером с ограничением высоты, чтобы поповер не раздувался за экран.
+class _History extends StatefulWidget {
+  const _History(this.s);
   final DictationState s;
+
+  @override
+  State<_History> createState() => _HistoryState();
+}
+
+class _HistoryState extends State<_History> {
+  bool _expanded = false;
+
+  DictationState get s => widget.s;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final cubit = context.read<DictationCubit>();
+    final history = s.history;
+    final hasHistory = history.isNotEmpty;
+    final latest = hasHistory ? history.first : null;
+    final older = hasHistory && history.length > 1 ? history.sublist(1) : const <DictationEntry>[];
+
     return Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: Gap.edgeNarrow, vertical: Gap.item),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l10n.lastTranscriptTitle,
-                style: Type.caption.copyWith(color: Surface.secondaryText(context))),
-            const SizedBox(height: Gap.hint),
+      padding: const EdgeInsets.symmetric(
+        horizontal: Gap.edgeNarrow,
+        vertical: Gap.item,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Заголовок и кнопка очистки всей истории
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  l10n.lastTranscriptTitle,
+                  style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+                ),
+              ),
+              if (hasHistory)
+                MacosTooltip(
+                  message: l10n.menuClearRecentList,
+                  child: Semantics(
+                    button: true,
+                    label: l10n.menuClearRecentList,
+                    child: _HistoryActionIcon(
+                      icon: CupertinoIcons.trash,
+                      size: 13,
+                      onTap: () {
+                        try {
+                          cubit.clearHistory();
+                        } catch (e, st) {
+                          Log.warn('Panel', 'Ошибка вызова clearHistory: $e', e, st);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: Gap.hint),
+
+          // Последняя расшифровка
+          if (!hasHistory)
             Text(
-              s.last.isEmpty ? l10n.noDictationYet : s.last,
+              l10n.noDictationYet,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: s.last.isEmpty
-                  ? Type.control.copyWith(color: Surface.secondaryText(context))
-                  : Type.control,
+              style: Type.control.copyWith(color: Surface.secondaryText(context)),
+            )
+          else ...[
+            Text(
+              latest!.text,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: Type.control,
             ),
-            // Кнопки без текста нечего делать: пустая пара мертвецов только
-            // занимает место в и без того тесном поповере.
-            // «Вставить снова» здесь была и не работала: панель не помнила,
-            // куда вставляла, а ждала наугад двести миллисекунд и попадала
-            // в чужое окно. Осталось «Скопировать» и родное сочетание
-            // вставки той системы, где человек работает.
-            if (s.last.isNotEmpty) ...[
-              const SizedBox(height: Gap.item),
-              PushButton(
-                controlSize: ControlSize.small,
-                secondary: true,
-                onPressed: context.read<DictationCubit>().copyLast,
-                child: Text(l10n.buttonCopy),
+            const SizedBox(height: Gap.item),
+            Row(
+              children: [
+                PushButton(
+                  controlSize: ControlSize.small,
+                  secondary: true,
+                  onPressed: () {
+                    try {
+                      cubit.copyLast();
+                    } catch (e, st) {
+                      Log.warn('Panel', 'Ошибка копирования последней записи: $e', e, st);
+                    }
+                  },
+                  child: Text(l10n.buttonCopy),
+                ),
+                const Spacer(),
+                Text(
+                  _formatTime(latest.createdAt),
+                  style: Type.timestamp.copyWith(color: Surface.secondaryText(context)),
+                ),
+              ],
+            ),
+          ],
+
+          // Предыдущие записи (аккордеон)
+          if (older.isNotEmpty) ...[
+            const SizedBox(height: Gap.item),
+            _AccordionToggle(
+              expanded: _expanded,
+              count: older.length,
+              onToggle: () => setState(() => _expanded = !_expanded),
+            ),
+            if (_expanded) ...[
+              const SizedBox(height: Gap.hint),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 180),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final entry in older)
+                        _HistoryItemRow(
+                          key: ValueKey(entry.id),
+                          entry: entry,
+                          onCopy: () {
+                            try {
+                              cubit.copyEntry(entry.id);
+                            } catch (e, st) {
+                              Log.warn('Panel', 'Ошибка копирования записи ${entry.id}: $e', e, st);
+                            }
+                          },
+                          onDelete: () {
+                            try {
+                              cubit.deleteHistoryEntry(entry.id);
+                            } catch (e, st) {
+                              Log.warn('Panel', 'Ошибка удаления записи ${entry.id}: $e', e, st);
+                            }
+                          },
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ],
-        ),
-      );
+        ],
+      ),
+    );
   }
+}
+
+class _AccordionToggle extends StatefulWidget {
+  const _AccordionToggle({
+    required this.expanded,
+    required this.count,
+    required this.onToggle,
+  });
+
+  final bool expanded;
+  final int count;
+  final VoidCallback onToggle;
+
+  @override
+  State<_AccordionToggle> createState() => _AccordionToggleState();
+}
+
+class _AccordionToggleState extends State<_AccordionToggle> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = _previousLabel(context, widget.count);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onToggle,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: Gap.hint, horizontal: Gap.inner),
+          decoration: BoxDecoration(
+            color: _hover ? Surface.hover(context) : MacosColors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: Type.caption.copyWith(
+                    color: _hover ? MacosTheme.of(context).typography.body.color : Surface.secondaryText(context),
+                  ),
+                ),
+              ),
+              MacosIcon(
+                widget.expanded ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
+                size: 12,
+                color: Surface.secondaryText(context),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryItemRow extends StatefulWidget {
+  const _HistoryItemRow({
+    super.key,
+    required this.entry,
+    required this.onCopy,
+    required this.onDelete,
+  });
+
+  final DictationEntry entry;
+  final VoidCallback onCopy;
+  final VoidCallback onDelete;
+
+  @override
+  State<_HistoryItemRow> createState() => _HistoryItemRowState();
+}
+
+class _HistoryItemRowState extends State<_HistoryItemRow> {
+  bool _hover = false;
+  bool _copied = false;
+
+  void _handleCopy() {
+    try {
+      widget.onCopy();
+      setState(() => _copied = true);
+      Future.delayed(const Duration(milliseconds: 1200), () {
+        if (mounted) setState(() => _copied = false);
+      });
+    } catch (e, st) {
+      Log.warn('Panel', 'Ошибка копирования: $e', e, st);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final isRu = Localizations.localeOf(context).languageCode == 'ru';
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: Gap.hint),
+        padding: const EdgeInsets.symmetric(horizontal: Gap.inner, vertical: Gap.hint),
+        decoration: BoxDecoration(
+          color: _hover ? Surface.hover(context) : MacosColors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: Surface.hairline(context),
+            width: 0.5,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.entry.text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Type.caption.copyWith(height: 1.25),
+            ),
+            const SizedBox(height: Gap.tight),
+            Row(
+              children: [
+                Text(
+                  _formatTime(widget.entry.createdAt),
+                  style: Type.timestamp.copyWith(
+                    color: Surface.secondaryText(context),
+                  ),
+                ),
+                const Spacer(),
+                MacosTooltip(
+                  message: _copied ? (isRu ? 'Скопировано' : 'Copied') : l10n.buttonCopy,
+                  child: _HistoryActionIcon(
+                    icon: _copied ? CupertinoIcons.checkmark_alt : CupertinoIcons.doc_on_doc,
+                    size: 13,
+                    lit: _copied,
+                    onTap: _handleCopy,
+                  ),
+                ),
+                const SizedBox(width: Gap.tight),
+                MacosTooltip(
+                  message: l10n.buttonDelete,
+                  child: _HistoryActionIcon(
+                    icon: CupertinoIcons.xmark,
+                    size: 11,
+                    onTap: widget.onDelete,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryActionIcon extends StatefulWidget {
+  const _HistoryActionIcon({
+    required this.icon,
+    required this.onTap,
+    this.size = 14,
+    this.lit = false,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final double size;
+  final bool lit;
+
+  @override
+  State<_HistoryActionIcon> createState() => _HistoryActionIconState();
+}
+
+class _HistoryActionIconState extends State<_HistoryActionIcon> {
+  bool _hover = false;
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = MacosTheme.of(context).primaryColor;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _down = true),
+        onTapUp: (_) => setState(() => _down = false),
+        onTapCancel: () => setState(() => _down = false),
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          duration: Motion.dur(context, Motion.press),
+          scale: _down ? 0.90 : 1.0,
+          child: Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: _down
+                  ? Surface.pressed(context)
+                  : (_hover ? Surface.hover(context) : MacosColors.transparent),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            alignment: Alignment.center,
+            child: MacosIcon(
+              widget.icon,
+              size: widget.size,
+              color: widget.lit
+                  ? accent
+                  : Surface.secondaryText(context).withValues(alpha: _hover ? 1 : 0.65),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _formatTime(DateTime dt) {
+  final h = dt.hour.toString().padLeft(2, '0');
+  final m = dt.minute.toString().padLeft(2, '0');
+  return '$h:$m';
+}
+
+String _previousLabel(BuildContext context, int count) {
+  final isRu = Localizations.localeOf(context).languageCode == 'ru';
+  return isRu ? 'Предыдущие записи ($count)' : 'Previous transcripts ($count)';
 }
 
 /// Модель: что загружено, сколько занимает и когда освободится. Та самая
