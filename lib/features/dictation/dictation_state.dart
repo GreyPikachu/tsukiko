@@ -17,6 +17,8 @@ enum Phase { idle, recording, transcribing }
 class DictationState extends Equatable {
   const DictationState({
     this.phase = Phase.idle,
+    this.pendingCount = 0,
+    this.processing = false,
     this.enabled = true,
     this.holdLabel = '',
     this.toggleLabel = '',
@@ -38,6 +40,8 @@ class DictationState extends Equatable {
   });
 
   final Phase phase;
+  final int pendingCount;
+  final bool processing;
 
   /// Главный выключатель и подписи назначенных сочетаний.
   final bool enabled;
@@ -88,6 +92,8 @@ class DictationState extends Equatable {
 
   DictationState copyWith({
     Phase? phase,
+    int? pendingCount,
+    bool? processing,
     bool? enabled,
     String? holdLabel,
     String? toggleLabel,
@@ -112,51 +118,54 @@ class DictationState extends Equatable {
     bool clearFailurePath = false,
     bool clearVad = false,
     bool clearUnload = false,
-  }) =>
-      DictationState(
-        phase: phase ?? this.phase,
-        enabled: enabled ?? this.enabled,
-        holdLabel: holdLabel ?? this.holdLabel,
-        toggleLabel: toggleLabel ?? this.toggleLabel,
-        last: last ?? this.last,
-        level: level ?? this.level,
-        elapsed: elapsed ?? this.elapsed,
-        allowed: allowed ?? this.allowed,
-        sweptMb: sweptMb ?? this.sweptMb,
-        failure: clearFailure ? null : (failure ?? this.failure),
-        failurePath: clearFailure || clearFailurePath
-            ? null
-            : (failurePath ?? this.failurePath),
-        vadProgress: clearVad ? null : (vadProgress ?? this.vadProgress),
-        vadError: clearVad ? null : (vadError ?? this.vadError),
-        serverUp: serverUp ?? this.serverUp,
-        untilUnload: clearUnload ? null : (untilUnload ?? this.untilUnload),
-        memoryMb: memoryMb ?? this.memoryMb,
-        chosenModel: chosenModel ?? this.chosenModel,
-        ownModel: ownModel ?? this.ownModel,
-        models: models ?? this.models,
-      );
+  }) => DictationState(
+    phase: phase ?? this.phase,
+    pendingCount: pendingCount ?? this.pendingCount,
+    processing: processing ?? this.processing,
+    enabled: enabled ?? this.enabled,
+    holdLabel: holdLabel ?? this.holdLabel,
+    toggleLabel: toggleLabel ?? this.toggleLabel,
+    last: last ?? this.last,
+    level: level ?? this.level,
+    elapsed: elapsed ?? this.elapsed,
+    allowed: allowed ?? this.allowed,
+    sweptMb: sweptMb ?? this.sweptMb,
+    failure: clearFailure ? null : (failure ?? this.failure),
+    failurePath: clearFailure || clearFailurePath
+        ? null
+        : (failurePath ?? this.failurePath),
+    vadProgress: clearVad ? null : (vadProgress ?? this.vadProgress),
+    vadError: clearVad ? null : (vadError ?? this.vadError),
+    serverUp: serverUp ?? this.serverUp,
+    untilUnload: clearUnload ? null : (untilUnload ?? this.untilUnload),
+    memoryMb: memoryMb ?? this.memoryMb,
+    chosenModel: chosenModel ?? this.chosenModel,
+    ownModel: ownModel ?? this.ownModel,
+    models: models ?? this.models,
+  );
 
   @override
   List<Object?> get props => [
-        phase,
-        enabled,
-        holdLabel,
-        toggleLabel,
-        last,
-        level,
-        elapsed,
-        allowed,
-        sweptMb,
-        failure,
-        failurePath,
-        vadProgress,
-        vadError,
-        serverUp,
-        untilUnload,
-        memoryMb,
-        chosenModel,
-        ownModel,
-        models,
-      ];
+    phase,
+    pendingCount,
+    processing,
+    enabled,
+    holdLabel,
+    toggleLabel,
+    last,
+    level,
+    elapsed,
+    allowed,
+    sweptMb,
+    failure,
+    failurePath,
+    vadProgress,
+    vadError,
+    serverUp,
+    untilUnload,
+    memoryMb,
+    chosenModel,
+    ownModel,
+    models,
+  ];
 }

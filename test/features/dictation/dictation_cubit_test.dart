@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:tsukiko/platform/os.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
@@ -57,7 +59,10 @@ void main() {
       });
       await cubit.reloadSettingsForTesting();
 
-      expect(cubit.optionsForTesting.effectivePrompt, isNot(contains('адрес офиса')));
+      expect(
+        cubit.optionsForTesting.effectivePrompt,
+        isNot(contains('адрес офиса')),
+      );
     });
 
     test('начинается и переходит в распознавание', () async {
@@ -227,6 +232,187 @@ void main() {
     });
   });
 
+  group('очередь диктовок', () {
+    Future<void> waitFor(bool Function() condition) async {
+      for (var i = 0; i < 200 && !condition(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      expect(condition(), isTrue);
+    }
+
+    for (final count in [5, 10]) {
+      test('$count записей обрабатываются FIFO без перекрытия', () async {
+        server.gate = Completer<String?>();
+        final results = <Future<void>>[];
+        for (var i = 0; i < count; i++) {
+          native.recordPath = os.join(os.supportDir, 'queue-$i.wav');
+          await cubit.start();
+          results.add(cubit.stop());
+          await waitFor(() => !cubit.state.recording);
+        }
+        await waitFor(() => server.paths.isNotEmpty);
+        expect(server.paths.length, 1);
+        expect(cubit.state.processing, isTrue);
+        expect(cubit.state.pendingCount, count - 1);
+        server.gate!.complete('first');
+        server.gate = null;
+        await Future.wait(results);
+        expect(server.paths, [
+          for (var i = 0; i < count; i++)
+            os.join(os.supportDir, 'queue-$i.wav'),
+        ]);
+        expect(server.maxConcurrent, 1);
+        expect(native.pastes.length, count);
+        expect(native.pastes.first, 'first');
+        expect(cubit.state.phase, Phase.idle);
+        expect(cubit.state.pendingCount, 0);
+        expect(server.holds, 0);
+      });
+    }
+
+    test('результат предыдущей не сбрасывает текущую запись', () async {
+      server.gate = Completer<String?>();
+      await cubit.start();
+      final first = cubit.stop();
+      await waitFor(() => server.paths.isNotEmpty);
+      native.recordPath = os.join(os.supportDir, 'second.wav');
+      await cubit.start();
+      server.gate!.complete('first');
+      await first;
+      expect(cubit.state.recording, isTrue);
+      expect(native.hudStates.last, 'recording');
+      await cubit.cancel();
+      expect(server.holds, 0);
+    });
+
+    test('отмена текущей записи оставляет прежнюю расшифровку', () async {
+      server.gate = Completer<String?>();
+      await cubit.start();
+      final first = cubit.stop();
+      await waitFor(() => server.paths.isNotEmpty);
+      native.recordPath = os.join(os.supportDir, 'cancel.wav');
+      await cubit.start();
+      await cubit.cancel();
+      expect(cubit.state.phase, Phase.transcribing);
+      expect(server.shutdowns, 0);
+      expect(native.hudStates.last, 'transcribing');
+      server.gate!.complete('first');
+      await first;
+      expect(native.pasted, 'first');
+      expect(server.paths.length, 1);
+    });
+
+    test(
+      'отмена расшифровки не отменяет микрофон и не вставляет поздний результат',
+      () async {
+        server.gate = Completer<String?>();
+        await cubit.start();
+        final first = cubit.stop();
+        await waitFor(() => server.paths.isNotEmpty);
+        await cubit.start();
+        await cubit.abortTranscription();
+        server.gate!.complete('late');
+        await first;
+        expect(native.pastes, isEmpty);
+        expect(cubit.state.recording, isTrue);
+        await cubit.cancel();
+        expect(server.holds, 0);
+      },
+    );
+
+    test('очистка ожидающих сохраняет файлы и не трогает активную', () async {
+      server.gate = Completer<String?>();
+      await cubit.start();
+      final first = cubit.stop();
+      await waitFor(() => server.paths.isNotEmpty);
+      native.recordPath = os.join(os.supportDir, 'waiting.wav');
+      File(native.recordPath!).writeAsBytesSync(List.filled(64, 1));
+      await cubit.start();
+      final waiting = cubit.stop();
+      await waitFor(() => cubit.state.pendingCount == 1);
+      await cubit.clearPending();
+      await waiting;
+      expect(cubit.state.pendingCount, 0);
+      expect(cubit.state.failurePath, isNotNull);
+      expect(File(cubit.state.failurePath!).existsSync(), isTrue);
+      expect(server.shutdowns, 0);
+      server.gate!.complete('first');
+      await first;
+      expect(server.paths.length, 1);
+      expect(server.holds, 0);
+    });
+
+    test('запуск ждёт закрытие WAV, повторная остановка безопасна', () async {
+      native.stopGate = Completer<void>();
+      await cubit.start();
+      final stopped = cubit.stop();
+      final next = cubit.start();
+      await cubit.stop();
+      expect(native.calls.where((c) => c == 'record').length, 1);
+      expect(native.calls.where((c) => c == 'stopRecord').length, 1);
+      native.stopGate!.complete();
+      await next;
+      await stopped;
+      expect(cubit.state.recording, isTrue);
+      await cubit.cancel();
+      expect(server.holds, 0);
+    });
+
+    test('отмена во время загрузки модели не гасит следующую запись', () async {
+      server.ensureUpCompleter = Completer<void>();
+      await cubit.start();
+      final first = cubit.stop();
+      await waitFor(() => server.ensureUpCalls.isNotEmpty);
+      final abort = cubit.abortTranscription();
+      native.recordPath = os.join(os.supportDir, 'after-abort.wav');
+      await cubit.start();
+      final next = cubit.stop();
+      await waitFor(() => cubit.state.pendingCount == 1);
+      server.ensureUpCompleter!.complete();
+      await abort;
+      await Future.wait([first, next]);
+      expect(server.shutdowns, 1);
+      expect(server.paths, [os.join(os.supportDir, 'after-abort.wav')]);
+      expect(native.pastes.length, 1);
+      expect(server.holds, 0);
+    });
+
+    test('очередь в режиме буфера накапливает все результаты', () async {
+      final settings = DictationSettings.load()..insert = false;
+      settings.save();
+      await cubit.reloadSettingsForTesting();
+      server.gate = Completer<String?>();
+      await cubit.start();
+      final first = cubit.stop();
+      await waitFor(() => server.paths.isNotEmpty);
+      await cubit.start();
+      final next = cubit.stop();
+      await waitFor(() => cubit.state.pendingCount == 1);
+      server.gate!.complete('first');
+      server.gate = null;
+      await Future.wait([first, next]);
+      expect(cubit.state.last, 'first\nсказанное вслух');
+      expect(native.pastes, isEmpty);
+    });
+
+    test('ошибка одной записи не блокирует следующую', () async {
+      server.gate = Completer<String?>();
+      await cubit.start();
+      final first = cubit.stop();
+      await waitFor(() => server.paths.isNotEmpty);
+      native.recordPath = os.join(os.supportDir, 'after-failure.wav');
+      await cubit.start();
+      final next = cubit.stop();
+      await waitFor(() => cubit.state.pendingCount == 1);
+      server.gate!.completeError(StateError('engine failed'));
+      server.gate = null;
+      await Future.wait([first, next]);
+      expect(native.pastes.length, 1);
+      expect(cubit.state.phase, Phase.idle);
+      expect(server.holds, 0);
+    });
+  });
+
   group('разрешения', () {
     test('одному «нет» не верим, третьему верим', () async {
       await settle();
@@ -286,69 +472,81 @@ void main() {
   });
 
   group('прогрев и запуск', () {
-    test('выбор модели при включённой диктовке запускает фоновый прогрев', () async {
-      cubit.setEnabled(true);
-      server.ensureUpCalls.clear();
+    test(
+      'выбор модели при включённой диктовке запускает фоновый прогрев',
+      () async {
+        cubit.setEnabled(true);
+        server.ensureUpCalls.clear();
 
-      cubit.setModel('/path/to/test-model.bin');
-      await cubit.bringingUpForTesting;
+        cubit.setModel('/path/to/test-model.bin');
+        await cubit.bringingUpForTesting;
 
-      expect(server.ensureUpCalls, isNotEmpty);
-      expect(server.ensureUpCalls.last.model, '/path/to/test-model.bin');
-    });
+        expect(server.ensureUpCalls, isNotEmpty);
+        expect(server.ensureUpCalls.last.model, '/path/to/test-model.bin');
+      },
+    );
 
-    test('включение диктовки при выбранной модели запускает фоновый прогрев', () async {
-      cubit.setEnabled(false);
-      cubit.setModel('/path/to/test-model.bin');
-      server.ensureUpCalls.clear();
+    test(
+      'включение диктовки при выбранной модели запускает фоновый прогрев',
+      () async {
+        cubit.setEnabled(false);
+        cubit.setModel('/path/to/test-model.bin');
+        server.ensureUpCalls.clear();
 
-      cubit.setEnabled(true);
-      await cubit.bringingUpForTesting;
+        cubit.setEnabled(true);
+        await cubit.bringingUpForTesting;
 
-      expect(server.ensureUpCalls, isNotEmpty);
-      expect(server.ensureUpCalls.last.model, '/path/to/test-model.bin');
-    });
+        expect(server.ensureUpCalls, isNotEmpty);
+        expect(server.ensureUpCalls.last.model, '/path/to/test-model.bin');
+      },
+    );
 
-    test('запись начинается сразу, даже если прогрев ещё не завершён', () async {
-      final completer = Completer<void>();
-      server.ensureUpCompleter = completer;
+    test(
+      'запись начинается сразу, даже если прогрев ещё не завершён',
+      () async {
+        final completer = Completer<void>();
+        server.ensureUpCompleter = completer;
 
-      // Запуск записи не должен блокироваться на ensureUp
-      final starting = cubit.start();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+        // Запуск записи не должен блокироваться на ensureUp
+        final starting = cubit.start();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      expect(cubit.state.phase, Phase.recording);
-      expect(native.hudStates.last, 'recording');
+        expect(cubit.state.phase, Phase.recording);
+        expect(native.hudStates.last, 'recording');
 
-      completer.complete();
-      await starting;
-      await cubit.stop();
-      expect(cubit.state.phase, Phase.idle);
-    });
+        completer.complete();
+        await starting;
+        await cubit.stop();
+        expect(cubit.state.phase, Phase.idle);
+      },
+    );
 
-    test('остановка сразу переходит в transcribing и дожидается прогрева', () async {
-      final completer = Completer<void>();
-      server.ensureUpCompleter = completer;
+    test(
+      'остановка сразу переходит в transcribing и дожидается прогрева',
+      () async {
+        final completer = Completer<void>();
+        server.ensureUpCompleter = completer;
 
-      final starting = cubit.start();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      expect(cubit.state.phase, Phase.recording);
-      await starting;
+        final starting = cubit.start();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(cubit.state.phase, Phase.recording);
+        await starting;
 
-      // Вызываем stop, пока прогрев ещё заблокирован
-      final stopping = cubit.stop();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+        // Вызываем stop, пока прогрев ещё заблокирован
+        final stopping = cubit.stop();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      expect(cubit.state.phase, Phase.transcribing);
-      expect(native.hudStates.last, 'transcribing');
+        expect(cubit.state.phase, Phase.transcribing);
+        expect(native.hudStates.last, 'transcribing');
 
-      // Разрешаем прогрев завершиться
-      completer.complete();
-      await stopping;
+        // Разрешаем прогрев завершиться
+        completer.complete();
+        await stopping;
 
-      expect(cubit.state.phase, Phase.idle);
-      expect(cubit.state.last, 'сказанное вслух');
-    });
+        expect(cubit.state.phase, Phase.idle);
+        expect(cubit.state.last, 'сказанное вслух');
+      },
+    );
   });
 }
 
@@ -360,9 +558,17 @@ class _FakeServer extends WhisperServer {
   var shutdowns = 0;
   final ensureUpCalls = <RunOptions>[];
   Completer<void>? ensureUpCompleter;
+  Completer<String?>? gate;
+  final paths = <String>[];
+  int concurrent = 0, maxConcurrent = 0, holds = 0;
 
   @override
   bool get up => false;
+
+  @override
+  Future<void> get ready async {
+    await ensureUpCompleter?.future;
+  }
 
   @override
   Future<void> ensureUp(RunOptions o) async {
@@ -373,16 +579,29 @@ class _FakeServer extends WhisperServer {
   }
 
   @override
-  Future<String?> transcribe(String wav, {String lang = 'auto'}) async => text;
+  Future<String?> transcribe(String wav, {String lang = 'auto'}) async {
+    paths.add(wav);
+    concurrent++;
+    if (concurrent > maxConcurrent) maxConcurrent = concurrent;
+    try {
+      return gate == null ? text : await gate!.future;
+    } finally {
+      concurrent--;
+    }
+  }
 
   @override
   Future<void> shutdown() async => shutdowns++;
 
   @override
-  void hold() {}
+  void hold() {
+    holds++;
+  }
 
   @override
-  void release() {}
+  void release() {
+    holds--;
+  }
 
   @override
   Future<int> footprintMb() async => 0;
@@ -396,6 +615,8 @@ class _FakeNative {
   bool permitted = true;
   bool pasteSucceeds = true;
   String? pasted;
+  final pastes = <String>[];
+  Completer<void>? stopGate;
 
   /// Насколько система тянет с ответом «микрофон готов».
   Duration recordDelay = Duration.zero;
@@ -414,6 +635,7 @@ class _FakeNative {
               }
               return recordPath;
             case 'stopRecord':
+              await stopGate?.future;
               return null;
             case 'level':
               return 0.3;
@@ -421,6 +643,7 @@ class _FakeNative {
               return permitted;
             case 'paste':
               pasted = (call.arguments as Map)['text'] as String?;
+              pastes.add(pasted!);
               return pasteSucceeds;
             case 'hud':
               hudStates.add((call.arguments as Map)['state'] as String);

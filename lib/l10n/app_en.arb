@@ -15,7 +15,9 @@
   "singleHotkeyTitle": "Assign “{combo}” as a single key?",
   "@singleHotkeyTitle": {
     "placeholders": {
-      "combo": {"type": "String"}
+      "combo": {
+        "type": "String"
+      }
     }
   },
   "singleHotkeyBody": "This hotkey works in every application. It fires only while exactly this key is pressed; pressing a second key cancels it.",
@@ -741,7 +743,13 @@
   "calibrationNegativeTitle": "Check a similar word",
   "calibrationNegativePrompt": "Say one similar-sounding but different word. It must not start or stop recording.",
   "calibrationNegativeExample": "Similar to “{word}”",
-  "@calibrationNegativeExample": {"placeholders": {"word": {"type": "String"}}},
+  "@calibrationNegativeExample": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
   "calibrationButtonRecord": "Start Recording",
   "calibrationButtonStop": "Stop",
   "calibrationRecordingInProgress": "Listening to microphone… speak",
@@ -777,5 +785,16 @@
   "calibrationWakeSectionTitle": "Wake Word Calibration",
   "calibrationCloseSectionTitle": "Close Word Calibration",
   "buttonDeleteWakeProfile": "Delete wake profile",
-  "buttonDeleteCloseProfile": "Delete close profile"
+  "buttonDeleteCloseProfile": "Delete close profile",
+  "hudQueueCount": "Waiting: {count}",
+  "hudRecordNext": "Record next",
+  "hudAbortCurrent": "Cancel current transcription",
+  "hudClearQueue": "Clear waiting · keep recordings",
+  "@hudQueueCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

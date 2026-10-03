@@ -18,6 +18,11 @@ enum HUDState: String {
 
 final class HUDModel: ObservableObject {
   @Published var state: HUDState = .hidden
+  @Published var pending = 0
+  @Published var processing = false
+  var onClearQueue: () -> Void = {}
+  var onRecord: () -> Void = {}
+
   @Published var elapsed: TimeInterval = 0
 
   /// История уровня: полоски бегут справа налево, как настоящий сигнал.
@@ -128,6 +133,22 @@ struct HUDView: View {
         Spacer(minLength: 0)
         HUDButton(title: "Отменить", filled: false, action: model.onCancel)
         HUDButton(title: "Остановить", filled: true, action: model.onStop)
+      }
+    }
+    .overlay(alignment: .bottomTrailing) {
+      if model.pending > 0 || model.processing {
+        Menu {
+          Text("В очереди: \(model.pending)")
+          if model.state != .recording { Button("Записать следующую", action: model.onRecord) }
+          if model.processing { Button("Отменить текущую расшифровку", action: model.onAbort) }
+          if model.pending > 0 { Button("Убрать ожидающие · сохранить записи", action: model.onClearQueue) }
+        } label: {
+          Text("\(model.pending + (model.processing ? 1 : 0))")
+            .font(.system(size: 10, weight: .semibold).monospacedDigit())
+            .padding(4).background(Capsule().fill(Color.accentColor.opacity(0.16)))
+        }
+        .menuStyle(.borderlessButton).fixedSize().padding(.trailing, 4)
+        .accessibilityLabel("Очередь диктовок")
       }
     }
     // Поля шире, чем кажется нужным: содержимое, прижатое к скруглённому
@@ -305,11 +326,14 @@ final class RecordingHUD {
 
   init(
     onCancel: @escaping () -> Void, onStop: @escaping () -> Void,
-    onAbort: @escaping () -> Void
+    onAbort: @escaping () -> Void, onClearQueue: @escaping () -> Void,
+    onRecord: @escaping () -> Void
   ) {
     model.onCancel = onCancel
     model.onStop = onStop
     model.onAbort = onAbort
+    model.onClearQueue = onClearQueue
+    model.onRecord = onRecord
   }
 
   private func build() -> HUDPanel {
@@ -370,7 +394,13 @@ final class RecordingHUD {
     NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
   }
 
+  func updateQueue(pending: Int, processing: Bool) {
+    model.pending = pending
+    model.processing = processing
+  }
+
   func show() {
+    if model.state == .recording && panel?.isVisible == true { return }
     let panel = build()
     hideAfterDone?.invalidate()
     hideAfterDone = nil

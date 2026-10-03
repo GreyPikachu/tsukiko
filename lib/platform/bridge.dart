@@ -94,6 +94,11 @@ class NativeBridge {
   /// тот, что её рисует. На macOS панель нарисована на SwiftUI, и этот
   /// поток там пуст: состояние ей передаёт родная сторона напрямую.
   final _hudStates = StreamController<HudState>.broadcast();
+  final _hudQueue = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get hudQueue => _hudQueue.stream;
+  Future<Map<String, dynamic>> currentHudQueue() async =>
+      await _channel.invokeMapMethod<String, dynamic>('getHudQueue') ?? {};
+
   final _reload = StreamController<void>.broadcast();
   final _tab = StreamController<String>.broadcast();
   Completer<Hotkey?>? _capture;
@@ -134,6 +139,8 @@ class NativeBridge {
         _hidden.add(null);
       case 'hud':
         _hudActions.add(call.arguments as String);
+      case 'hudQueue':
+        _hudQueue.add((call.arguments as Map).cast<String, dynamic>());
       case 'hudState':
         final name = call.arguments as String;
         _hudStates.add(
@@ -195,11 +202,21 @@ class NativeBridge {
 
   /// Нажали кнопку на плавающей панели. Родная сторона переправит это
   /// диктовке: панель рисуется своим изолятом и до неё не достаёт.
+  Future<void> showHudQueueMenu(Map<String, String> labels) =>
+      _channel.invokeMethod('hudQueueMenu', labels);
+
   Future<void> hudAction(String action) =>
       _channel.invokeMethod('hudAction', action);
 
-  Future<void> hud(HudState state) =>
-      _channel.invokeMethod('hud', {'state': state.name});
+  Future<void> hud(
+    HudState state, {
+    int pending = 0,
+    bool processing = false,
+  }) => _channel.invokeMethod('hud', {
+    'state': state.name,
+    'pending': pending,
+    'processing': processing,
+  });
 
   /// Пустое сочетание значит «не назначено»: родная сторона такое
   /// не перехватывает вовсе.
@@ -293,8 +310,13 @@ class NativeBridge {
   Future<double> level() async =>
       await _channel.invokeMethod<double>('level') ?? 0;
 
-  Future<bool> insert(String text) async =>
-      await _channel.invokeMethod<bool>('paste', {'text': text}) ?? false;
+  Future<bool> insert(String text) async {
+    final sent =
+        await _channel.invokeMethod<bool>('paste', {'text': text}) ?? false;
+    // The receiving application reads the clipboard after the key event.
+    if (sent) await Future<void>.delayed(const Duration(milliseconds: 450));
+    return sent;
+  }
 
   /// Значок в Dock. Выключенный переводит приложение в .accessory: оно
   /// пропадает и из Dock, и из ⌘Tab, а строка меню остаётся. Меняется

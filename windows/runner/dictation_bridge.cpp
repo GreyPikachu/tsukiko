@@ -569,6 +569,12 @@ void DictationBridge::RegisterHandler(
     } else if (method == "hud") {
       const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
       if (args) {
+        for (const auto* key : {"pending", "processing"}) {
+          auto value = args->find(flutter::EncodableValue(key));
+          if (value != args->end()) hud_queue_[flutter::EncodableValue(key)] = value->second;
+        }
+        if (hud_channel_) hud_channel_->InvokeMethod("hudQueue",
+            std::make_unique<flutter::EncodableValue>(hud_queue_));
         auto it = args->find(flutter::EncodableValue("state"));
         if (it != args->end()) {
           if (const auto* st = std::get_if<std::string>(&it->second)) {
@@ -577,8 +583,35 @@ void DictationBridge::RegisterHandler(
         }
       }
       result->Success();
+    } else if (method == "getHudQueue") {
+      result->Success(flutter::EncodableValue(hud_queue_));
     } else if (method == "getHudState") {
       result->Success(flutter::EncodableValue(current_hud_state_));
+    } else if (method == "hudQueueMenu") {
+      HMENU menu = CreatePopupMenu();
+      const auto* labels = std::get_if<flutter::EncodableMap>(call.arguments());
+      const char* actions[] = {"record", "abort", "clearQueue"};
+      for (int i = 0; i < 3; ++i) {
+        bool enabled = i == 0 ? current_hud_state_ != "recording" :
+            i == 1 ? hud_queue_[flutter::EncodableValue("processing")] == flutter::EncodableValue(true) :
+            hud_queue_[flutter::EncodableValue("pending")] != flutter::EncodableValue(0);
+        if (enabled && labels) {
+          auto value = labels->find(flutter::EncodableValue(actions[i]));
+          if (value != labels->end()) {
+            if (const auto* label = std::get_if<std::string>(&value->second)) {
+              AppendMenuW(menu, MF_STRING, i + 1, Utf8ToWide(*label).c_str());
+            }
+          }
+        }
+      }
+      POINT at; GetCursorPos(&at);
+      int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY,
+          at.x, at.y, 0, main_window_, nullptr);
+      DestroyMenu(menu);
+      if (command >= 1 && command <= 3 && panel_channel_) {
+        panel_channel_->InvokeMethod("hud", std::make_unique<flutter::EncodableValue>(actions[command - 1]));
+      }
+      result->Success();
     } else if (method == "hudAction") {
       // Нажали кнопку на плавающей панели. Рисует её свой изолят, а
       // делает дело — диктовка: переправляем ей.
@@ -1261,7 +1294,8 @@ std::string DictationBridge::StartAudioRecording() {
   wchar_t tempPath[MAX_PATH];
   GetTempPathW(MAX_PATH, tempPath);
   auto now = std::chrono::system_clock::now().time_since_epoch().count();
-  std::wstring fileW = std::wstring(tempPath) + L"tsukiko_record_" + std::to_wstring(now) + L".wav";
+  static uint64_t sequence = 0;
+  std::wstring fileW = std::wstring(tempPath) + L"tsukiko_record_" + std::to_wstring(now) + L"_" + std::to_wstring(++sequence) + L".wav";
   current_record_path_ = WideToUtf8(fileW);
 
   auto* encoder = new ma_encoder();
@@ -1498,8 +1532,7 @@ bool DictationBridge::PasteText(const std::string& text) {
   key('V', true);
   key(VK_CONTROL, true);
 
-  SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
-  return true;
+  return SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT)) == inputs.size();
 }
 
 void DictationBridge::RestoreClipboard() {

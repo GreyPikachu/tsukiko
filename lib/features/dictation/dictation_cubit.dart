@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:collection';
 
 import 'package:bloc/bloc.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -56,6 +57,8 @@ class DictationCubit extends Cubit<DictationState> {
       (a) => switch (a) {
         'cancel' => cancel(),
         'abort' => abortTranscription(),
+        'clearQueue' => clearPending(),
+        'record' => start(),
         _ => stop(),
       },
     );
@@ -166,9 +169,11 @@ class DictationCubit extends Cubit<DictationState> {
     final s = _wakeWordService;
     if (s == null) return;
     s.canTriggerWakeWord = () =>
-        state.phase == Phase.idle && _startingRecording == null;
+        !state.recording &&
+        _startingRecording == null &&
+        _finishingRecording == null;
     s.onWakeWordTriggered = () {
-      if (state.phase == Phase.idle) {
+      if (!state.recording) {
         start(startedByVoice: true);
       }
     };
@@ -200,11 +205,41 @@ class DictationCubit extends Cubit<DictationState> {
   List<String> _models = findModels();
   Download? _vadDownload;
   String? _wav;
+  String _clipboardResults = '';
   DateTime? _startedAt;
 
   /// Распознавание прервали крестиком. Отличать это от неудачи обязательно:
   /// «не получилось» и «я сам передумал» — разные новости.
-  bool _aborted = false;
+  final Queue<_DictationJob> _pending = Queue();
+  _DictationJob? _active;
+  Future<void>? _finishingRecording;
+  Future<void>? _worker;
+
+  Phase get _restingPhase =>
+      _active != null || _pending.isNotEmpty ? Phase.transcribing : Phase.idle;
+
+  void _syncQueue() {
+    _emit(
+      state.copyWith(
+        phase: state.recording ? Phase.recording : _restingPhase,
+        pendingCount: _pending.length,
+        processing: _active != null,
+      ),
+    );
+  }
+
+  Future<void> _showActivity([HudState fallback = HudState.hidden]) =>
+      bridge.hud(
+        !_settings.hud
+            ? HudState.hidden
+            : state.recording
+            ? HudState.recording
+            : _active != null || _pending.isNotEmpty
+            ? HudState.transcribing
+            : fallback,
+        pending: _pending.length,
+        processing: _active != null,
+      );
 
   /// Идущий подбор сирот и идущий подъём сервера под нынешнюю запись.
   Future<void>? _sweeping;
@@ -345,10 +380,12 @@ class DictationCubit extends Cubit<DictationState> {
     // поднят: при «как у расшифровщика» своя настройка пуста и до и после,
     // а модель под ней сменилась в главном окне — и диктовка молча
     // продолжала бы говорить старой.
-    if (was.prompt != _settings.prompt ||
-        was.punctuate != _settings.punctuate ||
-        was.threads != _settings.threads ||
-        (_server.up && _server.model != _options.model)) {
+    if (_active == null &&
+        _pending.isEmpty &&
+        (was.prompt != _settings.prompt ||
+            was.punctuate != _settings.punctuate ||
+            was.threads != _settings.threads ||
+            (_server.up && _server.model != _options.model))) {
       unawaited(_server.shutdown());
     }
     await _apply();
@@ -490,7 +527,9 @@ class DictationCubit extends Cubit<DictationState> {
     // не остаётся ни в тексте, ни в буфере — на то и «без вставки».
     if (e.id == 'cancel') {
       if (e.edge == HotkeyEdge.down) {
-        state.phase == Phase.transcribing ? abortTranscription() : cancel();
+        state.recording || _startingRecording != null
+            ? cancel()
+            : abortTranscription();
       }
       return;
     }
@@ -504,7 +543,9 @@ class DictationCubit extends Cubit<DictationState> {
   }
 
   Future<void> start({bool startedByVoice = false}) async {
-    if (state.phase != Phase.idle || _startingRecording != null) return;
+    if (_finishingRecording != null) await _finishingRecording;
+    if (isClosed || state.recording || _startingRecording != null) return;
+    if (state.phase == Phase.idle) _clipboardResults = '';
     _finishAfterStart = null;
     _startingRecording = _beginRecording(startedByVoice: startedByVoice);
     try {
@@ -520,7 +561,6 @@ class DictationCubit extends Cubit<DictationState> {
   }
 
   Future<void> _beginRecording({bool startedByVoice = false}) async {
-    _aborted = false;
     // Реакция на клавишу должна быть мгновенной. На Windows один только
     // подъём WASAPI занимает заметное время; прежде всё это время панель
     // молчала и казалось, что хоткей не сработал. Запуск микрофона всё ещё
@@ -534,7 +574,7 @@ class DictationCubit extends Cubit<DictationState> {
         clearFailure: true,
       ),
     );
-    if (_settings.hud) unawaited(bridge.hud(HudState.recording));
+    unawaited(_showActivity());
     _syncMeter();
     _wakeWordService?.notifyRecordingStarted(startedByVoice: startedByVoice);
 
@@ -552,53 +592,111 @@ class DictationCubit extends Cubit<DictationState> {
       // раньше, чем оно кончится, — значит быть убитым им же.
       try {
         await _sweeping;
-        await _server.ensureUp(_options);
+        if (_active == null && _pending.isEmpty) {
+          await _server.ensureUp(_options);
+        }
       } catch (e, st) {
         Log.error('Dictation', 'Engine bringup failed: $e', e, st);
       }
     }();
     unawaited(_bringingUp);
 
-    final path = await bridge.startRecording();
+    String? path;
+    try {
+      path = await bridge.startRecording();
+    } catch (e, st) {
+      Log.error('Dictation', 'Microphone failed', e, st);
+    }
     if (path == null || path.isEmpty) {
       Log.error('Dictation', 'Recording failed to start');
       _stopMeter();
       _server.release();
       _wakeWordService?.notifyRecordingStopped();
-      if (_settings.hud) unawaited(bridge.hud(HudState.failed));
       _emit(
         state.copyWith(
-          phase: Phase.idle,
+          phase: _restingPhase,
           failure: currentL10n().errorRecordingStart,
         ),
       );
+      unawaited(_showActivity(HudState.failed));
       return;
     }
     _wav = path;
   }
 
   Future<void> stop() async {
-    // Запись ещё только заводится — запомним, что её просили прекратить,
-    // и сделаем это, как только будет что прекращать.
     if (_startingRecording != null) {
-      _finishAfterStart = stop;
+      _finishAfterStart ??= stop;
       return;
     }
-    if (!state.recording) return;
-    _wakeWordService?.notifyRecordingStopped();
-    final duration = _startedAt != null
-        ? DateTime.now().difference(_startedAt!)
-        : Duration.zero;
-    _stopMeter();
-    _emit(state.copyWith(phase: Phase.transcribing));
-    if (_settings.hud) unawaited(bridge.hud(HudState.transcribing));
+    if (_finishingRecording != null || !state.recording) return;
+    final finished = Completer<void>();
+    _finishingRecording = finished.future;
+    _DictationJob? job;
+    try {
+      _wakeWordService?.notifyRecordingStopped();
+      _stopMeter();
+      final path = await bridge.stopRecording() ?? _wav;
+      _wav = null;
+      if (path != null && path.isNotEmpty) {
+        job = _DictationJob(
+          path,
+          _options,
+          _settings.closeWord,
+          _settings.insert,
+          _commandsEnabled,
+          List.of(_vocabulary),
+        );
+        _pending.add(job);
+      }
+      _emit(state.copyWith(phase: _restingPhase));
+      _syncQueue();
+      unawaited(_showActivity());
+      if (job == null) _server.release();
+      if (job != null) _worker ??= _drain();
+    } catch (e, st) {
+      Log.error('Dictation', 'Stopping microphone failed', e, st);
+      final path = _wav;
+      _wav = null;
+      final saved = path == null ? null : rescueRecording(path) ?? path;
+      _server.release();
+      _emit(
+        state.copyWith(
+          phase: _restingPhase,
+          failure: currentL10n().errorRecordingStart,
+          failurePath: saved,
+        ),
+      );
+      unawaited(_showActivity(HudState.failed));
+    } finally {
+      _finishingRecording = null;
+      finished.complete();
+    }
+    // Callers may await this particular result; the microphone is already free.
+    await job?.done.future;
+  }
 
-    final path = await bridge.stopRecording() ?? _wav;
-    Log.info(
-      'Dictation',
-      'Recording stopped, duration: ${duration.inMilliseconds}ms (path: $path)',
-    );
-    _wav = null;
+  Future<void> _drain() async {
+    try {
+      while (_pending.isNotEmpty && !isClosed) {
+        final job = _active = _pending.removeFirst();
+        _syncQueue();
+        unawaited(_showActivity());
+        try {
+          await _transcribeJob(job);
+        } finally {
+          _active = null;
+          _syncQueue();
+          job.done.complete();
+        }
+      }
+    } finally {
+      _worker = null;
+    }
+  }
+
+  Future<void> _transcribeJob(_DictationJob job) async {
+    final path = job.path;
     var ok = false, silent = false;
     String? failure;
     String? failurePath;
@@ -607,11 +705,11 @@ class DictationCubit extends Cubit<DictationState> {
       // первый отсчёт. Такой файл спасать нечего и незачем — в нём
       // заголовок и ноль данных, — а движок на нём говорит невнятное
       // (см. wavHasAudio). Стираем и говорим прямо.
-      if (path != null && !wavHasAudio(path)) {
+      if (!wavHasAudio(path)) {
         _discard(path);
         silent = true;
         failure = currentL10n().errorSilentRecording;
-      } else if (path != null) {
+      } else {
         // Сервер поднимался параллельно записи — дожидаемся, иначе фраза
         // короче подъёма уйдёт в «не удалось» при живой модели.
         if (_bringingUp != null) {
@@ -630,15 +728,19 @@ class DictationCubit extends Cubit<DictationState> {
           'Dictation',
           'Transcribing dictation audio ($path) with model: ${_options.model}, lang: ${_options.lang}',
         );
-        final recognized = await _server.transcribe(path, lang: _options.lang);
-        if (recognized == null) {
+        if (!job.aborted) await _server.ensureUp(job.options);
+        final recognized = job.aborted
+            ? null
+            : await _server.transcribe(path, lang: job.options.lang);
+        if (job.aborted) await job.cancelling;
+        if (recognized == null || job.aborted) {
           Log.warn('Dictation', 'Dictation transcribe returned null');
           // Распознать не удалось — или мы сами прервали счёт. Запись
           // в обоих случаях единственный экземпляр сказанного, и удалять
           // её здесь было бы потерей данных.
           final saved = rescueRecording(path);
           failurePath = saved ?? path;
-          failure = _aborted
+          failure = job.aborted
               ? saved == null
                     ? currentL10n().dictationAbortedNoSave(path)
                     : currentL10n().dictationAbortedSaved
@@ -648,18 +750,19 @@ class DictationCubit extends Cubit<DictationState> {
         } else {
           _discard(path);
           var text = recognized;
-          if (_settings.closeWord.trim().isNotEmpty) {
-            text = stripTrailingCloseWord(text, _settings.closeWord);
+          if (job.closeWord.trim().isNotEmpty) {
+            text = stripTrailingCloseWord(text, job.closeWord);
           }
-          if (_commandsEnabled) {
-            text = applyVocabularyReplacements(text, _vocabulary).text;
+          if (job.commandsEnabled) {
+            text = applyVocabularyReplacements(text, job.vocabulary).text;
           }
           Log.info('Dictation', 'Dictation transcribed: ${text.length} chars');
           if (text.isNotEmpty) {
+            job.delivering = true;
             _emit(state.copyWith(last: text));
             // «Только в буфер» — для тех, кто вставит сам и туда, куда решит.
-            if (!_settings.insert) {
-              await copyLast();
+            if (!job.insert) {
+              await _copyResult(text);
               ok = true;
             } else {
               ok = await bridge.insert(text);
@@ -667,7 +770,7 @@ class DictationCubit extends Cubit<DictationState> {
                 // Вставка не состоялась — почти всегда это отозванный
                 // «Универсальный доступ». Текст при этом уже распознан,
                 // и терять его нельзя: кладём в буфер и говорим вслух.
-                await copyLast();
+                await _copyResult(text);
                 failure = currentL10n().insertFailed(os.accessibilityName);
               }
             }
@@ -681,7 +784,7 @@ class DictationCubit extends Cubit<DictationState> {
         e,
         st,
       );
-      if (path != null && failurePath == null && !silent) {
+      if (failurePath == null && !silent) {
         final saved = rescueRecording(path);
         failurePath = saved ?? path;
         failure = saved == null
@@ -697,27 +800,35 @@ class DictationCubit extends Cubit<DictationState> {
     // молча — иначе человек так и не узнает, что записи он лишился.
     // Исходы разные: пропала запись, пропала только вставка, или мы сами
     // прервали счёт, — и говорить о них одним и тем же нельзя.
-    await bridge.hud(
-      ok
-          ? HudState.done
-          : silent
-          ? HudState.silent
-          : _aborted
-          ? HudState.cancelled
-          : failurePath != null
-          ? HudState.failed
-          : failure != null
-          ? HudState.copied
-          : HudState.hidden,
-    );
+    final outcome = ok
+        ? HudState.done
+        : silent
+        ? HudState.silent
+        : job.aborted
+        ? HudState.cancelled
+        : failurePath != null
+        ? HudState.failed
+        : failure != null
+        ? HudState.copied
+        : HudState.hidden;
     if (isClosed) return;
     _emit(
       state.copyWith(
-        phase: Phase.idle,
         failure: failure,
         failurePath: failurePath,
         clearFailure: failure == null,
       ),
+    );
+    await bridge.hud(
+      !_settings.hud
+          ? HudState.hidden
+          : state.recording
+          ? HudState.recording
+          : _pending.isNotEmpty
+          ? HudState.transcribing
+          : outcome,
+      pending: _pending.length,
+      processing: _pending.isNotEmpty,
     );
   }
 
@@ -726,35 +837,54 @@ class DictationCubit extends Cubit<DictationState> {
   Future<void> cancel() async {
     if (_startingRecording != null) {
       _finishAfterStart = cancel;
-      _aborted = false;
       return;
     }
-    if (!state.recording) return;
-    _wakeWordService?.notifyRecordingStopped();
-    Log.info('Dictation', 'Recording cancelled');
-    _stopMeter();
-    _emit(state.copyWith(phase: Phase.idle));
-    unawaited(bridge.hud(HudState.hidden));
-    _discard(await bridge.stopRecording() ?? _wav);
-    _wav = null;
-    _server.release();
+    if (_finishingRecording != null || !state.recording) return;
+    final finished = Completer<void>();
+    _finishingRecording = finished.future;
+    try {
+      _wakeWordService?.notifyRecordingStopped();
+      _stopMeter();
+      _discard(await bridge.stopRecording() ?? _wav);
+      _wav = null;
+    } finally {
+      _server.release();
+      _emit(state.copyWith(phase: _restingPhase));
+      _finishingRecording = null;
+      finished.complete();
+      unawaited(_showActivity());
+    }
   }
 
-  /// Прервать уже идущее распознавание.
-  ///
-  /// Оборвать HTTP-запрос мало: whisper-server считает синхронно и о
-  /// закрытом сокете узнаёт только когда соберётся писать ответ — то есть
-  /// процессор он жечь не перестанет. Единственное, что действительно
-  /// останавливает счёт, — погасить сам процесс. Ценой этого модель уходит
-  /// из памяти, и следующая фраза платит 0,6–2 с на загрузку; ради того,
-  /// чтобы часовая запись не считалась вхолостую, это дёшево.
-  ///
-  /// Запись при этом не пропадает: [stop] увидит, что текста нет, и уложит
-  /// её в «Не распознано», откуда её можно распознать вручную или убрать.
+  /// Cancels only the active recognition, even while another recording runs.
   Future<void> abortTranscription() async {
-    if (state.phase != Phase.transcribing || _aborted) return;
-    _aborted = true;
-    await _server.shutdown();
+    final job = _active;
+    if (job == null || job.aborted || job.delivering) return;
+    job.aborted = true;
+    job.cancelling = () async {
+      await _bringingUp;
+      await _server.ready;
+      await _server.shutdown();
+    }();
+    await job.cancelling;
+  }
+
+  /// Waiting recordings are preserved in the recovery library.
+  Future<void> clearPending() async {
+    while (_pending.isNotEmpty) {
+      final job = _pending.removeFirst();
+      final saved = rescueRecording(job.path) ?? job.path;
+      _emit(
+        state.copyWith(
+          failurePath: saved,
+          failure: currentL10n().dictationAbortedSaved,
+        ),
+      );
+      _server.release();
+      job.done.complete();
+    }
+    _syncQueue();
+    await _showActivity();
   }
 
   /// Уровень сигнала и время записи.
@@ -773,7 +903,7 @@ class DictationCubit extends Cubit<DictationState> {
     }
     _meter = Timer.periodic(const Duration(milliseconds: 100), (_) async {
       final level = await bridge.level();
-      if (isClosed) return;
+      if (isClosed || !state.recording || _meter == null) return;
       _emit(
         state.copyWith(
           level: level,
@@ -808,7 +938,9 @@ class DictationCubit extends Cubit<DictationState> {
       _bringingUp = () async {
         try {
           await _sweeping;
-          await _server.ensureUp(_options);
+          if (_active == null && _pending.isEmpty) {
+            await _server.ensureUp(_options);
+          }
         } catch (e, st) {
           Log.error('Dictation', 'Engine prewarm failed: $e', e, st);
         }
@@ -822,12 +954,19 @@ class DictationCubit extends Cubit<DictationState> {
     _settings.save();
     _emit(_withSnapshots(state));
     unawaited(bridge.settingsChanged());
-    if (_server.up && _server.model != path) unawaited(_server.shutdown());
+    if (_active == null &&
+        _pending.isEmpty &&
+        _server.up &&
+        _server.model != path) {
+      unawaited(_server.shutdown());
+    }
     if (_settings.enabled && path.isNotEmpty) {
       _bringingUp = () async {
         try {
           await _sweeping;
-          await _server.ensureUp(_options);
+          if (_active == null && _pending.isEmpty) {
+            await _server.ensureUp(_options);
+          }
         } catch (e, st) {
           Log.error('Dictation', 'Engine prewarm failed: $e', e, st);
         }
@@ -836,12 +975,22 @@ class DictationCubit extends Cubit<DictationState> {
     }
   }
 
+  Future<void> _copyResult(String text) async {
+    _clipboardResults = _clipboardResults.isEmpty
+        ? text
+        : '$_clipboardResults\n$text';
+    _emit(state.copyWith(last: _clipboardResults));
+    await Clipboard.setData(ClipboardData(text: _clipboardResults));
+  }
+
   Future<void> copyLast() async {
     if (state.last.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: state.last));
   }
 
-  void unload() => unawaited(_server.shutdown());
+  void unload() {
+    if (state.phase == Phase.idle) unawaited(_server.shutdown());
+  }
 
   void forgetSweep() => _emit(state.copyWith(sweptMb: 0));
 
@@ -911,7 +1060,9 @@ class DictationCubit extends Cubit<DictationState> {
   /// Отдать память. Спрашивают только в покое и только с согласия человека:
   /// держать полтора гигабайта ради возможной следующей фразы дороже,
   /// чем поднять сервер заново за 0,6 с.
-  Future<void> _releaseModel() => _server.shutdown();
+  Future<void> _releaseModel() async {
+    if (state.phase == Phase.idle) await _server.shutdown();
+  }
 
   /// Высота содержимого панели: окно подгоняется под неё, как системный
   /// поповер, — иначе внизу остаётся пустота на всё, чего сейчас нет.
@@ -940,4 +1091,24 @@ class DictationCubit extends Cubit<DictationState> {
     _wakeWordService?.dispose();
     return super.close();
   }
+}
+
+class _DictationJob {
+  _DictationJob(
+    this.path,
+    this.options,
+    this.closeWord,
+    this.insert,
+    this.commandsEnabled,
+    this.vocabulary,
+  );
+  final String path;
+  final RunOptions options;
+  final String closeWord;
+  final bool insert, commandsEnabled;
+  final List<VocabularyItem> vocabulary;
+  final done = Completer<void>();
+  bool aborted = false;
+  bool delivering = false;
+  Future<void>? cancelling;
 }

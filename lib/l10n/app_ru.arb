@@ -15,7 +15,9 @@
   "singleHotkeyTitle": "Назначить «{combo}» одной клавишей?",
   "@singleHotkeyTitle": {
     "placeholders": {
-      "combo": {"type": "String"}
+      "combo": {
+        "type": "String"
+      }
     }
   },
   "singleHotkeyBody": "Этот хоткей действует во всех приложениях. Он сработает, только когда нажата ровно эта клавиша; появление второй клавиши отменит срабатывание.",
@@ -1583,7 +1585,13 @@
   "calibrationNegativeTitle": "Проверка похожего слова",
   "calibrationNegativePrompt": "Произнесите одно созвучное, но другое слово. Оно не должно запускать или завершать запись.",
   "calibrationNegativeExample": "Похоже на «{word}»",
-  "@calibrationNegativeExample": {"placeholders": {"word": {"type": "String"}}},
+  "@calibrationNegativeExample": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
   "calibrationButtonRecord": "Начать запись",
   "calibrationButtonStop": "Остановить",
   "calibrationRecordingInProgress": "Слушаем микрофон… говорите",
@@ -1619,5 +1627,16 @@
   "calibrationWakeSectionTitle": "Калибровка слова активации",
   "calibrationCloseSectionTitle": "Калибровка слова завершения",
   "buttonDeleteWakeProfile": "Удалить профиль активации",
-  "buttonDeleteCloseProfile": "Удалить профиль завершения"
+  "buttonDeleteCloseProfile": "Удалить профиль завершения",
+  "hudQueueCount": "В очереди: {count}",
+  "hudRecordNext": "Записать следующую",
+  "hudAbortCurrent": "Отменить текущую расшифровку",
+  "hudClearQueue": "Убрать ожидающие · сохранить записи",
+  "@hudQueueCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

@@ -31,15 +31,18 @@ void main() {
 
   tearDown(() {
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        const MethodChannel('tsukiko/dictation'), null);
+      const MethodChannel('tsukiko/dictation'),
+      null,
+    );
   });
 
   /// Прислать панели состояние так же, как это делает родная сторона.
   Future<void> send(WidgetTester tester, HudState state) async {
     await binding.defaultBinaryMessenger.handlePlatformMessage(
       'tsukiko/dictation',
-      const StandardMethodCodec()
-          .encodeMethodCall(MethodCall('hudState', state.name)),
+      const StandardMethodCodec().encodeMethodCall(
+        MethodCall('hudState', state.name),
+      ),
       (_) {},
     );
     await tester.pump();
@@ -52,14 +55,42 @@ void main() {
     // Проверяем поведение, а не раскладку.
     await tester.binding.setSurfaceSize(const Size(600, 52));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(MacosApp(
-      locale: const Locale('ru'),
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: HudView(bridge: NativeBridge()),
-    ));
+    await tester.pumpWidget(
+      MacosApp(
+        locale: const Locale('ru'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: HudView(bridge: NativeBridge()),
+      ),
+    );
     await tester.pump();
   }
+
+  testWidgets('очередь показывает число и независимые действия', (
+    tester,
+  ) async {
+    await show(tester);
+    await send(tester, HudState.transcribing);
+    await binding.defaultBinaryMessenger.handlePlatformMessage(
+      'tsukiko/dictation',
+      const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('hudQueue', {'pending': 9, 'processing': true}),
+      ),
+      (_) {},
+    );
+    await tester.pump();
+    expect(find.text('10'), findsOneWidget);
+    await tester.tap(find.text('10'));
+    await tester.pump();
+    final menu = calls.where((c) => c.method == 'hudQueueMenu').last;
+    expect((menu.arguments as Map)['record'], 'Записать следующую');
+    expect((menu.arguments as Map)['abort'], 'Отменить текущую расшифровку');
+    expect(
+      (menu.arguments as Map)['clearQueue'],
+      'Убрать ожидающие · сохранить записи',
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('в каждом состоянии панель говорит своё', (tester) async {
     await show(tester);
@@ -91,8 +122,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('нажатие доходит до диктовки, а уровень спрашивается сам',
-      (tester) async {
+  testWidgets('нажатие доходит до диктовки, а уровень спрашивается сам', (
+    tester,
+  ) async {
     await show(tester);
     await send(tester, HudState.recording);
 

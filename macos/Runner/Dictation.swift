@@ -351,7 +351,9 @@ final class DictationBridge: NSObject {
     let hud = RecordingHUD(
       onCancel: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "cancel") },
       onStop: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "stop") },
-      onAbort: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "abort") })
+      onAbort: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "abort") },
+      onClearQueue: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "clearQueue") },
+      onRecord: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "record") })
     hud.levelSource = { [weak self] in self?.currentLevel() ?? 0 }
     return hud
   }()
@@ -550,6 +552,7 @@ final class DictationBridge: NSObject {
       // который через 0,4 с возвращался к прежнему содержимому.
       reply(paste((args?["text"] as? String) ?? ""))
     case "hud":
+      hud.updateQueue(pending: (args?["pending"] as? Int) ?? 0, processing: (args?["processing"] as? Bool) ?? false)
       switch (args?["state"] as? String) ?? "" {
       case "recording": hud.show()
       case "transcribing": hud.transcribing()
@@ -900,7 +903,7 @@ final class DictationBridge: NSObject {
   private func beginRecording() -> String? {
     stopRecorder()
     let url = URL(fileURLWithPath: NSTemporaryDirectory())
-      .appendingPathComponent("tsukiko-\(UInt64(Date().timeIntervalSince1970 * 1000)).wav")
+      .appendingPathComponent("tsukiko-\(UUID().uuidString).wav")
     let settings: [String: Any] = [
       AVFormatIDKey: Int(kAudioFormatLinearPCM),
       AVSampleRateKey: 16000.0,
@@ -1009,6 +1012,7 @@ final class DictationBridge: NSObject {
 
     pb.clearContents()
     pb.setString(text, forType: .string)
+    let change = pb.changeCount
     let sent = sendCommandV()
 
     // Вернуть буфер сразу нельзя: приложение-получатель читает его уже
@@ -1017,6 +1021,7 @@ final class DictationBridge: NSObject {
     // в буфере правильно: вызывающая сторона на это и рассчитывает.
     guard sent else { return false }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+      guard pb.changeCount == change else { return }
       pb.clearContents()
       guard !saved.isEmpty else { return }
       let items = saved.map { bag -> NSPasteboardItem in

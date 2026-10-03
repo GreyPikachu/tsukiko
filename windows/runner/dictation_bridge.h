@@ -117,6 +117,7 @@ class DictationBridge {
   std::unique_ptr<SettingsWindow> settings_;
   std::unique_ptr<HudWindow> hud_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> hud_channel_;
+  flutter::EncodableMap hud_queue_;
   std::string current_hud_state_ = "hidden";
 
   void SetHudState(const std::string& state);
