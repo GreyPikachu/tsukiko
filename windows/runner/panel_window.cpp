@@ -506,6 +506,25 @@ LRESULT CALLBACK HudWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
   }
   auto* self =
       reinterpret_cast<HudWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+  // Recompute native bounds after Windows has updated the window DPI.
+  // The Flutter child receives the original notification before resizing.
+  constexpr UINT kRefreshHudBounds = WM_APP + 64;
+  if (self && (message == WM_DPICHANGED || message == WM_DISPLAYCHANGE)) {
+    self->monitor_ = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    if (self->controller_) self->controller_->HandleTopLevelWindowProc(hwnd, message, wparam, lparam);
+    PostMessageW(hwnd, kRefreshHudBounds, 0, 0);
+    return 0;
+  }
+  if (self && message == kRefreshHudBounds) {
+    if (self->guides_) {
+      auto work = self->WorkArea();
+      SetWindowPos(self->guides_, HWND_TOPMOST, static_cast<int>(work.left), static_cast<int>(work.top),
+                   static_cast<int>(work.width), static_cast<int>(work.height), SWP_NOACTIVATE);
+      InvalidateRect(self->guides_, nullptr, TRUE);
+    }
+    self->ResizeAndPosition();
+    return 0;
+  }
   // Ни щелчком, ни клавишей фокус этой панели не достаётся: она нужна
   // поверх чужого окна, в которое сейчас диктуют.
   if (message == WM_MOUSEACTIVATE) return self && self->editing_ ? MA_ACTIVATE : MA_NOACTIVATE;

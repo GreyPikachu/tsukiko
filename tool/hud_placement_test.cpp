@@ -24,6 +24,10 @@ int main() {
   assert(layout.positioned && near(layout.x, .5) && near(layout.y, .5));
   point = layout.Origin({100, 50, 2560, 1440}, 744, 104);
   assert(near(point.x + 372, 1380) && near(point.y + 52, 770));
+  point = layout.Snap({1024, 700}, {100, 50, 2560, 1440}, 744, 104, 24);
+  assert(near(point.x, 1008) && near(point.y, 718));
+  point = layout.Snap({1036, 686}, {100, 50, 2560, 1440}, 744, 104, 24);
+  assert(near(point.x, 1036) && near(point.y, 686));
   assert(near(HudPlacement::ValidScale(.1), .8));
   assert(near(HudPlacement::ValidScale(20), 1.6));
   assert(near(HudPlacement::ValidScale(std::numeric_limits<double>::quiet_NaN()), 1));
