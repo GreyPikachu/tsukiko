@@ -1,0 +1,86 @@
+import Cocoa
+
+@main
+struct HUDPlacementTests {
+  static func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 0.000001 }
+  static func main() {
+    var layout = HUDPlacement()
+    let work = NSRect(x: -1920, y: -200, width: 1920, height: 1080)
+    let size = NSSize(width: 372, height: 52)
+    var point = layout.origin(in: work, size: size)
+    assert(near(point.x, -1146) && near(point.y, -108))
+    point = layout.snap(NSPoint(x: -1140, y: 309), in: work, size: size)
+    assert(near(point.x, -1146) && near(point.y, 314))
+    point = layout.snap(NSPoint(x: -1120, y: 285), in: work, size: size)
+    assert(near(point.x, -1120) && near(point.y, 285))
+    point = layout.clamp(NSPoint(x: -5000, y: 5000), in: work, size: size)
+    assert(near(point.x, -1920) && near(point.y, 828))
+    point = layout.clamp(NSPoint(x: 9999, y: 9999),
+                         in: NSRect(x: 20, y: 30, width: 100, height: 20), size: size)
+    assert(near(point.x, 20) && near(point.y, 30))
+    layout.capture(origin: NSPoint(x: -1146, y: 314), in: work, size: size)
+    assert(near(layout.x!, 0.5) && near(layout.y!, 0.5))
+    point = layout.origin(in: NSRect(x: 100, y: 50, width: 2560, height: 1440),
+                          size: NSSize(width: 744, height: 104))
+    assert(near(point.x + 372, 1380) && near(point.y + 52, 770))
+    assert(near(HUDPlacement.validScale(0.1), 0.8))
+    assert(near(HUDPlacement.validScale(20), 1.6))
+    assert(near(HUDPlacement.validScale(.nan), 1))
+    assert(near(HUDPlacement.validScale(.infinity), 1))
+    assert(HUDPlacement(x: .nan, y: .infinity).x == nil)
+    assert(HUDPlacement(x: .nan, y: .infinity).y == nil)
+    for i in 0...100 {
+      let p = layout.clamp(NSPoint(x: work.minX + Double(i) * 19.2,
+                                   y: work.minY + Double(i) * 10.8), in: work, size: size)
+      layout.capture(origin: p, in: work, size: size)
+      let restored = layout.origin(in: work, size: size)
+      assert(near(restored.x, p.x) && near(restored.y, p.y))
+    }
+    let before = layout
+    var draft = layout
+    draft.capture(origin: NSPoint(x: -1500, y: 500), in: work, size: size)
+    draft.scale = 1.4
+    draft = before
+    assert(draft.x == before.x && draft.y == before.y && draft.scale == before.scale)
+    draft = HUDPlacement()
+    assert(draft.x == nil && draft.y == nil && draft.scale == 1)
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.accessory)
+    let suite = "tsukiko-hud-test-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    func makeHUD() -> RecordingHUD {
+      RecordingHUD(onCancel: {}, onStop: {}, onAbort: {}, onClearQueue: {}, onRecord: {}, defaults: defaults)
+    }
+    let hud = makeHUD()
+    hud.configure(labels: [:])
+    assert(hud.isEditing && hud.isVisible)
+    hud.setScale(1.4)
+    hud.finishEditing(save: false)
+    assert(!hud.isEditing && !hud.isVisible && hud.currentPlacement.scale == 1)
+    assert(defaults.dictionary(forKey: "dictationHUDPlacement") == nil)
+    hud.configure(labels: [:])
+    hud.setScale(1.3)
+    if let path = ProcessInfo.processInfo.environment["TSUKIKO_HUD_SNAPSHOT"], let view = NSApp.keyWindow?.contentView {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+      if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        try! bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
+      }
+    }
+    hud.finishEditing(save: true)
+    assert(makeHUD().currentPlacement.scale == 1.3)
+    hud.resetPosition()
+    assert(makeHUD().currentPlacement.scale == 1)
+    hud.configure(labels: [:])
+    hud.show() // A recording arriving during editing must stay visible after Save.
+    hud.finishEditing(save: true)
+    assert(hud.isVisible)
+    hud.hide()
+    hud.show()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+    assert(hud.isVisible, "A stale hide animation must not hide the next recording")
+    hud.hide()
+    print("macOS HUD geometry: all checks passed")
+  }
+}

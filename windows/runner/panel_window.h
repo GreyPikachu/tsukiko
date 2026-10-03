@@ -6,6 +6,8 @@
 
 #include <functional>
 #include <memory>
+#include <string>
+#include "hud_placement.h"
 
 /// Плавающая панель записи: та, что приходит сама, пока человек диктует.
 ///
@@ -15,7 +17,17 @@
 /// на панели задач.
 class HudWindow {
  public:
+  HudWindow();
   ~HudWindow();
+  void Configure();
+  void FinishEditing(bool save);
+  void ResetPosition();
+  void SetScale(double scale);
+  void Move(double dx, double dy, bool ended);
+  void Nudge(double dx, double dy);
+  bool editing() const { return editing_; }
+  double scale() const { return placement_.scale; }
+  HWND handle() const { return window_; }
 
   /// Завести окно и поднять на нём движок, но на экран не выводить.
   ///
@@ -37,6 +49,19 @@ class HudWindow {
                                   LPARAM lparam);
 
   void ShowReady();
+  void ResizeAndPosition();
+  void SavePlacement();
+  HudArea WorkArea() const;
+  double DpiScale() const;
+  HudPlacement placement_, saved_;
+  bool editing_ = false;
+  bool dragging_ = false;
+  bool visible_before_editing_ = false;
+  HudPoint drag_origin_{};
+  POINT drag_pointer_{};
+  HWND previous_focus_ = nullptr;
+  HMONITOR monitor_ = nullptr;
+  HWND guides_ = nullptr;
 
   HWND window_ = nullptr;
   std::unique_ptr<flutter::FlutterViewController> controller_;

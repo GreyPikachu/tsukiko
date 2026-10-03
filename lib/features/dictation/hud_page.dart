@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
 
@@ -68,6 +69,10 @@ class _HudViewState extends State<HudView> {
   StreamSubscription<HudState>? _states;
   Timer? _ticker;
   StreamSubscription<Map<String, dynamic>>? _queue;
+  StreamSubscription<Map<String, dynamic>>? _layout;
+  bool _editing = false;
+  double _scale = 1;
+  Offset _drag = Offset.zero;
   int _pending = 0;
   bool _processing = false;
 
@@ -84,6 +89,8 @@ class _HudViewState extends State<HudView> {
     super.initState();
     _states = _bridge.hudStates.listen(_onState);
     _queue = _bridge.hudQueue.listen(_onQueue);
+    _layout = _bridge.hudLayout.listen(_onLayout);
+    _bridge.currentHudLayout().then(_onLayout);
     _bridge.currentHudQueue().then(_onQueue);
     _queryInitialState();
   }
@@ -103,9 +110,42 @@ class _HudViewState extends State<HudView> {
   void dispose() {
     _states?.cancel();
     _queue?.cancel();
+    _layout?.cancel();
     _ticker?.cancel();
     super.dispose();
   }
+
+  void _onLayout(Map<String, dynamic> layout) {
+    if (!mounted) return;
+    setState(() {
+      _editing = layout['editing'] == true;
+      final scale = (layout['scaleValue'] as num?)?.toDouble() ?? 1;
+      _scale = scale.isFinite ? scale.clamp(.8, 1.6) : 1;
+    });
+  }
+
+  Widget _draggable(Widget child) => MouseRegion(
+    cursor: SystemMouseCursors.move,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: (_) => _drag = Offset.zero,
+      onPanUpdate: (event) {
+        _drag += event.delta;
+        _bridge.changeHudLayout({'dx': _drag.dx, 'dy': _drag.dy, 'end': false});
+      },
+      onPanEnd: (_) => _bridge.changeHudLayout({
+        'dx': _drag.dx,
+        'dy': _drag.dy,
+        'end': true,
+      }),
+      onPanCancel: () => _bridge.changeHudLayout({
+        'dx': _drag.dx,
+        'dy': _drag.dy,
+        'end': true,
+      }),
+      child: child,
+    ),
+  );
 
   void _onQueue(Map<String, dynamic> queue) {
     if (!mounted) return;
@@ -159,21 +199,132 @@ class _HudViewState extends State<HudView> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Container(
-      height: 52,
-      // Поля шире, чем кажется нужным: содержимое, прижатое к скруглённому
-      // краю, читается теснее, чем стоит на самом деле.
-      padding: const EdgeInsets.symmetric(horizontal: Gap.edge),
-      decoration: BoxDecoration(
-        color: Surface.chrome(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Surface.hairline(context)),
-      ),
-      child: Row(
-        children: [
-          ..._content(l10n),
-          if (_pending > 0 || _processing) _queueButton(l10n),
-        ],
+    final width = _editing ? 600.0 : MediaQuery.sizeOf(context).width / _scale;
+    final height = _editing ? 156.0 : 52.0;
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, event) {
+        if (!_editing || event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event.logicalKey == LogicalKeyboardKey.escape) {
+          _bridge.changeHudLayout({'save': false});
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.enter) {
+          _bridge.changeHudLayout({'save': true});
+          return KeyEventResult.handled;
+        }
+        final step = HardwareKeyboard.instance.isShiftPressed ? 10.0 : 1.0;
+        final delta = switch (event.logicalKey) {
+          LogicalKeyboardKey.arrowLeft => Offset(-step, 0),
+          LogicalKeyboardKey.arrowRight => Offset(step, 0),
+          LogicalKeyboardKey.arrowUp => Offset(0, -step),
+          LogicalKeyboardKey.arrowDown => Offset(0, step),
+          _ => null,
+        };
+        if (delta == null) return KeyEventResult.ignored;
+        _bridge.changeHudLayout({'nudgeX': delta.dx, 'nudgeY': delta.dy});
+        return KeyEventResult.handled;
+      },
+      child: SizedBox(
+        width: width * _scale,
+        height: height * _scale,
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: Container(
+            width: width,
+            height: height,
+            padding: const EdgeInsets.symmetric(horizontal: Gap.edge),
+            decoration: BoxDecoration(
+              color: Surface.chrome(context),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Surface.hairline(context)),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (_editing) ...[
+                  _draggable(
+                    Text(
+                      l10n.hudLayoutTitle,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    l10n.hudLayoutHint,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                SizedBox(
+                  height: 40,
+                  child: Row(
+                    children: [
+                      if (_editing) ...[
+                        _draggable(_Meter(levels: _levels)),
+                        const SizedBox(width: 12),
+                        Text(l10n.hudDrag, style: _label),
+                        const Spacer(),
+                      ] else
+                        ..._content(l10n),
+                      if (!_editing && (_pending > 0 || _processing))
+                        _queueButton(l10n),
+                    ],
+                  ),
+                ),
+                if (_editing)
+                  Row(
+                    children: [
+                      Text(l10n.hudScale, style: const TextStyle(fontSize: 11)),
+                      Expanded(
+                        child: CupertinoSlider(
+                          value: _scale,
+                          min: .8,
+                          max: 1.6,
+                          divisions: 8,
+                          onChanged: (value) =>
+                              _bridge.changeHudLayout({'scaleValue': value}),
+                        ),
+                      ),
+                      Text(
+                        '${(_scale * 100).round()}%',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        onPressed: _bridge.resetHud,
+                        child: Text(
+                          l10n.hudReset,
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        onPressed: () =>
+                            _bridge.changeHudLayout({'save': false}),
+                        child: Text(
+                          l10n.hudCancel,
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        onPressed: () =>
+                            _bridge.changeHudLayout({'save': true}),
+                        child: Text(
+                          l10n.hudSave,
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -195,7 +346,13 @@ class _HudViewState extends State<HudView> {
 
   List<Widget> _content(AppLocalizations l10n) => switch (_state) {
     HudState.transcribing => [
-      const ProgressCircle(radius: 7),
+      _draggable(
+        const SizedBox(
+          width: 24,
+          height: 28,
+          child: Center(child: ProgressCircle(radius: 7)),
+        ),
+      ),
       const SizedBox(width: Gap.control),
       Text(l10n.hudTranscribing, style: _label, maxLines: 1),
       const Spacer(),
@@ -232,7 +389,7 @@ class _HudViewState extends State<HudView> {
       l10n.hudSilent,
     ),
     _ => [
-      _Meter(levels: _levels),
+      _draggable(_Meter(levels: _levels)),
       const SizedBox(width: Gap.control),
       Text(
         _time,

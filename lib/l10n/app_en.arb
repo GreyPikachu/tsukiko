@@ -796,5 +796,12 @@
         "type": "int"
       }
     }
-  }
+  },
+  "hudLayoutTitle": "Dictation island position",
+  "hudLayoutHint": "Drag the meter · snap to the center guides",
+  "hudDrag": "Move island",
+  "hudScale": "Scale",
+  "hudReset": "Reset",
+  "hudSave": "Save",
+  "hudConfigure": "Adjust position and scale"
 }

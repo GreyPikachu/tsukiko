@@ -20,6 +20,9 @@ class _FakeSettingsCubit extends Cubit<SettingsState> implements SettingsCubit {
     : super(initial ?? SettingsState(tab: 'models'));
 
   String? lastLibraryPath;
+  NativeBridge? hudBridge;
+  @override
+  NativeBridge get bridge => hudBridge!;
 
   void beginDownload() => emit(
     state.copyWith(
@@ -109,9 +112,7 @@ void main() {
     expect(find.text('Что сказать или распознать'), findsOneWidget);
     expect(find.text('Замена (необязательно)'), findsOneWidget);
     final phrase = tester.getRect(find.text('Что сказать или распознать'));
-    final replacement = tester.getRect(
-      find.text('Замена (необязательно)'),
-    );
+    final replacement = tester.getRect(find.text('Замена (необязательно)'));
     expect((phrase.top - replacement.top).abs(), lessThan(1));
     await tester.ensureVisible(find.text('адрес офиса', skipOffstage: false));
     await tester.pump();
@@ -124,6 +125,51 @@ void main() {
     expect(trash, findsOneWidget);
     expect(tester.getSize(trash).width, IconSize.button);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('настройка и сброс плашки доступны из настроек диктовки', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(580, 560));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+    NativeBridge.debugReset();
+    final calls = <MethodCall>[];
+    const channel = MethodChannel('tsukiko/dictation');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    final cubit = _FakeSettingsCubit(SettingsState(tab: 'dictation'))
+      ..hudBridge = NativeBridge();
+    addTearDown(cubit.close);
+    await tester.pumpWidget(
+      MacosApp(
+        locale: const Locale('ru'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: BlocProvider<SettingsCubit>.value(
+          value: cubit,
+          child: const SettingsBody(),
+        ),
+      ),
+    );
+    final configure = find.text('Настроить положение и масштаб');
+    await tester.scrollUntilVisible(configure, 180, scrollable: find.byType(Scrollable).first);
+    await tester.tap(configure);
+    expect(calls.last.method, 'configureHud');
+    expect((calls.last.arguments as Map)['save'], 'Сохранить');
+    await tester.tap(find.text('Сбросить'));
+    expect(calls.last.method, 'resetHud');
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -207,9 +253,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('окно настроек рисуется на всех пяти вкладках', (
-    tester,
-  ) async {
+  testWidgets('окно настроек рисуется на всех пяти вкладках', (tester) async {
     // Размер настоящего окна: раскладка обязана сходиться именно в нём.
     await tester.binding.setSurfaceSize(const Size(580, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -292,47 +336,48 @@ void main() {
   group('папка журналов', () {
     useTempSupportDir('tsukiko-settings-logs');
 
-    testWidgets('кнопка открытия папки журналов доступна во вкладке приложения', (
-      tester,
-    ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 600));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      tester.platformDispatcher.localesTestValue = const [Locale('ru')];
-      final cubit = _FakeSettingsCubit(
-        SettingsState(tab: 'app'),
-      );
-      addTearDown(cubit.close);
+    testWidgets(
+      'кнопка открытия папки журналов доступна во вкладке приложения',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(580, 600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+        final cubit = _FakeSettingsCubit(SettingsState(tab: 'app'));
+        addTearDown(cubit.close);
 
-      await tester.pumpWidget(
-        MacosApp(
-          locale: const Locale('ru'),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: BlocProvider<SettingsCubit>.value(
-            value: cubit,
-            child: const SettingsBody(),
+        await tester.pumpWidget(
+          MacosApp(
+            locale: const Locale('ru'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: BlocProvider<SettingsCubit>.value(
+              value: cubit,
+              child: const SettingsBody(),
+            ),
           ),
-        ),
-      );
-      await tester.pump();
+        );
+        await tester.pump();
 
-      await tester.dragUntilVisible(
-        find.widgetWithText(PushButton, 'Открыть папку журналов'),
-        find.byType(ListView).first,
-        const Offset(0, -150),
-      );
-      expect(find.text('ЖУРНАЛИРОВАНИЕ'), findsOneWidget);
-      expect(find.text('Вести журнал работы'), findsOneWidget);
-      final openLogsBtn =
-          find.widgetWithText(PushButton, 'Открыть папку журналов');
-      expect(openLogsBtn, findsOneWidget);
+        await tester.dragUntilVisible(
+          find.widgetWithText(PushButton, 'Открыть папку журналов'),
+          find.byType(ListView).first,
+          const Offset(0, -150),
+        );
+        expect(find.text('ЖУРНАЛИРОВАНИЕ'), findsOneWidget);
+        expect(find.text('Вести журнал работы'), findsOneWidget);
+        final openLogsBtn = find.widgetWithText(
+          PushButton,
+          'Открыть папку журналов',
+        );
+        expect(openLogsBtn, findsOneWidget);
 
-      await tester.tap(openLogsBtn);
-      await tester.pump();
+        await tester.tap(openLogsBtn);
+        await tester.pump();
 
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-    });
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
   });
 
   group('выбор папки библиотеки', () {

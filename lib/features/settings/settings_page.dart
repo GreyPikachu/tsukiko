@@ -524,6 +524,32 @@ class _SettingsBodyState extends State<SettingsBody>
     const SizedBox(height: Gap.item),
     Check(l10n.checkShowHud, s.hud, _cubit.setHud),
     Hint(l10n.hintHud, under: true),
+    const SizedBox(height: Gap.inner),
+    Wrap(
+      spacing: Gap.control,
+      children: [
+        PushButton(
+          controlSize: ControlSize.regular,
+          secondary: true,
+          onPressed: () => _cubit.bridge.configureHud({
+            'title': l10n.hudLayoutTitle,
+            'hint': l10n.hudLayoutHint,
+            'drag': l10n.hudDrag,
+            'scale': l10n.hudScale,
+            'reset': l10n.hudReset,
+            'cancel': l10n.hudCancel,
+            'save': l10n.hudSave,
+          }),
+          child: Text(l10n.hudConfigure),
+        ),
+        PushButton(
+          controlSize: ControlSize.regular,
+          secondary: true,
+          onPressed: () => _cubit.bridge.resetHud(),
+          child: Text(l10n.hudReset),
+        ),
+      ],
+    ),
     SectionTitle(l10n.sectionWakeWord),
     Hint(l10n.hintWakeWordSection),
     const SizedBox(height: Gap.inner),
@@ -677,21 +703,22 @@ class _SettingsBodyState extends State<SettingsBody>
   }) {
     final isDark = MacosTheme.brightnessOf(context) == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF9F9FB);
-    final borderColor =
-        isDark ? const Color(0xFF333333) : const Color(0xFFE5E5EA);
+    final borderColor = isDark
+        ? const Color(0xFF333333)
+        : const Color(0xFFE5E5EA);
     final statusColor = isWordEmpty
         ? const Color(0xFF8E8E93)
         : (isCalibrated ? const Color(0xFF34C759) : const Color(0xFFFF9500));
     final statusIcon = isWordEmpty
         ? CupertinoIcons.minus_circle
         : (isCalibrated
-            ? CupertinoIcons.checkmark_seal_fill
-            : CupertinoIcons.exclamationmark_circle);
+              ? CupertinoIcons.checkmark_seal_fill
+              : CupertinoIcons.exclamationmark_circle);
     final statusText = isWordEmpty
         ? l10n.voiceProfileCloseEmpty
         : (isCalibrated
-            ? l10n.voiceProfileStatusCalibrated(4)
-            : l10n.voiceProfileStatusNotCalibrated);
+              ? l10n.voiceProfileStatusCalibrated(4)
+              : l10n.voiceProfileStatusNotCalibrated);
 
     return Container(
       padding: const EdgeInsets.all(Gap.item),
@@ -707,11 +734,7 @@ class _SettingsBodyState extends State<SettingsBody>
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              MacosIcon(
-                statusIcon,
-                color: statusColor,
-                size: 20,
-              ),
+              MacosIcon(statusIcon, color: statusColor, size: 20),
               const SizedBox(width: Gap.item),
               Expanded(
                 child: Column(

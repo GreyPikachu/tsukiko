@@ -94,6 +94,16 @@ class NativeBridge {
   /// тот, что её рисует. На macOS панель нарисована на SwiftUI, и этот
   /// поток там пуст: состояние ей передаёт родная сторона напрямую.
   final _hudStates = StreamController<HudState>.broadcast();
+  final _hudLayout = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get hudLayout => _hudLayout.stream;
+  Future<Map<String, dynamic>> currentHudLayout() async =>
+      await _channel.invokeMapMethod<String, dynamic>('getHudLayout') ?? {};
+  Future<void> configureHud(Map<String, String> labels) =>
+      _channel.invokeMethod('configureHud', labels);
+  Future<void> resetHud() => _channel.invokeMethod('resetHud');
+  Future<void> changeHudLayout(Map<String, dynamic> changes) =>
+      _channel.invokeMethod('hudLayout', changes);
+
   final _hudQueue = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get hudQueue => _hudQueue.stream;
   Future<Map<String, dynamic>> currentHudQueue() async =>
@@ -139,6 +149,8 @@ class NativeBridge {
         _hidden.add(null);
       case 'hud':
         _hudActions.add(call.arguments as String);
+      case 'hudLayout':
+        _hudLayout.add((call.arguments as Map).cast<String, dynamic>());
       case 'hudQueue':
         _hudQueue.add((call.arguments as Map).cast<String, dynamic>());
       case 'hudState':
@@ -208,15 +220,20 @@ class NativeBridge {
   Future<void> hudAction(String action) =>
       _channel.invokeMethod('hudAction', action);
 
-  Future<void> hud(
-    HudState state, {
-    int pending = 0,
-    bool processing = false,
-  }) => _channel.invokeMethod('hud', {
-    'state': state.name,
-    'pending': pending,
-    'processing': processing,
-  });
+  Future<void> hud(HudState state, {int pending = 0, bool processing = false}) {
+    final l10n = currentL10n();
+    return _channel.invokeMethod('hud', {
+      'state': state.name,
+      'pending': pending,
+      'processing': processing,
+      'labels': {
+        'queueTitle': l10n.hudQueueCount(pending),
+        'record': l10n.hudRecordNext,
+        'abort': l10n.hudAbortCurrent,
+        'clearQueue': l10n.hudClearQueue,
+      },
+    });
+  }
 
   /// Пустое сочетание значит «не назначено»: родная сторона такое
   /// не перехватывает вовсе.

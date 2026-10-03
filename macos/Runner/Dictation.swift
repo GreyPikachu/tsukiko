@@ -551,8 +551,14 @@ final class DictationBridge: NSObject {
       // нечем и некуда: надиктованный текст пропадал вместе с буфером,
       // который через 0,4 с возвращался к прежнему содержимому.
       reply(paste((args?["text"] as? String) ?? ""))
+    case "configureHud":
+      hud.configure(labels: (call.arguments as? [String: String]) ?? [:])
+      reply(nil)
+    case "resetHud":
+      hud.resetPosition()
+      reply(nil)
     case "hud":
-      hud.updateQueue(pending: (args?["pending"] as? Int) ?? 0, processing: (args?["processing"] as? Bool) ?? false)
+      hud.updateQueue(pending: (args?["pending"] as? Int) ?? 0, processing: (args?["processing"] as? Bool) ?? false, labels: (args?["labels"] as? [String: String]) ?? [:])
       switch (args?["state"] as? String) ?? "" {
       case "recording": hud.show()
       case "transcribing": hud.transcribing()
@@ -995,6 +1001,7 @@ final class DictationBridge: NSObject {
   /// показать неудачу и оставить текст хотя бы в буфере обмена.
   @discardableResult
   private func paste(_ text: String) -> Bool {
+    guard !hud.isEditing else { return false }
     guard !text.isEmpty else { return false }
     // Без «Универсального доступа» событие клавиши не доходит никуда.
     // Проверяем до того, как трогать буфер: иначе мы бы затёрли чужую

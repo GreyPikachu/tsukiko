@@ -263,6 +263,7 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
 // ── плавающая панель записи ─────────────────────────────────────────────────
 
 HudWindow::~HudWindow() {
+  if (guides_) DestroyWindow(guides_);
   controller_ = nullptr;
   if (window_) DestroyWindow(window_);
 }
@@ -275,16 +276,166 @@ void HudWindow::Show(
   if (first_frame_ready_) ShowReady();
 }
 
+namespace {
+constexpr wchar_t kHudPrefs[] = L"Software\\Tsukiko\\HUD";
+LRESULT CALLBACK GuidesProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
+  if (message == WM_PAINT) {
+    PAINTSTRUCT paint; HDC dc = BeginPaint(hwnd, &paint);
+    RECT bounds; GetClientRect(hwnd, &bounds);
+    HBRUSH tint = CreateSolidBrush(RGB(65, 130, 230));
+    FillRect(dc, &bounds, tint); DeleteObject(tint);
+    HPEN line = CreatePen(PS_SOLID, 2, RGB(210, 230, 255));
+    auto old = SelectObject(dc, line);
+    MoveToEx(dc, bounds.right / 2, 0, nullptr); LineTo(dc, bounds.right / 2, bounds.bottom);
+    MoveToEx(dc, 0, bounds.bottom / 2, nullptr); LineTo(dc, bounds.right, bounds.bottom / 2);
+    SelectObject(dc, old); DeleteObject(line); EndPaint(hwnd, &paint); return 0;
+  }
+  if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+  return DefWindowProc(hwnd, message, wp, lp);
+}
+}
+
+HudWindow::HudWindow() {
+  auto read = [](const wchar_t* name, DWORD fallback) {
+    DWORD value = fallback, bytes = sizeof(value);
+    if (RegGetValueW(HKEY_CURRENT_USER, kHudPrefs, name, RRF_RT_REG_DWORD,
+                     nullptr, &value, &bytes) != ERROR_SUCCESS) return fallback;
+    return value;
+  };
+  placement_.scale = HudPlacement::ValidScale(read(L"scale", 1000) / 1000.0);
+  placement_.positioned = read(L"positioned", 0) != 0;
+  placement_.x = std::clamp(read(L"x", 500000) / 1000000.0, 0.0, 1.0);
+  placement_.y = std::clamp(read(L"y", 500000) / 1000000.0, 0.0, 1.0);
+}
+
+void HudWindow::SavePlacement() {
+  HKEY key;
+  if (RegCreateKeyExW(HKEY_CURRENT_USER, kHudPrefs, 0, nullptr, 0, KEY_SET_VALUE,
+                      nullptr, &key, nullptr) != ERROR_SUCCESS) return;
+  auto write = [&](const wchar_t* name, DWORD value) {
+    RegSetValueExW(key, name, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&value), sizeof(value));
+  };
+  write(L"scale", static_cast<DWORD>(placement_.scale * 1000));
+  write(L"positioned", placement_.positioned ? 1 : 0);
+  write(L"x", static_cast<DWORD>(placement_.x * 1000000));
+  write(L"y", static_cast<DWORD>(placement_.y * 1000000));
+  RegCloseKey(key);
+}
+
+double HudWindow::DpiScale() const {
+  return window_ ? GetDpiForWindow(window_) / 96.0 : 1.0;
+}
+
+HudArea HudWindow::WorkArea() const {
+  MONITORINFO info = {}; info.cbSize = sizeof(info);
+  if (monitor_ && GetMonitorInfoW(monitor_, &info)) {
+    auto r = info.rcWork;
+    return {static_cast<double>(r.left), static_cast<double>(r.top),
+            static_cast<double>(r.right - r.left), static_cast<double>(r.bottom - r.top)};
+  }
+  RECT r; SystemParametersInfoW(SPI_GETWORKAREA, 0, &r, 0);
+  return {static_cast<double>(r.left), static_cast<double>(r.top),
+          static_cast<double>(r.right - r.left), static_cast<double>(r.bottom - r.top)};
+}
+
+void HudWindow::ResizeAndPosition() {
+  if (!window_) return;
+  const double dpi = DpiScale();
+  int width = static_cast<int>((editing_ ? 600 : kHudWidth) * placement_.scale * dpi);
+  int height = static_cast<int>((editing_ ? 156 : kHudHeight) * placement_.scale * dpi);
+  const auto point = placement_.Origin(WorkArea(), width, height, 92 * dpi);
+  SetWindowPos(window_, HWND_TOPMOST, static_cast<int>(point.x), static_cast<int>(point.y),
+               width, height, SWP_NOACTIVATE);
+  if (controller_) {
+    MoveWindow(controller_->view()->GetNativeWindow(), 0, 0, width, height, TRUE);
+    controller_->ForceRedraw();
+  }
+}
+
 void HudWindow::ShowReady() {
   if (!window_ || !wanted_visible_) return;
+  if (!IsVisible() && !editing_) {
+    POINT pointer; GetCursorPos(&pointer);
+    monitor_ = MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST);
+  }
+  ResizeAndPosition();
+  ShowWindow(window_, SW_SHOWNOACTIVATE);
+}
 
-  // Внизу по центру рабочей области — там же, где она стоит на macOS.
-  RECT work;
-  SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
-  const int x = (work.left + work.right) / 2 - kHudWidth / 2;
-  const int y = work.bottom - kHudHeight - 92;
-  SetWindowPos(window_, HWND_TOPMOST, x, y, kHudWidth, kHudHeight,
-               SWP_NOACTIVATE | SWP_SHOWWINDOW);
+void HudWindow::Configure() {
+  if (!window_ || editing_) return;
+  saved_ = placement_;
+  visible_before_editing_ = IsVisible();
+  editing_ = true;
+  POINT pointer; GetCursorPos(&pointer);
+  monitor_ = MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST);
+  WNDCLASSW wc = {}; wc.lpfnWndProc = GuidesProc;
+  wc.hInstance = GetModuleHandle(nullptr); wc.lpszClassName = L"TsukikoHUDGuides";
+  RegisterClassW(&wc);
+  auto work = WorkArea();
+  guides_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+      wc.lpszClassName, L"", WS_POPUP, static_cast<int>(work.left), static_cast<int>(work.top),
+      static_cast<int>(work.width), static_cast<int>(work.height), nullptr, nullptr, wc.hInstance, nullptr);
+  SetLayeredWindowAttributes(guides_, 0, 42, LWA_ALPHA);
+  SetWindowPos(guides_, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  wanted_visible_ = true;
+  ShowReady();
+  previous_focus_ = GetForegroundWindow();
+  SetWindowLongPtr(window_, GWL_EXSTYLE, GetWindowLongPtr(window_, GWL_EXSTYLE) & ~WS_EX_NOACTIVATE);
+  SetForegroundWindow(window_);
+  SetFocus(controller_->view()->GetNativeWindow());
+}
+
+void HudWindow::FinishEditing(bool save) {
+  if (!editing_) return;
+  if (save) SavePlacement(); else placement_ = saved_;
+  editing_ = false;
+  SetWindowLongPtr(window_, GWL_EXSTYLE, GetWindowLongPtr(window_, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+  if (previous_focus_ && IsWindow(previous_focus_)) SetForegroundWindow(previous_focus_);
+  previous_focus_ = nullptr;
+  if (guides_) { DestroyWindow(guides_); guides_ = nullptr; }
+  ResizeAndPosition();
+  if (!visible_before_editing_) Hide();
+}
+
+void HudWindow::ResetPosition() {
+  placement_ = HudPlacement();
+  ResizeAndPosition();
+  if (!editing_) SavePlacement();
+}
+
+void HudWindow::SetScale(double scale) {
+  placement_.scale = HudPlacement::ValidScale(scale);
+  ResizeAndPosition();
+  if (!editing_) SavePlacement();
+}
+
+void HudWindow::Move(double dx, double dy, bool ended) {
+  if (!window_) return;
+  RECT rect; GetWindowRect(window_, &rect);
+  double factor = DpiScale() * placement_.scale;
+  POINT pointer; GetCursorPos(&pointer);
+  if (!dragging_) {
+    drag_origin_ = {static_cast<double>(rect.left), static_cast<double>(rect.top)};
+    drag_pointer_ = {pointer.x - static_cast<LONG>(dx * factor), pointer.y - static_cast<LONG>(dy * factor)};
+    dragging_ = true;
+  }
+  auto p = placement_.Snap({drag_origin_.x + pointer.x - drag_pointer_.x,
+                           drag_origin_.y + pointer.y - drag_pointer_.y},
+                          WorkArea(), rect.right - rect.left, rect.bottom - rect.top, 12 * DpiScale());
+  SetWindowPos(window_, HWND_TOPMOST, static_cast<int>(p.x), static_cast<int>(p.y), 0, 0,
+               SWP_NOSIZE | SWP_NOACTIVATE);
+  placement_.Capture(p, WorkArea(), rect.right - rect.left, rect.bottom - rect.top);
+  if (ended) { dragging_ = false; if (!editing_) SavePlacement(); }
+}
+
+void HudWindow::Nudge(double dx, double dy) {
+  if (!window_) return;
+  RECT r; GetWindowRect(window_, &r);
+  auto p = placement_.Clamp({r.left + dx * DpiScale(), r.top + dy * DpiScale()},
+                            WorkArea(), r.right - r.left, r.bottom - r.top);
+  SetWindowPos(window_, HWND_TOPMOST, static_cast<int>(p.x), static_cast<int>(p.y), 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+  placement_.Capture(p, WorkArea(), r.right - r.left, r.bottom - r.top);
 }
 
 void HudWindow::Prepare(
@@ -337,6 +488,7 @@ void HudWindow::Prepare(
 }
 
 void HudWindow::Hide() {
+  if (editing_) return;
   wanted_visible_ = false;
   if (window_) ShowWindow(window_, SW_HIDE);
 }
@@ -356,7 +508,7 @@ LRESULT CALLBACK HudWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
       reinterpret_cast<HudWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
   // Ни щелчком, ни клавишей фокус этой панели не достаётся: она нужна
   // поверх чужого окна, в которое сейчас диктуют.
-  if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+  if (message == WM_MOUSEACTIVATE) return self && self->editing_ ? MA_ACTIVATE : MA_NOACTIVATE;
   if (message == WM_ERASEBKGND) {
     HDC hdc = reinterpret_cast<HDC>(wparam);
     RECT rect;

@@ -22,6 +22,14 @@ final class HUDModel: ObservableObject {
   @Published var processing = false
   var onClearQueue: () -> Void = {}
   var onRecord: () -> Void = {}
+  @Published var editing = false
+  @Published var scale: Double = 1
+  var onMove: (CGSize, Bool) -> Void = { _, _ in }
+  var onScale: (Double) -> Void = { _ in }
+  var onFinish: (Bool) -> Void = { _ in }
+  var onReset: () -> Void = {}
+  var labels: [String: String] = [:]
+  func label(_ key: String, _ fallback: String) -> String { labels[key] ?? fallback }
 
   @Published var elapsed: TimeInterval = 0
 
@@ -54,10 +62,24 @@ struct HUDView: View {
   }
 
   var body: some View {
-    HStack(spacing: 12) {
+    VStack(spacing: 8) {
+      if model.editing {
+        Text(model.label("title", "Положение плашки"))
+          .font(.system(size: 14, weight: .semibold))
+          .contentShape(Rectangle())
+          .gesture(DragGesture(minimumDistance: 3)
+            .onChanged { model.onMove($0.translation, false) }
+            .onEnded { model.onMove($0.translation, true) })
+        Text(model.label("hint", "Перетащите за полоски · центр экрана притягивает плашку"))
+          .font(.system(size: 11)).foregroundColor(.secondary)
+      }
+      HStack(spacing: 12) {
       switch model.state {
       case .transcribing:
-        Spinner()
+        Spinner().contentShape(Rectangle())
+          .gesture(DragGesture(minimumDistance: 3)
+            .onChanged { model.onMove($0.translation, false) }
+            .onEnded { model.onMove($0.translation, true) })
         Text("Распознаю…")
           .font(.system(size: 13, weight: .medium))
           .lineLimit(1)
@@ -125,23 +147,31 @@ struct HUDView: View {
         Spacer(minLength: 0)
       default:
         Meter(levels: model.levels, reduceMotion: reduceMotion)
-        Text(time)
+          .contentShape(Rectangle())
+          .gesture(DragGesture(minimumDistance: 3)
+            .onChanged { model.onMove($0.translation, false) }
+            .onEnded { model.onMove($0.translation, true) })
+          .help(model.label("drag", "Переместить плашку"))
+          .accessibilityLabel(model.label("drag", "Переместить плашку"))
+        Text(model.editing ? model.label("drag", "Переместить плашку") : time)
           .font(.system(size: 13, weight: .medium).monospacedDigit())
           .lineLimit(1)
           .fixedSize()
           .foregroundColor(.primary)
         Spacer(minLength: 0)
-        HUDButton(title: "Отменить", filled: false, action: model.onCancel)
-        HUDButton(title: "Остановить", filled: true, action: model.onStop)
+        if !model.editing {
+          HUDButton(title: "Отменить", filled: false, action: model.onCancel)
+          HUDButton(title: "Остановить", filled: true, action: model.onStop)
+        }
       }
     }
     .overlay(alignment: .bottomTrailing) {
-      if model.pending > 0 || model.processing {
+      if !model.editing && (model.pending > 0 || model.processing) {
         Menu {
-          Text("В очереди: \(model.pending)")
-          if model.state != .recording { Button("Записать следующую", action: model.onRecord) }
-          if model.processing { Button("Отменить текущую расшифровку", action: model.onAbort) }
-          if model.pending > 0 { Button("Убрать ожидающие · сохранить записи", action: model.onClearQueue) }
+          Text(model.label("queueTitle", "В очереди: \(model.pending)"))
+          if model.state != .recording { Button(model.label("record", "Записать следующую"), action: model.onRecord) }
+          if model.processing { Button(model.label("abort", "Отменить текущую расшифровку"), action: model.onAbort) }
+          if model.pending > 0 { Button(model.label("clearQueue", "Убрать ожидающие · сохранить записи"), action: model.onClearQueue) }
         } label: {
           Text("\(model.pending + (model.processing ? 1 : 0))")
             .font(.system(size: 10, weight: .semibold).monospacedDigit())
@@ -157,6 +187,22 @@ struct HUDView: View {
     // Двадцать, а не двадцать два: шаг сетки во всём приложении — четыре.
     .padding(.horizontal, 20)
     .frame(height: 52)
+      if model.editing {
+        HStack(spacing: 10) {
+          Text(model.label("scale", "Масштаб"))
+          Slider(value: Binding(get: { model.scale }, set: model.onScale), in: 0.8...1.6, step: 0.1)
+            .frame(width: 110).accessibilityLabel(model.label("scale", "Масштаб"))
+          Text("\(Int(model.scale * 100))%").monospacedDigit().frame(width: 40)
+          Button(model.label("reset", "Сбросить"), action: model.onReset).fixedSize()
+          Button(model.label("cancel", "Отменить")) { model.onFinish(false) }.keyboardShortcut(.cancelAction).fixedSize()
+          Button(model.label("save", "Сохранить")) { model.onFinish(true) }.keyboardShortcut(.defaultAction).fixedSize()
+        }.font(.system(size: 11)).padding(.horizontal, 12)
+      }
+    }
+    .frame(width: model.editing ? 600 : 372, height: model.editing ? 156 : 52)
+    .scaleEffect(model.scale)
+    .frame(width: (model.editing ? 600 : 372) * model.scale,
+           height: (model.editing ? 156 : 52) * model.scale)
     // Отклик 0,25, а не 0,4: смену состояния человек вызвал сам, нажав
     // «Остановить», и ждать почти полсекунды, пока надпись доедет,
     // читается как задумчивость приложения. 0,4 — это для перемещений,
@@ -245,6 +291,7 @@ private struct AbortButton: View {
       .help("Отменить распознавание")
       .accessibilityLabel("Отменить распознавание")
       .accessibilityAddTraits(.isButton)
+      .accessibilityAction { action() }
   }
 }
 
@@ -299,7 +346,8 @@ private struct HUDButton: View {
 /// уйдёт из поля ввода, куда мы собираемся вставлять текст, и вставка
 /// сломается целиком.
 private final class HUDPanel: NSPanel {
-  override var canBecomeKey: Bool { false }
+  var editingEnabled = false
+  override var canBecomeKey: Bool { editingEnabled }
   override var canBecomeMain: Bool { false }
 }
 
@@ -318,8 +366,27 @@ final class RecordingHUD {
   /// она появлялась и в ту же долю секунды исчезала, а исчезнув, обратно
   /// сама не приходила. Номер отличает свой уход от чужого.
   private var showNumber = 0
+  private var hiding = false
 
-  private let size = NSSize(width: 372, height: 52)
+  private var size: NSSize {
+    NSSize(width: (model.editing ? 600 : 372) * model.scale,
+           height: (model.editing ? 156 : 52) * model.scale)
+  }
+  private let defaults: UserDefaults
+  var currentPlacement: HUDPlacement { placement }
+  var isEditing: Bool { model.editing }
+  var isVisible: Bool { panel?.isVisible == true }
+  private let placementKey = "dictationHUDPlacement"
+  private var placement = HUDPlacement()
+  private var savedPlacement = HUDPlacement()
+  private var dragOrigin: NSPoint?
+  private var dragPointer: NSPoint?
+  private weak var previousKeyWindow: NSWindow?
+  private var keyMonitor: Any?
+  private var layoutScreen: NSScreen?
+  private var guides: NSPanel?
+  private var visibleBeforeEditing = false
+  private var stateBeforeEditing: HUDState = .hidden
 
   /// Откуда брать уровень сигнала — рекордер живёт в мосте.
   var levelSource: () -> Double = { 0 }
@@ -327,13 +394,23 @@ final class RecordingHUD {
   init(
     onCancel: @escaping () -> Void, onStop: @escaping () -> Void,
     onAbort: @escaping () -> Void, onClearQueue: @escaping () -> Void,
-    onRecord: @escaping () -> Void
+    onRecord: @escaping () -> Void, defaults: UserDefaults = .standard
   ) {
+    self.defaults = defaults
     model.onCancel = onCancel
     model.onStop = onStop
     model.onAbort = onAbort
     model.onClearQueue = onClearQueue
     model.onRecord = onRecord
+    if let saved = defaults.dictionary(forKey: placementKey) {
+      placement = HUDPlacement(x: saved["x"] as? Double, y: saved["y"] as? Double,
+                               scale: saved["scale"] as? Double ?? 1)
+    }
+    model.scale = placement.scale
+    model.onMove = { [weak self] offset, ended in self?.move(offset, ended: ended) }
+    model.onScale = { [weak self] scale in self?.setScale(scale) }
+    model.onReset = { [weak self] in self?.resetPosition() }
+    model.onFinish = { [weak self] save in self?.finishEditing(save: save) }
   }
 
   private func build() -> HUDPanel {
@@ -383,24 +460,145 @@ final class RecordingHUD {
   /// окном, а ключевого окна у нас нет вовсе — панель нарочно не берёт
   /// фокус. На одном мониторе разницы нет, на двух панель уезжала
   /// на соседний, то есть «не появлялась» и там, где на неё смотрят.
-  private var restingOrigin: NSPoint {
+  private var currentScreen: NSScreen? {
+    if let layoutScreen, NSScreen.screens.contains(layoutScreen) { return layoutScreen }
     let mouse = NSEvent.mouseLocation
-    let screen = (NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens.first)
-    let work = screen.map { $0.visibleFrame.height > 0 ? $0.visibleFrame : $0.frame } ?? .zero
-    return NSPoint(x: work.midX - size.width / 2, y: work.minY + 92)
+    return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+      ?? NSScreen.main ?? NSScreen.screens.first
+  }
+
+  private var workArea: NSRect {
+    let screen = currentScreen
+    return screen.map { $0.visibleFrame.height > 0 ? $0.visibleFrame : $0.frame } ?? .zero
+  }
+
+  private var restingOrigin: NSPoint { placement.origin(in: workArea, size: size) }
+
+  private func persist() {
+    var saved: [String: Double] = ["scale": placement.scale]
+    if let x = placement.x, let y = placement.y { saved["x"] = x; saved["y"] = y }
+    defaults.set(saved, forKey: placementKey)
+  }
+
+  private func resize() {
+    let panel = build()
+    panel.setFrame(NSRect(origin: restingOrigin, size: size), display: true)
+  }
+
+  private func move(_ offset: CGSize, ended: Bool) {
+    let panel = build()
+    let pointer = NSEvent.mouseLocation
+    if dragOrigin == nil {
+      dragOrigin = panel.frame.origin
+      dragPointer = NSPoint(x: pointer.x - offset.width * model.scale,
+                            y: pointer.y + offset.height * model.scale)
+    }
+    let start = dragOrigin!, grabbed = dragPointer!
+    let origin = placement.snap(NSPoint(x: start.x + pointer.x - grabbed.x,
+                                        y: start.y + pointer.y - grabbed.y),
+                                in: workArea, size: size)
+    panel.setFrameOrigin(origin)
+    placement.capture(origin: origin, in: workArea, size: size)
+    if ended {
+      dragOrigin = nil; dragPointer = nil
+      if !model.editing { persist() }
+    }
+  }
+
+  func setScale(_ scale: Double) {
+    placement.scale = HUDPlacement.validScale(scale)
+    model.scale = placement.scale
+    resize()
+    if !model.editing { persist() }
+  }
+
+  func resetPosition() {
+    placement = HUDPlacement()
+    model.scale = placement.scale
+    resize()
+    if !model.editing { persist() }
+  }
+
+  func configure(labels: [String: String]) {
+    if model.editing { return }
+    savedPlacement = placement
+    visibleBeforeEditing = panel?.isVisible == true
+    stateBeforeEditing = model.state
+    model.labels = labels
+    layoutScreen = currentScreen
+    hideAfterDone?.invalidate(); hideAfterDone = nil
+    showNumber += 1
+    model.editing = true
+
+    resize()
+    let overlay = NSPanel(contentRect: workArea, styleMask: [.borderless, .nonactivatingPanel],
+                          backing: .buffered, defer: false)
+    overlay.level = .floating
+    overlay.isOpaque = false; overlay.backgroundColor = .clear
+    overlay.ignoresMouseEvents = true
+    overlay.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+    overlay.contentView = NSHostingView(rootView: HUDGuides())
+    overlay.orderFrontRegardless()
+    guides = overlay
+    previousKeyWindow = NSApp.keyWindow
+    panel?.editingEnabled = true
+    panel?.alphaValue = 1; panel?.makeKeyAndOrderFront(nil)
+    keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      guard let self, self.model.editing else { return event }
+      if event.keyCode == 53 { self.finishEditing(save: false); return nil }
+      if event.keyCode == 36 { self.finishEditing(save: true); return nil }
+      let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+      var delta = NSPoint.zero
+      switch event.keyCode {
+      case 123: delta.x = -step
+      case 124: delta.x = step
+      case 125: delta.y = -step
+      case 126: delta.y = step
+      default: return event
+      }
+      let p = self.build().frame.origin
+      let moved = self.placement.clamp(NSPoint(x: p.x + delta.x, y: p.y + delta.y),
+                                       in: self.workArea, size: self.size)
+      self.panel?.setFrameOrigin(moved)
+      self.placement.capture(origin: moved, in: self.workArea, size: self.size)
+      return nil
+    }
+  }
+
+  func finishEditing(save: Bool) {
+    guard model.editing else { return }
+    if !save { placement = savedPlacement }
+    else { persist() }
+    model.editing = false
+    panel?.editingEnabled = false
+    if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }; keyMonitor = nil
+    previousKeyWindow?.makeKeyAndOrderFront(nil)
+    model.scale = placement.scale
+    guides?.orderOut(nil); guides = nil
+    resize()
+    if stateBeforeEditing == .hidden { panel?.orderOut(nil); model.state = .hidden }
+    else { model.state = stateBeforeEditing }
+    if ![HUDState.hidden, .recording, .transcribing].contains(stateBeforeEditing) {
+      linger(stateBeforeEditing, seconds: 2.6)
+    }
+    layoutScreen = nil
   }
 
   private var reduceMotion: Bool {
     NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
   }
 
-  func updateQueue(pending: Int, processing: Bool) {
+  func updateQueue(pending: Int, processing: Bool, labels: [String: String] = [:]) {
+    model.labels.merge(labels) { _, new in new }
     model.pending = pending
     model.processing = processing
   }
 
   func show() {
-    if model.state == .recording && panel?.isVisible == true { return }
+    if model.editing { stateBeforeEditing = .recording }
+    if model.state == .recording && panel?.isVisible == true && !hiding { return }
+    hiding = false
+    if !model.editing && panel?.isVisible != true { layoutScreen = nil; layoutScreen = currentScreen }
     let panel = build()
     hideAfterDone?.invalidate()
     hideAfterDone = nil
@@ -457,6 +655,7 @@ final class RecordingHUD {
   /// Пропасть между «отпустил клавишу» и «текст появился» и есть то
   /// место, где пользователь начинает гадать, работает ли программа.
   func transcribing() {
+    if model.editing { stateBeforeEditing = .transcribing }
     guard panel?.isVisible == true else { return }
     ticker?.invalidate()
     ticker = nil
@@ -492,6 +691,7 @@ final class RecordingHUD {
   }
 
   private func linger(_ state: HUDState, seconds: TimeInterval) {
+    if model.editing { stateBeforeEditing = state }
     guard panel?.isVisible == true else {
       hide()
       return
@@ -500,6 +700,7 @@ final class RecordingHUD {
     ticker = nil
     model.state = state
     hideAfterDone?.invalidate()
+    if model.editing { return }
     hideAfterDone = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) {
       [weak self] _ in
       self?.hide()
@@ -507,12 +708,14 @@ final class RecordingHUD {
   }
 
   func hide() {
+    if model.editing { stateBeforeEditing = .hidden; return }
     ticker?.invalidate()
     ticker = nil
     hideAfterDone?.invalidate()
     hideAfterDone = nil
     guard let panel, panel.isVisible else { return }
     let rest = restingOrigin
+    hiding = true
     let mine = showNumber
     NSAnimationContext.runAnimationGroup(
       { context in
@@ -530,5 +733,52 @@ final class RecordingHUD {
         panel.orderOut(nil)
         self.model.state = .hidden
       })
+  }
+}
+
+/// Coordinates are fractions of the work area, measured from its top left.
+struct HUDPlacement {
+  var x: Double?
+  var y: Double?
+  var scale: Double
+  init(x: Double? = nil, y: Double? = nil, scale: Double = 1) {
+    self.x = x.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil }
+    self.y = y.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil }
+    self.scale = Self.validScale(scale)
+  }
+  static func validScale(_ scale: Double) -> Double {
+    scale.isFinite ? min(1.6, max(0.8, scale)) : 1
+  }
+  func clamp(_ origin: NSPoint, in work: NSRect, size: NSSize) -> NSPoint {
+    NSPoint(x: min(max(work.minX, work.maxX - size.width), max(work.minX, origin.x)),
+            y: min(max(work.minY, work.maxY - size.height), max(work.minY, origin.y)))
+  }
+  func origin(in work: NSRect, size: NSSize) -> NSPoint {
+    clamp(NSPoint(x: work.minX + (x ?? 0.5) * work.width - size.width / 2,
+                  y: y.map { work.maxY - $0 * work.height - size.height / 2 }
+                    ?? work.minY + 92), in: work, size: size)
+  }
+  func snap(_ origin: NSPoint, in work: NSRect, size: NSSize) -> NSPoint {
+    var p = origin
+    if abs(p.x + size.width / 2 - work.midX) <= 12 { p.x = work.midX - size.width / 2 }
+    if abs(p.y + size.height / 2 - work.midY) <= 12 { p.y = work.midY - size.height / 2 }
+    return clamp(p, in: work, size: size)
+  }
+  mutating func capture(origin: NSPoint, in work: NSRect, size: NSSize) {
+    guard work.width > 0, work.height > 0 else { return }
+    x = min(1, max(0, (origin.x + size.width / 2 - work.minX) / work.width))
+    y = min(1, max(0, (work.maxY - origin.y - size.height / 2) / work.height))
+  }
+}
+
+private struct HUDGuides: View {
+  var body: some View {
+    GeometryReader { area in
+      ZStack {
+        Color.blue.opacity(0.10)
+        Rectangle().fill(Color.blue.opacity(0.65)).frame(width: 1)
+        Rectangle().fill(Color.blue.opacity(0.65)).frame(height: 1)
+      }.frame(width: area.size.width, height: area.size.height)
+    }.accessibilityHidden(true)
   }
 }

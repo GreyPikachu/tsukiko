@@ -92,6 +92,68 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  Future<void> layout(WidgetTester tester, Map<String, dynamic> data) async {
+    await binding.defaultBinaryMessenger.handlePlatformMessage(
+      'tsukiko/dictation',
+      const StandardMethodCodec().encodeMethodCall(
+        MethodCall('hudLayout', data),
+      ),
+      (_) {},
+    );
+    await tester.pump();
+  }
+
+  testWidgets('настройка положения сохраняется, отменяется и сбрасывается', (
+    tester,
+  ) async {
+    await show(tester);
+    await tester.binding.setSurfaceSize(const Size(960, 250));
+    await layout(tester, {'editing': true, 'scaleValue': 1.6});
+    expect(find.text('Положение плашки'), findsOneWidget);
+    expect(find.text('160%'), findsOneWidget);
+    expect(find.text('Остановить'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Сбросить'));
+    expect(calls.last.method, 'resetHud');
+    await tester.tap(find.text('Сохранить'));
+    expect(calls.last.method, 'hudLayout');
+    expect(calls.last.arguments, {'save': true});
+    await tester.tap(find.text('Отменить'));
+    expect(calls.last.arguments, {'save': false});
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('положение настраивается с клавиатуры', (tester) async {
+    await show(tester);
+    await tester.binding.setSurfaceSize(const Size(960, 250));
+    await layout(tester, {'editing': true, 'scaleValue': 1.0});
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    expect(calls.last.arguments, {'nudgeX': 1.0, 'nudgeY': 0.0});
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    expect(calls.last.arguments, {'save': false});
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    expect(calls.last.arguments, {'save': true});
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('перетаскивание отправляет завершённый жест для сохранения', (
+    tester,
+  ) async {
+    await show(tester);
+    await send(tester, HudState.recording);
+    final meter = find
+        .byWidgetPredicate(
+          (widget) =>
+              widget is MouseRegion && widget.cursor == SystemMouseCursors.move,
+        )
+        .first;
+    await tester.drag(meter, const Offset(40, -20));
+    final moves = calls.where((call) => call.method == 'hudLayout').toList();
+    expect(moves, isNotEmpty);
+    expect((moves.last.arguments as Map)['end'], isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('в каждом состоянии панель говорит своё', (tester) async {
     await show(tester);
 

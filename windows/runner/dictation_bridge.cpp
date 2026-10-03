@@ -587,6 +587,44 @@ void DictationBridge::RegisterHandler(
       result->Success(flutter::EncodableValue(hud_queue_));
     } else if (method == "getHudState") {
       result->Success(flutter::EncodableValue(current_hud_state_));
+    } else if (method == "configureHud") {
+      PrewarmHud();
+      if (const auto* labels = std::get_if<flutter::EncodableMap>(call.arguments())) hud_layout_labels_ = *labels;
+      if (hud_) hud_->Configure();
+      KillTimer(main_window_, ID_HUD_TIMER);
+      SendHudLayout();
+      result->Success();
+    } else if (method == "resetHud") {
+      PrewarmHud();
+      if (hud_) hud_->ResetPosition();
+      SendHudLayout(); result->Success();
+    } else if (method == "getHudLayout") {
+      flutter::EncodableMap layout = hud_layout_labels_;
+      layout[flutter::EncodableValue("editing")] = flutter::EncodableValue(hud_ && hud_->editing());
+      layout[flutter::EncodableValue("scaleValue")] = flutter::EncodableValue(hud_ ? hud_->scale() : 1.0);
+      result->Success(flutter::EncodableValue(layout));
+    } else if (method == "hudLayout") {
+      const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+      if (args && hud_) {
+        auto number = [&](const char* key, double fallback) {
+          auto value = args->find(flutter::EncodableValue(key));
+          if (value != args->end()) if (const auto* n = std::get_if<double>(&value->second)) return *n;
+          return fallback;
+        };
+        if (args->count(flutter::EncodableValue("nudgeX"))) {
+          hud_->Nudge(number("nudgeX", 0), number("nudgeY", 0));
+        } else if (args->count(flutter::EncodableValue("dx"))) {
+          auto end = args->find(flutter::EncodableValue("end"));
+          hud_->Move(number("dx", 0), number("dy", 0),
+              end != args->end() && end->second == flutter::EncodableValue(true));
+        } else if (args->count(flutter::EncodableValue("scaleValue"))) {
+          hud_->SetScale(number("scaleValue", 1));
+        } else if (args->count(flutter::EncodableValue("save"))) {
+          hud_->FinishEditing(args->at(flutter::EncodableValue("save")) == flutter::EncodableValue(true));
+          SetHudState(current_hud_state_);
+        }
+      }
+      SendHudLayout(); result->Success();
     } else if (method == "hudQueueMenu") {
       HMENU menu = CreatePopupMenu();
       const auto* labels = std::get_if<flutter::EncodableMap>(call.arguments());
@@ -605,9 +643,13 @@ void DictationBridge::RegisterHandler(
         }
       }
       POINT at; GetCursorPos(&at);
+      HWND previous = GetForegroundWindow();
+      HWND owner = hud_ ? hud_->handle() : main_window_;
+      SetForegroundWindow(owner);
       int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY,
-          at.x, at.y, 0, main_window_, nullptr);
+          at.x, at.y, 0, owner, nullptr);
       DestroyMenu(menu);
+      if (previous && IsWindow(previous)) SetForegroundWindow(previous);
       if (command >= 1 && command <= 3 && panel_channel_) {
         panel_channel_->InvokeMethod("hud", std::make_unique<flutter::EncodableValue>(actions[command - 1]));
       }
@@ -813,7 +855,7 @@ void DictationBridge::ShowContextMenu() {
 bool DictationBridge::HandleWindowMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
   if (message == WM_TIMER && wparam == ID_HUD_TIMER) {
     KillTimer(main_window_, ID_HUD_TIMER);
-    if (hud_) hud_->Hide();
+    if (hud_ && current_hud_state_ != "recording" && current_hud_state_ != "transcribing") hud_->Hide();
     return true;
   }
   if (message == WM_TIMER && wparam == ID_PREWARM_TIMER) {
@@ -1218,6 +1260,14 @@ void DictationBridge::ShowSettings(const std::string& tab) {
 ///
 /// Движок под неё поднимается при первом показе: панель приходит только
 /// во время диктовки, а до тех пор держать ради неё сто мегабайт незачем.
+void DictationBridge::SendHudLayout() {
+  if (!hud_channel_) return;
+  flutter::EncodableMap layout = hud_layout_labels_;
+  layout[flutter::EncodableValue("editing")] = flutter::EncodableValue(hud_ && hud_->editing());
+  layout[flutter::EncodableValue("scaleValue")] = flutter::EncodableValue(hud_ ? hud_->scale() : 1.0);
+  hud_channel_->InvokeMethod("hudLayout", std::make_unique<flutter::EncodableValue>(layout));
+}
+
 void DictationBridge::PrewarmHud() {
   if (!project_ || hud_) return;
   hud_ = std::make_unique<HudWindow>();
@@ -1227,6 +1277,7 @@ void DictationBridge::PrewarmHud() {
             messenger, "tsukiko/dictation",
             &flutter::StandardMethodCodec::GetInstance());
     RegisterHandler(hud_channel_.get());
+    SendHudLayout();
     if (current_hud_state_ != "hidden") {
       hud_channel_->InvokeMethod(
           "hudState",
@@ -1249,6 +1300,7 @@ void DictationBridge::SetHudState(const std::string& state) {
             messenger, "tsukiko/dictation",
             &flutter::StandardMethodCodec::GetInstance());
     RegisterHandler(hud_channel_.get());
+    SendHudLayout();
     if (current_hud_state_ != "hidden") {
       hud_channel_->InvokeMethod(
           "hudState",
@@ -1480,6 +1532,7 @@ bool OpenClipboardPatiently(HWND owner) {
 /// Текст остаётся в буфере обмена (CF_UNICODETEXT), чтобы целевые
 /// приложения успели его прочитать и пользователь мог использовать его повторно.
 bool DictationBridge::PasteText(const std::string& text) {
+  if (hud_ && hud_->editing()) return false;
   if (text.empty()) return true;
 
   if (!OpenClipboardPatiently(main_window_)) return false;
