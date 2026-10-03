@@ -538,10 +538,10 @@ class _HistoryState extends State<_History> {
               ),
               if (hasHistory)
                 MacosTooltip(
-                  message: l10n.menuClearRecentList,
+                  message: l10n.menuClearHistory,
                   child: Semantics(
                     button: true,
-                    label: l10n.menuClearRecentList,
+                    label: l10n.menuClearHistory,
                     child: _HistoryActionIcon(
                       icon: CupertinoIcons.trash,
                       size: 13,
@@ -664,7 +664,7 @@ class _AccordionToggleState extends State<_AccordionToggle> {
 
   @override
   Widget build(BuildContext context) {
-    final label = _previousLabel(context, widget.count);
+    final label = AppLocalizations.of(context).previousTranscriptsCount(widget.count);
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -735,7 +735,6 @@ class _HistoryItemRowState extends State<_HistoryItemRow> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final isRu = Localizations.localeOf(context).languageCode == 'ru';
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -770,7 +769,7 @@ class _HistoryItemRowState extends State<_HistoryItemRow> {
                 ),
                 const Spacer(),
                 MacosTooltip(
-                  message: _copied ? (isRu ? 'Скопировано' : 'Copied') : l10n.buttonCopy,
+                  message: _copied ? l10n.tooltipCopied : l10n.buttonCopy,
                   child: _HistoryActionIcon(
                     icon: _copied ? CupertinoIcons.checkmark_alt : CupertinoIcons.doc_on_doc,
                     size: 13,
@@ -860,11 +859,6 @@ String _formatTime(DateTime dt) {
   final h = dt.hour.toString().padLeft(2, '0');
   final m = dt.minute.toString().padLeft(2, '0');
   return '$h:$m';
-}
-
-String _previousLabel(BuildContext context, int count) {
-  final isRu = Localizations.localeOf(context).languageCode == 'ru';
-  return isRu ? 'Предыдущие записи ($count)' : 'Previous transcripts ($count)';
 }
 
 /// Модель: что загружено, сколько занимает и когда освободится. Та самая

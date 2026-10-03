@@ -210,6 +210,28 @@ void main() {
     expect(find.text('Фраза перед очисткой'), findsNothing);
     expect(cubit.state.history.isEmpty, isTrue);
   });
+
+  testWidgets('6. Локализация на английском языке (en): отображаются корректные английские строки и тултипы', (tester) async {
+    final entries = [
+      DictationEntry(id: 'entry-1', text: 'Latest english text', createdAt: DateTime(2026, 10, 3, 15, 0)),
+      DictationEntry(id: 'entry-2', text: 'Older english text 1', createdAt: DateTime(2026, 10, 3, 14, 50)),
+      DictationEntry(id: 'entry-3', text: 'Older english text 2', createdAt: DateTime(2026, 10, 3, 14, 40)),
+    ];
+    DictationHistory.save(entries);
+    cubit.overrideState(cubit.state.copyWith(history: entries, last: entries.first.text));
+
+    await pumpPanel(tester, locale: const Locale('en'));
+
+    expect(find.text('Last Transcript'), findsOneWidget);
+    expect(find.text('Latest english text'), findsOneWidget);
+    expect(find.text('Copy'), findsOneWidget);
+    expect(find.text('Previous transcripts (2)'), findsOneWidget);
+
+    final clearTooltip = find.byWidgetPredicate(
+      (w) => w is MacosTooltip && w.message == 'Clear History',
+    );
+    expect(clearTooltip, findsOneWidget);
+  });
 }
 
 extension on DictationCubit {

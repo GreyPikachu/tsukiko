@@ -284,6 +284,16 @@
   "buttonRetry": "Try Again",
   "lastTranscriptTitle": "Last Transcript",
   "noDictationYet": "Nothing dictated yet.",
+  "previousTranscriptsCount": "Previous transcripts ({count})",
+  "@previousTranscriptsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "tooltipCopied": "Copied",
+  "menuClearHistory": "Clear History",
   "modelUnloaded": "Unloaded",
   "modelSizeInMemory": "{size} in process RAM",
   "modelInMemory": "In Memory",
