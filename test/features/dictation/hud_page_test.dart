@@ -148,9 +148,18 @@ void main() {
         )
         .first;
     await tester.drag(meter, const Offset(40, -20));
+    await tester.pump();
     final moves = calls.where((call) => call.method == 'hudLayout').toList();
     expect(moves, isNotEmpty);
     expect((moves.last.arguments as Map)['end'], isTrue);
+    final count = calls.where((call) => call.method == 'hudLayout').length;
+    await tester.tap(meter);
+    await tester.pump();
+    expect(
+      calls.where((call) => call.method == 'hudLayout').length,
+      count,
+      reason: 'a tap after dragging must not initiate native movement',
+    );
     await tester.pumpWidget(const SizedBox());
   });
 

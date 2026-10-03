@@ -73,6 +73,7 @@ class _HudViewState extends State<HudView> {
   bool _editing = false;
   double _scale = 1;
   Offset _drag = Offset.zero;
+  bool _dragMoved = false;
   int _pending = 0;
   bool _processing = false;
 
@@ -128,24 +129,27 @@ class _HudViewState extends State<HudView> {
     cursor: SystemMouseCursors.move,
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onPanStart: (_) => _drag = Offset.zero,
+      onPanStart: (_) {
+        _drag = Offset.zero;
+        _dragMoved = false;
+      },
       onPanUpdate: (event) {
+        if (event.delta == Offset.zero) return;
+        _dragMoved = true;
         _drag += event.delta;
         _bridge.changeHudLayout({'dx': _drag.dx, 'dy': _drag.dy, 'end': false});
       },
-      onPanEnd: (_) => _bridge.changeHudLayout({
-        'dx': _drag.dx,
-        'dy': _drag.dy,
-        'end': true,
-      }),
-      onPanCancel: () => _bridge.changeHudLayout({
-        'dx': _drag.dx,
-        'dy': _drag.dy,
-        'end': true,
-      }),
+      onPanEnd: (_) => _finishDrag(),
+      onPanCancel: _finishDrag,
       child: child,
     ),
   );
+
+  void _finishDrag() {
+    if (!_dragMoved) return;
+    _dragMoved = false;
+    _bridge.changeHudLayout({'dx': _drag.dx, 'dy': _drag.dy, 'end': true});
+  }
 
   void _onQueue(Map<String, dynamic> queue) {
     if (!mounted) return;
