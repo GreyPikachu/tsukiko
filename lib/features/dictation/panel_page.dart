@@ -937,20 +937,22 @@ class _Model extends StatelessWidget {
             )),
           const SizedBox(height: Gap.hint),
           Text(!s.hasModels ? l10n.nothingToRecognizeWith : serverState, style: grey),
-          // Кнопки под текстом, как в блоке последней расшифровки: два
-          // соседних блока, устроенных по-разному, читаются как два разных
-          // языка в одной панели.
-          const SizedBox(height: Gap.item),
+          const SizedBox(height: Gap.inner),
           Row(
             children: [
-              PushButton(
-                controlSize: ControlSize.small,
-                secondary: true,
-                onPressed: () => cubit.openSettings('models'),
-                child: Text(l10n.buttonDownloadAnother),
+              _ModelGhostButton(
+                icon: CupertinoIcons.arrow_down_to_line,
+                label: l10n.buttonDownloadAnother,
+                onTap: () {
+                  try {
+                    cubit.openSettings('models');
+                  } catch (e, st) {
+                    Log.warn('Panel', 'Ошибка открытия настроек моделей: $e', e, st);
+                  }
+                },
               ),
               if (s.serverUp) ...[
-                const SizedBox(width: Gap.inner),
+                const SizedBox(width: Gap.hint),
                 // Пока идёт запись или распознавание, модель занята делом,
                 // и выгружать её нельзя: кнопка, которая делает вид, что
                 // может, — обещание, которого приложение не сдержит.
@@ -958,17 +960,120 @@ class _Model extends StatelessWidget {
                   message: s.phase == Phase.idle
                       ? l10n.tooltipFreeMemoryNextPhrase
                       : l10n.tooltipModelBusy,
-                  child: PushButton(
-                    controlSize: ControlSize.small,
-                    secondary: true,
-                    onPressed: s.phase == Phase.idle ? cubit.unload : null,
-                    child: Text(l10n.buttonUnload),
+                  child: _ModelGhostButton(
+                    icon: CupertinoIcons.eject,
+                    label: l10n.buttonUnload,
+                    enabled: s.phase == Phase.idle,
+                    onTap: s.phase == Phase.idle
+                        ? () {
+                            try {
+                              cubit.unload();
+                            } catch (e, st) {
+                              Log.warn('Panel', 'Ошибка выгрузки модели: $e', e, st);
+                            }
+                          }
+                        : null,
                   ),
                 ),
               ],
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Нативная кнопка управления моделью без белых непрозрачных рамок:
+/// прозрачная в покое, мягко подсвечивается системным цветом при наведении.
+class _ModelGhostButton extends StatefulWidget {
+  const _ModelGhostButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool enabled;
+
+  @override
+  State<_ModelGhostButton> createState() => _ModelGhostButtonState();
+}
+
+class _ModelGhostButtonState extends State<_ModelGhostButton> {
+  bool _hover = false;
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.enabled && widget.onTap != null;
+    final secondary = Surface.secondaryText(context);
+    final foreground = enabled
+        ? (_hover
+            ? MacosTheme.of(context).typography.body.color ?? secondary
+            : secondary)
+        : secondary.withValues(alpha: 0.35);
+
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: widget.label,
+      child: MouseRegion(
+        onEnter: enabled ? (_) => setState(() => _hover = true) : null,
+        onExit: enabled ? (_) => setState(() => _hover = false) : null,
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+          onTapUp: enabled ? (_) => setState(() => _down = false) : null,
+          onTapCancel: enabled ? () => setState(() => _down = false) : null,
+          onTap: enabled
+              ? () {
+                  try {
+                    widget.onTap?.call();
+                  } catch (e, st) {
+                    Log.warn('Panel', 'Ошибка нажатия кнопки ${widget.label}: $e', e, st);
+                  }
+                }
+              : null,
+          child: AnimatedScale(
+            duration: Motion.dur(context, Motion.press),
+            scale: _down ? 0.94 : 1.0,
+            child: AnimatedContainer(
+              duration: Motion.dur(context, Motion.quick),
+              curve: Motion.curve(context, Motion.quickCurve),
+              padding: const EdgeInsets.symmetric(
+                horizontal: Gap.inner,
+                vertical: Gap.hint,
+              ),
+              decoration: BoxDecoration(
+                color: enabled
+                    ? (_down
+                        ? Surface.pressed(context)
+                        : (_hover ? Surface.hover(context) : MacosColors.transparent))
+                    : MacosColors.transparent,
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MacosIcon(
+                    widget.icon,
+                    size: 13,
+                    color: foreground,
+                  ),
+                  const SizedBox(width: Gap.hint),
+                  Text(
+                    widget.label,
+                    style: Type.caption.copyWith(color: foreground),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -183,6 +184,17 @@ void main() {
     await tester.tap(openLogs);
     await tester.pump();
 
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('кнопки управления моделью отображаются в виде нативных ghost-кнопок без PushButton', (tester) async {
+    await pumpPanel(tester);
+
+    expect(find.text('Загрузить другую…'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is MacosIcon && w.icon == CupertinoIcons.arrow_down_to_line), findsOneWidget);
+
+    await tester.tap(find.text('Загрузить другую…'));
+    await tester.pump();
     expect(tester.takeException(), isNull);
   });
 }
