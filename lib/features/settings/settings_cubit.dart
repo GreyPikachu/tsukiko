@@ -706,8 +706,10 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   void setLibraryPath(String dir) {
-    _emit(state.copyWith(libraryPath: dir));
-    unawaited(_saveApp({'libraryPath': dir}));
+    final trimmed = dir.trim();
+    if (trimmed.isEmpty) return;
+    _emit(state.copyWith(libraryPath: trimmed));
+    unawaited(_saveApp({'libraryPath': trimmed}));
   }
 
   /// Пустой набор при включённом сохранении означал бы тишину, поэтому

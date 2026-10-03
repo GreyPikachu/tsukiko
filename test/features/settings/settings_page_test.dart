@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
+import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:macos_ui/macos_ui.dart';
@@ -17,6 +19,8 @@ class _FakeSettingsCubit extends Cubit<SettingsState> implements SettingsCubit {
   _FakeSettingsCubit([SettingsState? initial])
     : super(initial ?? SettingsState(tab: 'models'));
 
+  String? lastLibraryPath;
+
   void beginDownload() => emit(
     state.copyWith(
       downloadTitle: 'Parakeet',
@@ -26,10 +30,39 @@ class _FakeSettingsCubit extends Cubit<SettingsState> implements SettingsCubit {
   );
 
   @override
+  void setLibraryPath(String dir) {
+    lastLibraryPath = dir;
+    emit(state.copyWith(libraryPath: dir));
+  }
+
+  @override
   void setVisible(bool visible) {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _MockFileSelector extends FileSelectorPlatform {
+  _MockFileSelector({this.result, this.shouldThrow = false});
+
+  final String? result;
+  final bool shouldThrow;
+  String? lastInitialDirectory;
+
+  @override
+  Future<String?> getDirectoryPath({
+    String? initialDirectory,
+    String? confirmButtonText,
+  }) async {
+    lastInitialDirectory = initialDirectory;
+    if (shouldThrow) {
+      throw PlatformException(
+        code: 'system_error',
+        message: 'Could not show dialog',
+      );
+    }
+    return result;
+  }
 }
 
 /// Окно настроек живёт отдельным файлом теста намеренно: рисующий тест
@@ -298,6 +331,94 @@ void main() {
       await tester.pump();
 
       expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('выбор папки библиотеки', () {
+    testWidgets('ошибка нативного диалога не роняет приложение', (
+      tester,
+    ) async {
+      final prevPlatform = FileSelectorPlatform.instance;
+      final mock = _MockFileSelector(shouldThrow: true);
+      FileSelectorPlatform.instance = mock;
+      addTearDown(() => FileSelectorPlatform.instance = prevPlatform);
+
+      await tester.binding.setSurfaceSize(const Size(580, 600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+      final cubit = _FakeSettingsCubit(
+        SettingsState(tab: 'transcriber', libraryPath: '/non/existent/path'),
+      );
+      addTearDown(cubit.close);
+
+      await tester.pumpWidget(
+        MacosApp(
+          locale: const Locale('ru'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BlocProvider<SettingsCubit>.value(
+            value: cubit,
+            child: const SettingsBody(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final pickBtn = find.widgetWithText(PushButton, 'Выбрать другую папку…');
+      await tester.dragUntilVisible(
+        pickBtn,
+        find.byType(ListView).first,
+        const Offset(0, -100),
+      );
+      await tester.tap(pickBtn);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(cubit.lastLibraryPath, isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('выбор папки обновляет путь, а пустой ответ игнорируется', (
+      tester,
+    ) async {
+      final prevPlatform = FileSelectorPlatform.instance;
+      final mock = _MockFileSelector(result: '/Users/test/Audio');
+      FileSelectorPlatform.instance = mock;
+      addTearDown(() => FileSelectorPlatform.instance = prevPlatform);
+
+      await tester.binding.setSurfaceSize(const Size(580, 600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+      final cubit = _FakeSettingsCubit(
+        SettingsState(tab: 'transcriber', libraryPath: '/old/path'),
+      );
+      addTearDown(cubit.close);
+
+      await tester.pumpWidget(
+        MacosApp(
+          locale: const Locale('ru'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BlocProvider<SettingsCubit>.value(
+            value: cubit,
+            child: const SettingsBody(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final pickBtn = find.widgetWithText(PushButton, 'Выбрать другую папку…');
+      await tester.dragUntilVisible(
+        pickBtn,
+        find.byType(ListView).first,
+        const Offset(0, -100),
+      );
+      await tester.tap(pickBtn);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(cubit.lastLibraryPath, '/Users/test/Audio');
       await tester.pumpWidget(const SizedBox());
     });
   });

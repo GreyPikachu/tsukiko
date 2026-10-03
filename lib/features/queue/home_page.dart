@@ -369,17 +369,22 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// работы ради одной строки в окне. А человек знает, куда он её дел, —
   /// и указать проще, чем ждать.
   Future<String?> _pointAtSource(QueueState s, String transcript) async {
-    final f = await openFile(
-      acceptedTypeGroups: [
-        XTypeGroup(
-          label: l10n.fileTypeAudioVideo,
-          extensions: audioExt.map((e) => e.substring(1)).toList(),
-        ),
-      ],
-    );
-    if (f == null) return null;
-    Sources.remember(s.libraryPath, [transcript], f.path);
-    return f.path;
+    try {
+      final f = await openFile(
+        acceptedTypeGroups: [
+          XTypeGroup(
+            label: l10n.fileTypeAudioVideo,
+            extensions: audioExt.map((e) => e.substring(1)).toList(),
+          ),
+        ],
+      );
+      if (f == null) return null;
+      Sources.remember(s.libraryPath, [transcript], f.path);
+      return f.path;
+    } catch (e, stack) {
+      Log.warn('Queue', 'Failed to pick source file: $e', e, stack);
+      return null;
+    }
   }
 
   /// Убрать файлы в Корзину. Возвращает то, что убрать не вышло.
@@ -486,27 +491,37 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
       }
       return;
     }
-    final files = await openFiles(
-      acceptedTypeGroups: [
-        XTypeGroup(
-          label: l10n.fileTypeAudioVideo,
-          extensions: audioExt.map((e) => e.substring(1)).toList(),
-        ),
-      ],
-    );
-    if (files.isNotEmpty) _send(FilesAdded(files.map((f) => f.path)));
+    try {
+      final files = await openFiles(
+        acceptedTypeGroups: [
+          XTypeGroup(
+            label: l10n.fileTypeAudioVideo,
+            extensions: audioExt.map((e) => e.substring(1)).toList(),
+          ),
+        ],
+      );
+      if (files.isNotEmpty) _send(FilesAdded(files.map((f) => f.path)));
+    } catch (e, stack) {
+      Log.warn('Queue', 'Failed to pick audio files: $e', e, stack);
+    }
   }
 
   Future<void> _openTranscript() async {
-    final f = await openFile(
-      acceptedTypeGroups: [
-        XTypeGroup(
-          label: l10n.fileTypeTranscripts,
-          extensions: transcriptExt.map((e) => e.substring(1)).toList(),
-        ),
-      ],
-    );
-    if (f != null) _send(TranscriptOpened(f.path));
+    try {
+      final f = await openFile(
+        acceptedTypeGroups: [
+          XTypeGroup(
+            label: l10n.fileTypeTranscripts,
+            extensions: transcriptExt.map((e) => e.substring(1)).toList(),
+          ),
+        ],
+      );
+      if (f != null && f.path.trim().isNotEmpty) {
+        _send(TranscriptOpened(f.path.trim()));
+      }
+    } catch (e, stack) {
+      Log.warn('Queue', 'Failed to pick transcript file: $e', e, stack);
+    }
   }
 
   /// Переложить готовую расшифровку в другой формат.
@@ -586,17 +601,21 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
   /// whisper-cli на чужом файле падает с руганью про тензоры — человеку
   /// из неё не понять, что он выбрал не то.
   Future<void> _pickModel() async {
-    final f = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'GGML / GGUF', extensions: ['bin', 'gguf']),
-      ],
-    );
-    if (f == null) return;
-    final problem = modelFileProblem(f.path);
-    if (problem != null) {
-      return _showAsk(Ask(l10n.askNotRecognitionModelTitle, problem));
+    try {
+      final f = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'GGML / GGUF', extensions: ['bin', 'gguf']),
+        ],
+      );
+      if (f == null) return;
+      final problem = modelFileProblem(f.path);
+      if (problem != null) {
+        return _showAsk(Ask(l10n.askNotRecognitionModelTitle, problem));
+      }
+      _send(ModelChosen(f.path));
+    } catch (e, stack) {
+      Log.warn('Queue', 'Failed to pick model file: $e', e, stack);
     }
-    _send(ModelChosen(f.path));
   }
 
   Future<void> _saveAs(QueueState s, [ExportFormat? format]) async {
@@ -618,21 +637,25 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
     // окном поверх системного. Первым идёт тот, которым сохраняли в прошлый
     // раз, — он же и предложится.
     final offered = [f, ...exportFormats.where((g) => g.id != f.id)];
-    final loc = await getSaveLocation(
-      suggestedName: f.fileName(_stem(job.name)),
-      acceptedTypeGroups: [
-        for (final g in offered)
-          XTypeGroup(label: g.label, extensions: [g.ext.substring(1)]),
-      ],
-    );
-    if (loc == null) return;
-    // Ничего не узнали — остаётся тот формат, с которым диалог открывали.
-    final chosen = formatOfFile(loc.path) ?? f;
-    // Диалог мог отдать путь без расширения — дописываем сами.
-    final path = loc.path.toLowerCase().endsWith(chosen.ext)
-        ? loc.path
-        : '${loc.path}${chosen.ext}';
-    _send(SaveRequested(job, path, chosen));
+    try {
+      final loc = await getSaveLocation(
+        suggestedName: f.fileName(_stem(job.name)),
+        acceptedTypeGroups: [
+          for (final g in offered)
+            XTypeGroup(label: g.label, extensions: [g.ext.substring(1)]),
+        ],
+      );
+      if (loc == null) return;
+      // Ничего не узнали — остаётся тот формат, с которым диалог открывали.
+      final chosen = formatOfFile(loc.path) ?? f;
+      // Диалог мог отдать путь без расширения — дописываем сами.
+      final path = loc.path.toLowerCase().endsWith(chosen.ext)
+          ? loc.path
+          : '${loc.path}${chosen.ext}';
+      _send(SaveRequested(job, path, chosen));
+    } catch (e, stack) {
+      Log.warn('Queue', 'Failed to get save location: $e', e, stack);
+    }
   }
 
   Future<void> _exportAll(QueueState s) async {
@@ -645,8 +668,14 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
 
   Future<void> _exportInto(List<Job> jobs, List<ExportFormat> formats) async {
     if (formats.isEmpty) return;
-    final dir = await getDirectoryPath(confirmButtonText: l10n.buttonExport);
-    if (dir != null) _send(ExportRequested(jobs, dir, formats));
+    try {
+      final dir = await getDirectoryPath(confirmButtonText: l10n.buttonExport);
+      if (dir != null && dir.trim().isNotEmpty) {
+        _send(ExportRequested(jobs, dir.trim(), formats));
+      }
+    } catch (e, stack) {
+      Log.warn('Queue', 'Failed to pick export directory: $e', e, stack);
+    }
   }
 
   String _stem(String name) {

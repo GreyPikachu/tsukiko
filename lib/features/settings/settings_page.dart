@@ -298,22 +298,35 @@ class _SettingsBodyState extends State<SettingsBody>
   }
 
   Future<void> _pickModel() async {
-    final f = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'GGML / GGUF', extensions: ['bin', 'gguf']),
-      ],
-    );
-    if (f != null) _cubit.pickModel(f.path);
+    try {
+      final f = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'GGML / GGUF', extensions: ['bin', 'gguf']),
+        ],
+      );
+      if (f != null && f.path.trim().isNotEmpty) {
+        _cubit.pickModel(f.path.trim());
+      }
+    } catch (e, stack) {
+      Log.warn('Settings', 'Failed to pick model file: $e', e, stack);
+    }
   }
 
   Future<void> _pickLibrary(SettingsState s) async {
-    final dir = await getDirectoryPath(
-      confirmButtonText: l10n.buttonChoose,
-      initialDirectory: Directory(s.libraryPath).existsSync()
+    try {
+      final initial = Directory(s.libraryPath).existsSync()
           ? s.libraryPath
-          : os.documentsDir,
-    );
-    if (dir != null) _cubit.setLibraryPath(dir);
+          : (Directory(os.documentsDir).existsSync() ? os.documentsDir : null);
+      final dir = await getDirectoryPath(
+        confirmButtonText: l10n.buttonChoose,
+        initialDirectory: initial,
+      );
+      if (dir != null && dir.trim().isNotEmpty) {
+        _cubit.setLibraryPath(dir.trim());
+      }
+    } catch (e, stack) {
+      Log.warn('Settings', 'Failed to pick library directory: $e', e, stack);
+    }
   }
 
   @override

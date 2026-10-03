@@ -242,8 +242,11 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
       return 0;
     }
     // Клавиатура достаётся виду Flutter, а не пустой рамке вокруг него:
-    // иначе в полях настроек нельзя набрать ни буквы.
-    if (message == WM_ACTIVATE && self->controller_ && self->controller_->view()) {
+    // иначе в полях настроек нельзя набрать ни буквы. Фокус отдаём только при
+    // активации окна, чтобы не отбирать его у модальных диалогов (например,
+    // выбора папки) при деактивации (WA_INACTIVE).
+    if (message == WM_ACTIVATE && LOWORD(wparam) != WA_INACTIVE &&
+        self->controller_ && self->controller_->view()) {
       SetFocus(self->controller_->view()->GetNativeWindow());
     }
     if (self->controller_) {
