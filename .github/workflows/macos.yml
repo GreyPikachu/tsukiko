@@ -46,8 +46,23 @@ jobs:
       - name: Разбор
         run: flutter analyze
 
+      - name: Нативная геометрия и сохранение плашки (Swift / C++)
+        run: |
+          swiftc macos/Runner/RecordingHUD.swift tool/hud_placement_test.swift -o "$RUNNER_TEMP/hud-swift-test"
+          "$RUNNER_TEMP/hud-swift-test"
+          cmake -S tool/native-tests -B build/native-tests
+          cmake --build build/native-tests --config Release
+          ctest --test-dir build/native-tests -C Release --output-on-failure
+
       - name: Тесты
-        run: flutter test --reporter expanded
+        run: flutter test --coverage --reporter expanded
+
+      - name: Покрытие тестами
+        uses: actions/upload-artifact@v7
+        with:
+          name: tsukiko-macos-coverage
+          path: coverage/lcov.info
+          if-no-files-found: error
 
   build:
     name: Сборка дистрибутива (DMG и App)

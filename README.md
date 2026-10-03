@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Yukovsky/tsukiko/releases"><img src="https://img.shields.io/badge/version-1.0.1-blue.svg?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/Yukovsky/tsukiko/releases"><img src="https://img.shields.io/badge/version-1.1.0-blue.svg?style=flat-square" alt="Version" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%2012%2B%20%7C%20Windows%2010%2F11-lightgrey.svg?style=flat-square" alt="Platforms" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/privacy-100%25%20Offline-success.svg?style=flat-square" alt="100% Offline" />
@@ -236,6 +236,11 @@ Tsukiko is signed with an Apple Developer certificate and distributed outside th
 2. The floating HUD appears on your screen. Speak your thoughts naturally.
 3. Release or press the hotkey again (or pause speaking if Voice Activity Detection is enabled).
 4. Tsukiko transcribes your speech and pastes the text directly at your cursor location.
+
+
+You can start the next recording while an earlier one is still being transcribed. Completed recordings wait in a FIFO queue; recognition and pasting run one at a time. The cancel hotkey cancels the microphone recording first, leaving earlier recordings untouched. The HUD counter includes the active transcription and waiting recordings. Its menu lets you record the next phrase, cancel the active transcription, or clear waiting recordings while preserving their audio for recovery. In clipboard-only mode, results from the same queue accumulate in order with line breaks.
+
+Drag the HUD by its waveform (or the progress indicator during transcription) to move it; the position is saved when you release it. **Settings → Dictation → Adjust position and scale** opens a blue guide overlay with horizontal and vertical center snapping. Choose a scale from 80% to 160%, then **Save** or **Cancel**. Arrow keys move the island by one point; Shift+Arrow moves it by ten. Enter saves and Escape cancels. **Reset** restores the original bottom-center position and 100% scale. Saved coordinates adapt to the current monitor's work area and keep the island within screen bounds.
 
 ---
 

@@ -45,8 +45,24 @@ jobs:
       - name: Разбор
         run: flutter analyze
 
+      - name: Нативная геометрия плашки (MSVC)
+        run: |
+          cmake -S tool/native-tests -B build/native-tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build/native-tests --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build/native-tests -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Тесты
-        run: flutter test --reporter expanded
+        run: flutter test --coverage --reporter expanded
+
+      - name: Покрытие тестами
+        uses: actions/upload-artifact@v7
+        with:
+          name: tsukiko-windows-coverage
+          path: coverage/lcov.info
+          if-no-files-found: error
 
   build:
     name: Сборка дистрибутива (EXE и Setup)
