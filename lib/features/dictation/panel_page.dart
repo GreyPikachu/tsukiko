@@ -507,6 +507,19 @@ class _History extends StatefulWidget {
 
 class _HistoryState extends State<_History> {
   bool _expanded = false;
+  bool _copiedLatest = false;
+
+  void _handleCopyLatest(DictationCubit cubit) {
+    try {
+      cubit.copyLast();
+      setState(() => _copiedLatest = true);
+      Future.delayed(const Duration(milliseconds: 1200), () {
+        if (mounted) setState(() => _copiedLatest = false);
+      });
+    } catch (e, st) {
+      Log.warn('Panel', 'Ошибка копирования последней записи: $e', e, st);
+    }
+  }
 
   DictationState get s => widget.s;
 
@@ -574,25 +587,26 @@ class _HistoryState extends State<_History> {
               overflow: TextOverflow.ellipsis,
               style: Type.control,
             ),
-            const SizedBox(height: Gap.item),
+            const SizedBox(height: Gap.hint),
             Row(
               children: [
-                PushButton(
-                  controlSize: ControlSize.small,
-                  secondary: true,
-                  onPressed: () {
-                    try {
-                      cubit.copyLast();
-                    } catch (e, st) {
-                      Log.warn('Panel', 'Ошибка копирования последней записи: $e', e, st);
-                    }
-                  },
-                  child: Text(l10n.buttonCopy),
-                ),
-                const Spacer(),
                 Text(
                   _formatTime(latest.createdAt),
                   style: Type.timestamp.copyWith(color: Surface.secondaryText(context)),
+                ),
+                const Spacer(),
+                MacosTooltip(
+                  message: _copiedLatest ? l10n.tooltipCopied : l10n.buttonCopy,
+                  child: Semantics(
+                    button: true,
+                    label: l10n.buttonCopy,
+                    child: _HistoryActionIcon(
+                      icon: _copiedLatest ? CupertinoIcons.checkmark_alt : CupertinoIcons.doc_on_doc,
+                      size: 13,
+                      lit: _copiedLatest,
+                      onTap: () => _handleCopyLatest(cubit),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -600,7 +614,7 @@ class _HistoryState extends State<_History> {
 
           // Предыдущие записи (аккордеон)
           if (older.isNotEmpty) ...[
-            const SizedBox(height: Gap.item),
+            const SizedBox(height: Gap.inner),
             _AccordionToggle(
               expanded: _expanded,
               count: older.length,

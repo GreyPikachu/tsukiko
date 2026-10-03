@@ -110,12 +110,12 @@ void main() {
 
     expect(find.text('Последняя расшифровка'), findsOneWidget);
     expect(find.text('Пока ничего не надиктовано.'), findsOneWidget);
-    expect(find.text('Скопировать'), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is MacosTooltip && w.message == 'Скопировать'), findsNothing);
     expect(find.byIcon(CupertinoIcons.trash), findsNothing);
     expect(find.textContaining('Предыдущие записи'), findsNothing);
   });
 
-  testWidgets('2. Одна запись: виден текст, время, кнопка Скопировать, аккордеон скрыт', (tester) async {
+  testWidgets('2. Одна запись: виден текст, время, иконка копирования, аккордеон скрыт', (tester) async {
     final entry = DictationEntry(
       id: 'entry-1',
       text: 'Первая надиктованная фраза',
@@ -127,7 +127,8 @@ void main() {
     await pumpPanel(tester);
 
     expect(find.text('Первая надиктованная фраза'), findsOneWidget);
-    expect(find.text('Скопировать'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is MacosTooltip && w.message == 'Скопировать'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is MacosIcon && w.icon == CupertinoIcons.doc_on_doc), findsOneWidget);
     expect(find.text('14:25'), findsOneWidget);
     expect(find.byWidgetPredicate((w) => w is MacosIcon && w.icon == CupertinoIcons.trash), findsOneWidget);
     expect(find.textContaining('Предыдущие записи'), findsNothing);
@@ -224,13 +225,45 @@ void main() {
 
     expect(find.text('Last Transcript'), findsOneWidget);
     expect(find.text('Latest english text'), findsOneWidget);
-    expect(find.text('Copy'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is MacosTooltip && w.message == 'Copy'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is MacosIcon && w.icon == CupertinoIcons.doc_on_doc), findsOneWidget);
     expect(find.text('Previous transcripts (2)'), findsOneWidget);
 
     final clearTooltip = find.byWidgetPredicate(
       (w) => w is MacosTooltip && w.message == 'Clear History',
     );
     expect(clearTooltip, findsOneWidget);
+  });
+
+  testWidgets('7. Клик по иконке копирования последней записи переключает иконку на галочку и обновляет тултип', (tester) async {
+    final entry = DictationEntry(
+      id: 'entry-1',
+      text: 'Фраза для копирования',
+      createdAt: DateTime(2026, 10, 3, 14, 25),
+    );
+    DictationHistory.save([entry]);
+    cubit.overrideState(cubit.state.copyWith(history: [entry], last: entry.text));
+
+    await pumpPanel(tester);
+
+    final copyBtn = find.byWidgetPredicate(
+      (w) => w is MacosTooltip && w.message == 'Скопировать',
+    );
+    expect(copyBtn, findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is MacosIcon && w.icon == CupertinoIcons.checkmark_alt), findsNothing);
+
+    // Кликаем по кнопке копирования
+    await tester.tap(copyBtn);
+    await tester.pump();
+
+    // Теперь видна галочка и тултип Скопировано
+    expect(find.byWidgetPredicate((w) => w is MacosIcon && w.icon == CupertinoIcons.checkmark_alt), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is MacosTooltip && w.message == 'Скопировано'), findsOneWidget);
+
+    // Спустя 1.2с состояние возвращается обратно
+    await tester.pump(const Duration(milliseconds: 1300));
+    expect(find.byWidgetPredicate((w) => w is MacosIcon && w.icon == CupertinoIcons.checkmark_alt), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is MacosIcon && w.icon == CupertinoIcons.doc_on_doc), findsOneWidget);
   });
 }
 
