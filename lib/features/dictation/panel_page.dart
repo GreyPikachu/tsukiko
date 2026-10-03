@@ -916,25 +916,18 @@ class _Model extends StatelessWidget {
             Text(l10n.modelNotFound,
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: Type.fileName)
           else
-            SizedBox(width: double.infinity, child: MacosPopupButton<String>(
-              value: s.models.contains(s.chosenModel) ? s.chosenModel : null,
-              hint: Text(l10n.modelNotChosen, style: Type.fileName),
-              items: [
-                for (final path in s.models)
-                  MacosPopupMenuItem(
-                    value: path,
-                    // modelLabel, а не modelDisplayName: одна и та же
-                    // модель в двух папках дала бы две одинаковые строки,
-                    // и какая из них выбрана — не понять.
-                    child: Text(modelLabel(path, s.models),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ),
-              ],
-              // Выбранное вступает в силу сразу; сервер при этом
-              // перезапускается только если модель правда сменилась —
-              // об этом заботится сам cubit.setModel.
-              onChanged: (v) => v == null ? null : cubit.setModel(v),
-            )),
+            _ModelSelector(
+              models: s.models,
+              chosenModel: s.models.contains(s.chosenModel) ? s.chosenModel : null,
+              hint: l10n.modelNotChosen,
+              onChanged: (v) {
+                try {
+                  cubit.setModel(v);
+                } catch (e, st) {
+                  Log.warn('Panel', 'Ошибка выбора модели: $e', e, st);
+                }
+              },
+            ),
           const SizedBox(height: Gap.hint),
           Text(!s.hasModels ? l10n.nothingToRecognizeWith : serverState, style: grey),
           const SizedBox(height: Gap.inner),
@@ -1078,6 +1071,347 @@ class _ModelGhostButtonState extends State<_ModelGhostButton> {
     );
   }
 }
+
+/// Нативный селектор модели для меню-бара:
+/// полупрозрачная плашка в покое, мягкий ховер, аккуратный шеврон
+/// и всплывающее меню с системной галочкой активного пункта.
+class _ModelSelector extends StatefulWidget {
+  const _ModelSelector({
+    required this.models,
+    required this.chosenModel,
+    required this.hint,
+    required this.onChanged,
+  });
+
+  final List<String> models;
+  final String? chosenModel;
+  final String hint;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_ModelSelector> createState() => _ModelSelectorState();
+}
+
+class _ModelSelectorState extends State<_ModelSelector> {
+  bool _hover = false;
+  bool _down = false;
+
+  void _showMenu() {
+    final RenderBox? button = context.findRenderObject() as RenderBox?;
+    if (button == null || !button.hasSize) return;
+
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null || !overlay.hasSize) return;
+
+    final buttonRect = Rect.fromPoints(
+      button.localToGlobal(Offset.zero, ancestor: overlay),
+      button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
+    );
+
+    Navigator.of(context).push(
+      _ModelMenuRoute(
+        buttonRect: buttonRect,
+        overlaySize: overlay.size,
+        models: widget.models,
+        chosenModel: widget.chosenModel,
+        onSelected: (model) {
+          try {
+            widget.onChanged(model);
+          } catch (e, st) {
+            Log.warn('Panel', 'Ошибка выбора модели в селекторе: $e', e, st);
+          }
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentLabel = widget.chosenModel != null
+        ? modelLabel(widget.chosenModel!, widget.models)
+        : widget.hint;
+
+    return Semantics(
+      button: true,
+      label: currentLabel,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTapDown: (_) => setState(() => _down = true),
+          onTapUp: (_) => setState(() => _down = false),
+          onTapCancel: () => setState(() => _down = false),
+          onTap: () {
+            try {
+              _showMenu();
+            } catch (e, st) {
+              Log.warn('Panel', 'Ошибка открытия меню выбора модели: $e', e, st);
+            }
+          },
+          child: AnimatedScale(
+            duration: Motion.dur(context, Motion.press),
+            scale: _down ? 0.98 : 1.0,
+            child: AnimatedContainer(
+              duration: Motion.dur(context, Motion.quick),
+              curve: Motion.curve(context, Motion.quickCurve),
+              padding: const EdgeInsets.symmetric(
+                horizontal: Gap.inner,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: _down
+                    ? Surface.pressed(context)
+                    : (_hover ? Surface.pressed(context) : Surface.hover(context)),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: Surface.hairline(context),
+                  width: 0.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      currentLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Type.control.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: Gap.hint),
+                  MacosIcon(
+                    CupertinoIcons.chevron_up_chevron_down,
+                    size: 11,
+                    color: Surface.secondaryText(context)
+                        .withValues(alpha: _hover ? 1 : 0.7),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModelMenuRoute extends PopupRoute<String> {
+  _ModelMenuRoute({
+    required this.buttonRect,
+    required this.overlaySize,
+    required this.models,
+    required this.chosenModel,
+    required this.onSelected,
+  });
+
+  final Rect buttonRect;
+  final Size overlaySize;
+  final List<String> models;
+  final String? chosenModel;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Color? get barrierColor => MacosColors.transparent;
+
+  @override
+  bool get barrierDismissible => true;
+
+  @override
+  String? get barrierLabel => 'Закрыть меню моделей';
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 100);
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    const double menuMaxHeight = 220.0;
+    final double spaceBelow = overlaySize.height - buttonRect.bottom;
+    final bool openUpward = spaceBelow < 120 && buttonRect.top > spaceBelow;
+
+    final double top = openUpward
+        ? (buttonRect.top - menuMaxHeight).clamp(8.0, overlaySize.height)
+        : buttonRect.bottom + 4;
+
+    return Stack(
+      children: [
+        Positioned(
+          left: buttonRect.left,
+          top: top,
+          width: buttonRect.width,
+          child: _ModelMenuPopup(
+            models: models,
+            chosenModel: chosenModel,
+            maxHeight: menuMaxHeight,
+            onSelected: (model) {
+              Navigator.of(context).pop();
+              onSelected(model);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+      child: child,
+    );
+  }
+}
+
+class _ModelMenuPopup extends StatelessWidget {
+  const _ModelMenuPopup({
+    required this.models,
+    required this.chosenModel,
+    required this.maxHeight,
+    required this.onSelected,
+  });
+
+  final List<String> models;
+  final String? chosenModel;
+  final double maxHeight;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = MacosTheme.of(context).brightness.isDark;
+    final bgColor = isDark
+        ? const Color(0xF02A2A2C)
+        : const Color(0xF5F2F2F4);
+    final defaultTextColor = isDark
+        ? MacosColors.white
+        : const Color(0xDE000000);
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: Surface.hairline(context),
+          width: 0.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: MacosColors.black.withValues(alpha: isDark ? 0.45 : 0.18),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: DefaultTextStyle(
+        style: Type.control.copyWith(color: defaultTextColor),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final path in models)
+                _ModelMenuItemRow(
+                  label: modelLabel(path, models),
+                  isSelected: path == chosenModel,
+                  onTap: () => onSelected(path),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModelMenuItemRow extends StatefulWidget {
+  const _ModelMenuItemRow({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  State<_ModelMenuItemRow> createState() => _ModelMenuItemRowState();
+}
+
+class _ModelMenuItemRowState extends State<_ModelMenuItemRow> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = MacosTheme.of(context).brightness.isDark;
+    final accent = MacosTheme.of(context).primaryColor;
+    final normalTextColor = isDark
+        ? MacosColors.white
+        : const Color(0xDE000000);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      cursor: SystemMouseCursors.basic,
+      child: GestureDetector(
+        onTap: () {
+          try {
+            widget.onTap();
+          } catch (e, st) {
+            Log.warn('Panel', 'Ошибка выбора пункта меню модели: $e', e, st);
+          }
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+          padding: const EdgeInsets.symmetric(horizontal: Gap.inner, vertical: 5),
+          decoration: BoxDecoration(
+            color: _hover ? accent : MacosColors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 14,
+                child: widget.isSelected
+                    ? MacosIcon(
+                        CupertinoIcons.checkmark,
+                        size: 12,
+                        color: _hover ? MacosColors.white : accent,
+                      )
+                    : null,
+              ),
+              const SizedBox(width: Gap.hint),
+              Expanded(
+                child: Text(
+                  widget.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Type.control.copyWith(
+                    color: _hover ? MacosColors.white : normalTextColor,
+                    fontWeight: widget.isSelected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 
 class _Footer extends StatelessWidget {
   const _Footer(this.s);

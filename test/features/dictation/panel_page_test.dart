@@ -1,13 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:macos_ui/macos_ui.dart';
 import 'package:tsukiko/core/whisper.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/features/dictation/dictation_cubit.dart';
+import 'package:tsukiko/features/dictation/dictation_state.dart';
 import 'package:tsukiko/features/dictation/panel_page.dart';
 import 'package:tsukiko/l10n/gen/app_localizations.dart';
 import 'package:tsukiko/platform/bridge.dart';
@@ -197,4 +197,27 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('селектор модели отображается в виде нативного _ModelSelector и открывает меню по клику', (tester) async {
+    const models = ['/path/to/ggml-large-v3-turbo.bin', '/path/to/ggml-base.bin'];
+    cubit.overrideState(cubit.state.copyWith(models: models, chosenModel: models.first));
+
+    await pumpPanel(tester);
+
+    expect(
+      find.byWidgetPredicate((w) => w is MacosIcon && w.icon == CupertinoIcons.chevron_up_chevron_down),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byWidgetPredicate((w) => w is MacosIcon && w.icon == CupertinoIcons.chevron_up_chevron_down));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
+}
+
+extension on DictationCubit {
+  void overrideState(DictationState s) {
+    emit(s);
+  }
 }
