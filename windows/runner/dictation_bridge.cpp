@@ -47,6 +47,21 @@ static const ULONG_PTR kOurInput = 0x7375'6B69;  // 'suki'
 
 namespace {
 
+bool BoolArgument(const flutter::EncodableMap& map, const char* key) {
+  auto found = map.find(flutter::EncodableValue(key));
+  if (found == map.end()) return false;
+  const auto* value = std::get_if<bool>(&found->second);
+  return value && *value;
+}
+
+int64_t IntArgument(const flutter::EncodableMap& map, const char* key) {
+  auto found = map.find(flutter::EncodableValue(key));
+  if (found == map.end()) return 0;
+  if (const auto* value = std::get_if<int32_t>(&found->second)) return *value;
+  if (const auto* value = std::get_if<int64_t>(&found->second)) return *value;
+  return 0;
+}
+
 std::wstring Utf8ToWide(const std::string& str) {
   if (str.empty()) return std::wstring();
   int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), static_cast<int>(str.size()), nullptr, 0);
@@ -614,13 +629,12 @@ void DictationBridge::RegisterHandler(
         if (args->count(flutter::EncodableValue("nudgeX"))) {
           hud_->Nudge(number("nudgeX", 0), number("nudgeY", 0));
         } else if (args->count(flutter::EncodableValue("dx"))) {
-          auto end = args->find(flutter::EncodableValue("end"));
           hud_->Move(number("dx", 0), number("dy", 0),
-              end != args->end() && end->second == flutter::EncodableValue(true));
+              BoolArgument(*args, "end"));
         } else if (args->count(flutter::EncodableValue("scaleValue"))) {
           hud_->SetScale(number("scaleValue", 1));
         } else if (args->count(flutter::EncodableValue("save"))) {
-          hud_->FinishEditing(args->at(flutter::EncodableValue("save")) == flutter::EncodableValue(true));
+          hud_->FinishEditing(BoolArgument(*args, "save"));
           SetHudState(current_hud_state_);
         }
       }
@@ -631,8 +645,8 @@ void DictationBridge::RegisterHandler(
       const char* actions[] = {"record", "abort", "clearQueue"};
       for (int i = 0; i < 3; ++i) {
         bool enabled = i == 0 ? current_hud_state_ != "recording" :
-            i == 1 ? hud_queue_[flutter::EncodableValue("processing")] == flutter::EncodableValue(true) :
-            hud_queue_[flutter::EncodableValue("pending")] != flutter::EncodableValue(0);
+            i == 1 ? BoolArgument(hud_queue_, "processing") :
+            IntArgument(hud_queue_, "pending") > 0;
         if (enabled && labels) {
           auto value = labels->find(flutter::EncodableValue(actions[i]));
           if (value != labels->end()) {
