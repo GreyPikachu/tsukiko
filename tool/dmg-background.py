@@ -17,12 +17,13 @@ from pathlib import Path
 
 from PIL import Image
 
+from dmg_layout import (CARD_SIZE, CARD_TOP, CONTENT_HEIGHT, CORNER_INSET, ICON_Y, LEFT_X,
+                        MASCOT_HEIGHT, RIGHT_X, WINDOW_SIZE)
+
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "design" / "dmg-background.tiff"
-# Лежащий кот был частью первоначального образа установщика и лучше
-# работает внизу широкого окна, чем высокий idle. Положение задаём после
-# обрезки прозрачных полей, поэтому рисунок больше не режется краем.
-MASCOT = ROOT / "assets" / "mascot" / "happy.webp"
+# Кот с завершённым силуэтом: у исходного happy.webp тело обрезано слева.
+MASCOT = ROOT / "design" / "dmg-mascot.png"
 
 # Картинка нарочно больше окна образа.
 #
@@ -35,21 +36,8 @@ MASCOT = ROOT / "assets" / "mascot" / "happy.webp"
 # уходит под обрез, и уходит один градиент.
 W, H = 1000, 700
 
-# Окно, под которое собрана раскладка: заголовок, гнёзда, стрелка стоят
-# в этой части картинки, остальное — продолжение фона.
-WIN_W, WIN_H = 600, 400
-
-# Где Finder на самом деле рисует значки.
-#
-# tool/dmg.sh просит поставить их в (150,190) и (450,190) — а Finder,
-# если спросить его обратно, отвечает (150,217) и (450,217). Разница
-# в высоту титульной полосы: просят его в координатах окна, а рисует он
-# в координатах содержимого. Гнёзда на фоне живут в тех же координатах,
-# что и значки, поэтому здесь стоит то число, которое Finder вернул,
-# а не то, которое ему дали. Проверяется это замером на настоящем окне:
-# гнездо обязано стоять вокруг значка, а не выше него.
-ICON_Y = 217
-LEFT_X, RIGHT_X = 150, 450
+# Фон и .DS_Store используют одну систему координат без поправки на заголовок.
+WIN_W, WIN_H = WINDOW_SIZE
 
 SVG = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}">
   <defs>
@@ -71,34 +59,33 @@ SVG = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}">
 
   <!-- Два места под значки: пунктирные гнёзда читаются как интерфейс,
        а не как украшение, — сразу видно, что и куда кладут. -->
-  <rect x="{LEFT_X - 56}" y="{ICON_Y - 56}" width="112" height="112" rx="26"
+  <rect x="{LEFT_X - CARD_SIZE // 2}" y="{CARD_TOP}" width="{CARD_SIZE}" height="{CARD_SIZE}" rx="28"
         fill="#ffffff" fill-opacity="0.07"
         stroke="#ffffff" stroke-opacity="0.28" stroke-width="1.5"
         stroke-dasharray="7 6"/>
-  <rect x="{RIGHT_X - 56}" y="{ICON_Y - 56}" width="112" height="112" rx="26"
+  <rect x="{RIGHT_X - CARD_SIZE // 2}" y="{CARD_TOP}" width="{CARD_SIZE}" height="{CARD_SIZE}" rx="28"
         fill="#ffffff" fill-opacity="0.10"
         stroke="#ffffff" stroke-opacity="0.34" stroke-width="1.5"/>
 
   <!-- Стрелка: единственное указание, и оно без слов — образ один
        на все языки. -->
   <g opacity="0.85" filter="url(#soft)">
-    <path d="M{LEFT_X + 82} {ICON_Y} H{RIGHT_X - 90}" stroke="#ffffff" stroke-width="9"
+    <path d="M{LEFT_X + 104} {ICON_Y} H{RIGHT_X - 104}" stroke="#ffffff" stroke-width="9"
           stroke-linecap="round" fill="none" opacity="0.35"/>
   </g>
-  <path d="M{LEFT_X + 82} {ICON_Y} H{RIGHT_X - 92}" stroke="#ffffff" stroke-width="4"
+  <path d="M{LEFT_X + 104} {ICON_Y} H{RIGHT_X - 104}" stroke="#ffffff" stroke-width="4"
         stroke-linecap="round" fill="none"/>
-  <path d="M{RIGHT_X - 104} {ICON_Y - 11} L{RIGHT_X - 86} {ICON_Y} L{RIGHT_X - 104} {ICON_Y + 11}"
+  <path d="M{RIGHT_X - 122} {ICON_Y - 10} L{RIGHT_X - 104} {ICON_Y} L{RIGHT_X - 122} {ICON_Y + 10}"
         stroke="#ffffff" stroke-width="4"
         stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 
-  <text x="{WIN_W // 2}" y="99" text-anchor="middle"
+  <text x="{WIN_W // 2}" y="72" text-anchor="middle"
         font-family="SF Pro Display, Helvetica Neue, Helvetica, sans-serif"
         font-size="28" font-weight="600" fill="#ffffff" fill-opacity="0.9"
-        letter-spacing="0.5">tsukiko</text>
+        letter-spacing="-0.4">tsukiko</text>
 
-  <!-- Подпись разработчика остаётся выше системных строк Finder:
-       строка пути и строка состояния вместе могут занять низ окна. -->
-  <text x="{WIN_W - 24}" y="326" text-anchor="end"
+  <!-- У декоративных элементов одинаковые поля от углов окна. -->
+  <text x="{WIN_W - CORNER_INSET}" y="{CONTENT_HEIGHT - CORNER_INSET - 3}" text-anchor="end"
         font-family="SF Pro Text, Helvetica Neue, Helvetica, sans-serif"
         font-size="12" font-weight="500" fill="#ffffff" fill-opacity="0.72"
         letter-spacing="0.25">Yukovsky</text>
@@ -116,18 +103,16 @@ def render(scale: int) -> Image.Image:
     # Кот в нижнем левом углу заметен с первого взгляда, но остаётся ниже
     # рабочих значков и не спорит с жестом перетаскивания.
     cat = Image.open(MASCOT).convert("RGBA")
-    # По самому рисунку, а не по кадру: у кадра вокруг кота пустые поля,
-    # и «вплотную к краю» с ними означало бы отступ непонятной ширины.
+    # Отступы считаются от самого рисунка, а не прозрачных полей файла.
     cat = cat.crop(cat.getchannel("A").getbbox())
-    height = int(112 * scale)
-    width = int(cat.width * height / cat.height)
+    height = MASCOT_HEIGHT * scale
+    width = round(cat.width * height / cat.height)
     cat = cat.resize((width, height), Image.LANCZOS)
     visible = cat.copy()
     visible.putalpha(cat.getchannel("A").point(lambda a: int(a * 0.78)))
-    # Ровное поле от левого края не даёт рисунку выглядеть случайно
-    # обрезанным. Снизу оставлено место сразу двум системным строкам
-    # Finder: их видимость хранится в пользовательских настройках.
-    canvas.alpha_composite(visible, (18 * scale, (WIN_H - 166) * scale))
+    canvas.alpha_composite(visible, (
+        CORNER_INSET * scale,
+        (CONTENT_HEIGHT - CORNER_INSET - MASCOT_HEIGHT) * scale))
     return canvas.convert("RGB")
 
 
