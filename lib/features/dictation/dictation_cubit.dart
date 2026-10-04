@@ -44,11 +44,15 @@ class DictationCubit extends Cubit<DictationState> {
         last: history.isNotEmpty ? history.first.text : '',
       );
     } catch (e, st) {
-      Log.warn('Dictation', 'Не удалось инициализировать историю диктовок: $e', e, st);
+      Log.warn(
+        'Dictation',
+        'Не удалось инициализировать историю диктовок: $e',
+        e,
+        st,
+      );
       return const DictationState();
     }
   }
-
 
   /// [server] подменяют только тесты: настоящий поднимает whisper-server
   /// и читает в память полтора гигабайта, а проверять надо не это.
@@ -57,7 +61,9 @@ class DictationCubit extends Cubit<DictationState> {
     WhisperServer? server,
     WakeWordService? wakeWordService,
     List<DictationEntry>? initialHistory,
+    Future<void> Function(List<DictationEntry>)? historyWriter,
   }) : super(_initialState(initialHistory)) {
+    _writeHistory = historyWriter ?? _storeHistory;
     _server =
         server ??
         WhisperServer(idleTimeout: Duration(seconds: _settings.idleSeconds));
@@ -790,16 +796,7 @@ class DictationCubit extends Cubit<DictationState> {
           Log.info('Dictation', 'Dictation transcribed: ${text.length} chars');
           if (text.isNotEmpty) {
             job.delivering = true;
-            final entry = DictationEntry(
-              id: DateTime.now().microsecondsSinceEpoch.toString(),
-              text: text,
-              createdAt: DateTime.now(),
-            );
-            final updatedHistory = [entry, ...state.history]
-                .take(DictationHistory.maxEntries)
-                .toList();
-            DictationHistory.save(updatedHistory);
-            _emit(state.copyWith(last: text, history: updatedHistory));
+            _remember(text);
             // «Только в буфер» — для тех, кто вставит сам и туда, куда решит.
             if (!job.insert) {
               await _copyResult(text);
@@ -1027,43 +1024,94 @@ class DictationCubit extends Cubit<DictationState> {
     await bridge.copyText(state.last);
   }
 
-  /// Скопировать запись из истории по её идентификатору.
-  Future<void> copyEntry(String id) async {
-    if (id.trim().isEmpty) return;
+  late final Future<void> Function(List<DictationEntry>) _writeHistory;
+  Future<void>? _historyWrites;
+
+  static Future<void> _storeHistory(List<DictationEntry> history) =>
+      history.isEmpty
+      ? DictationHistory.remove()
+      : DictationHistory.write(history);
+
+  @visibleForTesting
+  Future<void> flushHistoryForTesting() async {
+    await _historyWrites;
+  }
+
+  int _historySequence = 0;
+
+  void _remember(String text) {
+    final now = DateTime.now();
+    final entry = DictationEntry(
+      id: '${now.microsecondsSinceEpoch}-${_historySequence++}',
+      text: text,
+      createdAt: now,
+    );
+    final history = List<DictationEntry>.unmodifiable(
+      [entry, ...state.history].take(DictationHistory.maxEntries),
+    );
+    _emit(state.copyWith(last: text, history: history));
+    unawaited(_persistHistory(history));
+  }
+
+  Future<bool> _persistHistory(List<DictationEntry> history) {
+    final result = Completer<bool>();
+    final previous = _historyWrites;
+    _historyWrites = () async {
+      if (previous != null) await previous;
+      try {
+        await _writeHistory(history);
+        if (!isClosed) _emit(state.copyWith(clearHistoryError: true));
+        result.complete(true);
+      } catch (e, st) {
+        Log.warn('DictationHistory', 'History update failed: $e', e, st);
+        if (!isClosed) {
+          _emit(state.copyWith(historyError: currentL10n().historySaveFailed));
+        }
+        result.complete(false);
+      }
+    }();
+    final writing = _historyWrites;
+    unawaited(
+      writing!.then((_) {
+        if (identical(_historyWrites, writing)) _historyWrites = null;
+      }),
+    );
+    return result.future;
+  }
+
+  /// Copies one transcript, rather than the accumulated clipboard queue.
+  /// NativeBridge serializes this operation with automatic pastes.
+  Future<bool> copyEntry(String id) async {
     final entry = state.history.where((e) => e.id == id).firstOrNull;
-    if (entry == null || entry.text.trim().isEmpty) return;
+    if (entry == null || entry.text.trim().isEmpty) return false;
     try {
       await bridge.copyText(entry.text);
-      Log.info('Dictation', 'Скопирована запись из истории: ${entry.id}');
+      return true;
     } catch (e, st) {
-      Log.warn('Dictation', 'Не удалось скопировать запись $id в буфер: $e', e, st);
+      Log.warn('Dictation', 'Could not copy history entry: $e', e, st);
+      return false;
     }
   }
 
-  /// Полностью очистить историю диктовок.
-  Future<void> clearHistory() async {
-    try {
-      DictationHistory.clear();
-      _emit(state.copyWith(clearHistory: true));
-      Log.info('Dictation', 'История диктовок очищена');
-    } catch (e, st) {
-      Log.warn('Dictation', 'Ошибка при очистке истории диктовок: $e', e, st);
-    }
-  }
+  Future<void> clearHistory() => _deleteHistory(null);
+  Future<void> deleteHistoryEntry(String id) => _deleteHistory(id);
 
-  /// Удалить одну запись из истории.
-  Future<void> deleteHistoryEntry(String id) async {
-    if (id.trim().isEmpty) return;
-    try {
-      final updated = state.history.where((e) => e.id != id).toList();
-      DictationHistory.save(updated);
-      _emit(state.copyWith(
+  Future<void> _deleteHistory(String? id) async {
+    final previous = state;
+    final updated = List<DictationEntry>.unmodifiable(
+      id == null ? [] : state.history.where((e) => e.id != id),
+    );
+    if (id != null && updated.length == state.history.length) return;
+    _emit(
+      state.copyWith(
         history: updated,
         last: updated.isNotEmpty ? updated.first.text : '',
-      ));
-      Log.info('Dictation', 'Запись $id удалена из истории');
-    } catch (e, st) {
-      Log.warn('Dictation', 'Ошибка при удалении записи $id из истории: $e', e, st);
+      ),
+    );
+    final saved = await _persistHistory(updated);
+    // Roll back only if no later dictation or deletion has changed the list.
+    if (!saved && !isClosed && identical(state.history, updated)) {
+      _emit(state.copyWith(history: previous.history, last: previous.last));
     }
   }
 
@@ -1158,7 +1206,10 @@ class DictationCubit extends Cubit<DictationState> {
 
   Future<void> openPermissionSettings() => bridge.openPermissionSettings();
 
-  Future<void> quit() => bridge.quit();
+  Future<void> quit() async {
+    await _historyWrites;
+    await bridge.quit();
+  }
 
   @visibleForTesting
   WakeWordService? get wakeWordServiceForTesting => _wakeWordService;
@@ -1168,7 +1219,11 @@ class DictationCubit extends Cubit<DictationState> {
     _ticker?.cancel();
     _meter?.cancel();
     _wakeWordService?.dispose();
-    return super.close();
+    final closed = super.close();
+    final writing = _historyWrites;
+    return writing == null
+        ? closed
+        : Future.wait([closed, writing]).then((_) {});
   }
 }
 

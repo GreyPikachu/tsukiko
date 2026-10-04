@@ -1667,5 +1667,7 @@
   "indicatorOffHint": "Индикатор скрыт. Запись продолжается.",
   "indicatorPreview": "Предпросмотр",
   "indicatorPrevious": "Предыдущий стиль",
-  "indicatorNext": "Следующий стиль"
+  "indicatorNext": "Следующий стиль",
+  "historySaveFailed": "Не удалось сохранить историю. Проверьте доступ к папке приложения.",
+  "historyCopyFailed": "Не удалось скопировать текст."
 }

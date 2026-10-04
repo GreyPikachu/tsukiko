@@ -25,15 +25,16 @@ class DictationEntry extends Equatable {
   final DateTime createdAt;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'text': text,
-        'created_at': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'text': text,
+    'created_at': createdAt.toIso8601String(),
+  };
 
   factory DictationEntry.fromJson(Map<String, dynamic> json) {
     final rawTime = json['created_at'] as String?;
     return DictationEntry(
-      id: (json['id'] as String?) ??
+      id:
+          (json['id'] as String?) ??
           DateTime.now().microsecondsSinceEpoch.toString(),
       text: (json['text'] as String?) ?? '',
       createdAt: rawTime != null
@@ -68,11 +69,17 @@ class DictationHistory {
       if (text.trim().isEmpty) return const [];
       final data = jsonDecode(text);
       if (data is! Map<String, dynamic>) return const [];
-      final rawList = data['items'] as List<dynamic>? ?? const [];
+      final rawList = data['items'];
+      if (rawList is! List) return const [];
       final list = <DictationEntry>[];
       for (final item in rawList) {
         if (item is Map<String, dynamic>) {
-          final entry = DictationEntry.fromJson(item);
+          DictationEntry entry;
+          try {
+            entry = DictationEntry.fromJson(item);
+          } catch (_) {
+            continue; // One corrupt item must not discard the other transcripts.
+          }
           if (entry.text.trim().isNotEmpty) {
             list.add(entry);
           }
@@ -80,7 +87,12 @@ class DictationHistory {
       }
       return list.take(maxEntries).toList();
     } catch (e, st) {
-      Log.warn('DictationHistory', 'Не удалось прочитать историю диктовок: $e', e, st);
+      Log.warn(
+        'DictationHistory',
+        'Не удалось прочитать историю диктовок: $e',
+        e,
+        st,
+      );
       return const [];
     }
   }
@@ -99,8 +111,32 @@ class DictationHistory {
           .toList();
       writeJsonAtomically(_file, {'items': items});
     } catch (e, st) {
-      Log.warn('DictationHistory', 'Не удалось сохранить историю диктовок: $e', e, st);
+      Log.warn(
+        'DictationHistory',
+        'Не удалось сохранить историю диктовок: $e',
+        e,
+        st,
+      );
     }
+  }
+
+  /// Production writes are awaited by a single chain in DictationCubit,
+  /// so the atomic temporary file cannot be shared by overlapping writes.
+  static Future<void> write(List<DictationEntry> entries) async {
+    await Directory(supportDir).create(recursive: true);
+    final items = entries
+        .where((e) => e.text.trim().isNotEmpty)
+        .take(maxEntries)
+        .map((e) => e.toJson())
+        .toList();
+    final target = _file;
+    final tmp = File('${target.path}.tmp');
+    await tmp.writeAsString(jsonEncode({'items': items}), flush: true);
+    await tmp.rename(target.path);
+  }
+
+  static Future<void> remove() async {
+    if (await _file.exists()) await _file.delete();
   }
 
   /// Удалить файл истории с диска.
@@ -110,7 +146,12 @@ class DictationHistory {
         _file.deleteSync();
       }
     } catch (e, st) {
-      Log.warn('DictationHistory', 'Не удалось удалить историю диктовок: $e', e, st);
+      Log.warn(
+        'DictationHistory',
+        'Не удалось удалить историю диктовок: $e',
+        e,
+        st,
+      );
     }
   }
 }

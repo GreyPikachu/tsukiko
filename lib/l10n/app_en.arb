@@ -825,5 +825,7 @@
   "indicatorOffHint": "The indicator is hidden. Recording continues.",
   "indicatorPreview": "Preview",
   "indicatorPrevious": "Previous style",
-  "indicatorNext": "Next style"
+  "indicatorNext": "Next style",
+  "historySaveFailed": "Could not save history. Check access to the application folder.",
+  "historyCopyFailed": "Could not copy text."
 }

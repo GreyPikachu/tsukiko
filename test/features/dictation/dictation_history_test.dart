@@ -1,4 +1,8 @@
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tsukiko/core/library.dart';
+import 'package:tsukiko/platform/os.dart';
 import 'package:tsukiko/features/dictation/dictation_history.dart';
 import 'package:tsukiko/features/dictation/dictation_state.dart';
 
@@ -89,11 +93,7 @@ void main() {
 
     test('очистка удаляет файл с диска', () {
       DictationHistory.save([
-        DictationEntry(
-          id: '1',
-          text: 'Тест',
-          createdAt: DateTime.now(),
-        ),
+        DictationEntry(id: '1', text: 'Тест', createdAt: DateTime.now()),
       ]);
       expect(DictationHistory.load(), isNotEmpty);
 
@@ -101,6 +101,36 @@ void main() {
       expect(DictationHistory.load(), isEmpty);
     });
   });
+
+  test('одна повреждённая запись не теряет остальную историю', () {
+    final file = File(os.join(supportDir, 'dictation_history.json'));
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(
+      jsonEncode({
+        'items': [
+          {'id': 'a', 'text': 'Первая'},
+          {'id': 123, 'text': 'Повреждённая'},
+          {'id': 'b', 'text': 'Вторая'},
+        ],
+      }),
+    );
+    expect(DictationHistory.load().map((e) => e.text), ['Первая', 'Вторая']);
+  });
+  test(
+    'асинхронная запись заменяет прежний файл, удаление очищает историю',
+    () async {
+      final entry = DictationEntry(
+        id: 'a',
+        text: 'Текст',
+        createdAt: DateTime(2026, 10, 4),
+      );
+      await DictationHistory.write([entry]);
+      await DictationHistory.write([entry, entry]);
+      expect(DictationHistory.load().length, 2);
+      await DictationHistory.remove();
+      expect(DictationHistory.load(), isEmpty);
+    },
+  );
 
   group('DictationState с историей', () {
     test('равенство учитывает список истории', () {
