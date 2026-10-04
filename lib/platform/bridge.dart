@@ -337,18 +337,18 @@ class NativeBridge {
   Future<double> level() async =>
       await _channel.invokeMethod<double>('level') ?? 0;
 
-  Future<void> _pasteReady = Future<void>.value();
+  Future<void>? _pasteReady;
 
   /// Wait before changing the clipboard again, rather than blocking ASR after
   /// each paste. The receiving application reads it after the key event, and
   /// macOS restores the previous clipboard after 400 ms.
-  Future<void> waitForPaste() => _pasteReady;
+  Future<void> waitForPaste() => _pasteReady ?? Future<void>.value();
 
   Future<void> copyText(String text) async {
     final previous = _pasteReady;
     final ready = Completer<void>();
     _pasteReady = ready.future;
-    await previous;
+    if (previous != null) await previous;
     try {
       await Clipboard.setData(ClipboardData(text: text));
     } finally {
@@ -360,7 +360,7 @@ class NativeBridge {
     final previous = _pasteReady;
     final ready = Completer<void>();
     _pasteReady = ready.future;
-    await previous;
+    if (previous != null) await previous;
     var sent = false;
     try {
       sent =

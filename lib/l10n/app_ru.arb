@@ -781,6 +781,16 @@
   "buttonRetry": "Попробовать ещё раз",
   "lastTranscriptTitle": "Последняя расшифровка",
   "noDictationYet": "Пока ничего не надиктовано.",
+  "previousTranscriptsCount": "Предыдущие записи ({count})",
+  "@previousTranscriptsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "tooltipCopied": "Скопировано",
+  "menuClearHistory": "Очистить историю",
   "modelUnloaded": "Выгружена",
   "modelSizeInMemory": "{size} в ОЗУ процесса",
   "@modelSizeInMemory": {
@@ -1657,5 +1667,7 @@
   "indicatorOffHint": "Индикатор скрыт. Запись продолжается.",
   "indicatorPreview": "Предпросмотр",
   "indicatorPrevious": "Предыдущий стиль",
-  "indicatorNext": "Следующий стиль"
+  "indicatorNext": "Следующий стиль",
+  "historySaveFailed": "Не удалось сохранить историю. Проверьте доступ к папке приложения.",
+  "historyCopyFailed": "Не удалось скопировать текст."
 }

@@ -68,15 +68,18 @@ jobs:
     name: Сборка дистрибутива (DMG и App)
     needs: check
     if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      !contains(github.event.head_commit.message, '[skip-macos]') &&
-      !contains(github.event.head_commit.message, '[build-windows]') &&
-      !contains(github.event.head_commit.message, '[build-win]') &&
-      !contains(github.event.head_commit.message, '[windows]') &&
+      github.event_name == 'workflow_dispatch' ||
       (
-        contains(github.event.head_commit.message, '[build]') ||
-        contains(github.event.head_commit.message, '[build-macos]') ||
-        contains(github.event.head_commit.message, '[release]')
+        github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+        !contains(github.event.head_commit.message, '[skip-macos]') &&
+        !contains(github.event.head_commit.message, '[build-windows]') &&
+        !contains(github.event.head_commit.message, '[build-win]') &&
+        !contains(github.event.head_commit.message, '[windows]') &&
+        (
+          contains(github.event.head_commit.message, '[build]') ||
+          contains(github.event.head_commit.message, '[build-macos]') ||
+          contains(github.event.head_commit.message, '[release]')
+        )
       )
     runs-on: macos-14
     permissions:
@@ -192,6 +195,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Зарезервировать выпущенную версию macOS
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           tag=$(python3 tool/version.py tag --platform macos)
           git tag "$tag"
