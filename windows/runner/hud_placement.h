@@ -1,11 +1,12 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 // The foreground recording is separate; the foreground transcription is in outstanding.
-inline int HudBacklogCount(bool recording, int pending, bool processing) {
-  const int outstanding = std::max(0, pending) + (processing ? 1 : 0);
-  return std::max(0, outstanding - (recording ? 0 : 1));
+inline int64_t HudBacklogCount(bool recording, int64_t pending, bool processing) {
+  const int64_t outstanding = std::max<int64_t>(0, pending) + (processing ? 1 : 0);
+  return std::max<int64_t>(0, outstanding - (recording ? 0 : 1));
 }
 
 // The queue badge takes space only while present; editor previews include it.

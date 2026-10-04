@@ -15,6 +15,8 @@ int main() {
   assert(HudBacklogCount(true, 1, true) == 2); // Third recording.
   assert(HudBacklogCount(false, 1, true) == 1);
   assert(HudBacklogCount(false, 9, true) == 9); // Ten unfinished dictations.
+  const int64_t channel_pending = static_cast<int64_t>(std::numeric_limits<int>::max()) + 1;
+  assert(HudBacklogCount(false, channel_pending, true) == channel_pending);
   assert(HudPanelWidth(HudBacklogCount(false, 0, true) > 0, false) == 372);
   assert(HudPanelWidth(HudBacklogCount(true, 0, true) > 0, false) == 420);
   assert(HudPanelWidth(false, false) == 372);
