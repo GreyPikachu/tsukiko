@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Yukovsky/tsukiko/releases"><img src="https://img.shields.io/badge/version-1.1.1-blue.svg?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/Yukovsky/tsukiko/releases"><img src="https://img.shields.io/badge/version-1.2.0-blue.svg?style=flat-square" alt="Version" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%2012%2B%20%7C%20Windows%2010%2F11-lightgrey.svg?style=flat-square" alt="Platforms" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/privacy-100%25%20Offline-success.svg?style=flat-square" alt="100% Offline" />
@@ -89,7 +89,9 @@ Zero heavy external dependencies like Python, PyTorch, or separate CUDA runtimes
 
 ### System-Wide Dictation & Floating HUD
 - Activate from any window using a customizable global shortcut (default: right `Command` on macOS or `F8` on Windows).
-- Clean, non-intrusive floating HUD with real-time waveform level monitoring, elapsed timer, and inference progress.
+- Four recording indicators: full waveform panel, menu bar/system tray microphone, compact floating timer, or hidden. Switch instantly while recording.
+- A full-size layout preview with separate controls for style, position and scale. Drag anywhere on the indicator; center snapping, Save, Cancel and Reset are available. Controls move to a free corner when the preview approaches.
+- Record the next dictation while earlier recordings transcribe in FIFO order. The queue badge opens actions for the current transcription and waiting recordings.
 - Automatic text synthesis and simulated keystroke insertion directly into your focused application (IDE, browser, terminal, notes, chat).
 
 ### Hands-Free Voice Activation
