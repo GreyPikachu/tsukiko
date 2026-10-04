@@ -329,6 +329,35 @@ void main() {
       });
     }
 
+    test(
+      'следующая ASR начинается во время защиты предыдущей вставки',
+      () async {
+        server.gate = Completer<String?>();
+        await cubit.start();
+        final first = cubit.stop();
+        await waitFor(() => server.paths.length == 1);
+        native.recordPath = os.join(os.supportDir, 'next-with-paste.wav');
+        await cubit.start();
+        final second = cubit.stop();
+        await waitFor(() => cubit.state.pendingCount == 1);
+        server.gate!.complete('first');
+        server.gate = null;
+        await first;
+        var clipboardReady = false;
+        unawaited(
+          cubit.bridge.waitForPaste().then((_) {
+            clipboardReady = true;
+          }),
+        );
+        await waitFor(() => server.paths.length == 2);
+        expect(clipboardReady, isFalse);
+        expect(native.pastes, ['first']);
+        await second;
+        expect(native.pastes.length, 2);
+        expect(server.maxConcurrent, 1);
+      },
+    );
+
     test('результат предыдущей не сбрасывает текущую запись', () async {
       server.gate = Completer<String?>();
       await cubit.start();

@@ -337,12 +337,46 @@ class NativeBridge {
   Future<double> level() async =>
       await _channel.invokeMethod<double>('level') ?? 0;
 
+  Future<void> _pasteReady = Future<void>.value();
+
+  /// Wait before changing the clipboard again, rather than blocking ASR after
+  /// each paste. The receiving application reads it after the key event, and
+  /// macOS restores the previous clipboard after 400 ms.
+  Future<void> waitForPaste() => _pasteReady;
+
+  Future<void> copyText(String text) async {
+    final previous = _pasteReady;
+    final ready = Completer<void>();
+    _pasteReady = ready.future;
+    await previous;
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+    } finally {
+      ready.complete();
+    }
+  }
+
   Future<bool> insert(String text) async {
-    final sent =
-        await _channel.invokeMethod<bool>('paste', {'text': text}) ?? false;
-    // The receiving application reads the clipboard after the key event.
-    if (sent) await Future<void>.delayed(const Duration(milliseconds: 450));
-    return sent;
+    final previous = _pasteReady;
+    final ready = Completer<void>();
+    _pasteReady = ready.future;
+    await previous;
+    var sent = false;
+    try {
+      sent =
+          await _channel.invokeMethod<bool>('paste', {'text': text}) ?? false;
+      return sent;
+    } finally {
+      if (sent) {
+        unawaited(
+          Future<void>.delayed(
+            const Duration(milliseconds: 450),
+          ).then((_) => ready.complete()),
+        );
+      } else {
+        ready.complete();
+      }
+    }
   }
 
   /// Значок в Dock. Выключенный переводит приложение в .accessory: оно

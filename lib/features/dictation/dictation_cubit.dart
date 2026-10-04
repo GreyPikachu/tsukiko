@@ -4,7 +4,6 @@ import 'dart:collection';
 
 import 'package:bloc/bloc.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../platform/bridge.dart';
 import '../../core/logger.dart';
@@ -995,12 +994,12 @@ class DictationCubit extends Cubit<DictationState> {
         ? text
         : '$_clipboardResults\n$text';
     _emit(state.copyWith(last: _clipboardResults));
-    await Clipboard.setData(ClipboardData(text: _clipboardResults));
+    await bridge.copyText(_clipboardResults);
   }
 
   Future<void> copyLast() async {
     if (state.last.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: state.last));
+    await bridge.copyText(state.last);
   }
 
   void unload() {
