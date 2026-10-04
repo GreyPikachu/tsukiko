@@ -1640,10 +1640,22 @@
     }
   },
   "hudLayoutTitle": "Положение плашки",
-  "hudLayoutHint": "Перетащите за полоски · центр экрана притягивает плашку",
+  "hudLayoutHint": "Переместите индикатор · центр экрана притягивает",
   "hudDrag": "Переместить плашку",
   "hudScale": "Масштаб",
   "hudReset": "Сбросить",
   "hudSave": "Сохранить",
-  "hudConfigure": "Настроить положение и масштаб"
+  "hudConfigure": "Настроить положение и масштаб",
+  "indicatorTitle": "Индикатор записи",
+  "indicatorEditorHint": "Выберите стиль, положение и размер в редакторе. Изменения видны сразу, даже во время записи.",
+  "indicatorOpenEditor": "Настроить индикатор записи",
+  "indicatorPanel": "Плашка записи",
+  "indicatorStatus": "Строка меню / трей",
+  "indicatorTimer": "Плавающий таймер",
+  "indicatorOff": "Выключено",
+  "indicatorStatusHint": "Положение и размер этого значка задаёт система.",
+  "indicatorOffHint": "Индикатор скрыт. Запись продолжается.",
+  "indicatorPreview": "Предпросмотр",
+  "indicatorPrevious": "Предыдущий стиль",
+  "indicatorNext": "Следующий стиль"
 }

@@ -34,3 +34,34 @@ struct HudPlacement {
     positioned = true;
   }
 };
+
+
+struct HudControlsPlacement {
+  static HudArea Rect(HudArea work, double width, double height, int corner, double dpi = 1) {
+    double left = work.left + 24 * dpi;
+    double top = work.top + 24 * dpi;
+    double right = std::max(left, work.left + work.width - width - 24 * dpi);
+    double bottom = std::max(top, work.top + work.height - height - 24 * dpi);
+    return {corner % 2 == 0 ? left : right, corner < 2 ? top : bottom, width, height};
+  }
+  static bool Overlaps(HudArea a, HudArea b, double margin = 0) {
+    return a.left < b.left + b.width + margin && a.left + a.width > b.left - margin &&
+           a.top < b.top + b.height + margin && a.top + a.height > b.top - margin;
+  }
+  static int Corner(HudArea work, double width, double height, HudArea preview, int current, double dpi = 1) {
+    if (preview.width <= 0 || !Overlaps(Rect(work, width, height, current, dpi), preview, 32 * dpi)) return current;
+    int selected = current;
+    double farthest = -1;
+    bool found_free = false;
+    for (int i = 0; i < 4; ++i) {
+      auto r = Rect(work, width, height, i, dpi);
+      bool free = !Overlaps(r, preview, 32 * dpi);
+      double distance = std::hypot(r.left + width / 2 - preview.left - preview.width / 2,
+                                   r.top + height / 2 - preview.top - preview.height / 2);
+      if ((free && !found_free) || (free == found_free && distance > farthest)) {
+        selected = i; farthest = distance; found_free = free;
+      }
+    }
+    return selected;
+  }
+};

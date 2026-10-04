@@ -25,7 +25,7 @@ constexpr int kWidth = 340;
 
 constexpr wchar_t kHudClassName[] = L"TsukikoHudWindow";
 // Те же размеры, что у панели на macOS.
-constexpr int kHudWidth = 372;
+constexpr int kHudWidth = 420;
 constexpr int kHudHeight = 52;
 
 constexpr wchar_t kSettingsClassName[] = L"TsukikoSettingsWindow";
@@ -295,7 +295,8 @@ LRESULT CALLBACK GuidesProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
 }
 }
 
-HudWindow::HudWindow() {
+HudWindow::HudWindow(bool editor) : is_editor_(editor) {
+  if (is_editor_) return;
   auto read = [](const wchar_t* name, DWORD fallback) {
     DWORD value = fallback, bytes = sizeof(value);
     if (RegGetValueW(HKEY_CURRENT_USER, kHudPrefs, name, RRF_RT_REG_DWORD,
@@ -338,65 +339,122 @@ HudArea HudWindow::WorkArea() const {
           static_cast<double>(r.right - r.left), static_cast<double>(r.bottom - r.top)};
 }
 
+void HudWindow::CaptureCenter() {
+  double factor = DpiScale() * placement_.scale;
+  double width = (mode_ == "timer" ? 148 : kHudWidth) * factor;
+  double height = (mode_ == "timer" ? 44 : kHudHeight) * factor;
+  placement_.Capture(placement_.Origin(WorkArea(), width, height, 92 * DpiScale()), WorkArea(), width, height);
+}
+
+void HudWindow::SetMode(const std::string& value) {
+  std::string next = (value == "status" || value == "timer" || value == "off") ? value : "panel";
+  if (next == mode_) return;
+  if (floating()) CaptureCenter();
+  dragging_ = false;
+  mode_ = next;
+  ResizeAndPosition();
+  if (!floating()) ShowWindow(window_, SW_HIDE);
+  else if (wanted_visible_) ShowReady();
+}
+
 void HudWindow::ResizeAndPosition() {
   if (!window_) return;
   const double dpi = DpiScale();
-  int width = static_cast<int>((editing_ ? 600 : kHudWidth) * placement_.scale * dpi);
-  int height = static_cast<int>((editing_ ? 156 : kHudHeight) * placement_.scale * dpi);
-  const auto point = placement_.Origin(WorkArea(), width, height, 92 * dpi);
-  SetWindowPos(window_, HWND_TOPMOST, static_cast<int>(point.x), static_cast<int>(point.y),
-               width, height, SWP_NOACTIVATE);
+  int width = static_cast<int>((is_editor_ ? 360 : mode_ == "timer" ? 148 : kHudWidth) * (is_editor_ ? 1 : placement_.scale) * dpi);
+  int height = static_cast<int>((is_editor_ ? 228 : mode_ == "timer" ? 44 : kHudHeight) * (is_editor_ ? 1 : placement_.scale) * dpi);
+  auto point = placement_.Origin(WorkArea(), width, height, 92 * dpi);
+  if (is_editor_) {
+    RECT rect; GetWindowRect(window_, &rect);
+    point = placement_.Clamp({static_cast<double>(rect.left), static_cast<double>(rect.top)}, WorkArea(), width, height);
+  }
+  SetWindowPos(window_, above_window_ ? above_window_ : HWND_TOPMOST, static_cast<int>(point.x), static_cast<int>(point.y), width, height, SWP_NOACTIVATE);
   if (controller_) {
     MoveWindow(controller_->view()->GetNativeWindow(), 0, 0, width, height, TRUE);
     controller_->ForceRedraw();
   }
+  if (!is_editor_) PositionEditor(true);
+}
+
+void HudWindow::PositionEditor(bool animate) {
+  if (!editing_ || !editor_ || !editor_->window_) return;
+  editor_->monitor_ = monitor_;
+  RECT rect; GetWindowRect(window_, &rect);
+  HudArea preview = floating() ? HudArea{static_cast<double>(rect.left), static_cast<double>(rect.top), static_cast<double>(rect.right - rect.left), static_cast<double>(rect.bottom - rect.top)} : HudArea{};
+  double dpi = DpiScale(), width = 360 * dpi, height = 228 * dpi;
+  int next = HudControlsPlacement::Corner(WorkArea(), width, height, preview, editor_corner_, dpi);
+  if (next != editor_corner_ || !animate) {
+    editor_corner_ = next;
+    auto target = HudControlsPlacement::Rect(WorkArea(), width, height, next, dpi);
+    editor_->AnimateTo({target.left, target.top}, animate);
+  }
+}
+
+void HudWindow::AnimateTo(HudPoint target, bool animate) {
+  RECT rect; GetWindowRect(window_, &rect);
+  BOOL animations = TRUE;
+  SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
+  KillTimer(window_, 42);
+  moving_ = false;
+  if (!animate || !animations) {
+    SetWindowPos(window_, above_window_ ? above_window_ : HWND_TOPMOST, static_cast<int>(target.x), static_cast<int>(target.y), 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+    return;
+  }
+  motion_start_ = {static_cast<double>(rect.left), static_cast<double>(rect.top)};
+  motion_target_ = target;
+  motion_started_ = std::chrono::steady_clock::now();
+  moving_ = true;
+  SetTimer(window_, 42, 16, nullptr);
 }
 
 void HudWindow::ShowReady() {
-  if (!window_ || !wanted_visible_) return;
-  if (!IsVisible() && !editing_) {
+  if (!window_ || !wanted_visible_ || (!is_editor_ && !floating())) return;
+  if (!is_editor_ && !IsVisible() && !editing_) {
     POINT pointer; GetCursorPos(&pointer);
     monitor_ = MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST);
   }
   ResizeAndPosition();
-  ShowWindow(window_, SW_SHOWNOACTIVATE);
+  ShowWindow(window_, is_editor_ ? SW_SHOW : SW_SHOWNOACTIVATE);
 }
 
-void HudWindow::Configure() {
+void HudWindow::Configure(const flutter::DartProject& base, const std::function<void(flutter::BinaryMessenger*)>& on_ready) {
   if (!window_ || editing_) return;
-  saved_ = placement_;
-  visible_before_editing_ = IsVisible();
-  editing_ = true;
-  POINT pointer; GetCursorPos(&pointer);
-  monitor_ = MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST);
+  saved_ = placement_; saved_mode_ = mode_; editing_ = true;
+  POINT pointer; GetCursorPos(&pointer); monitor_ = MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST);
   WNDCLASSW wc = {}; wc.lpfnWndProc = GuidesProc;
   wc.hInstance = GetModuleHandle(nullptr); wc.lpszClassName = L"TsukikoHUDGuides";
   RegisterClassW(&wc);
   auto work = WorkArea();
   guides_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-      wc.lpszClassName, L"", WS_POPUP, static_cast<int>(work.left), static_cast<int>(work.top),
-      static_cast<int>(work.width), static_cast<int>(work.height), nullptr, nullptr, wc.hInstance, nullptr);
+    wc.lpszClassName, L"", WS_POPUP, static_cast<int>(work.left), static_cast<int>(work.top),
+    static_cast<int>(work.width), static_cast<int>(work.height), nullptr, nullptr, wc.hInstance, nullptr);
   SetLayeredWindowAttributes(guides_, 0, 42, LWA_ALPHA);
   SetWindowPos(guides_, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-  wanted_visible_ = true;
-  ShowReady();
+  wanted_visible_ = true; ShowReady();
   previous_focus_ = GetForegroundWindow();
-  SetWindowLongPtr(window_, GWL_EXSTYLE, GetWindowLongPtr(window_, GWL_EXSTYLE) & ~WS_EX_NOACTIVATE);
-  SetForegroundWindow(window_);
-  SetFocus(controller_->view()->GetNativeWindow());
+  if (!editor_) editor_ = std::make_unique<HudWindow>(true);
+  editor_->monitor_ = monitor_; editor_corner_ = 0;
+  editor_->above_window_ = window_;
+  editor_->on_close_ = [this]() { if (on_editor_closed) on_editor_closed(); };
+  editor_->Show(base, on_ready);
+  PositionEditor(false);
+  if (editor_->window_ && editor_->controller_) {
+    SetForegroundWindow(editor_->window_);
+    SetFocus(editor_->controller_->view()->GetNativeWindow());
+  }
 }
 
 void HudWindow::FinishEditing(bool save) {
   if (!editing_) return;
-  if (save) SavePlacement(); else placement_ = saved_;
-  editing_ = false;
-  SetWindowLongPtr(window_, GWL_EXSTYLE, GetWindowLongPtr(window_, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+  if (save) SavePlacement(); else { placement_ = saved_; mode_ = saved_mode_; }
+  dragging_ = false; editing_ = false;
+  if (editor_) editor_->Hide();
   if (previous_focus_ && IsWindow(previous_focus_)) SetForegroundWindow(previous_focus_);
   previous_focus_ = nullptr;
   if (guides_) { DestroyWindow(guides_); guides_ = nullptr; }
   ResizeAndPosition();
-  if (!visible_before_editing_) Hide();
 }
+
+void HudWindow::ReleaseEditor() { if (!editing_) editor_.reset(); }
 
 void HudWindow::ResetPosition() {
   placement_ = HudPlacement();
@@ -405,13 +463,14 @@ void HudWindow::ResetPosition() {
 }
 
 void HudWindow::SetScale(double scale) {
+  CaptureCenter();
   placement_.scale = HudPlacement::ValidScale(scale);
   ResizeAndPosition();
   if (!editing_) SavePlacement();
 }
 
 void HudWindow::Move(double dx, double dy, bool ended) {
-  if (!window_) return;
+  if (!window_ || !floating()) return;
   RECT rect; GetWindowRect(window_, &rect);
   double factor = DpiScale() * placement_.scale;
   POINT pointer; GetCursorPos(&pointer);
@@ -426,16 +485,18 @@ void HudWindow::Move(double dx, double dy, bool ended) {
   SetWindowPos(window_, HWND_TOPMOST, static_cast<int>(p.x), static_cast<int>(p.y), 0, 0,
                SWP_NOSIZE | SWP_NOACTIVATE);
   placement_.Capture(p, WorkArea(), rect.right - rect.left, rect.bottom - rect.top);
+  PositionEditor(true);
   if (ended) { dragging_ = false; if (!editing_) SavePlacement(); }
 }
 
 void HudWindow::Nudge(double dx, double dy) {
-  if (!window_) return;
+  if (!window_ || !floating()) return;
   RECT r; GetWindowRect(window_, &r);
   auto p = placement_.Clamp({r.left + dx * DpiScale(), r.top + dy * DpiScale()},
                             WorkArea(), r.right - r.left, r.bottom - r.top);
   SetWindowPos(window_, HWND_TOPMOST, static_cast<int>(p.x), static_cast<int>(p.y), 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
   placement_.Capture(p, WorkArea(), r.right - r.left, r.bottom - r.top);
+  PositionEditor(true);
 }
 
 void HudWindow::Prepare(
@@ -450,8 +511,8 @@ void HudWindow::Prepare(
     RegisterClassW(&wc);
 
     window_ = CreateWindowExW(
-        WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE, kHudClassName,
-        L"tsukiko", WS_POPUP, 0, 0, kHudWidth, kHudHeight, nullptr, nullptr,
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST | (is_editor_ ? 0 : WS_EX_NOACTIVATE), kHudClassName,
+        L"tsukiko", WS_POPUP, 0, 0, is_editor_ ? 360 : kHudWidth, is_editor_ ? 228 : kHudHeight, nullptr, nullptr,
         GetModuleHandle(nullptr), this);
     if (!window_) return;
 
@@ -462,9 +523,9 @@ void HudWindow::Prepare(
                           sizeof(corner));
 
     flutter::DartProject project = base;
-    project.set_dart_entrypoint("hudMain");
+    project.set_dart_entrypoint(is_editor_ ? "hudEditorMain" : "hudMain");
     controller_ = std::make_unique<flutter::FlutterViewController>(
-        kHudWidth, kHudHeight, project);
+        is_editor_ ? 360 : kHudWidth, is_editor_ ? 228 : kHudHeight, project);
     if (!controller_->engine() || !controller_->view()) {
       controller_ = nullptr;
       DestroyWindow(window_);
@@ -474,7 +535,7 @@ void HudWindow::Prepare(
     RegisterPlugins(controller_->engine());
     HWND view = controller_->view()->GetNativeWindow();
     SetParent(view, window_);
-    MoveWindow(view, 0, 0, kHudWidth, kHudHeight, TRUE);
+    MoveWindow(view, 0, 0, is_editor_ ? 360 : kHudWidth, is_editor_ ? 228 : kHudHeight, TRUE);
     ShowWindow(view, SW_SHOW);
     on_ready(controller_->engine()->messenger());
     // Первый показ ждёт первый кадр Flutter. Иначе Windows показывает
@@ -506,6 +567,18 @@ LRESULT CALLBACK HudWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
   }
   auto* self =
       reinterpret_cast<HudWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+  if (self && message == WM_TIMER && wparam == 42 && self->moving_) {
+    double t = std::clamp(std::chrono::duration<double>(std::chrono::steady_clock::now() - self->motion_started_).count() / .36, 0.0, 1.0);
+    double progress = t * t * (3 - 2 * t);
+    auto a = self->motion_start_, b = self->motion_target_;
+    SetWindowPos(hwnd, self->above_window_ ? self->above_window_ : HWND_TOPMOST, static_cast<int>(a.x + (b.x - a.x) * progress), static_cast<int>(a.y + (b.y - a.y) * progress), 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+    if (t >= 1) { KillTimer(hwnd, 42); self->moving_ = false; }
+    return 0;
+  }
+  if (self && message == WM_CLOSE) {
+    if (self->on_close_) self->on_close_();
+    return 0;
+  }
   // Recompute native bounds after Windows has updated the window DPI.
   // The Flutter child receives the original notification before resizing.
   constexpr UINT kRefreshHudBounds = WM_APP + 64;
@@ -527,7 +600,7 @@ LRESULT CALLBACK HudWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
   }
   // Ни щелчком, ни клавишей фокус этой панели не достаётся: она нужна
   // поверх чужого окна, в которое сейчас диктуют.
-  if (message == WM_MOUSEACTIVATE) return self && self->editing_ ? MA_ACTIVATE : MA_NOACTIVATE;
+  if (message == WM_MOUSEACTIVATE) return self && self->is_editor_ ? MA_ACTIVATE : MA_NOACTIVATE;
   if (message == WM_ERASEBKGND) {
     HDC hdc = reinterpret_cast<HDC>(wparam);
     RECT rect;

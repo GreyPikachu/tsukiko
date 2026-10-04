@@ -36,6 +36,15 @@ struct HUDPlacementTests {
       let restored = layout.origin(in: work, size: size)
       assert(near(restored.x, p.x) && near(restored.y, p.y))
     }
+    let controls = NSSize(width: 360, height: 228)
+    for corner in 0..<4 {
+      let collision = HUDLayoutControls.frame(in: work, size: controls, corner: corner)
+      let next = HUDLayoutControls.corner(in: work, size: controls, avoiding: collision, current: corner)
+      assert(next != corner)
+      assert(!HUDLayoutControls.frame(in: work, size: controls, corner: next).intersects(collision.insetBy(dx: -32, dy: -32)))
+      assert(HUDLayoutControls.corner(in: work, size: controls, avoiding: collision, current: next) == next)
+    }
+    assert(HUDLayoutControls.corner(in: work, size: controls, avoiding: .zero, current: 2) == 2)
     let before = layout
     var draft = layout
     draft.capture(origin: NSPoint(x: -1500, y: 500), in: work, size: size)
@@ -61,6 +70,14 @@ struct HUDPlacementTests {
     assert(defaults.dictionary(forKey: "dictationHUDPlacement") == nil)
     hud.configure(labels: [:])
     hud.setScale(1.3)
+    if let path = ProcessInfo.processInfo.environment["TSUKIKO_HUD_PREVIEW"],
+       let view = NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 500 && $0.frame.height < 100 })?.contentView {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+      if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        try! bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
+      }
+    }
     if let path = ProcessInfo.processInfo.environment["TSUKIKO_HUD_SNAPSHOT"], let view = NSApp.keyWindow?.contentView {
       RunLoop.main.run(until: Date().addingTimeInterval(0.2))
       if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
@@ -80,6 +97,41 @@ struct HUDPlacementTests {
     hud.show()
     RunLoop.main.run(until: Date().addingTimeInterval(0.4))
     assert(hud.isVisible, "A stale hide animation must not hide the next recording")
+    var statusActive = false
+    var changedMode = ""
+    hud.onStatusChanged = { statusActive = $0 }
+    hud.onModeChanged = { changedMode = $0 }
+    let center = NSPoint(x: hud.previewFrame.midX, y: hud.previewFrame.midY)
+    hud.setMode("timer")
+    assert(hud.isVisible && hud.previewFrame.size == NSSize(width: 148, height: 44))
+    assert(near(hud.previewFrame.midX, center.x) && near(hud.previewFrame.midY, center.y))
+    hud.setMode("status")
+    assert(!hud.isVisible && statusActive)
+    hud.setMode("off")
+    assert(!hud.isVisible && !statusActive)
+    hud.setMode("panel")
+    assert(hud.isVisible && !statusActive)
+    hud.configure(labels: [:])
+    let original = hud.currentPlacement
+    hud.cycleMode(-1); assert(hud.currentMode == "off")
+    hud.cycleMode(1); assert(hud.currentMode == "panel")
+    hud.cycleMode(1); assert(hud.currentMode == "status" && statusActive)
+    hud.cycleMode(1); assert(hud.currentMode == "timer")
+    hud.setScale(1.6)
+    assert(hud.editorFrame?.size == controls, "Scaling preview must never scale the controls")
+    hud.finishEditing(save: false)
+    assert(hud.currentMode == "panel" && changedMode == "panel" && hud.isVisible)
+    assert(hud.currentPlacement.x == original.x && hud.currentPlacement.y == original.y && hud.currentPlacement.scale == original.scale)
+    hud.transcribing(); hud.setMode("status")
+    assert(!statusActive && !hud.isVisible)
+    hud.configure(labels: [:])
+    assert(statusActive, "Status mode previews its real menu bar icon")
+    hud.hide() // Actual work finishes while editor preview stays open.
+    hud.setMode("timer")
+    assert(hud.isVisible)
+    hud.finishEditing(save: true)
+    assert(!hud.isVisible && !statusActive, "Closing editor must never resurrect finished work")
+    hud.show(); assert(hud.isVisible)
     hud.hide()
     print("macOS HUD geometry: all checks passed")
   }

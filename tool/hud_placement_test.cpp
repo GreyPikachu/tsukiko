@@ -38,6 +38,17 @@ int main() {
     auto restored = layout.Origin(work, 372, 52);
     assert(near(restored.x, p.x) && near(restored.y, p.y));
   }
+  for (double dpi : {1.0, 1.5, 2.0}) {
+    HudArea display{-1920 * dpi, -200 * dpi, 1920 * dpi, 1080 * dpi};
+    for (int corner = 0; corner < 4; ++corner) {
+      auto collision = HudControlsPlacement::Rect(display, 360 * dpi, 228 * dpi, corner, dpi);
+      int next = HudControlsPlacement::Corner(display, 360 * dpi, 228 * dpi, collision, corner, dpi);
+      assert(next != corner);
+      assert(!HudControlsPlacement::Overlaps(HudControlsPlacement::Rect(display, 360 * dpi, 228 * dpi, next, dpi), collision, 32 * dpi));
+      assert(HudControlsPlacement::Corner(display, 360 * dpi, 228 * dpi, collision, next, dpi) == next);
+    }
+  }
+  assert(HudControlsPlacement::Corner(work, 360, 228, {}, 2) == 2);
   const auto before = layout;
   auto draft = layout;
   draft.Capture({-1500, 500}, work, 372, 52);

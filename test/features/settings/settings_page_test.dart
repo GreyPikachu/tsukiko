@@ -128,7 +128,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('настройка и сброс плашки доступны из настроек диктовки', (
+  testWidgets('единый редактор индикатора доступен из настроек диктовки', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(580, 560));
@@ -163,13 +163,17 @@ void main() {
         ),
       ),
     );
-    final configure = find.text('Настроить положение и масштаб');
-    await tester.scrollUntilVisible(configure, 180, scrollable: find.byType(Scrollable).first);
+    final configure = find.text('Настроить индикатор записи');
+    await tester.scrollUntilVisible(
+      configure,
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(configure);
     expect(calls.last.method, 'configureHud');
     expect((calls.last.arguments as Map)['save'], 'Сохранить');
-    await tester.tap(find.text('Сбросить'));
-    expect(calls.last.method, 'resetHud');
+    expect((calls.last.arguments as Map)['mode'], 'panel');
+    expect(find.text('Показывать панель записи'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 

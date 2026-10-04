@@ -138,6 +138,27 @@ final class PanelController: NSObject, NSWindowDelegate {
     self.controller = controller
   }
 
+  func setRecordingIndicator(_ active: Bool) {
+    guard let button = statusItem?.button else { return }
+    if active, let symbol = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Идёт запись") {
+      let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+        symbol.draw(in: rect)
+        NSColor.systemRed.setFill()
+        rect.fill(using: .sourceAtop)
+        return true
+      }
+      image.isTemplate = false
+      button.image = image
+      button.toolTip = "tsukiko — идёт запись"
+    } else {
+      let image = NSImage(named: "MenuBarIcon")
+      image?.isTemplate = true
+      button.image = image
+      button.toolTip = "tsukiko"
+    }
+    button.setAccessibilityLabel(active ? "tsukiko — идёт запись" : "tsukiko")
+  }
+
   @objc private func clicked(_ sender: NSStatusBarButton) {
     let rightClick = NSApp.currentEvent?.type == .rightMouseUp
     if rightClick {

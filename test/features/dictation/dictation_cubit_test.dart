@@ -56,7 +56,8 @@ void main() {
       settings.hud = false;
       settings.save();
       await cubit.reloadSettingsForTesting();
-      expect(native.hudStates.last, 'hidden');
+      expect(native.hudStates.last, 'recording');
+      expect(native.hudModes.last, 'off');
       expect(cubit.state.recording, isTrue);
       settings.hud = true;
       settings.save();
@@ -64,6 +65,50 @@ void main() {
       expect(native.hudStates.last, 'recording');
       expect(native.calls.where((call) => call == 'record').length, 1);
     });
+    test(
+      'редактор меняет все стили при записи и при незавершённой расшифровке',
+      () async {
+        await cubit.start();
+        await settle();
+        final binds = native.calls.where((call) => call == 'bind').length;
+        Future<void> mode(IndicatorMode value) async {
+          await binding.defaultBinaryMessenger.handlePlatformMessage(
+            'tsukiko/dictation',
+            const StandardMethodCodec().encodeMethodCall(
+              MethodCall('hudMode', value.name),
+            ),
+            (_) {},
+          );
+          await settle();
+          expect(DictationSettings.load().indicatorMode, value);
+          expect(native.hudModes.last, value.name);
+          expect(
+            native.calls.where((call) => call == 'bind').length,
+            binds,
+            reason: 'appearance must preserve the held shortcut latch',
+          );
+        }
+
+        for (final value in IndicatorMode.values.skip(1)) {
+          await mode(value);
+          expect(native.hudStates.last, 'recording');
+          expect(cubit.state.recording, isTrue);
+        }
+        server.gate = Completer<String?>();
+        final completion = cubit.stop();
+        await settle();
+        expect(cubit.state.processing, isTrue);
+        for (final value in IndicatorMode.values) {
+          await mode(value);
+          expect(native.hudStates.last, 'transcribing');
+          expect(cubit.state.processing, isTrue);
+        }
+        expect(native.calls.where((call) => call == 'record').length, 1);
+        expect(native.calls.where((call) => call == 'stopRecord').length, 1);
+        server.gate!.complete('Сохранённый результат');
+        await completion;
+      },
+    );
     test('старая команда не перегружает модель подсказкой', () async {
       await Settings.save({
         textCommandsSetting: [
@@ -625,6 +670,7 @@ class _FakeServer extends WhisperServer {
 class _FakeNative {
   final calls = <String>[];
   final hudStates = <String>[];
+  final hudModes = <String>[];
 
   bool permitted = true;
   bool pasteSucceeds = true;
@@ -661,6 +707,7 @@ class _FakeNative {
               return pasteSucceeds;
             case 'hud':
               hudStates.add((call.arguments as Map)['state'] as String);
+              hudModes.add((call.arguments as Map)['mode'] as String);
               return null;
             case 'requestModel':
               return true;

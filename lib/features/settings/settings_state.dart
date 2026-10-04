@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:equatable/equatable.dart';
 
 import '../../core/app_locale.dart';
+import '../../core/indicator_mode.dart';
 import '../../core/models.dart';
 import '../../core/skill_install.dart';
 import '../../core/text_commands.dart';
@@ -63,6 +64,7 @@ class SettingsState extends Equatable {
     this.idleSeconds = 180,
     this.insert = true,
     this.hud = true,
+    this.indicatorMode = IndicatorMode.panel,
     this.wakeWordEnabled = false,
     this.wakeWord = 'Джеф',
     this.closeWord = '',
@@ -195,6 +197,7 @@ class SettingsState extends Equatable {
   final bool vocabularyDictationEnabled, vocabularyTranscriberEnabled;
   final int idleSeconds;
   final bool insert, hud;
+  final IndicatorMode indicatorMode;
   final bool wakeWordEnabled;
   final String wakeWord;
   final String closeWord;
@@ -280,6 +283,7 @@ class SettingsState extends Equatable {
     int? idleSeconds,
     bool? insert,
     bool? hud,
+    IndicatorMode? indicatorMode,
     bool? wakeWordEnabled,
     String? wakeWord,
     String? closeWord,
@@ -344,6 +348,7 @@ class SettingsState extends Equatable {
     idleSeconds: idleSeconds ?? this.idleSeconds,
     insert: insert ?? this.insert,
     hud: hud ?? this.hud,
+    indicatorMode: indicatorMode ?? this.indicatorMode,
     wakeWordEnabled: wakeWordEnabled ?? this.wakeWordEnabled,
     wakeWord: wakeWord ?? this.wakeWord,
     closeWord: closeWord ?? this.closeWord,
@@ -400,6 +405,7 @@ class SettingsState extends Equatable {
     idleSeconds,
     insert,
     hud,
+    indicatorMode,
     wakeWordEnabled,
     wakeWord,
     closeWord,

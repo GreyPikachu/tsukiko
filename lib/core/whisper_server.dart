@@ -12,6 +12,9 @@ import '../core/whisper.dart';
 import '../platform/os.dart';
 import '../core/settings.dart';
 
+import 'indicator_mode.dart';
+export 'indicator_mode.dart';
+
 export 'dictated_text.dart' show tidyDictated;
 
 /// Фоновая диктовка: долгоживущий whisper-server, который держит модель
@@ -955,7 +958,8 @@ class DictationSettings {
     Hotkey? cancel,
     this.idleSeconds = 180,
     this.insert = true,
-    this.hud = true,
+    bool hud = true,
+    IndicatorMode? indicatorMode,
     this.punctuate = true,
     this.threads = 4,
     this.wakeWordEnabled = false,
@@ -965,7 +969,8 @@ class DictationSettings {
     this.voiceCalibrationEnabled = false,
     this.speakerProfilePath = '',
     this.speakerThreshold = 0.60,
-  })  : hold = hold ?? Hotkey.holdDefault,
+  })  : indicatorMode = indicatorMode ?? (hud ? IndicatorMode.panel : IndicatorMode.off),
+        hold = hold ?? Hotkey.holdDefault,
         toggle = toggle ?? Hotkey.toggleDefault,
         cancel = cancel ?? Hotkey.none;
 
@@ -988,7 +993,9 @@ class DictationSettings {
   bool insert;
 
   /// Плавающая панель записи поверх всех окон.
-  bool hud;
+  IndicatorMode indicatorMode;
+  bool get hud => indicatorMode != IndicatorMode.off;
+  set hud(bool value) => indicatorMode = value ? IndicatorMode.panel : IndicatorMode.off;
 
   /// Дальше — своё распознавание, не общее с очередью: диктуют не то же,
   /// что расшифровывают, и общие значения устраивали бы разом обе стороны
@@ -1022,7 +1029,7 @@ class DictationSettings {
         cancel: Hotkey.fromJson(j['cancel'], Hotkey.none),
         idleSeconds: (j['idleSeconds'] as int?) ?? 180,
         insert: (j['insert'] as bool?) ?? true,
-        hud: (j['hud'] as bool?) ?? true,
+        indicatorMode: IndicatorMode.fromValue(j['indicatorMode'], legacyHud: (j['hud'] as bool?) ?? true),
         punctuate: (j['punctuate'] as bool?) ?? true,
         threads: (j['threads'] as int?) ?? 4,
         wakeWordEnabled: (j['wakeWordEnabled'] as bool?) ?? false,
@@ -1054,6 +1061,7 @@ class DictationSettings {
         'idleSeconds': idleSeconds,
         'insert': insert,
         'hud': hud,
+        'indicatorMode': indicatorMode.name,
         'punctuate': punctuate,
         'threads': threads,
         'wakeWordEnabled': wakeWordEnabled,

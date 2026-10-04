@@ -94,6 +94,8 @@ class NativeBridge {
   /// тот, что её рисует. На macOS панель нарисована на SwiftUI, и этот
   /// поток там пуст: состояние ей передаёт родная сторона напрямую.
   final _hudStates = StreamController<HudState>.broadcast();
+  final _hudModes = StreamController<String>.broadcast();
+  Stream<String> get hudModes => _hudModes.stream;
   final _hudLayout = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get hudLayout => _hudLayout.stream;
   Future<Map<String, dynamic>> currentHudLayout() async =>
@@ -149,6 +151,8 @@ class NativeBridge {
         _hidden.add(null);
       case 'hud':
         _hudActions.add(call.arguments as String);
+      case 'hudMode':
+        _hudModes.add(call.arguments as String);
       case 'hudLayout':
         _hudLayout.add((call.arguments as Map).cast<String, dynamic>());
       case 'hudQueue':
@@ -220,10 +224,16 @@ class NativeBridge {
   Future<void> hudAction(String action) =>
       _channel.invokeMethod('hudAction', action);
 
-  Future<void> hud(HudState state, {int pending = 0, bool processing = false}) {
+  Future<void> hud(
+    HudState state, {
+    int pending = 0,
+    bool processing = false,
+    IndicatorMode mode = IndicatorMode.panel,
+  }) {
     final l10n = currentL10n();
     return _channel.invokeMethod('hud', {
       'state': state.name,
+      'mode': mode.name,
       'pending': pending,
       'processing': processing,
       'labels': {

@@ -354,6 +354,8 @@ final class DictationBridge: NSObject {
       onAbort: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "abort") },
       onClearQueue: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "clearQueue") },
       onRecord: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "record") })
+    hud.onModeChanged = { [weak self] mode in self?.channel?.invokeMethod("hudMode", arguments: mode) }
+    hud.onStatusChanged = { [weak self] active in self?.panel.setRecordingIndicator(active) }
     hud.levelSource = { [weak self] in self?.currentLevel() ?? 0 }
     return hud
   }()
@@ -558,6 +560,7 @@ final class DictationBridge: NSObject {
       hud.resetPosition()
       reply(nil)
     case "hud":
+      hud.setMode((args?["mode"] as? String) ?? "panel")
       hud.updateQueue(pending: (args?["pending"] as? Int) ?? 0, processing: (args?["processing"] as? Bool) ?? false, labels: (args?["labels"] as? [String: String]) ?? [:])
       switch (args?["state"] as? String) ?? "" {
       case "recording": hud.show()

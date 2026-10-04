@@ -798,10 +798,22 @@
     }
   },
   "hudLayoutTitle": "Dictation island position",
-  "hudLayoutHint": "Drag the meter · snap to the center guides",
+  "hudLayoutHint": "Drag the indicator · it snaps to the screen’s center",
   "hudDrag": "Move island",
   "hudScale": "Scale",
   "hudReset": "Reset",
   "hudSave": "Save",
-  "hudConfigure": "Adjust position and scale"
+  "hudConfigure": "Adjust position and scale",
+  "indicatorTitle": "Recording indicator",
+  "indicatorEditorHint": "Choose a style, position and size in the editor. Changes appear immediately during recording.",
+  "indicatorOpenEditor": "Edit recording indicator",
+  "indicatorPanel": "Recording panel",
+  "indicatorStatus": "Menu bar / system tray",
+  "indicatorTimer": "Floating timer",
+  "indicatorOff": "Off",
+  "indicatorStatusHint": "The system controls this icon’s position and size.",
+  "indicatorOffHint": "The indicator is hidden. Recording continues.",
+  "indicatorPreview": "Preview",
+  "indicatorPrevious": "Previous style",
+  "indicatorNext": "Next style"
 }

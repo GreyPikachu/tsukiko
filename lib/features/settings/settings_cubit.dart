@@ -168,6 +168,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         idleSeconds: _dictation.idleSeconds,
         insert: _dictation.insert,
         hud: _dictation.hud,
+        indicatorMode: _dictation.indicatorMode,
         wakeWordEnabled: _dictation.wakeWordEnabled,
         wakeWord: _dictation.wakeWord,
         closeWord: _dictation.closeWord,

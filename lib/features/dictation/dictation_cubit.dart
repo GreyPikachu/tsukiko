@@ -62,6 +62,13 @@ class DictationCubit extends Cubit<DictationState> {
         _ => stop(),
       },
     );
+    bridge.hudModes.listen((value) {
+      final settings = DictationSettings.load();
+      settings.indicatorMode = IndicatorMode.fromValue(value);
+      settings.save();
+      unawaited(bridge.settingsChanged());
+      unawaited(_reloadSettings());
+    });
     bridge.panelShown.listen((_) => _onPanelShown());
     bridge.panelHidden.listen((_) => _onPanelHidden());
     // Очередь спрашивает, можно ли забрать модель. Отвечаем мы: диктовка
@@ -230,15 +237,14 @@ class DictationCubit extends Cubit<DictationState> {
 
   Future<void> _showActivity([HudState fallback = HudState.hidden]) =>
       bridge.hud(
-        !_settings.hud
-            ? HudState.hidden
-            : state.recording
+        state.recording
             ? HudState.recording
             : _active != null || _pending.isNotEmpty
             ? HudState.transcribing
             : fallback,
         pending: _pending.length,
         processing: _active != null,
+        mode: _settings.indicatorMode,
       );
 
   /// Идущий подбор сирот и идущий подъём сервера под нынешнюю запись.
@@ -341,7 +347,7 @@ class DictationCubit extends Cubit<DictationState> {
     if (freed > 0) _emit(state.copyWith(sweptMb: freed));
   }
 
-  Future<void> _apply() async {
+  Future<void> _apply({bool rebind = true}) async {
     // Родная сторона гасит сирот на выходе из приложения — признаки
     // «наш сервер» она должна брать у нас, а не держать свою копию.
     await bridge.setServerMarks(ourServerMarks);
@@ -349,11 +355,15 @@ class DictationCubit extends Cubit<DictationState> {
     // спрятал бы его навсегда, а настройка должна переключаться на лету.
     // Значит спрятать его может только Dart, и как можно раньше.
     await bridge.setDockIcon((Settings.load()['dockIcon'] as bool?) ?? true);
-    await bridge.bind(
-      hold: _settings.hold,
-      toggle: _settings.toggle,
-      cancel: _settings.cancel,
-    );
+    // Rebinding resets native key latches. Appearance changes must preserve
+    // a held recording shortcut so its eventual release still stops recording.
+    if (rebind) {
+      await bridge.bind(
+        hold: _settings.hold,
+        toggle: _settings.toggle,
+        cancel: _settings.cancel,
+      );
+    }
     _emit(_withSnapshots(state));
     await _checkPermission();
     if (_settings.wakeWordEnabled && !_calibrating) {
@@ -388,8 +398,13 @@ class DictationCubit extends Cubit<DictationState> {
             (_server.up && _server.model != _options.model))) {
       unawaited(_server.shutdown());
     }
-    await _apply();
-    if (was.hud != _settings.hud) await _showActivity();
+    await _apply(
+      rebind:
+          !was.hold.sameAs(_settings.hold) ||
+          !was.toggle.sameAs(_settings.toggle) ||
+          !was.cancel.sameAs(_settings.cancel),
+    );
+    if (was.indicatorMode != _settings.indicatorMode) await _showActivity();
   }
 
   @visibleForTesting
@@ -821,15 +836,14 @@ class DictationCubit extends Cubit<DictationState> {
       ),
     );
     await bridge.hud(
-      !_settings.hud
-          ? HudState.hidden
-          : state.recording
+      state.recording
           ? HudState.recording
           : _pending.isNotEmpty
           ? HudState.transcribing
           : outcome,
       pending: _pending.length,
       processing: _pending.isNotEmpty,
+      mode: _settings.indicatorMode,
     );
   }
 

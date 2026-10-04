@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <functional>
+#include <chrono>
 #include <memory>
 #include <string>
 #include "hud_placement.h"
@@ -17,9 +18,14 @@
 /// на панели задач.
 class HudWindow {
  public:
-  HudWindow();
+  explicit HudWindow(bool editor = false);
   ~HudWindow();
-  void Configure();
+  void Configure(const flutter::DartProject& base, const std::function<void(flutter::BinaryMessenger*)>& on_ready);
+  void ReleaseEditor();
+  std::function<void()> on_editor_closed;
+  void SetMode(const std::string& mode);
+  const std::string& mode() const { return mode_; }
+  bool floating() const { return mode_ == "panel" || mode_ == "timer"; }
   void FinishEditing(bool save);
   void ResetPosition();
   void SetScale(double scale);
@@ -50,16 +56,28 @@ class HudWindow {
 
   void ShowReady();
   void ResizeAndPosition();
+  void PositionEditor(bool animate);
+  void AnimateTo(HudPoint target, bool animate);
+  void CaptureCenter();
   void SavePlacement();
   HudArea WorkArea() const;
   double DpiScale() const;
   HudPlacement placement_, saved_;
+  bool is_editor_ = false;
+  std::string mode_ = "panel", saved_mode_ = "panel";
+  std::unique_ptr<HudWindow> editor_;
+  int editor_corner_ = 0;
+  HudPoint motion_start_{}, motion_target_{};
+  std::chrono::steady_clock::time_point motion_started_;
+  bool moving_ = false;
   bool editing_ = false;
   bool dragging_ = false;
   bool visible_before_editing_ = false;
   HudPoint drag_origin_{};
   POINT drag_pointer_{};
   HWND previous_focus_ = nullptr;
+  HWND above_window_ = nullptr;
+  std::function<void()> on_close_;
   HMONITOR monitor_ = nullptr;
   HWND guides_ = nullptr;
 
