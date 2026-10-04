@@ -309,14 +309,41 @@ class _KeysState extends State<_Keys> {
     final grey = Type.caption.copyWith(color: Surface.secondaryText(context));
     Widget row(String keys, String what) => Padding(
       padding: const EdgeInsets.only(bottom: Gap.hint),
-      // Подпись слева, плашка справа — ровно как в настройках, где
-      // эти же сочетания и назначают.
-      child: Row(
-        children: [
-          Expanded(child: Text(what, maxLines: 2, style: grey)),
-          const SizedBox(width: Gap.inner),
-          KeyCap(keys, lit: _hover),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final painter = TextPainter(
+            text: TextSpan(
+              text: keys,
+              style: DefaultTextStyle.of(context).style.merge(Type.control),
+            ),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+          )..layout();
+          final keyWidth = painter.width + Gap.inner * 2;
+          painter.dispose();
+          // Long Windows shortcuts need their own line rather than squeezing
+          // the description to zero width or overflowing the popover.
+          if (keyWidth + Gap.inner > constraints.maxWidth * 0.65) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(what, maxLines: 2, style: grey),
+                const SizedBox(height: Gap.hint),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: KeyCap(keys, lit: _hover),
+                ),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: Text(what, maxLines: 2, style: grey)),
+              const SizedBox(width: Gap.inner),
+              KeyCap(keys, lit: _hover),
+            ],
+          );
+        },
       ),
     );
 

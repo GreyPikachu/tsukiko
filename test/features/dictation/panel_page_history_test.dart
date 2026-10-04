@@ -13,6 +13,7 @@ import 'package:tsukiko/features/dictation/dictation_state.dart';
 import 'package:tsukiko/features/dictation/panel_page.dart';
 import 'package:tsukiko/l10n/gen/app_localizations.dart';
 import 'package:tsukiko/platform/bridge.dart';
+import 'package:tsukiko/platform/os_windows.dart';
 
 import '../../support/fake_os.dart';
 
@@ -484,6 +485,28 @@ void main() {
         TextAlign.left,
       );
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('длинные сочетания Windows помещаются в узкую панель', (
+    tester,
+  ) async {
+    final win = WindowsOs();
+    await pumpPanel(tester);
+    cubit.overrideState(
+      cubit.state.copyWith(
+        holdLabel: win.shortcutLabel(
+          win.defaultHold.mods,
+          win.defaultHold.keys,
+        ),
+        toggleLabel: win.shortcutLabel(
+          win.defaultToggle.mods,
+          win.defaultToggle.keys.map(Hotkey.keyLabel).toList(),
+        ),
+      ),
+    );
+    await tester.binding.setSurfaceSize(const Size(320, 600));
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 
