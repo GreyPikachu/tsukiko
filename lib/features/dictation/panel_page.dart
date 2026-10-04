@@ -564,10 +564,12 @@ class _HistoryState extends State<_History> {
     final cubit = context.read<DictationCubit>();
     final latest = history.firstOrNull;
     final older = history.skip(1).toList();
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: Gap.edgeNarrow,
-        vertical: Gap.item,
+    return Container(
+      margin: const EdgeInsets.all(Gap.inner),
+      padding: const EdgeInsets.all(Gap.inner),
+      decoration: BoxDecoration(
+        color: Surface.hover(context),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

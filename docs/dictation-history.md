@@ -20,7 +20,9 @@ with automatic pastes. The copy checkmark appears only after a successful write;
 a failed write shows an error instead. The latest row copies its own transcript,
 including when the clipboard contains an accumulated dictation burst.
 
-History uses the shared typography, spacing and icon sizes, keyboard-accessible
+History appears in one rounded, softly tinted group with a shared left edge for
+headings, transcripts and timestamps. It uses the shared typography, spacing and
+icon sizes, keyboard-accessible
 Cupertino controls, a disclosure with bounded scrolling, and the application's
 spring/reduced-motion settings. The model selector and download/unload buttons
 use the same components as the existing interface. Native panel height follows
