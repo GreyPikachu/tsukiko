@@ -112,8 +112,8 @@ validation before merging a pull request. Only successful builds pushed to `main
 reserve version tags; manual candidate builds do not consume the version.
 
 ```sh
-gh workflow run macos.yml --ref codex/my-branch
-gh workflow run windows.yml --ref codex/my-branch
+gh workflow run macos.yml --ref my-branch
+gh workflow run windows.yml --ref my-branch
 ```
 
 ---
