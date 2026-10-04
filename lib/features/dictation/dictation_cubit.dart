@@ -9,6 +9,7 @@ import '../../platform/bridge.dart';
 import '../../core/logger.dart';
 import '../../core/whisper_server.dart';
 import 'dictation_state.dart';
+import 'dictation_history.dart';
 import '../../core/library.dart';
 import '../../core/models.dart';
 import '../../core/recognition.dart';
@@ -35,13 +36,34 @@ import '../../core/wakeword/keyword_tokenizer.dart' show stripTrailingCloseWord;
 /// Службы (`WhisperServer`, `NativeBridge`, таймеры) — поля этого класса;
 /// наружу уходит только [DictationState], в котором одни значения.
 class DictationCubit extends Cubit<DictationState> {
+  static DictationState _initialState(List<DictationEntry>? initialHistory) {
+    try {
+      final history = initialHistory ?? DictationHistory.load();
+      return DictationState(
+        history: history,
+        last: history.isNotEmpty ? history.first.text : '',
+      );
+    } catch (e, st) {
+      Log.warn(
+        'Dictation',
+        'Не удалось инициализировать историю диктовок: $e',
+        e,
+        st,
+      );
+      return const DictationState();
+    }
+  }
+
   /// [server] подменяют только тесты: настоящий поднимает whisper-server
   /// и читает в память полтора гигабайта, а проверять надо не это.
   DictationCubit(
     this.bridge, {
     WhisperServer? server,
     WakeWordService? wakeWordService,
-  }) : super(const DictationState()) {
+    List<DictationEntry>? initialHistory,
+    Future<void> Function(List<DictationEntry>)? historyWriter,
+  }) : super(_initialState(initialHistory)) {
+    _writeHistory = historyWriter ?? _storeHistory;
     _server =
         server ??
         WhisperServer(idleTimeout: Duration(seconds: _settings.idleSeconds));
@@ -774,7 +796,7 @@ class DictationCubit extends Cubit<DictationState> {
           Log.info('Dictation', 'Dictation transcribed: ${text.length} chars');
           if (text.isNotEmpty) {
             job.delivering = true;
-            _emit(state.copyWith(last: text));
+            _remember(text);
             // «Только в буфер» — для тех, кто вставит сам и туда, куда решит.
             if (!job.insert) {
               await _copyResult(text);
@@ -1002,6 +1024,97 @@ class DictationCubit extends Cubit<DictationState> {
     await bridge.copyText(state.last);
   }
 
+  late final Future<void> Function(List<DictationEntry>) _writeHistory;
+  Future<void>? _historyWrites;
+
+  static Future<void> _storeHistory(List<DictationEntry> history) =>
+      history.isEmpty
+      ? DictationHistory.remove()
+      : DictationHistory.write(history);
+
+  @visibleForTesting
+  Future<void> flushHistoryForTesting() async {
+    await _historyWrites;
+  }
+
+  int _historySequence = 0;
+
+  void _remember(String text) {
+    final now = DateTime.now();
+    final entry = DictationEntry(
+      id: '${now.microsecondsSinceEpoch}-${_historySequence++}',
+      text: text,
+      createdAt: now,
+    );
+    final history = List<DictationEntry>.unmodifiable(
+      [entry, ...state.history].take(DictationHistory.maxEntries),
+    );
+    _emit(state.copyWith(last: text, history: history));
+    unawaited(_persistHistory(history));
+  }
+
+  Future<bool> _persistHistory(List<DictationEntry> history) {
+    final result = Completer<bool>();
+    final previous = _historyWrites;
+    _historyWrites = () async {
+      if (previous != null) await previous;
+      try {
+        await _writeHistory(history);
+        if (!isClosed) _emit(state.copyWith(clearHistoryError: true));
+        result.complete(true);
+      } catch (e, st) {
+        Log.warn('DictationHistory', 'History update failed: $e', e, st);
+        if (!isClosed) {
+          _emit(state.copyWith(historyError: currentL10n().historySaveFailed));
+        }
+        result.complete(false);
+      }
+    }();
+    final writing = _historyWrites;
+    unawaited(
+      writing!.then((_) {
+        if (identical(_historyWrites, writing)) _historyWrites = null;
+      }),
+    );
+    return result.future;
+  }
+
+  /// Copies one transcript, rather than the accumulated clipboard queue.
+  /// NativeBridge serializes this operation with automatic pastes.
+  Future<bool> copyEntry(String id) async {
+    final entry = state.history.where((e) => e.id == id).firstOrNull;
+    if (entry == null || entry.text.trim().isEmpty) return false;
+    try {
+      await bridge.copyText(entry.text);
+      return true;
+    } catch (e, st) {
+      Log.warn('Dictation', 'Could not copy history entry: $e', e, st);
+      return false;
+    }
+  }
+
+  Future<void> clearHistory() => _deleteHistory(null);
+  Future<void> deleteHistoryEntry(String id) => _deleteHistory(id);
+
+  Future<void> _deleteHistory(String? id) async {
+    final previous = state;
+    final updated = List<DictationEntry>.unmodifiable(
+      id == null ? [] : state.history.where((e) => e.id != id),
+    );
+    if (id != null && updated.length == state.history.length) return;
+    _emit(
+      state.copyWith(
+        history: updated,
+        last: updated.isNotEmpty ? updated.first.text : '',
+      ),
+    );
+    final saved = await _persistHistory(updated);
+    // Roll back only if no later dictation or deletion has changed the list.
+    if (!saved && !isClosed && identical(state.history, updated)) {
+      _emit(state.copyWith(history: previous.history, last: previous.last));
+    }
+  }
+
   void unload() {
     if (state.phase == Phase.idle) unawaited(_server.shutdown());
   }
@@ -1093,7 +1206,10 @@ class DictationCubit extends Cubit<DictationState> {
 
   Future<void> openPermissionSettings() => bridge.openPermissionSettings();
 
-  Future<void> quit() => bridge.quit();
+  Future<void> quit() async {
+    await _historyWrites;
+    await bridge.quit();
+  }
 
   @visibleForTesting
   WakeWordService? get wakeWordServiceForTesting => _wakeWordService;
@@ -1103,7 +1219,11 @@ class DictationCubit extends Cubit<DictationState> {
     _ticker?.cancel();
     _meter?.cancel();
     _wakeWordService?.dispose();
-    return super.close();
+    final closed = super.close();
+    final writing = _historyWrites;
+    return writing == null
+        ? closed
+        : Future.wait([closed, writing]).then((_) {});
   }
 }
 

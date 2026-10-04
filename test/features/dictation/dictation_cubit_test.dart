@@ -10,6 +10,7 @@ import 'package:tsukiko/core/text_commands.dart';
 import 'package:tsukiko/core/whisper_server.dart';
 import 'package:tsukiko/features/dictation/dictation_cubit.dart';
 import 'package:tsukiko/features/dictation/dictation_state.dart';
+import 'package:tsukiko/features/dictation/dictation_history.dart';
 import 'package:tsukiko/core/whisper.dart';
 
 import '../../support/fake_os.dart';
@@ -329,6 +330,13 @@ void main() {
         expect(cubit.state.phase, Phase.idle);
         expect(cubit.state.pendingCount, 0);
         expect(server.holds, 0);
+        await cubit.flushHistoryForTesting();
+        expect(
+          cubit.state.history.map((e) => e.text).toList(),
+          native.pastes.reversed.toList(),
+        );
+        expect(DictationHistory.load(), cubit.state.history);
+        expect(cubit.state.history.map((e) => e.id).toSet().length, count);
       });
     }
 
@@ -483,6 +491,10 @@ void main() {
       server.gate = null;
       await Future.wait([first, next]);
       expect(cubit.state.last, 'first\nсказанное вслух');
+      expect(cubit.state.history.map((e) => e.text), [
+        'сказанное вслух',
+        'first',
+      ]);
       expect(native.pastes, isEmpty);
     });
 
@@ -502,6 +514,163 @@ void main() {
       expect(cubit.state.phase, Phase.idle);
       expect(server.holds, 0);
     });
+  });
+
+  group('история и очередь', () {
+    test('начальная история восстанавливает последний текст', () async {
+      await cubit.close();
+      final entry = DictationEntry(
+        id: 'saved',
+        text: 'Сохранённая фраза',
+        createdAt: DateTime(2026, 10, 4),
+      );
+      DictationHistory.save([entry]);
+      NativeBridge.debugReset();
+      cubit = DictationCubit(NativeBridge(), server: server);
+      expect(cubit.state.last, entry.text);
+      expect(cubit.state.history, [entry]);
+      await settle();
+    });
+
+    test(
+      'сохранение сериализовано и не задерживает следующие расшифровки',
+      () async {
+        await cubit.close();
+        final gate = Completer<void>();
+        final snapshots = <List<DictationEntry>>[];
+        NativeBridge.debugReset();
+        cubit = DictationCubit(
+          NativeBridge(),
+          server: server,
+          historyWriter: (entries) async {
+            snapshots.add(entries);
+            if (snapshots.length == 1) await gate.future;
+          },
+        );
+        await cubit.start();
+        await cubit.stop();
+        await cubit.start();
+        await cubit.stop();
+        expect(cubit.state.history.length, 2);
+        expect(server.paths.length, 2);
+        expect(snapshots.length, 1);
+        gate.complete();
+        await cubit.flushHistoryForTesting();
+        expect(snapshots.map((s) => s.length), [1, 2]);
+      },
+    );
+    test('выход из панели ждёт последнее сохранение истории', () async {
+      await cubit.close();
+      final gate = Completer<void>();
+      NativeBridge.debugReset();
+      cubit = DictationCubit(
+        NativeBridge(),
+        server: server,
+        historyWriter: (_) => gate.future,
+      );
+      await cubit.start();
+      await cubit.stop();
+      final quitting = cubit.quit();
+      await settle();
+      expect(native.calls, isNot(contains('quit')));
+      gate.complete();
+      await quitting;
+      expect(native.calls, contains('quit'));
+    });
+    test('отмена и тишина не создают записей истории', () async {
+      await cubit.start();
+      await cubit.cancel();
+      expect(cubit.state.history, isEmpty);
+      server.text = '';
+      await cubit.start();
+      await cubit.stop();
+      expect(cubit.state.history, isEmpty);
+    });
+    test(
+      'очистка во время распознавания сохраняет следующий результат',
+      () async {
+        await cubit.start();
+        await cubit.stop();
+        expect(cubit.state.history.length, 1);
+        server.gate = Completer<String?>();
+        await cubit.start();
+        final result = cubit.stop();
+        await settle();
+        await cubit.clearHistory();
+        expect(cubit.state.history, isEmpty);
+        expect(cubit.state.processing, isTrue);
+        server.gate!.complete('После очистки');
+        await result;
+        await cubit.flushHistoryForTesting();
+        expect(DictationHistory.load().map((e) => e.text), ['После очистки']);
+      },
+    );
+    test('ошибка сохранения не блокирует доставку и распознавание', () async {
+      await cubit.close();
+      NativeBridge.debugReset();
+      cubit = DictationCubit(
+        NativeBridge(),
+        server: server,
+        historyWriter: (_) async =>
+            throw FileSystemException('disk unavailable'),
+      );
+      await cubit.start();
+      await cubit.stop();
+      await cubit.flushHistoryForTesting();
+      expect(native.pastes.length, 1);
+      expect(cubit.state.history.length, 1);
+      expect(cubit.state.historyError, isNotNull);
+      expect(cubit.state.phase, Phase.idle);
+    });
+    test('неудачная очистка возвращает записи в панель', () async {
+      await cubit.close();
+      final entry = DictationEntry(
+        id: 'saved',
+        text: 'Текст',
+        createdAt: DateTime(2026, 10, 4),
+      );
+      NativeBridge.debugReset();
+      cubit = DictationCubit(
+        NativeBridge(),
+        server: server,
+        initialHistory: [entry],
+        historyWriter: (_) async =>
+            throw FileSystemException('disk unavailable'),
+      );
+      await cubit.clearHistory();
+      expect(cubit.state.history, [entry]);
+      expect(cubit.state.historyError, isNotNull);
+    });
+    test(
+      'история копируется после защищённой автоматической вставки',
+      () async {
+        await cubit.start();
+        await cubit.stop();
+        String? copied;
+        binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method == 'Clipboard.setData') {
+              copied = (call.arguments as Map)['text'] as String;
+            }
+            return null;
+          },
+        );
+        try {
+          final result = cubit.copyEntry(cubit.state.history.first.id);
+          await settle();
+          expect(copied, isNull);
+          expect(await result, isTrue);
+          expect(copied, cubit.state.history.first.text);
+          expect(await cubit.copyEntry('missing'), isFalse);
+        } finally {
+          binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          );
+        }
+      },
+    );
   });
 
   group('разрешения', () {

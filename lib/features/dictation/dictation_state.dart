@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'dictation_history.dart';
 
 /// Что делает диктовка прямо сейчас.
 enum Phase { idle, recording, transcribing }
@@ -23,6 +24,8 @@ class DictationState extends Equatable {
     this.holdLabel = '',
     this.toggleLabel = '',
     this.last = '',
+    this.history = const [],
+    this.historyError,
     this.level = 0,
     this.elapsed = Duration.zero,
     this.allowed = true,
@@ -49,6 +52,9 @@ class DictationState extends Equatable {
 
   /// Последняя расшифровка — то, что можно скопировать ещё раз.
   final String last;
+
+  final List<DictationEntry> history;
+  final String? historyError;
 
   /// Уровень сигнала 0…1 и время с начала записи.
   final double level;
@@ -98,6 +104,8 @@ class DictationState extends Equatable {
     String? holdLabel,
     String? toggleLabel,
     String? last,
+    List<DictationEntry>? history,
+    String? historyError,
     double? level,
     Duration? elapsed,
     bool? allowed,
@@ -118,6 +126,8 @@ class DictationState extends Equatable {
     bool clearFailurePath = false,
     bool clearVad = false,
     bool clearUnload = false,
+    bool clearHistory = false,
+    bool clearHistoryError = false,
   }) => DictationState(
     phase: phase ?? this.phase,
     pendingCount: pendingCount ?? this.pendingCount,
@@ -125,7 +135,11 @@ class DictationState extends Equatable {
     enabled: enabled ?? this.enabled,
     holdLabel: holdLabel ?? this.holdLabel,
     toggleLabel: toggleLabel ?? this.toggleLabel,
-    last: last ?? this.last,
+    last: clearHistory ? '' : (last ?? this.last),
+    history: clearHistory ? const [] : (history ?? this.history),
+    historyError: clearHistoryError
+        ? null
+        : (historyError ?? this.historyError),
     level: level ?? this.level,
     elapsed: elapsed ?? this.elapsed,
     allowed: allowed ?? this.allowed,
@@ -153,6 +167,8 @@ class DictationState extends Equatable {
     holdLabel,
     toggleLabel,
     last,
+    history,
+    historyError,
     level,
     elapsed,
     allowed,

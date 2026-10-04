@@ -68,15 +68,18 @@ jobs:
     name: Сборка дистрибутива (EXE и Setup)
     needs: check
     if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      !contains(github.event.head_commit.message, '[skip-windows]') &&
-      !contains(github.event.head_commit.message, '[build-macos]') &&
+      github.event_name == 'workflow_dispatch' ||
       (
-        contains(github.event.head_commit.message, '[build]') ||
-        contains(github.event.head_commit.message, '[build-windows]') ||
-        contains(github.event.head_commit.message, '[build-win]') ||
-        contains(github.event.head_commit.message, '[windows]') ||
-        contains(github.event.head_commit.message, '[release]')
+        github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+        !contains(github.event.head_commit.message, '[skip-windows]') &&
+        !contains(github.event.head_commit.message, '[build-macos]') &&
+        (
+          contains(github.event.head_commit.message, '[build]') ||
+          contains(github.event.head_commit.message, '[build-windows]') ||
+          contains(github.event.head_commit.message, '[build-win]') ||
+          contains(github.event.head_commit.message, '[windows]') ||
+          contains(github.event.head_commit.message, '[release]')
+        )
       )
     runs-on: windows-2025
     permissions:
@@ -215,6 +218,7 @@ jobs:
           if-no-files-found: error
 
       - name: Зарезервировать выпущенную версию Windows
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           $tag = python tool/version.py tag --platform windows
           git tag $tag
