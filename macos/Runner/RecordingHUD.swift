@@ -5,7 +5,6 @@ enum HUDState: String { case hidden, recording, transcribing, done, failed, copi
 enum IndicatorStyle: String, CaseIterable {
   case panel, status, timer, off
   var floating: Bool { self == .panel || self == .timer }
-  var size: NSSize { self == .timer ? NSSize(width: 148, height: 44) : NSSize(width: 420, height: 52) }
 }
 
 final class HUDModel: ObservableObject {
@@ -15,6 +14,8 @@ final class HUDModel: ObservableObject {
   @Published var editing = false
   @Published var scale: Double = 1
   @Published var mode: IndicatorStyle = .panel
+  var queueCount: Int { editing ? max(2, pending + (processing ? 1 : 0)) : pending + (processing ? 1 : 0) }
+  var size: NSSize { mode == .timer ? NSSize(width: 148, height: 44) : NSSize(width: queueCount > 0 ? 420 : 372, height: 52) }
   @Published var elapsed: TimeInterval = 0
   @Published var levels: [Double] = Array(repeating: 0, count: 22)
   var labels: [String: String] = [:]
@@ -36,7 +37,7 @@ struct HUDView: View {
   @ObservedObject var model: HUDModel
   private var preview: Bool { model.editing && model.state != .recording }
   private var displayState: HUDState { model.editing ? .recording : model.state }
-  private var count: Int { model.editing ? max(2, model.pending + (model.processing ? 1 : 0)) : model.pending + (model.processing ? 1 : 0) }
+  private var count: Int { model.queueCount }
   private var time: String {
     let seconds = preview ? 3 : Int(model.elapsed)
     return String(format: "%d:%02d", seconds / 60, seconds % 60)
@@ -108,13 +109,13 @@ struct HUDView: View {
         }.padding(.horizontal, 16)
       }
     }
-    .frame(width: model.mode.size.width, height: model.mode.size.height)
+    .frame(width: model.size.width, height: model.size.height)
     .contentShape(Rectangle())
     .highPriorityGesture(DragGesture(minimumDistance: 4, coordinateSpace: .global)
       .onChanged { model.onMove($0.translation, false) }
       .onEnded { model.onMove($0.translation, true) })
     .scaleEffect(model.scale)
-    .frame(width: model.mode.size.width * model.scale, height: model.mode.size.height * model.scale)
+    .frame(width: model.size.width * model.scale, height: model.size.height * model.scale)
   }
   private var resultIcon: String {
     switch displayState {
@@ -241,7 +242,7 @@ final class RecordingHUD {
   var isVisible: Bool { panel?.isVisible == true }
   var previewFrame: NSRect { NSRect(origin: restingOrigin, size: size) }
   var editorFrame: NSRect? { editor?.frame }
-  private var size: NSSize { NSSize(width: model.mode.size.width * model.scale, height: model.mode.size.height * model.scale) }
+  private var size: NSSize { NSSize(width: model.size.width * model.scale, height: model.size.height * model.scale) }
   private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
   init(onCancel: @escaping () -> Void, onStop: @escaping () -> Void,
@@ -341,7 +342,7 @@ final class RecordingHUD {
     if let mode = labels["mode"] { setMode(mode) }
     model.labels.merge(labels) { _, new in new }
     savedPlacement = placement; savedMode = model.mode; layoutScreen = currentScreen
-    model.editing = true
+    captureCenter(); model.editing = true
     let overlay = NSPanel(contentRect: workArea, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     overlay.level = .floating; overlay.isOpaque = false; overlay.backgroundColor = .clear; overlay.ignoresMouseEvents = true
     overlay.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
@@ -375,6 +376,7 @@ final class RecordingHUD {
   }
   func finishEditing(save: Bool) {
     guard model.editing else { return }
+    if save { captureCenter() }
     model.editing = false
     if !save {
       placement = savedPlacement; model.scale = placement.scale; model.mode = savedMode
@@ -401,7 +403,16 @@ final class RecordingHUD {
     } else { editor.setFrameOrigin(target.origin) }
   }
   func updateQueue(pending: Int, processing: Bool, labels: [String: String] = [:]) {
+    let before = size, origin = restingOrigin
+    let hasQueue = model.editing || pending > 0 || processing
+    if model.mode == .panel && (model.queueCount > 0) != hasQueue { captureCenter() }
     model.labels.merge(labels) { _, new in new }; model.pending = max(0, pending); model.processing = processing
+    if size != before {
+      if let start = dragOrigin {
+        dragOrigin = NSPoint(x: start.x + restingOrigin.x - origin.x, y: start.y + restingOrigin.y - origin.y)
+      }
+      if panel != nil { resize() }
+    }
   }
   func show() { setState(.recording) }
   func transcribing() { setState(.transcribing) }

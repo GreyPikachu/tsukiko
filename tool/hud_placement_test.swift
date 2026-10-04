@@ -62,8 +62,18 @@ struct HUDPlacementTests {
       RecordingHUD(onCancel: {}, onStop: {}, onAbort: {}, onClearQueue: {}, onRecord: {}, defaults: defaults)
     }
     let hud = makeHUD()
+    assert(hud.previewFrame.width == 372)
+    let idleCenter = NSPoint(x: hud.previewFrame.midX, y: hud.previewFrame.midY)
+    hud.updateQueue(pending: 9, processing: true)
+    assert(hud.previewFrame.width == 420)
+    assert(near(hud.previewFrame.midX, idleCenter.x) && near(hud.previewFrame.midY, idleCenter.y))
+    hud.updateQueue(pending: 0, processing: false)
+    assert(hud.previewFrame.width == 372)
+    hud.updateQueue(pending: 0, processing: true)
+    assert(hud.previewFrame.width == 420)
+    hud.updateQueue(pending: 0, processing: false)
     hud.configure(labels: [:])
-    assert(hud.isEditing && hud.isVisible)
+    assert(hud.isEditing && hud.isVisible && hud.previewFrame.width == 420)
     hud.setScale(1.4)
     hud.finishEditing(save: false)
     assert(!hud.isEditing && !hud.isVisible && hud.currentPlacement.scale == 1)
@@ -96,6 +106,7 @@ struct HUDPlacementTests {
     hud.hide()
     hud.show()
     RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+    assert(hud.previewFrame.width == 372)
     assert(hud.isVisible, "A stale hide animation must not hide the next recording")
     var statusActive = false
     var changedMode = ""
@@ -111,6 +122,14 @@ struct HUDPlacementTests {
     assert(!hud.isVisible && !statusActive)
     hud.setMode("panel")
     assert(hud.isVisible && !statusActive)
+    if let path = ProcessInfo.processInfo.environment["TSUKIKO_HUD_EMPTY"],
+       let view = NSApp.windows.first(where: { $0.isVisible && near($0.frame.width, 372) })?.contentView {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+      if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        try! bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
+      }
+    }
     hud.configure(labels: [:])
     let original = hud.currentPlacement
     hud.cycleMode(-1); assert(hud.currentMode == "off")

@@ -25,7 +25,7 @@ constexpr int kWidth = 340;
 
 constexpr wchar_t kHudClassName[] = L"TsukikoHudWindow";
 // Те же размеры, что у панели на macOS.
-constexpr int kHudWidth = 420;
+constexpr int kHudWidth = 372;
 constexpr int kHudHeight = 52;
 
 constexpr wchar_t kSettingsClassName[] = L"TsukikoSettingsWindow";
@@ -341,9 +341,26 @@ HudArea HudWindow::WorkArea() const {
 
 void HudWindow::CaptureCenter() {
   double factor = DpiScale() * placement_.scale;
-  double width = (mode_ == "timer" ? 148 : kHudWidth) * factor;
+  double width = (mode_ == "timer" ? 148 : HudPanelWidth(queued_, editing_)) * factor;
   double height = (mode_ == "timer" ? 44 : kHudHeight) * factor;
   placement_.Capture(placement_.Origin(WorkArea(), width, height, 92 * DpiScale()), WorkArea(), width, height);
+}
+
+void HudWindow::SetQueue(bool queued) {
+  if (queued_ == queued) return;
+  const bool resizing = mode_ == "panel" && !editing_;
+  const double old_width = HudPanelWidth(queued_, editing_) * DpiScale() * placement_.scale;
+  const auto old_origin = placement_.Origin(WorkArea(), old_width, kHudHeight * DpiScale() * placement_.scale, 92 * DpiScale());
+  if (resizing) CaptureCenter();
+  queued_ = queued;
+  if (resizing) {
+    if (dragging_) {
+      const double new_width = HudPanelWidth(queued_, editing_) * DpiScale() * placement_.scale;
+      const auto origin = placement_.Origin(WorkArea(), new_width, kHudHeight * DpiScale() * placement_.scale, 92 * DpiScale());
+      drag_origin_.x += origin.x - old_origin.x;
+    }
+    ResizeAndPosition();
+  }
 }
 
 void HudWindow::SetMode(const std::string& value) {
@@ -360,7 +377,7 @@ void HudWindow::SetMode(const std::string& value) {
 void HudWindow::ResizeAndPosition() {
   if (!window_) return;
   const double dpi = DpiScale();
-  int width = static_cast<int>((is_editor_ ? 360 : mode_ == "timer" ? 148 : kHudWidth) * (is_editor_ ? 1 : placement_.scale) * dpi);
+  int width = static_cast<int>((is_editor_ ? 360 : mode_ == "timer" ? 148 : HudPanelWidth(queued_, editing_)) * (is_editor_ ? 1 : placement_.scale) * dpi);
   int height = static_cast<int>((is_editor_ ? 228 : mode_ == "timer" ? 44 : kHudHeight) * (is_editor_ ? 1 : placement_.scale) * dpi);
   auto point = placement_.Origin(WorkArea(), width, height, 92 * dpi);
   if (is_editor_) {
@@ -418,7 +435,7 @@ void HudWindow::ShowReady() {
 
 void HudWindow::Configure(const flutter::DartProject& base, const std::function<void(flutter::BinaryMessenger*)>& on_ready) {
   if (!window_ || editing_) return;
-  saved_ = placement_; saved_mode_ = mode_; editing_ = true;
+  saved_ = placement_; saved_mode_ = mode_; CaptureCenter(); editing_ = true;
   POINT pointer; GetCursorPos(&pointer); monitor_ = MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST);
   WNDCLASSW wc = {}; wc.lpfnWndProc = GuidesProc;
   wc.hInstance = GetModuleHandle(nullptr); wc.lpszClassName = L"TsukikoHUDGuides";
@@ -445,7 +462,7 @@ void HudWindow::Configure(const flutter::DartProject& base, const std::function<
 
 void HudWindow::FinishEditing(bool save) {
   if (!editing_) return;
-  if (save) SavePlacement(); else { placement_ = saved_; mode_ = saved_mode_; }
+  if (save) { CaptureCenter(); SavePlacement(); } else { placement_ = saved_; mode_ = saved_mode_; }
   dragging_ = false; editing_ = false;
   if (editor_) editor_->Hide();
   if (previous_focus_ && IsWindow(previous_focus_)) SetForegroundWindow(previous_focus_);

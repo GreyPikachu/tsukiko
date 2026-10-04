@@ -8,6 +8,10 @@
 
 bool near(double a, double b) { return std::abs(a - b) < .000001; }
 int main() {
+  assert(HudPanelWidth(false, false) == 372);
+  assert(HudPanelWidth(true, false) == 420);
+  assert(HudPanelWidth(false, true) == 420);
+  assert(HudPanelWidth(true, true) == 420);
   HudPlacement layout;
   const HudArea work{-1920, -200, 1920, 1080};
   auto point = layout.Origin(work, 372, 52);

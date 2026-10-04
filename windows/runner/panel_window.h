@@ -23,6 +23,7 @@ class HudWindow {
   void Configure(const flutter::DartProject& base, const std::function<void(flutter::BinaryMessenger*)>& on_ready);
   void ReleaseEditor();
   std::function<void()> on_editor_closed;
+  void SetQueue(bool queued);
   void SetMode(const std::string& mode);
   const std::string& mode() const { return mode_; }
   bool floating() const { return mode_ == "panel" || mode_ == "timer"; }
@@ -71,6 +72,7 @@ class HudWindow {
   std::chrono::steady_clock::time_point motion_started_;
   bool moving_ = false;
   bool editing_ = false;
+  bool queued_ = false;
   bool dragging_ = false;
   bool visible_before_editing_ = false;
   HudPoint drag_origin_{};

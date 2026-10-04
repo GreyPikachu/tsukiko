@@ -591,6 +591,7 @@ void DictationBridge::RegisterHandler(
         if (hud_channel_) hud_channel_->InvokeMethod("hudQueue",
             std::make_unique<flutter::EncodableValue>(hud_queue_));
         PrewarmHud();
+        if (hud_) hud_->SetQueue(IntArgument(hud_queue_, "pending") > 0 || BoolArgument(hud_queue_, "processing"));
         auto mode = args->find(flutter::EncodableValue("mode"));
         if (hud_ && mode != args->end()) if (const auto* value = std::get_if<std::string>(&mode->second)) hud_->SetMode(*value);
         SendHudLayout();

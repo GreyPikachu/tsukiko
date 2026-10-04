@@ -2,6 +2,9 @@
 #include <algorithm>
 #include <cmath>
 
+// The queue badge takes space only while present; editor previews include it.
+inline int HudPanelWidth(bool queued, bool editing) { return queued || editing ? 420 : 372; }
+
 // Work-area fractions, measured from the top left; independent of DPI.
 struct HudArea { double left, top, width, height; };
 struct HudPoint { double x, y; };
