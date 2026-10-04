@@ -50,6 +50,20 @@ void main() {
       Future<void>.delayed(const Duration(milliseconds: 20));
 
   group('запись', () {
+    test('видимость применяется к текущей записи сразу', () async {
+      await cubit.start();
+      final settings = DictationSettings.load();
+      settings.hud = false;
+      settings.save();
+      await cubit.reloadSettingsForTesting();
+      expect(native.hudStates.last, 'hidden');
+      expect(cubit.state.recording, isTrue);
+      settings.hud = true;
+      settings.save();
+      await cubit.reloadSettingsForTesting();
+      expect(native.hudStates.last, 'recording');
+      expect(native.calls.where((call) => call == 'record').length, 1);
+    });
     test('старая команда не перегружает модель подсказкой', () async {
       await Settings.save({
         textCommandsSetting: [

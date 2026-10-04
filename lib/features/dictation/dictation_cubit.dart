@@ -389,6 +389,7 @@ class DictationCubit extends Cubit<DictationState> {
       unawaited(_server.shutdown());
     }
     await _apply();
+    if (was.hud != _settings.hud) await _showActivity();
   }
 
   @visibleForTesting
