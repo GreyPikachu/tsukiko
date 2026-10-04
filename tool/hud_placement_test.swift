@@ -4,6 +4,21 @@ import Cocoa
 struct HUDPlacementTests {
   static func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 0.000001 }
   static func main() {
+    let model = HUDModel()
+    model.state = .transcribing; model.processing = true
+    assert(model.queueCount == 0 && model.size.width == 372)
+    model.pending = 1
+    assert(model.queueCount == 1 && model.size.width == 420)
+    model.state = .recording
+    assert(model.queueCount == 2)
+    model.pending = 0
+    assert(model.queueCount == 1)
+    model.processing = false
+    assert(model.queueCount == 0 && model.size.width == 372)
+    model.pending = 1; model.state = .transcribing
+    assert(model.queueCount == 0)
+    model.pending = 9; model.processing = true
+    assert(model.queueCount == 9)
     var layout = HUDPlacement()
     let work = NSRect(x: -1920, y: -200, width: 1920, height: 1080)
     let size = NSSize(width: 372, height: 52)
@@ -70,8 +85,22 @@ struct HUDPlacementTests {
     hud.updateQueue(pending: 0, processing: false)
     assert(hud.previewFrame.width == 372)
     hud.updateQueue(pending: 0, processing: true)
+    assert(hud.previewFrame.width == 372)
+    hud.transcribing()
+    let singleCenter = NSPoint(x: hud.previewFrame.midX, y: hud.previewFrame.midY)
+    hud.show() // A second recording has one dictation ahead of it.
     assert(hud.previewFrame.width == 420)
+    assert(near(hud.previewFrame.midX, singleCenter.x) && near(hud.previewFrame.midY, singleCenter.y))
+    hud.transcribing()
+    assert(hud.previewFrame.width == 372)
+    assert(near(hud.previewFrame.midX, singleCenter.x) && near(hud.previewFrame.midY, singleCenter.y))
+    hud.updateQueue(pending: 1, processing: true)
+    assert(hud.previewFrame.width == 420)
+    hud.updateQueue(pending: 0, processing: true)
+    assert(hud.previewFrame.width == 372)
+    assert(near(hud.previewFrame.midX, singleCenter.x) && near(hud.previewFrame.midY, singleCenter.y))
     hud.updateQueue(pending: 0, processing: false)
+    hud.hide()
     hud.configure(labels: [:])
     assert(hud.isEditing && hud.isVisible && hud.previewFrame.width == 420)
     hud.setScale(1.4)

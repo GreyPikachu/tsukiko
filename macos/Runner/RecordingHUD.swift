@@ -14,7 +14,11 @@ final class HUDModel: ObservableObject {
   @Published var editing = false
   @Published var scale: Double = 1
   @Published var mode: IndicatorStyle = .panel
-  var queueCount: Int { editing ? max(2, pending + (processing ? 1 : 0)) : pending + (processing ? 1 : 0) }
+  var queueCount: Int {
+    let outstanding = max(0, pending) + (processing ? 1 : 0)
+    if editing { return max(2, outstanding) }
+    return max(0, outstanding - (state == .recording ? 0 : 1))
+  }
   var size: NSSize { mode == .timer ? NSSize(width: 148, height: 44) : NSSize(width: queueCount > 0 ? 420 : 372, height: 52) }
   @Published var elapsed: TimeInterval = 0
   @Published var levels: [Double] = Array(repeating: 0, count: 22)
@@ -404,14 +408,16 @@ final class RecordingHUD {
   }
   func updateQueue(pending: Int, processing: Bool, labels: [String: String] = [:]) {
     let before = size, origin = restingOrigin
-    let hasQueue = model.editing || pending > 0 || processing
-    if model.mode == .panel && (model.queueCount > 0) != hasQueue { captureCenter() }
     model.labels.merge(labels) { _, new in new }; model.pending = max(0, pending); model.processing = processing
+    preserveCenter(from: before, origin: origin)
+    if size != before && panel != nil { resize() }
+  }
+  private func preserveCenter(from before: NSSize, origin: NSPoint) {
     if size != before {
+      placement.capture(origin: origin, in: workArea, size: before)
       if let start = dragOrigin {
         dragOrigin = NSPoint(x: start.x + restingOrigin.x - origin.x, y: start.y + restingOrigin.y - origin.y)
       }
-      if panel != nil { resize() }
     }
   }
   func show() { setState(.recording) }
@@ -423,6 +429,7 @@ final class RecordingHUD {
   func silent() { linger(.silent, seconds: 1.8) }
   func hide() { setState(.hidden) }
   private func setState(_ next: HUDState) {
+    let before = size, origin = restingOrigin
     hideAfterDone?.invalidate(); hideAfterDone = nil
     if next != model.state {
       if next == .recording {
@@ -430,6 +437,7 @@ final class RecordingHUD {
       } else { ticker?.invalidate(); ticker = nil }
       model.state = next
     }
+    preserveCenter(from: before, origin: origin)
     if next == .recording && ticker == nil {
       let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
         guard let self else { return }

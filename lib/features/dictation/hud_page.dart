@@ -219,7 +219,8 @@ class _HudViewState extends State<HudView> {
     return '${total ~/ 60}:${(total % 60).toString().padLeft(2, '0')}';
   }
 
-  int get _queueCount => _editing ? 2 : _pending + (_processing ? 1 : 0);
+  int get _queueCount =>
+      _editing ? 2 : hudBacklogCount(_state, _pending, _processing);
 
   void _action(String action) {
     if (!_editing) _bridge.hudAction(action);

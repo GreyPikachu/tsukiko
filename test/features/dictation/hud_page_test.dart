@@ -75,6 +75,91 @@ void main() {
     await tester.pump();
   }
 
+  Future<void> queue(
+    WidgetTester tester, {
+    required int pending,
+    required bool processing,
+  }) async {
+    await binding.defaultBinaryMessenger.handlePlatformMessage(
+      'tsukiko/dictation',
+      const StandardMethodCodec().encodeMethodCall(
+        MethodCall('hudQueue', {'pending': pending, 'processing': processing}),
+      ),
+      (_) {},
+    );
+    await tester.pump();
+  }
+
+  testWidgets(
+    'единственная расшифровка не показывает очередь и не меняет отступы',
+    (tester) async {
+      await show(tester);
+      await send(tester, HudState.transcribing);
+      final label = tester.getRect(find.text('Распознаю…'));
+      final abort = tester.getRect(icon(CupertinoIcons.xmark));
+      await queue(tester, pending: 0, processing: true);
+      expect(icon(CupertinoIcons.list_bullet), findsNothing);
+      expect(tester.getRect(find.text('Распознаю…')), label);
+      expect(tester.getRect(icon(CupertinoIcons.xmark)), abort);
+
+      await queue(tester, pending: 1, processing: true);
+      expect(find.text('1'), findsOneWidget);
+      await queue(tester, pending: 0, processing: true);
+      expect(icon(CupertinoIcons.list_bullet), findsNothing);
+      expect(tester.getRect(find.text('Распознаю…')), label);
+      expect(tester.getRect(icon(CupertinoIcons.xmark)), abort);
+
+      // Первая диктовка уже отправлена, но рабочий ещё не забрал её.
+      await queue(tester, pending: 1, processing: false);
+      expect(icon(CupertinoIcons.list_bullet), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'вторая запись имеет очередь 1, третья — 2, текущая расшифровка исключена',
+    (tester) async {
+      await show(tester);
+      await send(tester, HudState.recording);
+      await queue(tester, pending: 0, processing: false);
+      expect(icon(CupertinoIcons.list_bullet), findsNothing);
+
+      await queue(tester, pending: 0, processing: true);
+      expect(find.text('1'), findsOneWidget);
+      await queue(tester, pending: 1, processing: true);
+      expect(find.text('2'), findsOneWidget);
+
+      await send(tester, HudState.transcribing);
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('2'), findsNothing);
+      await queue(tester, pending: 0, processing: true);
+      expect(icon(CupertinoIcons.list_bullet), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets('подпись меню очереди совпадает с числом на индикаторе', (
+    tester,
+  ) async {
+    await show(tester);
+    final bridge = tester.widget<HudView>(find.byType(HudView)).bridge!;
+    final l10n = AppLocalizations.of(tester.element(find.byType(HudView)));
+    for (final example in [
+      (HudState.transcribing, 0, 0),
+      (HudState.recording, 0, 1),
+      (HudState.recording, 1, 2),
+      (HudState.transcribing, 1, 1),
+    ]) {
+      await bridge.hud(example.$1, pending: example.$2, processing: true);
+      final payload = calls.last.arguments as Map;
+      expect(
+        (payload['labels'] as Map)['queueTitle'],
+        l10n.hudQueueCount(example.$3),
+      );
+    }
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('очередь показывает число и независимые действия', (
     tester,
   ) async {
@@ -88,8 +173,9 @@ void main() {
       (_) {},
     );
     await tester.pump();
-    expect(find.text('10'), findsOneWidget);
-    await tester.tap(find.text('10'));
+    expect(find.text('9'), findsOneWidget);
+    expect(find.text('10'), findsNothing);
+    await tester.tap(find.text('9'));
     await tester.pump();
     final menu = calls.where((c) => c.method == 'hudQueueMenu').last;
     expect((menu.arguments as Map)['record'], 'Записать следующую');

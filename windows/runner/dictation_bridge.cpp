@@ -591,7 +591,6 @@ void DictationBridge::RegisterHandler(
         if (hud_channel_) hud_channel_->InvokeMethod("hudQueue",
             std::make_unique<flutter::EncodableValue>(hud_queue_));
         PrewarmHud();
-        if (hud_) hud_->SetQueue(IntArgument(hud_queue_, "pending") > 0 || BoolArgument(hud_queue_, "processing"));
         auto mode = args->find(flutter::EncodableValue("mode"));
         if (hud_ && mode != args->end()) if (const auto* value = std::get_if<std::string>(&mode->second)) hud_->SetMode(*value);
         SendHudLayout();
@@ -1381,6 +1380,8 @@ void DictationBridge::SetHudState(const std::string& state) {
   std::string next = state;
   current_hud_state_ = next;
   PrewarmHud();
+  if (hud_) hud_->SetQueue(HudBacklogCount(next == "recording",
+      IntArgument(hud_queue_, "pending"), BoolArgument(hud_queue_, "processing")) > 0);
   if (hud_channel_) hud_channel_->InvokeMethod("hudState", std::make_unique<flutter::EncodableValue>(next));
   if (hud_ && project_) {
     if ((hud_->editing() || next != "hidden") && hud_->floating()) hud_->Show(*project_, [this](flutter::BinaryMessenger*) {});
