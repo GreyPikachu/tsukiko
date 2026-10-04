@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show stderr;
+import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
@@ -54,6 +55,12 @@ enum HudState {
   copied,
   cancelled,
   silent,
+}
+
+/// Диктовки перед текущей записью; при распознавании сама текущая не считается.
+int hudBacklogCount(HudState state, int pending, bool processing) {
+  final outstanding = max(0, pending) + (processing ? 1 : 0);
+  return max(0, outstanding - (state == HudState.recording ? 0 : 1));
 }
 
 /// Один канал на всё приложение.
@@ -237,7 +244,9 @@ class NativeBridge {
       'pending': pending,
       'processing': processing,
       'labels': {
-        'queueTitle': l10n.hudQueueCount(pending),
+        'queueTitle': l10n.hudQueueCount(
+          hudBacklogCount(state, pending, processing),
+        ),
         'record': l10n.hudRecordNext,
         'abort': l10n.hudAbortCurrent,
         'clearQueue': l10n.hudClearQueue,

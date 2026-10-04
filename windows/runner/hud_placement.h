@@ -2,6 +2,12 @@
 #include <algorithm>
 #include <cmath>
 
+// The foreground recording is separate; the foreground transcription is in outstanding.
+inline int HudBacklogCount(bool recording, int pending, bool processing) {
+  const int outstanding = std::max(0, pending) + (processing ? 1 : 0);
+  return std::max(0, outstanding - (recording ? 0 : 1));
+}
+
 // The queue badge takes space only while present; editor previews include it.
 inline int HudPanelWidth(bool queued, bool editing) { return queued || editing ? 420 : 372; }
 

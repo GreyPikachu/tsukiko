@@ -8,6 +8,15 @@
 
 bool near(double a, double b) { return std::abs(a - b) < .000001; }
 int main() {
+  assert(HudBacklogCount(false, 0, true) == 0); // One transcription, no backlog.
+  assert(HudBacklogCount(false, 1, false) == 0); // Worker has not taken the first job yet.
+  assert(HudBacklogCount(true, 0, false) == 0); // First recording.
+  assert(HudBacklogCount(true, 0, true) == 1); // Second recording.
+  assert(HudBacklogCount(true, 1, true) == 2); // Third recording.
+  assert(HudBacklogCount(false, 1, true) == 1);
+  assert(HudBacklogCount(false, 9, true) == 9); // Ten unfinished dictations.
+  assert(HudPanelWidth(HudBacklogCount(false, 0, true) > 0, false) == 372);
+  assert(HudPanelWidth(HudBacklogCount(true, 0, true) > 0, false) == 420);
   assert(HudPanelWidth(false, false) == 372);
   assert(HudPanelWidth(true, false) == 420);
   assert(HudPanelWidth(false, true) == 420);
