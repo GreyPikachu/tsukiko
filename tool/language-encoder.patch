@@ -1,0 +1,47 @@
+Автоопределение языка не должно оплачивать кодировщик дважды.
+
+whisper_lang_auto_detect_with_state уже вычисляет признаки первого
+окна и cross-attention KV. Расшифровка снова кодировала то же окно.
+Повторно используем эти признаки только внутри текущего вызова,
+при seek == 0 и совпадающем audio_ctx. Следующие окна, явный язык,
+другой контекст и ненулевой offset идут обычным путём.
+
+Callback начала кодирования и проверки отмены декодера сохранены.
+Self-attention KV очищается перед текстовым декодированием, как раньше.
+Модель, beam search, длина контекста и подсказки не меняются.
+
+--- a/src/whisper.cpp
++++ b/src/whisper.cpp
+@@ -6845,6 +6845,10 @@
+         }
+     }
+ 
++    // tsukiko: reuse only this call's language-detection encoder output.
++    // A different audio context or a nonzero seek still needs a fresh encode.
++    bool language_encoder_ready = false;
++
+     // auto-detect language if not specified
+     if (params.language == nullptr || strlen(params.language) == 0 || strcmp(params.language, "auto") == 0 || params.detect_language) {
+         std::vector<float> probs(whisper_lang_max_id() + 1, 0.0f);
+@@ -6854,6 +6858,7 @@
+             WHISPER_LOG_ERROR("%s: failed to auto-detect language\n", __func__);
+             return -3;
+         }
++        language_encoder_ready = state->exp_n_audio_ctx == params.audio_ctx;
+         state->lang_id = lang_id;
+         params.language = whisper_lang_str(lang_id);
+ 
+@@ -7054,10 +7059,12 @@
+         }
+ 
+         // encode audio features starting at offset seek
+-        if (!whisper_encode_internal(*ctx, *state, seek, params.n_threads, params.abort_callback, params.abort_callback_user_data)) {
++        if (!(language_encoder_ready && seek == 0) &&
++                !whisper_encode_internal(*ctx, *state, seek, params.n_threads, params.abort_callback, params.abort_callback_user_data)) {
+             WHISPER_LOG_ERROR("%s: failed to encode\n", __func__);
+             return -6;
+         }
++        language_encoder_ready = false;
+ 
+         // if there is a very short audio segment left to process, we remove any past prompt since it tends
+         // to confuse the decoder and often make it repeat or hallucinate stuff

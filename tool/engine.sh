@@ -10,9 +10,10 @@
 # Чужой при этом не трогается: tsukiko ничего не ставит в систему
 # и ничего оттуда не удаляет.
 #
-# Расшифровщик собирается с двумя точечными правками: одна отпускает память
+# Расшифровщик собирается с точечными правками: одна отпускает память
 # из-под сырого звука после расчёта мел, вторая не даёт `-mc 0` съесть
-# пользовательскую подсказку. Объяснение — в шапке каждого патча.
+# пользовательскую подсказку, третья убирает повторное кодирование
+# при определении языка. Объяснение — в шапке каждого патча.
 #
 # Итог: два самодостаточных универсальных бинарника в macos/Engine.
 # Самодостаточных буквально — линкуются только с системными фреймворками
@@ -31,6 +32,7 @@ cd "$(dirname "$0")/.."
 VERSION=v1.9.3
 MEMORY_PATCH=tool/recognizer-pcm.patch
 PROMPT_PATCH=tool/prompt-context.patch
+LANGUAGE_PATCH=tool/language-encoder.patch
 SHA=1650f884effba487025143bd8facd2f9fb40a83b3737a732803c67a8d659d9c0
 
 OUT=macos/Engine
@@ -39,7 +41,7 @@ STAMP="$OUT/.version"
 
 # В метке не только версия, но и отпечатки патчей: любая их правка должна
 # пересобирать движок так же, как смена версии.
-PATCH_HASH=$(cat "$MEMORY_PATCH" "$PROMPT_PATCH" | shasum -a 256 | cut -c1-12)
+PATCH_HASH=$(cat "$MEMORY_PATCH" "$PROMPT_PATCH" "$LANGUAGE_PATCH" | shasum -a 256 | cut -c1-12)
 STAMPED="$VERSION $PATCH_HASH"
 
 if [ "$1" != "--force" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$STAMPED" ] &&
@@ -74,6 +76,7 @@ fi
 tar xzf "$TAR" -C "$WORK"
 patch -p1 -d "$SRC" < "$MEMORY_PATCH"
 patch -p1 -d "$SRC" < "$PROMPT_PATCH"
+patch -p1 -d "$SRC" < "$LANGUAGE_PATCH"
 
 # Универсальный, как и само приложение: Flutter собирает обе архитектуры.
 # GGML_NATIVE=OFF по той же причине, что и на Windows: по умолчанию ggml

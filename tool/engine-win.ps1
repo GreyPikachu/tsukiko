@@ -26,7 +26,7 @@ Set-Location $RootDir
 & "$ScriptDir/nemo-engine-win.ps1" -Force:$Force
 
 $VERSION = "v1.9.3"
-$PATCHES = @("tool/recognizer-pcm.patch", "tool/prompt-context.patch")
+$PATCHES = @("tool/recognizer-pcm.patch", "tool/prompt-context.patch", "tool/language-encoder.patch")
 $SHA256 = "1650f884effba487025143bd8facd2f9fb40a83b3737a732803c67a8d659d9c0"
 
 $OUT = "windows/Engine"

@@ -101,7 +101,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: windows/Engine
-          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/nemo-engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
+          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/nemo-engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch', 'tool/language-encoder.patch') }}
 
       - name: Vulkan SDK
         if: steps.engine-cache.outputs.cache-hit != 'true'
@@ -116,12 +116,15 @@ jobs:
         if: steps.engine-cache.outputs.cache-hit != 'true'
         run: .\tool\engine-win.ps1
 
+      - name: Реальный Whisper · очередь из десяти записей (CPU)
+        run: python tool/whisper_queue_test.py --cli windows/Engine/tsukiko-recognizer.exe --server windows/Engine/tsukiko-dictation.exe
+
       - name: Движок в кэш
         if: always() && steps.engine-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: windows/Engine
-          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/nemo-engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch') }}
+          key: engine-${{ runner.os }}-${{ hashFiles('tool/engine-win.ps1', 'tool/nemo-engine-win.ps1', 'tool/recognizer-pcm.patch', 'tool/prompt-context.patch', 'tool/language-encoder.patch') }}
 
       - name: Кэш ffmpeg
         id: ffmpeg-cache
