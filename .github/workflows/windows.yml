@@ -117,7 +117,7 @@ jobs:
         run: .\tool\engine-win.ps1
 
       - name: Реальный Whisper · очередь из десяти записей (CPU)
-        run: python tool/whisper_queue_test.py --cli windows/Engine/tsukiko-recognizer.exe --server windows/Engine/tsukiko-dictation.exe
+        run: python tool/whisper_queue_test.py --cli windows/Engine/tsukiko-recognizer-cpu.exe --server windows/Engine/tsukiko-dictation-cpu.exe
 
       - name: Движок в кэш
         if: always() && steps.engine-cache.outputs.cache-hit != 'true'
