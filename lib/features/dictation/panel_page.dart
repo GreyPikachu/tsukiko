@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
@@ -50,9 +51,9 @@ class PanelApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-        create: (_) => DictationCubit(NativeBridge()),
-        child: const _PanelApp(),
-      );
+    create: (_) => DictationCubit(NativeBridge()),
+    child: const _PanelApp(),
+  );
 }
 
 class _PanelApp extends StatelessWidget {
@@ -60,22 +61,22 @@ class _PanelApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<Locale?>(
-        valueListenable: appLocale,
-        builder: (context, locale, _) => MacosApp(
-          locale: locale,
-          title: appName,
-          theme: MacosThemeData.light(),
-          darkTheme: MacosThemeData.dark(),
-          themeMode: ThemeMode.system,
-          debugShowCheckedModeBanner: false,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          // Фон рисует NSVisualEffectView под этим слоем — своим здесь
-          // ничего не закрашиваем, иначе материал не будет виден.
-          color: const Color(0x00000000),
-          home: const PanelBody(),
-        ),
-      );
+    valueListenable: appLocale,
+    builder: (context, locale, _) => MacosApp(
+      locale: locale,
+      title: appName,
+      theme: MacosThemeData.light(),
+      darkTheme: MacosThemeData.dark(),
+      themeMode: ThemeMode.system,
+      debugShowCheckedModeBanner: false,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      // Фон рисует NSVisualEffectView под этим слоем — своим здесь
+      // ничего не закрашиваем, иначе материал не будет виден.
+      color: const Color(0x00000000),
+      home: const PanelBody(),
+    ),
+  );
 }
 
 class PanelBody extends StatelessWidget {
@@ -105,51 +106,45 @@ class _Panel extends StatefulWidget {
 }
 
 class _PanelState extends State<_Panel> {
-  // Ключ и последняя сообщённая высота — поля состояния, а не статика
-  // виджета. Статика работала лишь потому, что панель в приложении одна:
-  // второй экземпляр (тест, будущий второй поповер) молча делил бы
-  // с первым и ключ, и «уже сообщённую» высоту.
-  final _content = GlobalKey();
+  // Each panel owns its last reported height.
   double _reported = 0;
-
   DictationState get s => widget.state;
+
+  void _reportHeight(double height) {
+    if (!mounted || height == _reported) return;
+    _reported = height;
+    unawaited(context.read<DictationCubit>().reportHeight(height));
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Кадр за кадром одно и то же число дёргало бы окно на каждой секунде
-    // обратного отсчёта: шлём только при настоящем изменении.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final h = _content.currentContext?.size?.height.ceilToDouble();
-      if (h == null || h == _reported) return;
-      _reported = h;
-      unawaited(context.read<DictationCubit>().reportHeight(h));
-    });
-
     // Фон панели. На macOS под слоем Flutter стоит материал окна, и
     // красить нечего; на Windows под ним нет ничего — панель выходила
     // чёрным прямоугольником у значка.
     final ground = Surface.sidebar(context);
     final body = SingleChildScrollView(
-      child: Column(
-        key: _content,
-        mainAxisSize: MainAxisSize.min,
-        // Без растяжения по ширине блоки съёжились бы до своего текста
-        // и встали по центру: раньше ширину задавал ListView.
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Header(s),
-          const _Divider(),
-          _Live(s),
-          _Notices(s),
-          const _Divider(),
-          _History(s),
-          const _Divider(),
-          _Model(s),
-          // Действия ухода живут внизу и отделены — так во всех поповерах
-          // системы: сначала состояние, в конце «закрыть за собой дверь».
-          const _Divider(),
-          _Footer(s),
-        ],
+      child: _PanelMeasure(
+        onHeight: _reportHeight,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          // Без растяжения по ширине блоки съёжились бы до своего текста
+          // и встали по центру: раньше ширину задавал ListView.
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Header(s),
+            const _Divider(),
+            _Live(s),
+            _Notices(s),
+            const _Divider(),
+            _History(s),
+            const _Divider(),
+            _Model(s),
+            // Действия ухода живут внизу и отделены — так во всех поповерах
+            // системы: сначала состояние, в конце «закрыть за собой дверь».
+            const _Divider(),
+            _Footer(s),
+          ],
+        ),
       ),
     );
     return ground == null ? body : ColoredBox(color: ground, child: body);
@@ -166,30 +161,38 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Padding(
-        padding: const EdgeInsets.fromLTRB(
-            Gap.edgeNarrow, Gap.item, Gap.edgeNarrow, Gap.item),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(l10n.settingsTabDictation, style: Type.emptyTitle),
-                  const SizedBox(height: Gap.tight),
-                  Text(
-                    s.enabled ? l10n.dictationEnabledState : l10n.dictationDisabledState,
-                    style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+      padding: const EdgeInsets.fromLTRB(
+        Gap.edgeNarrow,
+        Gap.item,
+        Gap.edgeNarrow,
+        Gap.item,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.settingsTabDictation, style: Type.emptyTitle),
+                const SizedBox(height: Gap.tight),
+                Text(
+                  s.enabled
+                      ? l10n.dictationEnabledState
+                      : l10n.dictationDisabledState,
+                  style: Type.caption.copyWith(
+                    color: Surface.secondaryText(context),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            MacosSwitch(
-              value: s.enabled,
-              onChanged: context.read<DictationCubit>().setEnabled,
-            ),
-          ],
-        ),
-      );
+          ),
+          MacosSwitch(
+            value: s.enabled,
+            onChanged: context.read<DictationCubit>().setEnabled,
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -209,16 +212,20 @@ class _Live extends StatelessWidget {
       Phase.recording => (l10n.liveRecording, MacosColors.systemRedColor),
       Phase.transcribing => (l10n.liveTranscribing, accent),
       Phase.idle => (
-          s.enabled ? l10n.liveReady : l10n.liveDictationOff,
-          s.enabled
-              ? MacosColors.systemGreenColor
-              : Surface.secondaryText(context)
-        ),
+        s.enabled ? l10n.liveReady : l10n.liveDictationOff,
+        s.enabled
+            ? MacosColors.systemGreenColor
+            : Surface.secondaryText(context),
+      ),
     };
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-          Gap.edgeNarrow, Gap.item, Gap.edgeNarrow, Gap.item),
+        Gap.edgeNarrow,
+        Gap.item,
+        Gap.edgeNarrow,
+        Gap.item,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -243,19 +250,26 @@ class _Live extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     children: [...previous, ?current],
                   ),
-                  child: Text(title, key: ValueKey(title), style: Type.stateTitle),
+                  child: Text(
+                    title,
+                    key: ValueKey(title),
+                    style: Type.stateTitle,
+                  ),
                 ),
               ),
               if (recording)
                 Text(
                   humanDuration(s.elapsed.inMilliseconds),
-                  style: Type.timestamp.copyWith(color: Surface.secondaryText(context)),
+                  style: Type.timestamp.copyWith(
+                    color: Surface.secondaryText(context),
+                  ),
                 ),
               if (s.phase == Phase.transcribing) ...[
                 const SizedBox(
-                    width: IconSize.button,
-                    height: IconSize.button,
-                    child: ProgressCircle()),
+                  width: IconSize.button,
+                  height: IconSize.button,
+                  child: ProgressCircle(),
+                ),
                 // Тот же крестик, что и в плавающей панели, и на том же
                 // месте относительно прогресса: одно действие — один вид
                 // в обеих панелях, искать его дважды не приходится.
@@ -267,10 +281,7 @@ class _Live extends StatelessWidget {
             ],
           ),
           const SizedBox(height: Gap.item),
-          if (recording)
-            _Meter(level: s.level)
-          else
-            _Keys(s),
+          if (recording) _Meter(level: s.level) else _Keys(s),
         ],
       ),
     );
@@ -297,17 +308,17 @@ class _KeysState extends State<_Keys> {
     final l10n = AppLocalizations.of(context);
     final grey = Type.caption.copyWith(color: Surface.secondaryText(context));
     Widget row(String keys, String what) => Padding(
-          padding: const EdgeInsets.only(bottom: Gap.hint),
-          // Подпись слева, плашка справа — ровно как в настройках, где
-          // эти же сочетания и назначают.
-          child: Row(
-            children: [
-              Expanded(child: Text(what, maxLines: 2, style: grey)),
-              const SizedBox(width: Gap.inner),
-              KeyCap(keys, lit: _hover),
-            ],
-          ),
-        );
+      padding: const EdgeInsets.only(bottom: Gap.hint),
+      // Подпись слева, плашка справа — ровно как в настройках, где
+      // эти же сочетания и назначают.
+      child: Row(
+        children: [
+          Expanded(child: Text(what, maxLines: 2, style: grey)),
+          const SizedBox(width: Gap.inner),
+          KeyCap(keys, lit: _hover),
+        ],
+      ),
+    );
 
     return MacosTooltip(
       message: l10n.tooltipChangeInSettings,
@@ -347,47 +358,50 @@ class _AbortButtonState extends State<_AbortButton> {
 
   @override
   Widget build(BuildContext context) => MacosTooltip(
-        message: AppLocalizations.of(context).abortRecognitionAction,
-        child: Semantics(
-          button: true,
-          label: AppLocalizations.of(context).abortRecognitionAction,
-          child: MouseRegion(
-            onEnter: (_) => setState(() => _hover = true),
-            onExit: (_) => setState(() => _hover = false),
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              // Отклик на нажатие, а не на отпускании — как везде в панели.
-              onTapDown: (_) => setState(() => _down = true),
-              onTapUp: (_) => setState(() => _down = false),
-              onTapCancel: () => setState(() => _down = false),
-              onTap: widget.onPressed,
-              child: AnimatedScale(
-                duration: Motion.dur(context, Motion.press),
-                scale: _down ? 0.94 : 1,
-                child: AnimatedContainer(
-                  duration: Motion.dur(context, Motion.quick),
-                  curve: Motion.curve(context, Motion.quickCurve),
-                  // Кружок и значок в нём — ровно те же, что у крестика
-                  // плавающей панели: одно действие обязано быть одного
-                  // размера в обоих окнах, иначе его ищут заново.
-                  width: IconSize.button + Gap.inner,
-                  height: IconSize.button + Gap.inner,
-                  decoration: BoxDecoration(
-                    color: _hover ? Surface.hover(context) : MacosColors.transparent,
-                    shape: BoxShape.circle,
-                  ),
-                  child: MacosIcon(
-                    CupertinoIcons.xmark,
-                    size: IconSize.button,
-                    color: Surface.secondaryText(context)
-                        .withValues(alpha: _hover ? 1 : 0.55),
-                  ),
-                ),
+    message: AppLocalizations.of(context).abortRecognitionAction,
+    child: Semantics(
+      button: true,
+      label: AppLocalizations.of(context).abortRecognitionAction,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          // Отклик на нажатие, а не на отпускании — как везде в панели.
+          onTapDown: (_) => setState(() => _down = true),
+          onTapUp: (_) => setState(() => _down = false),
+          onTapCancel: () => setState(() => _down = false),
+          onTap: widget.onPressed,
+          child: AnimatedScale(
+            duration: Motion.dur(context, Motion.press),
+            scale: _down ? 0.94 : 1,
+            child: AnimatedContainer(
+              duration: Motion.dur(context, Motion.quick),
+              curve: Motion.curve(context, Motion.quickCurve),
+              // Кружок и значок в нём — ровно те же, что у крестика
+              // плавающей панели: одно действие обязано быть одного
+              // размера в обоих окнах, иначе его ищут заново.
+              width: IconSize.button + Gap.inner,
+              height: IconSize.button + Gap.inner,
+              decoration: BoxDecoration(
+                color: _hover
+                    ? Surface.hover(context)
+                    : MacosColors.transparent,
+                shape: BoxShape.circle,
+              ),
+              child: MacosIcon(
+                CupertinoIcons.xmark,
+                size: IconSize.button,
+                color: Surface.secondaryText(
+                  context,
+                ).withValues(alpha: _hover ? 1 : 0.55),
               ),
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 }
 
 /// Уровень сигнала: не столбики-эквалайзер, а одна полоса — она отвечает
@@ -457,15 +471,15 @@ class _Notices extends StatelessWidget {
               button: s.failurePath != null
                   ? l10n.buttonShowRecording
                   : s.last.isNotEmpty
-                      ? l10n.buttonCopy
-                      : null,
+                  ? l10n.buttonCopy
+                  : null,
               // Ни записи, ни текста — предлагать нечего. Такая беда
               // остаётся просто сообщением и уходит сама.
               onPressed: s.failurePath != null
                   ? cubit.revealFailure
                   : s.last.isNotEmpty
-                      ? cubit.copyLast
-                      : null,
+                  ? cubit.copyLast
+                  : null,
               second: s.failurePath != null ? l10n.buttonDelete : null,
               onSecond: s.failurePath != null ? cubit.discardFailure : null,
             ),
@@ -480,7 +494,9 @@ class _Notices extends StatelessWidget {
               padding: const EdgeInsets.only(top: Gap.inner),
               child: Text(
                 l10n.vadLoadingProgress(s.vadProgress!),
-                style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+                style: Type.caption.copyWith(
+                  color: Surface.secondaryText(context),
+                ),
               ),
             )
           else if (s.vadError != null)
@@ -495,8 +511,7 @@ class _Notices extends StatelessWidget {
   }
 }
 
-/// Блок истории диктовок: последняя запись на виду, предыдущие — под аккуратным
-/// спойлером с ограничением высоты, чтобы поповер не раздувался за экран.
+/// Recent dictation stays visible; older text is one disclosure away.
 class _History extends StatefulWidget {
   const _History(this.s);
   final DictationState s;
@@ -507,31 +522,21 @@ class _History extends StatefulWidget {
 
 class _HistoryState extends State<_History> {
   bool _expanded = false;
-  bool _copiedLatest = false;
+  final _scroll = ScrollController();
 
-  void _handleCopyLatest(DictationCubit cubit) {
-    try {
-      cubit.copyLast();
-      setState(() => _copiedLatest = true);
-      Future.delayed(const Duration(milliseconds: 1200), () {
-        if (mounted) setState(() => _copiedLatest = false);
-      });
-    } catch (e, st) {
-      Log.warn('Panel', 'Ошибка копирования последней записи: $e', e, st);
-    }
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
   }
-
-  DictationState get s => widget.s;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final history = widget.s.history;
     final cubit = context.read<DictationCubit>();
-    final history = s.history;
-    final hasHistory = history.isNotEmpty;
-    final latest = hasHistory ? history.first : null;
-    final older = hasHistory && history.length > 1 ? history.sublist(1) : const <DictationEntry>[];
-
+    final latest = history.firstOrNull;
+    final older = history.skip(1).toList();
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: Gap.edgeNarrow,
@@ -540,117 +545,111 @@ class _HistoryState extends State<_History> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Заголовок и кнопка очистки всей истории
           Row(
             children: [
               Expanded(
                 child: Text(
                   l10n.lastTranscriptTitle,
-                  style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+                  style: Type.caption.copyWith(
+                    color: Surface.secondaryText(context),
+                  ),
                 ),
               ),
-              if (hasHistory)
-                MacosTooltip(
-                  message: l10n.menuClearHistory,
-                  child: Semantics(
-                    button: true,
-                    label: l10n.menuClearHistory,
-                    child: _HistoryActionIcon(
-                      icon: CupertinoIcons.trash,
-                      size: 13,
-                      onTap: () {
-                        try {
-                          cubit.clearHistory();
-                        } catch (e, st) {
-                          Log.warn('Panel', 'Ошибка вызова clearHistory: $e', e, st);
-                        }
-                      },
-                    ),
-                  ),
+              if (latest != null)
+                _HistoryAction(
+                  icon: CupertinoIcons.trash,
+                  label: l10n.menuClearHistory,
+                  onPressed: () => unawaited(cubit.clearHistory()),
                 ),
             ],
           ),
           const SizedBox(height: Gap.hint),
-
-          // Последняя расшифровка
-          if (!hasHistory)
+          if (latest == null)
             Text(
               l10n.noDictationYet,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: Type.control.copyWith(color: Surface.secondaryText(context)),
+              style: Type.control.copyWith(
+                color: Surface.secondaryText(context),
+              ),
             )
-          else ...[
-            Text(
-              latest!.text,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: Type.control,
-            ),
-            const SizedBox(height: Gap.hint),
-            Row(
-              children: [
-                Text(
-                  _formatTime(latest.createdAt),
-                  style: Type.timestamp.copyWith(color: Surface.secondaryText(context)),
-                ),
-                const Spacer(),
-                MacosTooltip(
-                  message: _copiedLatest ? l10n.tooltipCopied : l10n.buttonCopy,
-                  child: Semantics(
-                    button: true,
-                    label: l10n.buttonCopy,
-                    child: _HistoryActionIcon(
-                      icon: _copiedLatest ? CupertinoIcons.checkmark_alt : CupertinoIcons.doc_on_doc,
-                      size: 13,
-                      lit: _copiedLatest,
-                      onTap: () => _handleCopyLatest(cubit),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-
-          // Предыдущие записи (аккордеон)
-          if (older.isNotEmpty) ...[
-            const SizedBox(height: Gap.inner),
-            _AccordionToggle(
-              expanded: _expanded,
-              count: older.length,
-              onToggle: () => setState(() => _expanded = !_expanded),
-            ),
-            if (_expanded) ...[
-              const SizedBox(height: Gap.hint),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 180),
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      for (final entry in older)
-                        _HistoryItemRow(
-                          key: ValueKey(entry.id),
-                          entry: entry,
-                          onCopy: () {
-                            try {
-                              cubit.copyEntry(entry.id);
-                            } catch (e, st) {
-                              Log.warn('Panel', 'Ошибка копирования записи ${entry.id}: $e', e, st);
-                            }
-                          },
-                          onDelete: () {
-                            try {
-                              cubit.deleteHistoryEntry(entry.id);
-                            } catch (e, st) {
-                              Log.warn('Panel', 'Ошибка удаления записи ${entry.id}: $e', e, st);
-                            }
-                          },
-                        ),
-                    ],
+          else
+            _HistoryTranscript(entry: latest, latest: true),
+          if (widget.s.historyError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: Gap.inner),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  widget.s.historyError!,
+                  style: Type.caption.copyWith(
+                    color: MacosColors.systemRedColor,
                   ),
                 ),
               ),
-            ],
+            ),
+          if (older.isNotEmpty) ...[
+            const SizedBox(height: Gap.inner),
+            Semantics(
+              expanded: _expanded,
+              child: _PanelQuietButton(
+                label: l10n.previousTranscriptsCount(older.length),
+                onPressed: () => setState(() => _expanded = !_expanded),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        l10n.previousTranscriptsCount(older.length),
+                        style: Type.caption.copyWith(
+                          color: Surface.secondaryText(context),
+                        ),
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.25 : 0,
+                      duration: Motion.dur(context, Motion.quick),
+                      curve: Motion.curve(context, Motion.quickCurve),
+                      child: MacosIcon(
+                        CupertinoIcons.chevron_right,
+                        size: IconSize.inline,
+                        color: Surface.secondaryText(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            AnimatedSize(
+              alignment: Alignment.topLeft,
+              duration: Motion.dur(context, Motion.settle),
+              curve: Motion.curve(context, Motion.settleCurve),
+              child: !_expanded
+                  ? const SizedBox(width: double.infinity)
+                  : Padding(
+                      padding: const EdgeInsets.only(top: Gap.inner),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 180),
+                        child: MacosScrollbar(
+                          controller: _scroll,
+                          child: ListView.separated(
+                            controller: _scroll,
+                            shrinkWrap: true,
+                            primary: false,
+                            padding: EdgeInsets.zero,
+                            itemCount: older.length,
+                            separatorBuilder: (_, _) => const Padding(
+                              padding: EdgeInsets.symmetric(
+                                vertical: Gap.inner,
+                              ),
+                              child: _Divider(),
+                            ),
+                            itemBuilder: (_, i) => _HistoryTranscript(
+                              key: ValueKey(older[i].id),
+                              entry: older[i],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
           ],
         ],
       ),
@@ -658,221 +657,216 @@ class _HistoryState extends State<_History> {
   }
 }
 
-class _AccordionToggle extends StatefulWidget {
-  const _AccordionToggle({
-    required this.expanded,
-    required this.count,
-    required this.onToggle,
+class _HistoryTranscript extends StatelessWidget {
+  const _HistoryTranscript({
+    super.key,
+    required this.entry,
+    this.latest = false,
   });
-
-  final bool expanded;
-  final int count;
-  final VoidCallback onToggle;
-
-  @override
-  State<_AccordionToggle> createState() => _AccordionToggleState();
-}
-
-class _AccordionToggleState extends State<_AccordionToggle> {
-  bool _hover = false;
+  final DictationEntry entry;
+  final bool latest;
 
   @override
   Widget build(BuildContext context) {
-    final label = AppLocalizations.of(context).previousTranscriptsCount(widget.count);
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: widget.onToggle,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: Gap.hint, horizontal: Gap.inner),
-          decoration: BoxDecoration(
-            color: _hover ? Surface.hover(context) : MacosColors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: Type.caption.copyWith(
-                    color: _hover ? MacosTheme.of(context).typography.body.color : Surface.secondaryText(context),
-                  ),
+    final l10n = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          entry.text,
+          maxLines: latest ? 3 : 2,
+          overflow: TextOverflow.ellipsis,
+          style: latest ? Type.control : Type.caption.copyWith(height: 1.35),
+        ),
+        const SizedBox(height: Gap.hint),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${entry.createdAt.hour.toString().padLeft(2, '0')}:${entry.createdAt.minute.toString().padLeft(2, '0')}',
+                style: Type.timestamp.copyWith(
+                  color: Surface.secondaryText(context),
                 ),
               ),
-              MacosIcon(
-                widget.expanded ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
-                size: 12,
-                color: Surface.secondaryText(context),
+            ),
+            _HistoryCopy(key: ValueKey(entry.id), id: entry.id),
+            if (!latest) ...[
+              const SizedBox(width: Gap.hint),
+              _HistoryAction(
+                icon: CupertinoIcons.xmark,
+                label: l10n.buttonDelete,
+                onPressed: () => unawaited(
+                  context.read<DictationCubit>().deleteHistoryEntry(entry.id),
+                ),
               ),
             ],
-          ),
+          ],
         ),
-      ),
+      ],
     );
   }
 }
 
-class _HistoryItemRow extends StatefulWidget {
-  const _HistoryItemRow({
-    super.key,
-    required this.entry,
-    required this.onCopy,
-    required this.onDelete,
-  });
-
-  final DictationEntry entry;
-  final VoidCallback onCopy;
-  final VoidCallback onDelete;
-
+class _HistoryCopy extends StatefulWidget {
+  const _HistoryCopy({super.key, required this.id});
+  final String id;
   @override
-  State<_HistoryItemRow> createState() => _HistoryItemRowState();
+  State<_HistoryCopy> createState() => _HistoryCopyState();
 }
 
-class _HistoryItemRowState extends State<_HistoryItemRow> {
-  bool _hover = false;
-  bool _copied = false;
+class _HistoryCopyState extends State<_HistoryCopy> {
+  bool _copying = false, _copied = false, _failed = false;
+  Timer? _reset;
 
-  void _handleCopy() {
-    try {
-      widget.onCopy();
-      setState(() => _copied = true);
-      Future.delayed(const Duration(milliseconds: 1200), () {
+  Future<void> _copy() async {
+    _reset?.cancel();
+    setState(() {
+      _copying = true;
+      _copied = false;
+      _failed = false;
+    });
+    final copied = await context.read<DictationCubit>().copyEntry(widget.id);
+    if (!mounted) return;
+    setState(() {
+      _copying = false;
+      _copied = copied;
+      _failed = !copied;
+    });
+    if (copied) {
+      _reset = Timer(const Duration(milliseconds: 1200), () {
         if (mounted) setState(() => _copied = false);
       });
-    } catch (e, st) {
-      Log.warn('Panel', 'Ошибка копирования: $e', e, st);
     }
+  }
+
+  @override
+  void dispose() {
+    _reset?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: Gap.hint),
-        padding: const EdgeInsets.symmetric(horizontal: Gap.inner, vertical: Gap.hint),
-        decoration: BoxDecoration(
-          color: _hover ? Surface.hover(context) : MacosColors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: Surface.hairline(context),
-            width: 0.5,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.entry.text,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Type.caption.copyWith(height: 1.25),
-            ),
-            const SizedBox(height: Gap.tight),
-            Row(
-              children: [
-                Text(
-                  _formatTime(widget.entry.createdAt),
-                  style: Type.timestamp.copyWith(
-                    color: Surface.secondaryText(context),
-                  ),
-                ),
-                const Spacer(),
-                MacosTooltip(
-                  message: _copied ? l10n.tooltipCopied : l10n.buttonCopy,
-                  child: _HistoryActionIcon(
-                    icon: _copied ? CupertinoIcons.checkmark_alt : CupertinoIcons.doc_on_doc,
-                    size: 13,
-                    lit: _copied,
-                    onTap: _handleCopy,
-                  ),
-                ),
-                const SizedBox(width: Gap.tight),
-                MacosTooltip(
-                  message: l10n.buttonDelete,
-                  child: _HistoryActionIcon(
-                    icon: CupertinoIcons.xmark,
-                    size: 11,
-                    onTap: widget.onDelete,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+    return _HistoryAction(
+      icon: _failed
+          ? CupertinoIcons.exclamationmark_triangle
+          : _copied
+          ? CupertinoIcons.checkmark_alt
+          : CupertinoIcons.doc_on_doc,
+      label: _failed
+          ? l10n.historyCopyFailed
+          : _copied
+          ? l10n.tooltipCopied
+          : l10n.buttonCopy,
+      color: _failed
+          ? MacosColors.systemRedColor
+          : _copied
+          ? MacosTheme.of(context).primaryColor
+          : null,
+      onPressed: _copying ? null : () => unawaited(_copy()),
     );
   }
 }
 
-class _HistoryActionIcon extends StatefulWidget {
-  const _HistoryActionIcon({
+class _HistoryAction extends StatelessWidget {
+  const _HistoryAction({
     required this.icon,
-    required this.onTap,
-    this.size = 14,
-    this.lit = false,
+    required this.label,
+    required this.onPressed,
+    this.color,
   });
-
   final IconData icon;
-  final VoidCallback onTap;
-  final double size;
-  final bool lit;
+  final String label;
+  final VoidCallback? onPressed;
+  final Color? color;
 
   @override
-  State<_HistoryActionIcon> createState() => _HistoryActionIconState();
+  Widget build(BuildContext context) => MacosTooltip(
+    message: label,
+    child: _PanelQuietButton(
+      label: label,
+      onPressed: onPressed,
+      child: MacosIcon(
+        icon,
+        size: IconSize.button,
+        color: color ?? Surface.secondaryText(context),
+      ),
+    ),
+  );
 }
 
-class _HistoryActionIconState extends State<_HistoryActionIcon> {
-  bool _hover = false;
-  bool _down = false;
+/// Same sizes, focus feedback and system keyboard activation for every history action.
+class _PanelQuietButton extends StatefulWidget {
+  const _PanelQuietButton({
+    required this.label,
+    required this.child,
+    required this.onPressed,
+  });
+  final String label;
+  final Widget child;
+  final VoidCallback? onPressed;
+  @override
+  State<_PanelQuietButton> createState() => _PanelQuietButtonState();
+}
+
+class _PanelQuietButtonState extends State<_PanelQuietButton> {
+  bool _hover = false, _focused = false;
 
   @override
-  Widget build(BuildContext context) {
-    final accent = MacosTheme.of(context).primaryColor;
-    return MouseRegion(
+  Widget build(BuildContext context) => Semantics(
+    label: widget.label,
+    button: true,
+    child: MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTapDown: (_) => setState(() => _down = true),
-        onTapUp: (_) => setState(() => _down = false),
-        onTapCancel: () => setState(() => _down = false),
-        onTap: widget.onTap,
-        child: AnimatedScale(
-          duration: Motion.dur(context, Motion.press),
-          scale: _down ? 0.90 : 1.0,
-          child: Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              color: _down
-                  ? Surface.pressed(context)
-                  : (_hover ? Surface.hover(context) : MacosColors.transparent),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            alignment: Alignment.center,
-            child: MacosIcon(
-              widget.icon,
-              size: widget.size,
-              color: widget.lit
-                  ? accent
-                  : Surface.secondaryText(context).withValues(alpha: _hover ? 1 : 0.65),
-            ),
-          ),
-        ),
+      child: CupertinoButton(
+        minimumSize: const Size(28, 28),
+        padding: const EdgeInsets.all(Gap.hint),
+        borderRadius: const BorderRadius.all(Radius.circular(5)),
+        color: _focused
+            ? Surface.pressed(context)
+            : _hover
+            ? Surface.hover(context)
+            : MacosColors.transparent,
+        onFocusChange: (v) => setState(() => _focused = v),
+        onPressed: widget.onPressed,
+        child: widget.child,
       ),
-    );
+    ),
+  );
+}
+
+/// Report layout changes even when only a child disclosure or animation rebuilds.
+class _PanelMeasure extends SingleChildRenderObjectWidget {
+  const _PanelMeasure({required this.onHeight, required super.child});
+  final ValueChanged<double> onHeight;
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _PanelMeasureBox(onHeight);
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _PanelMeasureBox renderObject,
+  ) {
+    renderObject.onHeight = onHeight;
   }
 }
 
-String _formatTime(DateTime dt) {
-  final h = dt.hour.toString().padLeft(2, '0');
-  final m = dt.minute.toString().padLeft(2, '0');
-  return '$h:$m';
+class _PanelMeasureBox extends RenderProxyBox {
+  _PanelMeasureBox(this.onHeight);
+  ValueChanged<double> onHeight;
+  double _height = -1;
+  @override
+  void performLayout() {
+    super.performLayout();
+    final height = size.height.ceilToDouble();
+    if (height == _height) return;
+    _height = height;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (attached) onHeight(height);
+    });
+  }
 }
 
 /// Модель: что загружено, сколько занимает и когда освободится. Та самая
@@ -898,12 +892,15 @@ class _Model extends StatelessWidget {
               l10n.modelSizeInMemory(l10n.sizeGb(s.memoryMb / 1024))
             else
               l10n.modelInMemory,
-            if (left != null) l10n.modelFreesIn(humanDuration(left.inMilliseconds)),
+            if (left != null)
+              l10n.modelFreesIn(humanDuration(left.inMilliseconds)),
           ].join(' · ');
 
     return Padding(
       padding: const EdgeInsets.symmetric(
-          horizontal: Gap.edgeNarrow, vertical: Gap.item),
+        horizontal: Gap.edgeNarrow,
+        vertical: Gap.item,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -913,39 +910,57 @@ class _Model extends StatelessWidget {
           // одна или три — и выбора не было вовсе. Список честнее и
           // работает при любом их числе.
           if (!s.hasModels)
-            Text(l10n.modelNotFound,
-                maxLines: 1, overflow: TextOverflow.ellipsis, style: Type.fileName)
+            Text(
+              l10n.modelNotFound,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Type.fileName,
+            )
           else
-            _ModelSelector(
-              models: s.models,
-              chosenModel: s.models.contains(s.chosenModel) ? s.chosenModel : null,
-              hint: l10n.modelNotChosen,
-              onChanged: (v) {
-                try {
-                  cubit.setModel(v);
-                } catch (e, st) {
-                  Log.warn('Panel', 'Ошибка выбора модели: $e', e, st);
-                }
-              },
+            SizedBox(
+              width: double.infinity,
+              child: MacosPopupButton<String>(
+                value: s.models.contains(s.chosenModel) ? s.chosenModel : null,
+                hint: Text(l10n.modelNotChosen, style: Type.fileName),
+                items: [
+                  for (final path in s.models)
+                    MacosPopupMenuItem(
+                      value: path,
+                      // modelLabel, а не modelDisplayName: одна и та же
+                      // модель в двух папках дала бы две одинаковые строки,
+                      // и какая из них выбрана — не понять.
+                      child: Text(
+                        modelLabel(path, s.models),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                // Выбранное вступает в силу сразу; сервер при этом
+                // перезапускается только если модель правда сменилась —
+                // об этом заботится сам cubit.setModel.
+                onChanged: (v) => v == null ? null : cubit.setModel(v),
+              ),
             ),
           const SizedBox(height: Gap.hint),
-          Text(!s.hasModels ? l10n.nothingToRecognizeWith : serverState, style: grey),
-          const SizedBox(height: Gap.inner),
+          Text(
+            !s.hasModels ? l10n.nothingToRecognizeWith : serverState,
+            style: grey,
+          ),
+          // Кнопки под текстом, как в блоке последней расшифровки: два
+          // соседних блока, устроенных по-разному, читаются как два разных
+          // языка в одной панели.
+          const SizedBox(height: Gap.item),
           Row(
             children: [
-              _ModelGhostButton(
-                icon: CupertinoIcons.arrow_down_to_line,
-                label: l10n.buttonDownloadAnother,
-                onTap: () {
-                  try {
-                    cubit.openSettings('models');
-                  } catch (e, st) {
-                    Log.warn('Panel', 'Ошибка открытия настроек моделей: $e', e, st);
-                  }
-                },
+              PushButton(
+                controlSize: ControlSize.small,
+                secondary: true,
+                onPressed: () => cubit.openSettings('models'),
+                child: Text(l10n.buttonDownloadAnother),
               ),
               if (s.serverUp) ...[
-                const SizedBox(width: Gap.hint),
+                const SizedBox(width: Gap.inner),
                 // Пока идёт запись или распознавание, модель занята делом,
                 // и выгружать её нельзя: кнопка, которая делает вид, что
                 // может, — обещание, которого приложение не сдержит.
@@ -953,19 +968,11 @@ class _Model extends StatelessWidget {
                   message: s.phase == Phase.idle
                       ? l10n.tooltipFreeMemoryNextPhrase
                       : l10n.tooltipModelBusy,
-                  child: _ModelGhostButton(
-                    icon: CupertinoIcons.eject,
-                    label: l10n.buttonUnload,
-                    enabled: s.phase == Phase.idle,
-                    onTap: s.phase == Phase.idle
-                        ? () {
-                            try {
-                              cubit.unload();
-                            } catch (e, st) {
-                              Log.warn('Panel', 'Ошибка выгрузки модели: $e', e, st);
-                            }
-                          }
-                        : null,
+                  child: PushButton(
+                    controlSize: ControlSize.small,
+                    secondary: true,
+                    onPressed: s.phase == Phase.idle ? cubit.unload : null,
+                    child: Text(l10n.buttonUnload),
                   ),
                 ),
               ],
@@ -976,442 +983,6 @@ class _Model extends StatelessWidget {
     );
   }
 }
-
-/// Нативная кнопка управления моделью без белых непрозрачных рамок:
-/// прозрачная в покое, мягко подсвечивается системным цветом при наведении.
-class _ModelGhostButton extends StatefulWidget {
-  const _ModelGhostButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.enabled = true,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  final bool enabled;
-
-  @override
-  State<_ModelGhostButton> createState() => _ModelGhostButtonState();
-}
-
-class _ModelGhostButtonState extends State<_ModelGhostButton> {
-  bool _hover = false;
-  bool _down = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = widget.enabled && widget.onTap != null;
-    final secondary = Surface.secondaryText(context);
-    final foreground = enabled
-        ? (_hover
-            ? MacosTheme.of(context).typography.body.color ?? secondary
-            : secondary)
-        : secondary.withValues(alpha: 0.35);
-
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      label: widget.label,
-      child: MouseRegion(
-        onEnter: enabled ? (_) => setState(() => _hover = true) : null,
-        onExit: enabled ? (_) => setState(() => _hover = false) : null,
-        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-        child: GestureDetector(
-          onTapDown: enabled ? (_) => setState(() => _down = true) : null,
-          onTapUp: enabled ? (_) => setState(() => _down = false) : null,
-          onTapCancel: enabled ? () => setState(() => _down = false) : null,
-          onTap: enabled
-              ? () {
-                  try {
-                    widget.onTap?.call();
-                  } catch (e, st) {
-                    Log.warn('Panel', 'Ошибка нажатия кнопки ${widget.label}: $e', e, st);
-                  }
-                }
-              : null,
-          child: AnimatedScale(
-            duration: Motion.dur(context, Motion.press),
-            scale: _down ? 0.94 : 1.0,
-            child: AnimatedContainer(
-              duration: Motion.dur(context, Motion.quick),
-              curve: Motion.curve(context, Motion.quickCurve),
-              padding: const EdgeInsets.symmetric(
-                horizontal: Gap.inner,
-                vertical: Gap.hint,
-              ),
-              decoration: BoxDecoration(
-                color: enabled
-                    ? (_down
-                        ? Surface.pressed(context)
-                        : (_hover ? Surface.hover(context) : MacosColors.transparent))
-                    : MacosColors.transparent,
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  MacosIcon(
-                    widget.icon,
-                    size: 13,
-                    color: foreground,
-                  ),
-                  const SizedBox(width: Gap.hint),
-                  Text(
-                    widget.label,
-                    style: Type.caption.copyWith(color: foreground),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Нативный селектор модели для меню-бара:
-/// полупрозрачная плашка в покое, мягкий ховер, аккуратный шеврон
-/// и всплывающее меню с системной галочкой активного пункта.
-class _ModelSelector extends StatefulWidget {
-  const _ModelSelector({
-    required this.models,
-    required this.chosenModel,
-    required this.hint,
-    required this.onChanged,
-  });
-
-  final List<String> models;
-  final String? chosenModel;
-  final String hint;
-  final ValueChanged<String> onChanged;
-
-  @override
-  State<_ModelSelector> createState() => _ModelSelectorState();
-}
-
-class _ModelSelectorState extends State<_ModelSelector> {
-  bool _hover = false;
-  bool _down = false;
-
-  void _showMenu() {
-    final RenderBox? button = context.findRenderObject() as RenderBox?;
-    if (button == null || !button.hasSize) return;
-
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (overlay == null || !overlay.hasSize) return;
-
-    final buttonRect = Rect.fromPoints(
-      button.localToGlobal(Offset.zero, ancestor: overlay),
-      button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
-    );
-
-    Navigator.of(context).push(
-      _ModelMenuRoute(
-        buttonRect: buttonRect,
-        overlaySize: overlay.size,
-        models: widget.models,
-        chosenModel: widget.chosenModel,
-        onSelected: (model) {
-          try {
-            widget.onChanged(model);
-          } catch (e, st) {
-            Log.warn('Panel', 'Ошибка выбора модели в селекторе: $e', e, st);
-          }
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final currentLabel = widget.chosenModel != null
-        ? modelLabel(widget.chosenModel!, widget.models)
-        : widget.hint;
-
-    return Semantics(
-      button: true,
-      label: currentLabel,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTapDown: (_) => setState(() => _down = true),
-          onTapUp: (_) => setState(() => _down = false),
-          onTapCancel: () => setState(() => _down = false),
-          onTap: () {
-            try {
-              _showMenu();
-            } catch (e, st) {
-              Log.warn('Panel', 'Ошибка открытия меню выбора модели: $e', e, st);
-            }
-          },
-          child: AnimatedScale(
-            duration: Motion.dur(context, Motion.press),
-            scale: _down ? 0.98 : 1.0,
-            child: AnimatedContainer(
-              duration: Motion.dur(context, Motion.quick),
-              curve: Motion.curve(context, Motion.quickCurve),
-              padding: const EdgeInsets.symmetric(
-                horizontal: Gap.inner,
-                vertical: 6,
-              ),
-              decoration: BoxDecoration(
-                color: _down
-                    ? Surface.pressed(context)
-                    : (_hover ? Surface.pressed(context) : Surface.hover(context)),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: Surface.hairline(context),
-                  width: 0.5,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      currentLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Type.control.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: Gap.hint),
-                  MacosIcon(
-                    CupertinoIcons.chevron_up_chevron_down,
-                    size: 11,
-                    color: Surface.secondaryText(context)
-                        .withValues(alpha: _hover ? 1 : 0.7),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ModelMenuRoute extends PopupRoute<String> {
-  _ModelMenuRoute({
-    required this.buttonRect,
-    required this.overlaySize,
-    required this.models,
-    required this.chosenModel,
-    required this.onSelected,
-  });
-
-  final Rect buttonRect;
-  final Size overlaySize;
-  final List<String> models;
-  final String? chosenModel;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Color? get barrierColor => MacosColors.transparent;
-
-  @override
-  bool get barrierDismissible => true;
-
-  @override
-  String? get barrierLabel => 'Закрыть меню моделей';
-
-  @override
-  Duration get transitionDuration => const Duration(milliseconds: 100);
-
-  @override
-  Widget buildPage(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-  ) {
-    const double menuMaxHeight = 220.0;
-    final double spaceBelow = overlaySize.height - buttonRect.bottom;
-    final bool openUpward = spaceBelow < 120 && buttonRect.top > spaceBelow;
-
-    final double top = openUpward
-        ? (buttonRect.top - menuMaxHeight).clamp(8.0, overlaySize.height)
-        : buttonRect.bottom + 4;
-
-    return Stack(
-      children: [
-        Positioned(
-          left: buttonRect.left,
-          top: top,
-          width: buttonRect.width,
-          child: _ModelMenuPopup(
-            models: models,
-            chosenModel: chosenModel,
-            maxHeight: menuMaxHeight,
-            onSelected: (model) {
-              Navigator.of(context).pop();
-              onSelected(model);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  @override
-  Widget buildTransitions(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  ) {
-    return FadeTransition(
-      opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-      child: child,
-    );
-  }
-}
-
-class _ModelMenuPopup extends StatelessWidget {
-  const _ModelMenuPopup({
-    required this.models,
-    required this.chosenModel,
-    required this.maxHeight,
-    required this.onSelected,
-  });
-
-  final List<String> models;
-  final String? chosenModel;
-  final double maxHeight;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = MacosTheme.of(context).brightness.isDark;
-    final bgColor = isDark
-        ? const Color(0xF02A2A2C)
-        : const Color(0xF5F2F2F4);
-    final defaultTextColor = isDark
-        ? MacosColors.white
-        : const Color(0xDE000000);
-
-    return Container(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: Surface.hairline(context),
-          width: 0.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: MacosColors.black.withValues(alpha: isDark ? 0.45 : 0.18),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: DefaultTextStyle(
-        style: Type.control.copyWith(color: defaultTextColor),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final path in models)
-                _ModelMenuItemRow(
-                  label: modelLabel(path, models),
-                  isSelected: path == chosenModel,
-                  onTap: () => onSelected(path),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ModelMenuItemRow extends StatefulWidget {
-  const _ModelMenuItemRow({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  State<_ModelMenuItemRow> createState() => _ModelMenuItemRowState();
-}
-
-class _ModelMenuItemRowState extends State<_ModelMenuItemRow> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = MacosTheme.of(context).brightness.isDark;
-    final accent = MacosTheme.of(context).primaryColor;
-    final normalTextColor = isDark
-        ? MacosColors.white
-        : const Color(0xDE000000);
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      cursor: SystemMouseCursors.basic,
-      child: GestureDetector(
-        onTap: () {
-          try {
-            widget.onTap();
-          } catch (e, st) {
-            Log.warn('Panel', 'Ошибка выбора пункта меню модели: $e', e, st);
-          }
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-          padding: const EdgeInsets.symmetric(horizontal: Gap.inner, vertical: 5),
-          decoration: BoxDecoration(
-            color: _hover ? accent : MacosColors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 14,
-                child: widget.isSelected
-                    ? MacosIcon(
-                        CupertinoIcons.checkmark,
-                        size: 12,
-                        color: _hover ? MacosColors.white : accent,
-                      )
-                    : null,
-              ),
-              const SizedBox(width: Gap.hint),
-              Expanded(
-                child: Text(
-                  widget.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Type.control.copyWith(
-                    color: _hover ? MacosColors.white : normalTextColor,
-                    fontWeight: widget.isSelected ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 
 class _Footer extends StatelessWidget {
   const _Footer(this.s);
@@ -1438,8 +1009,8 @@ class _Footer extends StatelessWidget {
                     final settings = Settings.load();
                     final path =
                         (settings['libraryPath'] as String?)?.isNotEmpty == true
-                            ? settings['libraryPath'] as String
-                            : os.defaultLibraryPath;
+                        ? settings['libraryPath'] as String
+                        : os.defaultLibraryPath;
                     revealInFinder(path, createIfMissing: true);
                   },
                 ),
@@ -1447,7 +1018,8 @@ class _Footer extends StatelessWidget {
                 _FooterIconButton(
                   icon: CupertinoIcons.cube_box,
                   tooltip: l10n.menuOpenModelsFolder,
-                  onTap: () => revealInFinder(os.modelsDir, createIfMissing: true),
+                  onTap: () =>
+                      revealInFinder(os.modelsDir, createIfMissing: true),
                 ),
                 const SizedBox(width: Gap.hint),
                 _FooterIconButton(
@@ -1503,48 +1075,49 @@ class _FooterIconButtonState extends State<_FooterIconButton> {
 
   @override
   Widget build(BuildContext context) => MacosTooltip(
-        message: widget.tooltip,
-        child: Semantics(
-          button: true,
-          label: widget.tooltip,
-          child: MouseRegion(
-            onEnter: (_) => setState(() => _hover = true),
-            onExit: (_) => setState(() => _hover = false),
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              onTapDown: (_) => setState(() => _down = true),
-              onTapUp: (_) => setState(() => _down = false),
-              onTapCancel: () => setState(() => _down = false),
-              onTap: widget.onTap,
-              child: AnimatedScale(
-                duration: Motion.dur(context, Motion.press),
-                scale: _down ? 0.92 : 1.0,
-                child: AnimatedContainer(
-                  duration: Motion.dur(context, Motion.quick),
-                  curve: Motion.curve(context, Motion.quickCurve),
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: _down
-                        ? Surface.pressed(context)
-                        : (_hover
-                            ? Surface.hover(context)
-                            : MacosColors.transparent),
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  alignment: Alignment.center,
-                  child: MacosIcon(
-                    widget.icon,
-                    size: IconSize.button,
-                    color: Surface.secondaryText(context)
-                        .withValues(alpha: _hover ? 1 : 0.65),
-                  ),
-                ),
+    message: widget.tooltip,
+    child: Semantics(
+      button: true,
+      label: widget.tooltip,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTapDown: (_) => setState(() => _down = true),
+          onTapUp: (_) => setState(() => _down = false),
+          onTapCancel: () => setState(() => _down = false),
+          onTap: widget.onTap,
+          child: AnimatedScale(
+            duration: Motion.dur(context, Motion.press),
+            scale: _down ? 0.92 : 1.0,
+            child: AnimatedContainer(
+              duration: Motion.dur(context, Motion.quick),
+              curve: Motion.curve(context, Motion.quickCurve),
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: _down
+                    ? Surface.pressed(context)
+                    : (_hover
+                          ? Surface.hover(context)
+                          : MacosColors.transparent),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              alignment: Alignment.center,
+              child: MacosIcon(
+                widget.icon,
+                size: IconSize.button,
+                color: Surface.secondaryText(
+                  context,
+                ).withValues(alpha: _hover ? 1 : 0.65),
               ),
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 }
 
 // ── мелочи ──────────────────────────────────────────────────────────────────
@@ -1587,7 +1160,9 @@ class _MenuRowState extends State<_MenuRow> {
           // Те же поля, что у строки контекстного меню в главном окне:
           // это один и тот же вид списка команд.
           padding: const EdgeInsets.symmetric(
-              horizontal: Gap.inner, vertical: Gap.hint),
+            horizontal: Gap.inner,
+            vertical: Gap.hint,
+          ),
           decoration: BoxDecoration(
             color: _hover ? accent : MacosColors.transparent,
             borderRadius: BorderRadius.circular(5),
@@ -1597,14 +1172,18 @@ class _MenuRowState extends State<_MenuRow> {
               Expanded(
                 child: Text(
                   widget.label,
-                  style: Type.control.copyWith(color: _hover ? MacosColors.white : null),
+                  style: Type.control.copyWith(
+                    color: _hover ? MacosColors.white : null,
+                  ),
                 ),
               ),
               if (widget.shortcut != null)
                 Text(
                   widget.shortcut!,
                   style: Type.control.copyWith(
-                    color: _hover ? MacosColors.white : Surface.secondaryText(context),
+                    color: _hover
+                        ? MacosColors.white
+                        : Surface.secondaryText(context),
                   ),
                 ),
             ],
@@ -1639,19 +1218,19 @@ class _Warning extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Container(
-        margin: const EdgeInsets.only(bottom: Gap.inner),
-        // Самостоятельная плашка, поле в ступень «между настройками» —
-        // как у ScopeBanner в инспекторе главного окна.
-        padding: const EdgeInsets.all(Gap.item),
-        decoration: BoxDecoration(
-          color: MacosColors.systemOrangeColor.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(text, style: Type.caption.copyWith(height: 1.35)),
-            if (onPressed != null) ...[
+      margin: const EdgeInsets.only(bottom: Gap.inner),
+      // Самостоятельная плашка, поле в ступень «между настройками» —
+      // как у ScopeBanner в инспекторе главного окна.
+      padding: const EdgeInsets.all(Gap.item),
+      decoration: BoxDecoration(
+        color: MacosColors.systemOrangeColor.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(text, style: Type.caption.copyWith(height: 1.35)),
+          if (onPressed != null) ...[
             const SizedBox(height: Gap.item),
             Row(
               children: [
@@ -1672,9 +1251,9 @@ class _Warning extends StatelessWidget {
                 ],
               ],
             ),
-            ],
           ],
-        ),
-      );
+        ],
+      ),
+    );
   }
 }
