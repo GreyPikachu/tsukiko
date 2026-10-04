@@ -293,7 +293,10 @@ void main() {
 
   group('очередь диктовок', () {
     Future<void> waitFor(bool Function() condition) async {
-      for (var i = 0; i < 200 && !condition(); i++) {
+      // Windows process enumeration during startup can exceed 400 ms on CI.
+      // Wait for the actual state, rather than depending on runner speed.
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      while (!condition() && DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(milliseconds: 2));
       }
       expect(condition(), isTrue);
