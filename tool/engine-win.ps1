@@ -10,7 +10,8 @@
 # поэтому не требуют установленного Visual C++ Redistributable (vcredist).
 #
 # Также накладываются патчи освобождения памяти и сохранения начальной
-# подсказки при отключённой истории распознанного текста.
+# подсказки при отключённой истории распознанного текста, а также
+# повторного кодирования первого окна при определении языка.
 
 [CmdletBinding()]
 param (
@@ -80,13 +81,16 @@ if (Test-Path $SRC) {
     Remove-Item $SRC -Recurse -Force
 }
 tar -xzf $TAR -C $WORK
+if ($LASTEXITCODE -ne 0) { throw "Не удалось распаковать whisper.cpp (код $LASTEXITCODE)." }
 
 foreach ($PATCH in $PATCHES) {
     Write-Host "Накладываем патч $PATCH..."
     if (Get-Command "git" -ErrorAction SilentlyContinue) {
         git -C $SRC apply --unidiff-zero "$RootDir/$PATCH"
+        if ($LASTEXITCODE -ne 0) { throw "Патч $PATCH не применился (код $LASTEXITCODE)." }
     } elseif (Get-Command "patch" -ErrorAction SilentlyContinue) {
         patch -p1 -d $SRC -i "$RootDir/$PATCH"
+        if ($LASTEXITCODE -ne 0) { throw "Патч $PATCH не применился (код $LASTEXITCODE)." }
     } else {
         Write-Error "Для сборки нужна утилита git или patch."
         exit 1
@@ -119,8 +123,10 @@ cmake -S $SRC -B $BUILD_VK `
     -DWHISPER_BUILD_SERVER=ON `
     -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
     -DGGML_VULKAN=ON
+if ($LASTEXITCODE -ne 0) { throw "Не удалось настроить Vulkan-сборку (код $LASTEXITCODE)." }
 
 cmake --build $BUILD_VK --config Release --parallel
+if ($LASTEXITCODE -ne 0) { throw "Не удалось собрать Vulkan-движок (код $LASTEXITCODE)." }
 
 # ── 2. Сборка CPU (надежный фоллбэк) ───────────────────────────────────────────
 Write-Host "Конфигурируем и собираем процессорную (CPU) версию движка..."
@@ -133,8 +139,10 @@ cmake -S $SRC -B $BUILD_CPU `
     -DWHISPER_BUILD_SERVER=ON `
     -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
     -DGGML_VULKAN=OFF
+if ($LASTEXITCODE -ne 0) { throw "Не удалось настроить CPU-сборку (код $LASTEXITCODE)." }
 
 cmake --build $BUILD_CPU --config Release --parallel
+if ($LASTEXITCODE -ne 0) { throw "Не удалось собрать CPU-движок (код $LASTEXITCODE)." }
 
 # ── 3. Копирование и фиксация ─────────────────────────────────────────────────
 Copy-Item "$BUILD_VK/bin/Release/whisper-cli.exe" "$OUT/tsukiko-recognizer-vulkan.exe" -Force

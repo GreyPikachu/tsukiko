@@ -1,0 +1,2 @@
+# Git apply expects LF patch context on every platform.
+tool/*.patch text eol=lf

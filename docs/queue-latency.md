@@ -15,6 +15,9 @@ Two changes remove avoidable work:
   next recognition to run while the receiving application consumes the paste.
   Pastes and automatic/manual dictation copies share a FIFO reservation.
 
+Windows builds also enforce LF patch files and stop on failed native commands.
+The real-engine test caught the previously silent patch-application failure.
+
 The model, beam search, audio context, prompt handling and FIFO order remain
 unchanged. No encoder state is reused between recordings.
 
