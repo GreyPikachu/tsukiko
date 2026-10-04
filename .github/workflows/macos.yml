@@ -36,6 +36,9 @@ jobs:
           python3 tool/version.py check
           python3 -m unittest discover -s tool -p test_version.py
 
+      - name: Раскладка DMG и сохранность уже открытого установщика
+        run: python3 tool/test_dmg.py
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -168,7 +171,10 @@ jobs:
 
       - name: Образ DMG
         id: dmg
-        run: set -o pipefail; ./tool/dmg.sh 2>&1 | tee logs/dmg.txt
+        run: |
+          set -o pipefail
+          ./tool/dmg.sh 2>&1 | tee logs/dmg.txt
+          build/dmg-tools-venv/bin/python3 tool/verify-dmg.py build/tsukiko.dmg
 
       - name: Приложение в артефакты
         if: always() && steps.sign.outcome == 'success'

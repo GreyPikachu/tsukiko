@@ -85,6 +85,8 @@ flutter build macos --release
 ```
 
 - Features a Retina background image (`design/dmg-background.tiff`) with drag-to-Applications layout.
+- Finder layout is written directly into the image, without GUI automation. Packaging installs pinned Python dependencies in `build/dmg-tools-venv`; it leaves existing mounted installers connected.
+- `python3 tool/test_dmg.py` checks packaging and layout with another `tsukiko` volume already mounted. `build/dmg-tools-venv/bin/python3 tool/verify-dmg.py build/tsukiko.dmg` verifies the actual distributable.
 - Signed with `--timestamp` to ensure the signature remains valid beyond certificate expiry.
 
 ### Windows: Inno Setup Installer
