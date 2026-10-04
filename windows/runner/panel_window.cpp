@@ -511,10 +511,13 @@ void HudWindow::Prepare(
     RegisterClassW(&wc);
 
     window_ = CreateWindowExW(
-        WS_EX_TOOLWINDOW | WS_EX_TOPMOST | (is_editor_ ? 0 : WS_EX_NOACTIVATE), kHudClassName,
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST | (is_editor_ ? WS_EX_LAYERED : WS_EX_NOACTIVATE), kHudClassName,
         L"tsukiko", WS_POPUP, 0, 0, is_editor_ ? 360 : kHudWidth, is_editor_ ? 228 : kHudHeight, nullptr, nullptr,
         GetModuleHandle(nullptr), this);
     if (!window_) return;
+
+    // A lightly translucent editor stays readable over the desktop.
+    if (is_editor_) SetLayeredWindowAttributes(window_, 0, 235, LWA_ALPHA);
 
     // Скруглённые углы — системные, как у всплывающих окон Windows 11.
     // На Windows 10 вызов просто ничего не делает.
