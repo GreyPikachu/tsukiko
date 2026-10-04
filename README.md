@@ -13,12 +13,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Yukovsky/tsukiko/releases"><img src="https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/Yukovsky/tsukiko/releases"><img src="https://img.shields.io/badge/version-1.2.2-blue.svg?style=flat-square" alt="Version" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%2012%2B%20%7C%20Windows%2010%2F11-lightgrey.svg?style=flat-square" alt="Platforms" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/privacy-100%25%20Offline-success.svg?style=flat-square" alt="100% Offline" />
   <img src="https://img.shields.io/badge/hardware-Metal%20%7C%20Vulkan-orange.svg?style=flat-square" alt="Hardware Acceleration" />
-  <img src="https://img.shields.io/badge/tests-549%20passed-brightgreen.svg?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-551%20passed-brightgreen.svg?style=flat-square" alt="Tests" />
 </p>
 
 <br />
@@ -89,7 +89,9 @@ Zero heavy external dependencies like Python, PyTorch, or separate CUDA runtimes
 
 ### System-Wide Dictation & Floating HUD
 - Activate from any window using a customizable global shortcut (default: right `Command` on macOS or `F8` on Windows).
-- Clean, non-intrusive floating HUD with real-time waveform level monitoring, elapsed timer, and inference progress.
+- Four recording indicators: full waveform panel, menu bar/system tray microphone, compact floating timer, or hidden. Switch instantly while recording.
+- A full-size layout preview with separate controls for style, position and scale. Drag anywhere on the indicator; center snapping, Save, Cancel and Reset are available. Controls move to a free corner when the preview approaches.
+- Record the next dictation while earlier recordings transcribe in FIFO order. The queue badge opens actions for the current transcription and waiting recordings.
 - Automatic text synthesis and simulated keystroke insertion directly into your focused application (IDE, browser, terminal, notes, chat).
 
 ### Hands-Free Voice Activation
@@ -236,6 +238,11 @@ Tsukiko is signed with an Apple Developer certificate and distributed outside th
 2. The floating HUD appears on your screen. Speak your thoughts naturally.
 3. Release or press the hotkey again (or pause speaking if Voice Activity Detection is enabled).
 4. Tsukiko transcribes your speech and pastes the text directly at your cursor location.
+
+
+You can start the next recording while an earlier one is still being transcribed. Completed recordings wait in a FIFO queue; recognition and pasting run one at a time. The cancel hotkey cancels the microphone recording first, leaving earlier recordings untouched. The HUD counter includes the active transcription and waiting recordings. Its menu lets you record the next phrase, cancel the active transcription, or clear waiting recordings while preserving their audio for recovery. In clipboard-only mode, results from the same queue accumulate in order with line breaks.
+
+Drag the HUD by its waveform (or the progress indicator during transcription) to move it; the position is saved when you release it. **Settings → Dictation → Adjust position and scale** opens a blue guide overlay with horizontal and vertical center snapping. Choose a scale from 80% to 160%, then **Save** or **Cancel**. Arrow keys move the island by one point; Shift+Arrow moves it by ten. Enter saves and Escape cancels. **Reset** restores the original bottom-center position and 100% scale. Saved coordinates adapt to the current monitor's work area and keep the island within screen bounds.
 
 ---
 

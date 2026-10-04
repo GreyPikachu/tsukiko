@@ -27,10 +27,16 @@ class WindowsOs implements Os {
       join(Platform.environment['APPDATA'] ?? home, bundleId);
 
   @override
-  String get defaultLibraryPath => join(home, 'Documents', appName);
+  String get defaultLibraryPath => join(documentsDir, appName);
 
   @override
-  String get documentsDir => join(home, 'Documents');
+  String get documentsDir {
+    final docs = join(home, 'Documents');
+    if (Directory(docs).existsSync()) return docs;
+    final oneDriveDocs = join(home, 'OneDrive', 'Documents');
+    if (Directory(oneDriveDocs).existsSync()) return oneDriveDocs;
+    return docs;
+  }
 
   @override
   List<String> get sharedModelDirs => [

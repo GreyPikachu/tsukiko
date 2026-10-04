@@ -1,229 +1,140 @@
 import Cocoa
 import SwiftUI
 
-/// Плавающая панель записи. Она отвечает на единственный вопрос —
-/// «система меня слышит и работает?» — и уходит, как только ответила.
-///
-/// Своё окно, а не поповер из трея: у них разные задачи. Поповер —
-/// настройки, которые открывают намеренно; эта панель приходит сама
-/// и не должна ни забирать фокус, ни закрывать собой работу.
-///
-/// Пружины те же, что в lib/design.dart: Motion.settle — отклик 0,4 с
-/// без перелёта, Motion.toss — 0,3 с с затуханием 0,72. Появление
-/// перелёта не имеет: жеста, который нёс бы импульс, здесь не было.
-
-enum HUDState: String {
-  case hidden, recording, transcribing, done, failed, copied, cancelled, silent
+enum HUDState: String { case hidden, recording, transcribing, done, failed, copied, cancelled, silent }
+enum IndicatorStyle: String, CaseIterable {
+  case panel, status, timer, off
+  var floating: Bool { self == .panel || self == .timer }
 }
 
 final class HUDModel: ObservableObject {
   @Published var state: HUDState = .hidden
+  @Published var pending = 0
+  @Published var processing = false
+  @Published var editing = false
+  @Published var scale: Double = 1
+  @Published var mode: IndicatorStyle = .panel
+  var queueCount: Int { editing ? max(2, pending + (processing ? 1 : 0)) : pending + (processing ? 1 : 0) }
+  var size: NSSize { mode == .timer ? NSSize(width: 148, height: 44) : NSSize(width: queueCount > 0 ? 420 : 372, height: 52) }
   @Published var elapsed: TimeInterval = 0
-
-  /// История уровня: полоски бегут справа налево, как настоящий сигнал.
   @Published var levels: [Double] = Array(repeating: 0, count: 22)
-
+  var labels: [String: String] = [:]
+  var onMove: (CGSize, Bool) -> Void = { _, _ in }
+  var onScale: (Double) -> Void = { _ in }
+  var onMode: (Int) -> Void = { _ in }
+  var onFinish: (Bool) -> Void = { _ in }
+  var onReset: () -> Void = {}
   var onCancel: () -> Void = {}
   var onStop: () -> Void = {}
-
-  /// Прервать распознавание. Отдельно от [onCancel]: та отменяет запись,
-  /// эта — уже идущий счёт модели.
   var onAbort: () -> Void = {}
-
-  func push(level: Double) {
-    levels.removeFirst()
-    levels.append(level)
-  }
+  var onClearQueue: () -> Void = {}
+  var onRecord: () -> Void = {}
+  func label(_ key: String, _ fallback: String) -> String { labels[key] ?? fallback }
+  func push(level: Double) { levels.removeFirst(); levels.append(level) }
 }
 
 struct HUDView: View {
   @ObservedObject var model: HUDModel
-
-  private var reduceMotion: Bool {
-    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-  }
-
+  private var preview: Bool { model.editing && model.state != .recording }
+  private var displayState: HUDState { model.editing ? .recording : model.state }
+  private var count: Int { model.queueCount }
   private var time: String {
-    let total = Int(model.elapsed)
-    return String(format: "%d:%02d", total / 60, total % 60)
+    let seconds = preview ? 3 : Int(model.elapsed)
+    return String(format: "%d:%02d", seconds / 60, seconds % 60)
   }
-
-  var body: some View {
-    HStack(spacing: 12) {
-      switch model.state {
-      case .transcribing:
-        Spinner()
-        Text("Распознаю…")
-          .font(.system(size: 13, weight: .medium))
-          .lineLimit(1)
-          .fixedSize()
-        Spacer(minLength: 0)
-        // Часовая запись считается минутами, и до этого выйти было нельзя
-        // ничем, кроме выхода из приложения. Крестик рядом с прогрессом —
-        // то же, чем отменяют загрузку в Safari и копирование в Finder:
-        // знакомый жест, который не нужно объяснять. Он у самого правого
-        // края — там же, где кончались кнопки записи, поэтому при смене
-        // фазы панель не перекраивается.
-        AbortButton(action: model.onAbort)
-      case .cancelled:
-        Image(systemName: "xmark.circle.fill")
-          .font(.system(size: 15))
-          .foregroundColor(.secondary)
-        Text("Отменено · запись сохранена")
-          .font(.system(size: 13, weight: .medium))
-          .lineLimit(1)
-          .fixedSize()
-        Spacer(minLength: 0)
-      case .done:
-        Image(systemName: "checkmark.circle.fill")
-          .font(.system(size: 15))
-          .foregroundColor(.green)
-        Text("Готово")
-          .font(.system(size: 13, weight: .medium))
-          .lineLimit(1)
-          .fixedSize()
-        Spacer(minLength: 0)
-      case .failed:
-        // Молча исчезнуть после неудачи — значит соврать, что всё в порядке.
-        // Подробности и путь к сохранённой записи ждут в панели диктовки.
-        Image(systemName: "exclamationmark.triangle.fill")
-          .font(.system(size: 15))
-          .foregroundColor(.orange)
-        Text("Не распознано · запись сохранена")
-          .font(.system(size: 13, weight: .medium))
-          .lineLimit(1)
-          .fixedSize()
-        Spacer(minLength: 0)
-      case .silent:
-        // Записывать было нечего: клавишу отпустили раньше, чем микрофон
-        // отдал первый отсчёт. Молча уйти здесь нельзя — это читалось бы
-        // как «всё получилось», — а «не вставилось» было бы неправдой.
-        Image(systemName: "mic.slash")
-          .font(.system(size: 15))
-          .foregroundColor(.secondary)
-        Text("Ничего не записалось")
-          .font(.system(size: 13, weight: .medium))
-          .lineLimit(1)
-          .fixedSize()
-        Spacer(minLength: 0)
-      case .copied:
-        // Текст распознан, но в чужое окно не попал. Молчать здесь тоже
-        // нельзя: человек ждёт слов там, где стоит курсор, и не узнает,
-        // что они лежат в буфере обмена.
-        Image(systemName: "doc.on.clipboard")
-          .font(.system(size: 15))
-          .foregroundColor(.orange)
-        Text("Не вставилось · текст в буфере, ⌘V")
-          .font(.system(size: 13, weight: .medium))
-          .lineLimit(1)
-          .fixedSize()
-        Spacer(minLength: 0)
-      default:
-        Meter(levels: model.levels, reduceMotion: reduceMotion)
-        Text(time)
-          .font(.system(size: 13, weight: .medium).monospacedDigit())
-          .lineLimit(1)
-          .fixedSize()
-          .foregroundColor(.primary)
-        Spacer(minLength: 0)
-        HUDButton(title: "Отменить", filled: false, action: model.onCancel)
-        HUDButton(title: "Остановить", filled: true, action: model.onStop)
+  private var levels: [Double] {
+    preview ? (0..<22).map { Double(($0 * 7) % 13 + 2) / 16 } : model.levels
+  }
+  private func action(_ callback: () -> Void) { if !model.editing { callback() } }
+  private var queue: some View {
+    Menu {
+      Text(model.label("queueTitle", "В очереди: \(model.pending)"))
+      if model.state != .recording { Button(model.label("record", "Записать следующую"), action: model.onRecord) }
+      if model.processing { Button(model.label("abort", "Отменить текущую расшифровку"), action: model.onAbort) }
+      if model.pending > 0 { Button(model.label("clearQueue", "Убрать ожидающие · сохранить записи"), action: model.onClearQueue) }
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: "list.bullet").font(.system(size: 11, weight: .medium))
+        Text(count > 99 ? "99+" : "\(count)").font(.system(size: 11, weight: .semibold).monospacedDigit())
       }
-    }
-    // Поля шире, чем кажется нужным: содержимое, прижатое к скруглённому
-    // краю, читается теснее, чем стоит на самом деле. Ширина панели растёт
-    // на ту же величину, чтобы поля не съели место у кнопок.
-    // Двадцать, а не двадцать два: шаг сетки во всём приложении — четыре.
-    .padding(.horizontal, 20)
-    .frame(height: 52)
-    // Отклик 0,25, а не 0,4: смену состояния человек вызвал сам, нажав
-    // «Остановить», и ждать почти полсекунды, пока надпись доедет,
-    // читается как задумчивость приложения. 0,4 — это для перемещений,
-    // которые случаются сами.
-    .animation(
-      reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.25, dampingFraction: 1),
-      value: model.state)
+    }.menuStyle(.borderlessButton).fixedSize().padding(.horizontal, 7).padding(.vertical, 5)
+      .background(Capsule().fill(Color.accentColor.opacity(0.14))).disabled(model.editing)
+      .help(model.label("queueTitle", "Очередь диктовок"))
+      .accessibilityLabel(model.label("queueTitle", "Очередь диктовок"))
   }
-}
-
-/// Уровень сигнала полосками. Это не украшение: пока они шевелятся,
-/// видно, что микрофон действительно слышит, а не пишет тишину.
-private struct Meter: View {
-  let levels: [Double]
-  let reduceMotion: Bool
-
   var body: some View {
-    HStack(alignment: .center, spacing: 2) {
-      ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
-        Capsule()
-          .fill(Color.primary.opacity(0.55))
-          .frame(width: 2.5, height: max(2.5, level * 24))
-      }
-    }
-    .frame(width: 100, height: 26, alignment: .center)
-    .animation(
-      reduceMotion ? nil : .spring(response: 0.18, dampingFraction: 1), value: levels)
-  }
-}
-
-/// Неопределённый прогресс: длительность распознавания заранее
-/// неизвестна, а показывать выдуманную шкалу — врать.
-private struct Spinner: View {
-  @State private var spin = false
-
-  var body: some View {
-    Circle()
-      .trim(from: 0, to: 0.7)
-      .stroke(Color.primary.opacity(0.55), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-      .frame(width: 14, height: 14)
-      .rotationEffect(.degrees(spin ? 360 : 0))
-      .onAppear {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
-          spin = true
-        }
-      }
-  }
-}
-
-/// Крестик отмены. Не кнопка с подписью: действие редкое, и громкая
-/// кнопка рядом с «Распознаю…» читалась бы как основное намерение.
-/// В покое он приглушён, под курсором проявляется вместе с круглой
-/// подложкой — есть, когда его ищут, и молчит, когда не нужен.
-private struct AbortButton: View {
-  let action: () -> Void
-
-  @State private var hover = false
-  @State private var pressed = false
-
-  var body: some View {
-    Image(systemName: "xmark")
-      .font(.system(size: 11, weight: .semibold))
-      .foregroundColor(.primary.opacity(hover ? 0.9 : 0.4))
-      .frame(width: 22, height: 22)
-      .background(
-        Circle().fill(Color.primary.opacity(hover ? 0.08 : 0))
-      )
-      .contentShape(Circle())
-      // Отклик на нажатие, а не на отпускании: задержка убивает
-      // ощущение прямоты — то же правило, что у HUDButton.
-      .scaleEffect(pressed ? 0.94 : 1)
-      .animation(.easeOut(duration: 0.09), value: pressed)
-      .animation(.easeOut(duration: 0.12), value: hover)
-      .onHover { hover = $0 }
-      .gesture(
-        DragGesture(minimumDistance: 0)
-          .onChanged { _ in pressed = true }
-          .onEnded { value in
-            pressed = false
-            // Ушли с кнопки, не отпустив, — действие отменяется.
-            let inside = abs(value.translation.width) < 20 && abs(value.translation.height) < 20
-            if inside { action() }
+    Group {
+      if model.mode == .timer {
+        HStack(spacing: 9) {
+          if displayState == .recording || displayState == .transcribing {
+            if displayState == .recording { Image(systemName: "mic.fill").foregroundColor(.red) }
+            else { ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 14) }
+            Text(displayState == .recording ? time : "Распознаю…")
+              .font(.system(size: 13, weight: .medium).monospacedDigit()).lineLimit(1)
+            Spacer(minLength: 0)
+            Button { action(displayState == .recording ? model.onStop : model.onAbort) } label: {
+              Image(systemName: displayState == .recording ? "stop.fill" : "xmark").font(.system(size: 10, weight: .semibold))
+                .frame(width: 22, height: 24).contentShape(Rectangle())
+            }.buttonStyle(PlainButtonStyle())
+              .accessibilityLabel(displayState == .recording ? "Остановить запись" : "Отменить расшифровку")
+              .help(displayState == .recording ? "Остановить запись" : "Отменить расшифровку")
+          } else {
+            Image(systemName: resultIcon).foregroundColor(displayState == .done ? .green : .secondary)
+            Text(resultText).font(.system(size: 12)).lineLimit(1).help(resultText)
+            Spacer(minLength: 0)
           }
-      )
-      .help("Отменить распознавание")
-      .accessibilityLabel("Отменить распознавание")
-      .accessibilityAddTraits(.isButton)
+        }.padding(.horizontal, 13)
+      } else {
+        HStack(spacing: 9) {
+          if displayState == .recording {
+            Meter(levels: levels, reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+            Text(time).font(.system(size: 13, weight: .medium).monospacedDigit()).fixedSize()
+            if count > 0 { queue }
+            Spacer(minLength: 0)
+            HUDButton(title: "Отменить", filled: false) { action(model.onCancel) }
+            HUDButton(title: "Остановить", filled: true) { action(model.onStop) }
+          } else if displayState == .transcribing {
+            ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 20)
+            Text("Распознаю…").font(.system(size: 13, weight: .medium))
+            if count > 0 { queue }
+            Spacer(minLength: 0)
+            Button { action(model.onAbort) } label: {
+              Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 32)
+            }.buttonStyle(PlainButtonStyle()).help("Отменить распознавание")
+          } else {
+            Image(systemName: resultIcon).foregroundColor(displayState == .done ? .green : .secondary)
+            Text(resultText).font(.system(size: 13, weight: .medium)).lineLimit(1)
+            Spacer(minLength: 0)
+          }
+        }.padding(.horizontal, 16)
+      }
+    }
+    .frame(width: model.size.width, height: model.size.height)
+    .contentShape(Rectangle())
+    .highPriorityGesture(DragGesture(minimumDistance: 4, coordinateSpace: .global)
+      .onChanged { model.onMove($0.translation, false) }
+      .onEnded { model.onMove($0.translation, true) })
+    .scaleEffect(model.scale)
+    .frame(width: model.size.width * model.scale, height: model.size.height * model.scale)
+  }
+  private var resultIcon: String {
+    switch displayState {
+    case .done: return "checkmark.circle.fill"
+    case .failed: return "exclamationmark.triangle.fill"
+    case .copied: return "doc.on.clipboard"
+    case .silent: return "mic.slash"
+    default: return "xmark.circle.fill"
+    }
+  }
+  private var resultText: String {
+    switch displayState {
+    case .done: return "Готово"
+    case .failed: return "Не распознано · запись сохранена"
+    case .copied: return "Не вставилось · текст в буфере, ⌘V"
+    case .silent: return "Ничего не записалось"
+    case .cancelled: return "Отменено · запись сохранена"
+    default: return ""
+    }
   }
 }
 
@@ -231,274 +142,387 @@ private struct HUDButton: View {
   let title: String
   let filled: Bool
   let action: () -> Void
-
-  @State private var pressed = false
-  @State private var hover = false
-
   var body: some View {
-    Text(title)
-      .font(.system(size: 12))
-      .lineLimit(1)
-      .fixedSize()
-      .foregroundColor(filled ? .white : .primary)
-      .padding(.horizontal, 12)
-      .padding(.vertical, 6)
-      .background(
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-          .fill(background)
-      )
-      // Подсветка на нажатии, а не на отпускании: задержка убивает
-      // ощущение прямоты.
-      .scaleEffect(pressed ? 0.97 : 1)
-      .animation(.easeOut(duration: 0.09), value: pressed)
-      .onHover { hover = $0 }
-      .gesture(
-        DragGesture(minimumDistance: 0)
-          .onChanged { _ in pressed = true }
-          .onEnded { value in
-            pressed = false
-            // Ушли с кнопки, не отпустив, — действие отменяется.
-            let inside = abs(value.translation.width) < 24 && abs(value.translation.height) < 20
-            if inside { action() }
-          }
-      )
+    Button(action: action) { Text(title).font(.system(size: 12)).fixedSize().padding(.horizontal, 10).padding(.vertical, 6) }
+      .buttonStyle(HUDButtonStyle(filled: filled))
   }
-
-  private var background: Color {
-    if filled {
-      return Color.accentColor.opacity(hover ? 0.9 : 1)
-    }
-    return Color.primary.opacity(pressed ? 0.16 : hover ? 0.1 : 0.06)
+}
+private struct HUDButtonStyle: ButtonStyle {
+  let filled: Bool
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label.foregroundColor(filled ? .white : .primary)
+      .background(RoundedRectangle(cornerRadius: 6).fill(filled ? Color.accentColor : Color.primary.opacity(configuration.isPressed ? 0.16 : 0.06)))
+      .opacity(configuration.isPressed ? 0.8 : 1)
+  }
+}
+private struct Meter: View {
+  let levels: [Double]
+  let reduceMotion: Bool
+  var body: some View {
+    HStack(alignment: .center, spacing: 2) {
+      ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
+        Capsule().fill(Color.primary.opacity(0.55)).frame(width: 2.5, height: max(2.5, level * 24))
+      }
+    }.frame(width: 100, height: 26)
+      .animation(reduceMotion ? nil : .spring(response: 0.18, dampingFraction: 1), value: levels)
   }
 }
 
-// ── окно ────────────────────────────────────────────────────────────────────
+private struct HUDEditorView: View {
+  @ObservedObject var model: HUDModel
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack {
+        Text(model.label("title", "Индикатор записи")).font(.system(size: 14, weight: .semibold))
+        Spacer()
+        Text("\((IndicatorStyle.allCases.firstIndex(of: model.mode) ?? 0) + 1) / 4").font(.system(size: 11).monospacedDigit()).foregroundColor(.secondary)
+      }
+      HStack {
+        Button { model.onMode(-1) } label: { Image(systemName: "chevron.left").frame(width: 28, height: 26) }.help(model.label("previous", "Предыдущий стиль")).accessibilityLabel(model.label("previous", "Предыдущий стиль"))
+        Spacer()
+        Text(model.label(model.mode.rawValue, ["panel": "Плашка записи", "status": "Строка меню / трей", "timer": "Плавающий таймер", "off": "Выключено"][model.mode.rawValue]!)).font(.system(size: 12, weight: .medium))
+        Spacer()
+        Button { model.onMode(1) } label: { Image(systemName: "chevron.right").frame(width: 28, height: 26) }.help(model.label("next", "Следующий стиль")).accessibilityLabel(model.label("next", "Следующий стиль"))
+      }.buttonStyle(PlainButtonStyle())
+      if model.mode.floating {
+        HStack {
+          Text(model.label("scale", "Масштаб"))
+          Slider(value: Binding(get: { model.scale }, set: model.onScale), in: 0.8...1.6, step: 0.1)
+            .accessibilityLabel(model.label("scale", "Масштаб"))
+          Text("\(Int((model.scale * 100).rounded()))%").monospacedDigit().frame(width: 38)
+        }.font(.system(size: 11)).frame(height: 26)
+      } else {
+        Text(model.label(model.mode == .status ? "statusHint" : "offHint", "Положение значка задаёт система"))
+          .font(.system(size: 11)).foregroundColor(.secondary).frame(height: 26)
+      }
+      Text(model.mode.floating ? model.label("preview", "Предпросмотр") + " · " + model.label("hint", "Переместите индикатор · центр экрана притягивает") : "")
+        .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(2)
+      HStack {
+        Button(model.label("reset", "Сбросить"), action: model.onReset)
+        Spacer()
+        Button(model.label("cancel", "Отменить")) { model.onFinish(false) }
+        Button(model.label("save", "Сохранить")) { model.onFinish(true) }
+      }.font(.system(size: 11))
+    }.padding(16).frame(width: 360, height: 228)
+  }
+}
 
-/// Панель не становится ключевой ни при каких условиях: заберёт фокус —
-/// уйдёт из поля ввода, куда мы собираемся вставлять текст, и вставка
-/// сломается целиком.
 private final class HUDPanel: NSPanel {
-  override var canBecomeKey: Bool { false }
+  var editingEnabled = false
+  override var canBecomeKey: Bool { editingEnabled }
   override var canBecomeMain: Bool { false }
 }
 
 final class RecordingHUD {
   private var panel: HUDPanel?
+  private var editor: HUDPanel?
+  private var guides: NSPanel?
   private let model = HUDModel()
+  private let defaults: UserDefaults
+  private let placementKey = "dictationHUDPlacement"
+  private var placement = HUDPlacement()
+  private var savedPlacement = HUDPlacement()
+  private var savedMode: IndicatorStyle = .panel
   private var ticker: Timer?
   private var startedAt: Date?
   private var hideAfterDone: Timer?
-
-  /// Номер нынешнего показа. Уход панели — анимация в четверть секунды, и
-  /// панель прячется не сразу, а в её обработчике завершения. Если за эту
-  /// четверть секунды человек начал говорить снова, обработчик прежнего
-  /// ухода всё равно доигрывал своё и убирал панель с экрана — уже поверх
-  /// начатой записи. Со стороны это и есть «панель просто не появилась»:
-  /// она появлялась и в ту же долю секунды исчезала, а исчезнув, обратно
-  /// сама не приходила. Номер отличает свой уход от чужого.
   private var showNumber = 0
-
-  private let size = NSSize(width: 372, height: 52)
-
-  /// Откуда брать уровень сигнала — рекордер живёт в мосте.
+  private var dragOrigin: NSPoint?
+  private var dragPointer: NSPoint?
+  private var layoutScreen: NSScreen?
+  private var keyMonitor: Any?
+  private weak var previousKeyWindow: NSWindow?
+  private var editorCorner = 0
   var levelSource: () -> Double = { 0 }
+  var onModeChanged: (String) -> Void = { _ in }
+  var onStatusChanged: (Bool) -> Void = { _ in }
+  var currentPlacement: HUDPlacement { placement }
+  var currentMode: String { model.mode.rawValue }
+  var isEditing: Bool { model.editing }
+  var isVisible: Bool { panel?.isVisible == true }
+  var previewFrame: NSRect { NSRect(origin: restingOrigin, size: size) }
+  var editorFrame: NSRect? { editor?.frame }
+  private var size: NSSize { NSSize(width: model.size.width * model.scale, height: model.size.height * model.scale) }
+  private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
-  init(
-    onCancel: @escaping () -> Void, onStop: @escaping () -> Void,
-    onAbort: @escaping () -> Void
-  ) {
-    model.onCancel = onCancel
-    model.onStop = onStop
-    model.onAbort = onAbort
+  init(onCancel: @escaping () -> Void, onStop: @escaping () -> Void,
+       onAbort: @escaping () -> Void, onClearQueue: @escaping () -> Void,
+       onRecord: @escaping () -> Void, defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+    model.onCancel = onCancel; model.onStop = onStop; model.onAbort = onAbort
+    model.onClearQueue = onClearQueue; model.onRecord = onRecord
+    if let saved = defaults.dictionary(forKey: placementKey) {
+      placement = HUDPlacement(x: saved["x"] as? Double, y: saved["y"] as? Double, scale: saved["scale"] as? Double ?? 1)
+    }
+    model.scale = placement.scale
+    model.onMove = { [weak self] offset, ended in self?.move(offset, ended: ended) }
+    model.onScale = { [weak self] value in self?.setScale(value) }
+    model.onMode = { [weak self] delta in self?.cycleMode(delta) }
+    model.onReset = { [weak self] in self?.resetPosition() }
+    model.onFinish = { [weak self] save in self?.finishEditing(save: save) }
   }
-
+  deinit {
+    ticker?.invalidate(); hideAfterDone?.invalidate()
+    if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+    panel?.orderOut(nil); editor?.orderOut(nil); guides?.orderOut(nil)
+  }
+  private func materialPanel<V: View>(size: NSSize, view: V) -> HUDPanel {
+    let window = HUDPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
+    window.isFloatingPanel = true; window.level = .statusBar
+    window.hidesOnDeactivate = false; window.isOpaque = false; window.backgroundColor = .clear
+    window.hasShadow = true; window.becomesKeyOnlyIfNeeded = true
+    window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+    let effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
+    effect.material = .hudWindow; effect.blendingMode = .behindWindow; effect.state = .active
+    effect.wantsLayer = true; effect.layer?.cornerRadius = 14; effect.layer?.masksToBounds = true
+    effect.autoresizingMask = [.width, .height]
+    let host = NSHostingView(rootView: view); host.frame = effect.bounds; host.autoresizingMask = [.width, .height]
+    effect.addSubview(host); window.contentView = effect
+    return window
+  }
   private func build() -> HUDPanel {
     if let panel { return panel }
-
-    let panel = HUDPanel(
-      contentRect: NSRect(origin: .zero, size: size),
-      styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
-      backing: .buffered, defer: false)
-    panel.isFloatingPanel = true
-    panel.level = .statusBar
-    panel.hidesOnDeactivate = false
-    panel.isOpaque = false
-    panel.backgroundColor = .clear
-    panel.hasShadow = true
-    panel.isMovableByWindowBackground = false
-    panel.becomesKeyOnlyIfNeeded = true
-    panel.ignoresMouseEvents = false
-    // Панель принадлежит не окну, а моменту: она нужна на любом рабочем
-    // столе, в том числе поверх чужого полноэкранного окна.
-    panel.collectionBehavior = [
-      .canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle,
-    ]
-
-    let effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
-    effect.material = .hudWindow
-    effect.blendingMode = .behindWindow
-    effect.state = .active
-    effect.wantsLayer = true
-    effect.layer?.cornerRadius = 14
-    effect.layer?.masksToBounds = true
-    effect.autoresizingMask = [.width, .height]
-
-    let host = NSHostingView(rootView: HUDView(model: model))
-    host.frame = effect.bounds
-    host.autoresizingMask = [.width, .height]
-    effect.addSubview(host)
-
-    panel.contentView = effect
-    self.panel = panel
-    return panel
+    let window = materialPanel(size: size, view: HUDView(model: model))
+    window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+    panel = window; return window
   }
-
-  /// Экран, на котором сейчас работают, — тот, где указатель.
-  ///
-  /// `NSScreen.main` для этого не годится: он отвечает про экран с ключевым
-  /// окном, а ключевого окна у нас нет вовсе — панель нарочно не берёт
-  /// фокус. На одном мониторе разницы нет, на двух панель уезжала
-  /// на соседний, то есть «не появлялась» и там, где на неё смотрят.
-  private var restingOrigin: NSPoint {
-    let mouse = NSEvent.mouseLocation
-    let screen = (NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens.first)
-    let work = screen.map { $0.visibleFrame.height > 0 ? $0.visibleFrame : $0.frame } ?? .zero
-    return NSPoint(x: work.midX - size.width / 2, y: work.minY + 92)
+  private var currentScreen: NSScreen? {
+    if let layoutScreen, NSScreen.screens.contains(layoutScreen) { return layoutScreen }
+    let pointer = NSEvent.mouseLocation
+    return NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens.first
   }
-
-  private var reduceMotion: Bool {
-    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+  private var workArea: NSRect { currentScreen?.visibleFrame ?? .zero }
+  private var restingOrigin: NSPoint { placement.origin(in: workArea, size: size) }
+  private func persist() {
+    var saved: [String: Double] = ["scale": placement.scale]
+    if let x = placement.x, let y = placement.y { saved["x"] = x; saved["y"] = y }
+    defaults.set(saved, forKey: placementKey)
   }
-
-  func show() {
-    let panel = build()
-    hideAfterDone?.invalidate()
-    hideAfterDone = nil
-    ticker?.invalidate()
-    ticker = nil
-    showNumber += 1
-    model.state = .recording
-    model.levels = Array(repeating: 0, count: model.levels.count)
-    startedAt = Date()
-    model.elapsed = 0
-
-    // Появление проигрываем, только если панели на экране не было. А вот
-    // на экран выводим и проявляем всегда: «panel.isVisible» бывает true
-    // и у панели, которая прямо сейчас доугасает до нуля, — и без этих
-    // двух строк она так и оставалась прозрачной всю запись.
-    let appearing = !panel.isVisible
-    let rest = restingOrigin
-    if appearing {
-      // Приходит снизу и уходит вниз же: если что-то появилось одним
-      // путём, мы ждём, что тем же путём оно и исчезнет.
-      panel.setFrameOrigin(
-        NSPoint(x: rest.x, y: reduceMotion ? rest.y : rest.y - 18))
-      panel.alphaValue = 0
-    } else {
-      panel.setFrameOrigin(rest)
-      panel.alphaValue = 1
+  private func resize() {
+    build().setFrame(NSRect(origin: restingOrigin, size: size), display: true)
+    positionEditor(animated: true)
+  }
+  private func captureCenter() {
+    placement.capture(origin: restingOrigin, in: workArea, size: size)
+  }
+  private func move(_ offset: CGSize, ended: Bool) {
+    guard model.mode.floating else { return }
+    let window = build(), pointer = NSEvent.mouseLocation
+    if dragOrigin == nil {
+      dragOrigin = window.frame.origin
+      dragPointer = NSPoint(x: pointer.x - offset.width * model.scale, y: pointer.y + offset.height * model.scale)
     }
-    panel.orderFrontRegardless()
-    NSAnimationContext.runAnimationGroup { context in
-      context.duration = reduceMotion ? 0.15 : (appearing ? 0.34 : 0.12)
-      context.timingFunction = CAMediaTimingFunction(
-        controlPoints: 0.22, 1, 0.36, 1)
-      panel.animator().alphaValue = 1
-      panel.animator().setFrameOrigin(rest)
+    let origin = placement.snap(NSPoint(x: dragOrigin!.x + pointer.x - dragPointer!.x,
+                                        y: dragOrigin!.y + pointer.y - dragPointer!.y), in: workArea, size: size)
+    window.setFrameOrigin(origin); placement.capture(origin: origin, in: workArea, size: size)
+    positionEditor(animated: true)
+    if ended { dragOrigin = nil; dragPointer = nil; if !model.editing { persist() } }
+  }
+  func setScale(_ scale: Double) {
+    captureCenter(); placement.scale = HUDPlacement.validScale(scale); model.scale = placement.scale
+    resize(); if !model.editing { persist() }
+  }
+  func setMode(_ value: String, notify: Bool = false) {
+    let next = IndicatorStyle(rawValue: value) ?? .panel
+    if model.mode != next {
+      if model.mode.floating { captureCenter() }
+      dragOrigin = nil; dragPointer = nil
+      model.mode = next
+      refreshVisibility()
     }
-
-    let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
-      guard let self else { return }
-      self.model.push(level: self.levelSource())
-      if let started = self.startedAt, self.model.state == .recording {
-        self.model.elapsed = Date().timeIntervalSince(started)
+    if notify { onModeChanged(next.rawValue) }
+  }
+  func cycleMode(_ delta: Int) {
+    let modes = IndicatorStyle.allCases, index = modes.firstIndex(of: model.mode) ?? 0
+    setMode(modes[(index + delta % modes.count + modes.count) % modes.count].rawValue, notify: true)
+  }
+  func resetPosition() { placement = HUDPlacement(); model.scale = placement.scale; resize(); if !model.editing { persist() } }
+  func configure(labels: [String: String]) {
+    guard !model.editing else { return }
+    if let mode = labels["mode"] { setMode(mode) }
+    model.labels.merge(labels) { _, new in new }
+    savedPlacement = placement; savedMode = model.mode; layoutScreen = currentScreen
+    captureCenter(); model.editing = true
+    let overlay = NSPanel(contentRect: workArea, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    overlay.level = .floating; overlay.isOpaque = false; overlay.backgroundColor = .clear; overlay.ignoresMouseEvents = true
+    overlay.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+    overlay.contentView = NSHostingView(rootView: HUDGuides()); overlay.orderFrontRegardless(); guides = overlay
+    let controls = materialPanel(size: NSSize(width: 360, height: 228), view: HUDEditorView(model: model))
+    controls.editingEnabled = true; editor = controls; editorCorner = 0
+    positionEditor(animated: false)
+    previousKeyWindow = NSApp.keyWindow
+    controls.makeKeyAndOrderFront(nil)
+    refreshVisibility()
+    keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      guard let self, self.model.editing else { return event }
+      if event.keyCode == 53 { self.finishEditing(save: false); return nil }
+      if event.keyCode == 36 { self.finishEditing(save: true); return nil }
+      let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+      let delta: NSPoint
+      switch event.keyCode {
+      case 123: delta = NSPoint(x: -step, y: 0)
+      case 124: delta = NSPoint(x: step, y: 0)
+      case 125: delta = NSPoint(x: 0, y: -step)
+      case 126: delta = NSPoint(x: 0, y: step)
+      default: return event
       }
+      if self.model.mode.floating {
+        let origin = self.restingOrigin
+        let moved = self.placement.clamp(NSPoint(x: origin.x + delta.x, y: origin.y + delta.y), in: self.workArea, size: self.size)
+        self.placement.capture(origin: moved, in: self.workArea, size: self.size); self.resize()
+      }
+      return nil
     }
-    // scheduledTimer попадает только в default mode главного run loop.
-    // Системное меню переводит его в eventTracking mode на всё время,
-    // пока меню раскрыто, — и панель застывала вместе со временем и
-    // измерителем, хотя рекордер продолжал писать. Common modes включают
-    // оба режима, поэтому интерфейс записи продолжает жить поверх меню.
-    RunLoop.main.add(timer, forMode: .common)
-    ticker = timer
   }
-
-  /// Запись кончилась — панель не исчезает, а перетекает в «Распознаю».
-  /// Пропасть между «отпустил клавишу» и «текст появился» и есть то
-  /// место, где пользователь начинает гадать, работает ли программа.
-  func transcribing() {
-    guard panel?.isVisible == true else { return }
-    ticker?.invalidate()
-    ticker = nil
-    model.state = .transcribing
+  func finishEditing(save: Bool) {
+    guard model.editing else { return }
+    if save { captureCenter() }
+    model.editing = false
+    if !save {
+      placement = savedPlacement; model.scale = placement.scale; model.mode = savedMode
+      onModeChanged(savedMode.rawValue)
+    } else { persist() }
+    if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }; keyMonitor = nil
+    editor?.orderOut(nil); editor = nil; guides?.orderOut(nil); guides = nil
+    previousKeyWindow?.makeKeyAndOrderFront(nil)
+    refreshVisibility(); layoutScreen = nil
   }
-
-  /// Короткое подтверждение — и уходит.
-  func finish() {
-    linger(.done, seconds: 0.7)
+  private func positionEditor(animated: Bool) {
+    guard let editor, model.editing else { return }
+    let selected = HUDLayoutControls.corner(in: workArea, size: editor.frame.size,
+      avoiding: model.mode.floating ? previewFrame : .zero, current: editorCorner)
+    let target = HUDLayoutControls.frame(in: workArea, size: editor.frame.size, corner: selected)
+    let changed = selected != editorCorner || !animated
+    editorCorner = selected
+    guard changed else { return }
+    if animated && !reduceMotion {
+      NSAnimationContext.runAnimationGroup { context in
+        context.duration = 0.36; context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        editor.animator().setFrameOrigin(target.origin)
+      }
+    } else { editor.setFrameOrigin(target.origin) }
   }
-
-  /// Неудача висит дольше подтверждения: её надо успеть прочитать.
-  func failed() {
-    linger(.failed, seconds: 2.6)
+  func updateQueue(pending: Int, processing: Bool, labels: [String: String] = [:]) {
+    let before = size, origin = restingOrigin
+    let hasQueue = model.editing || pending > 0 || processing
+    if model.mode == .panel && (model.queueCount > 0) != hasQueue { captureCenter() }
+    model.labels.merge(labels) { _, new in new }; model.pending = max(0, pending); model.processing = processing
+    if size != before {
+      if let start = dragOrigin {
+        dragOrigin = NSPoint(x: start.x + restingOrigin.x - origin.x, y: start.y + restingOrigin.y - origin.y)
+      }
+      if panel != nil { resize() }
+    }
   }
-
-  /// Текст уцелел, но остался в буфере обмена — об этом надо успеть
-  /// прочитать так же, как о потерянной записи.
-  func copied() {
-    linger(.copied, seconds: 2.6)
+  func show() { setState(.recording) }
+  func transcribing() { setState(.transcribing) }
+  func finish() { linger(.done, seconds: 0.7) }
+  func failed() { linger(.failed, seconds: 2.6) }
+  func copied() { linger(.copied, seconds: 2.6) }
+  func cancelled() { linger(.cancelled, seconds: 2.2) }
+  func silent() { linger(.silent, seconds: 1.8) }
+  func hide() { setState(.hidden) }
+  private func setState(_ next: HUDState) {
+    hideAfterDone?.invalidate(); hideAfterDone = nil
+    if next != model.state {
+      if next == .recording {
+        startedAt = Date(); model.elapsed = 0; model.levels = Array(repeating: 0, count: 22)
+      } else { ticker?.invalidate(); ticker = nil }
+      model.state = next
+    }
+    if next == .recording && ticker == nil {
+      let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+        guard let self else { return }
+        self.model.push(level: self.levelSource())
+        if let start = self.startedAt { self.model.elapsed = Date().timeIntervalSince(start) }
+      }
+      RunLoop.main.add(timer, forMode: .common); ticker = timer
+    }
+    refreshVisibility()
   }
-
-  /// Распознавание прервали сами. Панель не исчезает молча: надо сказать,
-  /// что запись при этом сохранена, — иначе отмена читается как потеря.
-  func cancelled() {
-    linger(.cancelled, seconds: 2.2)
-  }
-
-  /// Записывать было нечего. Висит недолго: сказанного тут одно слово,
-  /// и оно про то, что ничего не случилось.
-  func silent() {
-    linger(.silent, seconds: 1.8)
-  }
-
   private func linger(_ state: HUDState, seconds: TimeInterval) {
-    guard panel?.isVisible == true else {
-      hide()
-      return
-    }
-    ticker?.invalidate()
-    ticker = nil
-    model.state = state
-    hideAfterDone?.invalidate()
-    hideAfterDone = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) {
-      [weak self] _ in
-      self?.hide()
-    }
+    setState(state)
+    hideAfterDone = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in self?.hide() }
   }
-
-  func hide() {
-    ticker?.invalidate()
-    ticker = nil
-    hideAfterDone?.invalidate()
-    hideAfterDone = nil
-    guard let panel, panel.isVisible else { return }
-    let rest = restingOrigin
-    let mine = showNumber
-    NSAnimationContext.runAnimationGroup(
-      { context in
+  private func refreshVisibility() {
+    showNumber += 1
+    onStatusChanged(model.mode == .status && (model.state == .recording || model.editing))
+    guard model.mode.floating && (model.editing || model.state != .hidden) else {
+      panel?.orderOut(nil); return
+    }
+    let window = build(), appearing = !window.isVisible
+    resize(); window.orderFrontRegardless()
+    if appearing {
+      window.alphaValue = 0
+      NSAnimationContext.runAnimationGroup { context in
         context.duration = reduceMotion ? 0.12 : 0.22
-        context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        panel.animator().alphaValue = 0
-        if !reduceMotion {
-          panel.animator().setFrameOrigin(NSPoint(x: rest.x, y: rest.y - 18))
-        }
-      },
-      completionHandler: { [weak self] in
-        // Пока панель угасала, могла начаться новая запись. Тогда убирать
-        // с экрана нечего: на нём уже не наша панель, а следующая.
-        guard let self, self.showNumber == mine else { return }
-        panel.orderOut(nil)
-        self.model.state = .hidden
-      })
+        window.animator().alphaValue = 1
+      }
+    } else { window.alphaValue = 1 }
+  }
+}
+
+/// Keep the current corner until the preview approaches; avoid oscillation.
+struct HUDLayoutControls {
+  static func frame(in work: NSRect, size: NSSize, corner: Int) -> NSRect {
+    let left = work.minX + 24, right = max(left, work.maxX - size.width - 24)
+    let bottom = work.minY + 24, top = max(bottom, work.maxY - size.height - 24)
+    return NSRect(x: corner % 2 == 0 ? left : right, y: corner < 2 ? top : bottom, width: size.width, height: size.height)
+  }
+  static func corner(in work: NSRect, size: NSSize, avoiding preview: NSRect, current: Int) -> Int {
+    let obstacle = preview.insetBy(dx: -32, dy: -32)
+    if preview.isEmpty || !frame(in: work, size: size, corner: current).intersects(obstacle) { return current }
+    let choices = (0..<4).filter { !frame(in: work, size: size, corner: $0).intersects(obstacle) }
+    return (choices.isEmpty ? Array(0..<4) : choices).max { a, b in
+      let pa = frame(in: work, size: size, corner: a), pb = frame(in: work, size: size, corner: b)
+      return hypot(pa.midX - preview.midX, pa.midY - preview.midY) < hypot(pb.midX - preview.midX, pb.midY - preview.midY)
+    } ?? current
+  }
+}
+
+/// Coordinates are fractions of the work area, measured from its top left.
+struct HUDPlacement {
+  var x: Double?
+  var y: Double?
+  var scale: Double
+  init(x: Double? = nil, y: Double? = nil, scale: Double = 1) {
+    self.x = x.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil }
+    self.y = y.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil }
+    self.scale = Self.validScale(scale)
+  }
+  static func validScale(_ scale: Double) -> Double {
+    scale.isFinite ? min(1.6, max(0.8, scale)) : 1
+  }
+  func clamp(_ origin: NSPoint, in work: NSRect, size: NSSize) -> NSPoint {
+    NSPoint(x: min(max(work.minX, work.maxX - size.width), max(work.minX, origin.x)),
+            y: min(max(work.minY, work.maxY - size.height), max(work.minY, origin.y)))
+  }
+  func origin(in work: NSRect, size: NSSize) -> NSPoint {
+    clamp(NSPoint(x: work.minX + (x ?? 0.5) * work.width - size.width / 2,
+                  y: y.map { work.maxY - $0 * work.height - size.height / 2 }
+                    ?? work.minY + 92), in: work, size: size)
+  }
+  func snap(_ origin: NSPoint, in work: NSRect, size: NSSize) -> NSPoint {
+    var p = origin
+    if abs(p.x + size.width / 2 - work.midX) <= 12 { p.x = work.midX - size.width / 2 }
+    if abs(p.y + size.height / 2 - work.midY) <= 12 { p.y = work.midY - size.height / 2 }
+    return clamp(p, in: work, size: size)
+  }
+  mutating func capture(origin: NSPoint, in work: NSRect, size: NSSize) {
+    guard work.width > 0, work.height > 0 else { return }
+    x = min(1, max(0, (origin.x + size.width / 2 - work.minX) / work.width))
+    y = min(1, max(0, (work.maxY - origin.y - size.height / 2) / work.height))
+  }
+}
+
+private struct HUDGuides: View {
+  var body: some View {
+    GeometryReader { area in
+      ZStack {
+        Color.blue.opacity(0.10)
+        Rectangle().fill(Color.blue.opacity(0.65)).frame(width: 1)
+        Rectangle().fill(Color.blue.opacity(0.65)).frame(height: 1)
+      }.frame(width: area.size.width, height: area.size.height)
+    }.accessibilityHidden(true)
   }
 }

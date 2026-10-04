@@ -168,6 +168,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         idleSeconds: _dictation.idleSeconds,
         insert: _dictation.insert,
         hud: _dictation.hud,
+        indicatorMode: _dictation.indicatorMode,
         wakeWordEnabled: _dictation.wakeWordEnabled,
         wakeWord: _dictation.wakeWord,
         closeWord: _dictation.closeWord,
@@ -706,8 +707,10 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   void setLibraryPath(String dir) {
-    _emit(state.copyWith(libraryPath: dir));
-    unawaited(_saveApp({'libraryPath': dir}));
+    final trimmed = dir.trim();
+    if (trimmed.isEmpty) return;
+    _emit(state.copyWith(libraryPath: trimmed));
+    unawaited(_saveApp({'libraryPath': trimmed}));
   }
 
   /// Пустой набор при включённом сохранении означал бы тишину, поэтому

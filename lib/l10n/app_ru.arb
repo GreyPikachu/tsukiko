@@ -15,7 +15,9 @@
   "singleHotkeyTitle": "Назначить «{combo}» одной клавишей?",
   "@singleHotkeyTitle": {
     "placeholders": {
-      "combo": {"type": "String"}
+      "combo": {
+        "type": "String"
+      }
     }
   },
   "singleHotkeyBody": "Этот хоткей действует во всех приложениях. Он сработает, только когда нажата ровно эта клавиша; появление второй клавиши отменит срабатывание.",
@@ -1593,7 +1595,13 @@
   "calibrationNegativeTitle": "Проверка похожего слова",
   "calibrationNegativePrompt": "Произнесите одно созвучное, но другое слово. Оно не должно запускать или завершать запись.",
   "calibrationNegativeExample": "Похоже на «{word}»",
-  "@calibrationNegativeExample": {"placeholders": {"word": {"type": "String"}}},
+  "@calibrationNegativeExample": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
   "calibrationButtonRecord": "Начать запись",
   "calibrationButtonStop": "Остановить",
   "calibrationRecordingInProgress": "Слушаем микрофон… говорите",
@@ -1629,5 +1637,35 @@
   "calibrationWakeSectionTitle": "Калибровка слова активации",
   "calibrationCloseSectionTitle": "Калибровка слова завершения",
   "buttonDeleteWakeProfile": "Удалить профиль активации",
-  "buttonDeleteCloseProfile": "Удалить профиль завершения"
+  "buttonDeleteCloseProfile": "Удалить профиль завершения",
+  "hudQueueCount": "В очереди: {count}",
+  "hudRecordNext": "Записать следующую",
+  "hudAbortCurrent": "Отменить текущую расшифровку",
+  "hudClearQueue": "Убрать ожидающие · сохранить записи",
+  "@hudQueueCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "hudLayoutTitle": "Положение плашки",
+  "hudLayoutHint": "Переместите индикатор · центр экрана притягивает",
+  "hudDrag": "Переместить плашку",
+  "hudScale": "Масштаб",
+  "hudReset": "Сбросить",
+  "hudSave": "Сохранить",
+  "hudConfigure": "Настроить положение и масштаб",
+  "indicatorTitle": "Индикатор записи",
+  "indicatorEditorHint": "Выберите стиль, положение и размер в редакторе. Изменения видны сразу, даже во время записи.",
+  "indicatorOpenEditor": "Настроить индикатор записи",
+  "indicatorPanel": "Плашка записи",
+  "indicatorStatus": "Строка меню / трей",
+  "indicatorTimer": "Плавающий таймер",
+  "indicatorOff": "Выключено",
+  "indicatorStatusHint": "Положение и размер этого значка задаёт система.",
+  "indicatorOffHint": "Индикатор скрыт. Запись продолжается.",
+  "indicatorPreview": "Предпросмотр",
+  "indicatorPrevious": "Предыдущий стиль",
+  "indicatorNext": "Следующий стиль"
 }

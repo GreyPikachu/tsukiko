@@ -51,6 +51,11 @@ void hudMain() {
   runHud();
 }
 
+@pragma('vm:entry-point')
+void hudEditorMain() {
+  runHud(editor: true);
+}
+
 /// Второй копии здесь не бывает: её ловит и завершает сторона macOS ещё
 /// до запуска движка (AppDelegate.applicationWillFinishLaunching), подняв
 /// окно уже работающей. Проверять это в Dart больше нечем и незачем.

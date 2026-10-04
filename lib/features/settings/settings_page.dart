@@ -298,22 +298,35 @@ class _SettingsBodyState extends State<SettingsBody>
   }
 
   Future<void> _pickModel() async {
-    final f = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'GGML / GGUF', extensions: ['bin', 'gguf']),
-      ],
-    );
-    if (f != null) _cubit.pickModel(f.path);
+    try {
+      final f = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'GGML / GGUF', extensions: ['bin', 'gguf']),
+        ],
+      );
+      if (f != null && f.path.trim().isNotEmpty) {
+        _cubit.pickModel(f.path.trim());
+      }
+    } catch (e, stack) {
+      Log.warn('Settings', 'Failed to pick model file: $e', e, stack);
+    }
   }
 
   Future<void> _pickLibrary(SettingsState s) async {
-    final dir = await getDirectoryPath(
-      confirmButtonText: l10n.buttonChoose,
-      initialDirectory: Directory(s.libraryPath).existsSync()
+    try {
+      final initial = Directory(s.libraryPath).existsSync()
           ? s.libraryPath
-          : os.documentsDir,
-    );
-    if (dir != null) _cubit.setLibraryPath(dir);
+          : (Directory(os.documentsDir).existsSync() ? os.documentsDir : null);
+      final dir = await getDirectoryPath(
+        confirmButtonText: l10n.buttonChoose,
+        initialDirectory: initial,
+      );
+      if (dir != null && dir.trim().isNotEmpty) {
+        _cubit.setLibraryPath(dir.trim());
+      }
+    } catch (e, stack) {
+      Log.warn('Settings', 'Failed to pick library directory: $e', e, stack);
+    }
   }
 
   @override
@@ -509,8 +522,33 @@ class _SettingsBodyState extends State<SettingsBody>
     Check(l10n.checkInsertText, s.insert, _cubit.setInsert),
     Hint(l10n.hintInsertOff, under: true),
     const SizedBox(height: Gap.item),
-    Check(l10n.checkShowHud, s.hud, _cubit.setHud),
-    Hint(l10n.hintHud, under: true),
+    SectionTitle(l10n.indicatorTitle),
+    Hint(l10n.indicatorEditorHint),
+    const SizedBox(height: Gap.inner),
+    PushButton(
+      controlSize: ControlSize.regular,
+      secondary: true,
+      onPressed: () => _cubit.bridge.configureHud({
+        'title': l10n.indicatorTitle,
+        'hint': l10n.hudLayoutHint,
+        'drag': l10n.hudDrag,
+        'scale': l10n.hudScale,
+        'reset': l10n.hudReset,
+        'cancel': l10n.hudCancel,
+        'save': l10n.hudSave,
+        'mode': s.indicatorMode.name,
+        'panel': l10n.indicatorPanel,
+        'status': l10n.indicatorStatus,
+        'timer': l10n.indicatorTimer,
+        'off': l10n.indicatorOff,
+        'statusHint': l10n.indicatorStatusHint,
+        'offHint': l10n.indicatorOffHint,
+        'preview': l10n.indicatorPreview,
+        'previous': l10n.indicatorPrevious,
+        'next': l10n.indicatorNext,
+      }),
+      child: Text(l10n.indicatorOpenEditor),
+    ),
     SectionTitle(l10n.sectionWakeWord),
     Hint(l10n.hintWakeWordSection),
     const SizedBox(height: Gap.inner),
@@ -664,21 +702,22 @@ class _SettingsBodyState extends State<SettingsBody>
   }) {
     final isDark = MacosTheme.brightnessOf(context) == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF9F9FB);
-    final borderColor =
-        isDark ? const Color(0xFF333333) : const Color(0xFFE5E5EA);
+    final borderColor = isDark
+        ? const Color(0xFF333333)
+        : const Color(0xFFE5E5EA);
     final statusColor = isWordEmpty
         ? const Color(0xFF8E8E93)
         : (isCalibrated ? const Color(0xFF34C759) : const Color(0xFFFF9500));
     final statusIcon = isWordEmpty
         ? CupertinoIcons.minus_circle
         : (isCalibrated
-            ? CupertinoIcons.checkmark_seal_fill
-            : CupertinoIcons.exclamationmark_circle);
+              ? CupertinoIcons.checkmark_seal_fill
+              : CupertinoIcons.exclamationmark_circle);
     final statusText = isWordEmpty
         ? l10n.voiceProfileCloseEmpty
         : (isCalibrated
-            ? l10n.voiceProfileStatusCalibrated(4)
-            : l10n.voiceProfileStatusNotCalibrated);
+              ? l10n.voiceProfileStatusCalibrated(4)
+              : l10n.voiceProfileStatusNotCalibrated);
 
     return Container(
       padding: const EdgeInsets.all(Gap.item),
@@ -694,11 +733,7 @@ class _SettingsBodyState extends State<SettingsBody>
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              MacosIcon(
-                statusIcon,
-                color: statusColor,
-                size: 20,
-              ),
+              MacosIcon(statusIcon, color: statusColor, size: 20),
               const SizedBox(width: Gap.item),
               Expanded(
                 child: Column(

@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
+import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:macos_ui/macos_ui.dart';
@@ -17,6 +19,11 @@ class _FakeSettingsCubit extends Cubit<SettingsState> implements SettingsCubit {
   _FakeSettingsCubit([SettingsState? initial])
     : super(initial ?? SettingsState(tab: 'models'));
 
+  String? lastLibraryPath;
+  NativeBridge? hudBridge;
+  @override
+  NativeBridge get bridge => hudBridge!;
+
   void beginDownload() => emit(
     state.copyWith(
       downloadTitle: 'Parakeet',
@@ -26,10 +33,39 @@ class _FakeSettingsCubit extends Cubit<SettingsState> implements SettingsCubit {
   );
 
   @override
+  void setLibraryPath(String dir) {
+    lastLibraryPath = dir;
+    emit(state.copyWith(libraryPath: dir));
+  }
+
+  @override
   void setVisible(bool visible) {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _MockFileSelector extends FileSelectorPlatform {
+  _MockFileSelector({this.result, this.shouldThrow = false});
+
+  final String? result;
+  final bool shouldThrow;
+  String? lastInitialDirectory;
+
+  @override
+  Future<String?> getDirectoryPath({
+    String? initialDirectory,
+    String? confirmButtonText,
+  }) async {
+    lastInitialDirectory = initialDirectory;
+    if (shouldThrow) {
+      throw PlatformException(
+        code: 'system_error',
+        message: 'Could not show dialog',
+      );
+    }
+    return result;
+  }
 }
 
 /// Окно настроек живёт отдельным файлом теста намеренно: рисующий тест
@@ -76,9 +112,7 @@ void main() {
     expect(find.text('Что сказать или распознать'), findsOneWidget);
     expect(find.text('Замена (необязательно)'), findsOneWidget);
     final phrase = tester.getRect(find.text('Что сказать или распознать'));
-    final replacement = tester.getRect(
-      find.text('Замена (необязательно)'),
-    );
+    final replacement = tester.getRect(find.text('Замена (необязательно)'));
     expect((phrase.top - replacement.top).abs(), lessThan(1));
     await tester.ensureVisible(find.text('адрес офиса', skipOffstage: false));
     await tester.pump();
@@ -91,6 +125,55 @@ void main() {
     expect(trash, findsOneWidget);
     expect(tester.getSize(trash).width, IconSize.button);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('единый редактор индикатора доступен из настроек диктовки', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(580, 560));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+    NativeBridge.debugReset();
+    final calls = <MethodCall>[];
+    const channel = MethodChannel('tsukiko/dictation');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    final cubit = _FakeSettingsCubit(SettingsState(tab: 'dictation'))
+      ..hudBridge = NativeBridge();
+    addTearDown(cubit.close);
+    await tester.pumpWidget(
+      MacosApp(
+        locale: const Locale('ru'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: BlocProvider<SettingsCubit>.value(
+          value: cubit,
+          child: const SettingsBody(),
+        ),
+      ),
+    );
+    final configure = find.text('Настроить индикатор записи');
+    await tester.scrollUntilVisible(
+      configure,
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(configure);
+    expect(calls.last.method, 'configureHud');
+    expect((calls.last.arguments as Map)['save'], 'Сохранить');
+    expect((calls.last.arguments as Map)['mode'], 'panel');
+    expect(find.text('Показывать панель записи'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -174,9 +257,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('окно настроек рисуется на всех пяти вкладках', (
-    tester,
-  ) async {
+  testWidgets('окно настроек рисуется на всех пяти вкладках', (tester) async {
     // Размер настоящего окна: раскладка обязана сходиться именно в нём.
     await tester.binding.setSurfaceSize(const Size(580, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -259,14 +340,64 @@ void main() {
   group('папка журналов', () {
     useTempSupportDir('tsukiko-settings-logs');
 
-    testWidgets('кнопка открытия папки журналов доступна во вкладке приложения', (
+    testWidgets(
+      'кнопка открытия папки журналов доступна во вкладке приложения',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(580, 600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+        final cubit = _FakeSettingsCubit(SettingsState(tab: 'app'));
+        addTearDown(cubit.close);
+
+        await tester.pumpWidget(
+          MacosApp(
+            locale: const Locale('ru'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: BlocProvider<SettingsCubit>.value(
+              value: cubit,
+              child: const SettingsBody(),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        await tester.dragUntilVisible(
+          find.widgetWithText(PushButton, 'Открыть папку журналов'),
+          find.byType(ListView).first,
+          const Offset(0, -150),
+        );
+        expect(find.text('ЖУРНАЛИРОВАНИЕ'), findsOneWidget);
+        expect(find.text('Вести журнал работы'), findsOneWidget);
+        final openLogsBtn = find.widgetWithText(
+          PushButton,
+          'Открыть папку журналов',
+        );
+        expect(openLogsBtn, findsOneWidget);
+
+        await tester.tap(openLogsBtn);
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  });
+
+  group('выбор папки библиотеки', () {
+    testWidgets('ошибка нативного диалога не роняет приложение', (
       tester,
     ) async {
+      final prevPlatform = FileSelectorPlatform.instance;
+      final mock = _MockFileSelector(shouldThrow: true);
+      FileSelectorPlatform.instance = mock;
+      addTearDown(() => FileSelectorPlatform.instance = prevPlatform);
+
       await tester.binding.setSurfaceSize(const Size(580, 600));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
       final cubit = _FakeSettingsCubit(
-        SettingsState(tab: 'app'),
+        SettingsState(tab: 'transcriber', libraryPath: '/non/existent/path'),
       );
       addTearDown(cubit.close);
 
@@ -283,21 +414,60 @@ void main() {
       );
       await tester.pump();
 
+      final pickBtn = find.widgetWithText(PushButton, 'Выбрать другую папку…');
       await tester.dragUntilVisible(
-        find.widgetWithText(PushButton, 'Открыть папку журналов'),
+        pickBtn,
         find.byType(ListView).first,
-        const Offset(0, -150),
+        const Offset(0, -100),
       );
-      expect(find.text('ЖУРНАЛИРОВАНИЕ'), findsOneWidget);
-      expect(find.text('Вести журнал работы'), findsOneWidget);
-      final openLogsBtn =
-          find.widgetWithText(PushButton, 'Открыть папку журналов');
-      expect(openLogsBtn, findsOneWidget);
-
-      await tester.tap(openLogsBtn);
-      await tester.pump();
+      await tester.tap(pickBtn);
+      await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
+      expect(cubit.lastLibraryPath, isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('выбор папки обновляет путь, а пустой ответ игнорируется', (
+      tester,
+    ) async {
+      final prevPlatform = FileSelectorPlatform.instance;
+      final mock = _MockFileSelector(result: '/Users/test/Audio');
+      FileSelectorPlatform.instance = mock;
+      addTearDown(() => FileSelectorPlatform.instance = prevPlatform);
+
+      await tester.binding.setSurfaceSize(const Size(580, 600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      tester.platformDispatcher.localesTestValue = const [Locale('ru')];
+      final cubit = _FakeSettingsCubit(
+        SettingsState(tab: 'transcriber', libraryPath: '/old/path'),
+      );
+      addTearDown(cubit.close);
+
+      await tester.pumpWidget(
+        MacosApp(
+          locale: const Locale('ru'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BlocProvider<SettingsCubit>.value(
+            value: cubit,
+            child: const SettingsBody(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final pickBtn = find.widgetWithText(PushButton, 'Выбрать другую папку…');
+      await tester.dragUntilVisible(
+        pickBtn,
+        find.byType(ListView).first,
+        const Offset(0, -100),
+      );
+      await tester.tap(pickBtn);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(cubit.lastLibraryPath, '/Users/test/Audio');
       await tester.pumpWidget(const SizedBox());
     });
   });

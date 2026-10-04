@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
+import '../../core/indicator_mode.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
 
@@ -24,33 +27,34 @@ import '../../platform/os.dart';
 /// движок под неё стоит около 110 МБ памяти (замерено) как раз тогда,
 /// когда модель занимает полтора гигабайта. Здесь это оправдано: своей
 /// панели на Windows не было вовсе.
-Future<void> runHud() async {
+Future<void> runHud({bool editor = false}) async {
   Log.info(
     'App',
     'runHud started on ${os.platformId} (${Platform.operatingSystemVersion}), Tsukiko $appVersion',
   );
   refreshLocale();
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const HudApp());
+  runApp(HudApp(editor: editor));
 }
 
 class HudApp extends StatelessWidget {
-  const HudApp({super.key});
+  const HudApp({super.key, this.editor = false});
+  final bool editor;
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<Locale?>(
-        valueListenable: appLocale,
-        builder: (context, locale, _) => MacosApp(
-          locale: locale,
-          theme: MacosThemeData.light(),
-          darkTheme: MacosThemeData.dark(),
-          themeMode: ThemeMode.system,
-          debugShowCheckedModeBanner: false,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: const HudView(),
-        ),
-      );
+    valueListenable: appLocale,
+    builder: (context, locale, _) => MacosApp(
+      locale: locale,
+      theme: MacosThemeData.light(),
+      darkTheme: MacosThemeData.dark(),
+      themeMode: ThemeMode.system,
+      debugShowCheckedModeBanner: false,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: editor ? const HudEditorView() : const HudView(),
+    ),
+  );
 }
 
 class HudView extends StatefulWidget {
@@ -67,6 +71,15 @@ class _HudViewState extends State<HudView> {
   late final NativeBridge _bridge = widget.bridge ?? NativeBridge();
   StreamSubscription<HudState>? _states;
   Timer? _ticker;
+  StreamSubscription<Map<String, dynamic>>? _queue;
+  StreamSubscription<Map<String, dynamic>>? _layout;
+  bool _editing = false;
+  IndicatorMode _mode = IndicatorMode.panel;
+  double _scale = 1;
+  Offset _drag = Offset.zero;
+  bool _dragMoved = false;
+  int _pending = 0;
+  bool _processing = false;
 
   HudState _state = HudState.hidden;
   Duration _elapsed = Duration.zero;
@@ -80,6 +93,10 @@ class _HudViewState extends State<HudView> {
   void initState() {
     super.initState();
     _states = _bridge.hudStates.listen(_onState);
+    _queue = _bridge.hudQueue.listen(_onQueue);
+    _layout = _bridge.hudLayout.listen(_onLayout);
+    _bridge.currentHudLayout().then(_onLayout);
+    _bridge.currentHudQueue().then(_onQueue);
     _queryInitialState();
   }
 
@@ -97,11 +114,70 @@ class _HudViewState extends State<HudView> {
   @override
   void dispose() {
     _states?.cancel();
+    _queue?.cancel();
+    _layout?.cancel();
     _ticker?.cancel();
     super.dispose();
   }
 
+  void _onLayout(Map<String, dynamic> layout) {
+    if (!mounted) return;
+    setState(() {
+      _editing = layout['editing'] == true;
+      _mode = IndicatorMode.fromValue(layout['mode']);
+      final scale = (layout['scaleValue'] as num?)?.toDouble() ?? 1;
+      _scale = scale.isFinite ? scale.clamp(.8, 1.6) : 1;
+    });
+  }
+
+  Widget _draggable(Widget child) => MouseRegion(
+    cursor: SystemMouseCursors.move,
+    child: RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
+      gestures: {
+        PanGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
+              () => PanGestureRecognizer()
+                ..gestureSettings = const DeviceGestureSettings(touchSlop: 4),
+              (recognizer) => recognizer
+                ..onStart = (_) {
+                  _drag = Offset.zero;
+                  _dragMoved = false;
+                }
+                ..onUpdate = (event) {
+                  if (event.delta == Offset.zero) return;
+                  _dragMoved = true;
+                  _drag += event.delta;
+                  _bridge.changeHudLayout({
+                    'dx': _drag.dx,
+                    'dy': _drag.dy,
+                    'end': false,
+                  });
+                }
+                ..onEnd = ((_) => _finishDrag())
+                ..onCancel = _finishDrag,
+            ),
+      },
+      child: child,
+    ),
+  );
+
+  void _finishDrag() {
+    if (!_dragMoved) return;
+    _dragMoved = false;
+    _bridge.changeHudLayout({'dx': _drag.dx, 'dy': _drag.dy, 'end': true});
+  }
+
+  void _onQueue(Map<String, dynamic> queue) {
+    if (!mounted) return;
+    setState(() {
+      _pending = (queue['pending'] as num?)?.toInt() ?? 0;
+      _processing = queue['processing'] == true;
+    });
+  }
+
   void _onState(HudState state) {
+    if (state == _state) return;
     if (!mounted) return;
     setState(() {
       _state = state;
@@ -137,92 +213,403 @@ class _HudViewState extends State<HudView> {
   }
 
   String get _time {
-    final total = _elapsed.inSeconds;
+    final total = _editing && _state != HudState.recording
+        ? 3
+        : _elapsed.inSeconds;
     return '${total ~/ 60}:${(total % 60).toString().padLeft(2, '0')}';
+  }
+
+  int get _queueCount => _editing ? 2 : _pending + (_processing ? 1 : 0);
+
+  void _action(String action) {
+    if (!_editing) _bridge.hudAction(action);
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Container(
-      height: 52,
-      // Поля шире, чем кажется нужным: содержимое, прижатое к скруглённому
-      // краю, читается теснее, чем стоит на самом деле.
-      padding: const EdgeInsets.symmetric(horizontal: Gap.edge),
-      decoration: BoxDecoration(
-        color: Surface.chrome(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Surface.hairline(context)),
+    final width = MediaQuery.sizeOf(context).width / _scale;
+    final height = _mode == IndicatorMode.timer ? 44.0 : 52.0;
+    final row = _mode == IndicatorMode.timer
+        ? _timerContent(l10n)
+        : _content(l10n);
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, event) => _editing
+          ? handleHudEditorKey(_bridge, event)
+          : KeyEventResult.ignored,
+      child: SizedBox(
+        width: width * _scale,
+        height: height * _scale,
+        child: FittedBox(
+          child: _draggable(
+            Container(
+              width: width,
+              height: height,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: Surface.chrome(context),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Surface.hairline(context)),
+              ),
+              child: Row(children: row),
+            ),
+          ),
+        ),
       ),
-      child: Row(children: _content(l10n)),
     );
   }
 
-  List<Widget> _content(AppLocalizations l10n) => switch (_state) {
+  List<Widget> _timerContent(AppLocalizations l10n) {
+    final state = _editing ? HudState.recording : _state;
+    if (state != HudState.recording && state != HudState.transcribing) {
+      return _content(l10n);
+    }
+    return [
+      if (state == HudState.recording)
+        const MacosIcon(
+          CupertinoIcons.mic_fill,
+          size: 16,
+          color: MacosColors.systemRedColor,
+        )
+      else
+        const ProgressCircle(radius: 7),
+      const SizedBox(width: 8),
+      Expanded(
+        child: Text(
+          state == HudState.recording ? _time : l10n.hudTranscribing,
+          style: _label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      _IconButton(
+        icon: state == HudState.recording
+            ? CupertinoIcons.stop_fill
+            : CupertinoIcons.xmark,
+        onPressed: () =>
+            _action(state == HudState.recording ? 'stop' : 'abort'),
+      ),
+    ];
+  }
+
+  Widget _queueButton(AppLocalizations l10n) => Padding(
+    padding: const EdgeInsets.only(left: 8),
+    child: CupertinoButton(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      minimumSize: const Size(36, 28),
+      color: MacosTheme.of(context).primaryColor.withValues(alpha: .14),
+      borderRadius: BorderRadius.circular(14),
+      onPressed: _editing
+          ? null
+          : () => _bridge.showHudQueueMenu({
+              'record': l10n.hudRecordNext,
+              'abort': l10n.hudAbortCurrent,
+              'clearQueue': l10n.hudClearQueue,
+            }),
+      child: Semantics(
+        label: l10n.hudQueueCount(_queueCount),
+        button: true,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const MacosIcon(CupertinoIcons.list_bullet, size: 12),
+            const SizedBox(width: 4),
+            Text(
+              _queueCount > 99 ? '99+' : '$_queueCount',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  List<Widget> _content(AppLocalizations l10n) =>
+      switch (_editing ? HudState.recording : _state) {
         HudState.transcribing => [
-            const ProgressCircle(radius: 7),
-            const SizedBox(width: Gap.control),
-            Text(l10n.hudTranscribing, style: _label, maxLines: 1),
-            const Spacer(),
-            // Часовая запись считается минутами, и выйти из этого иначе
-            // нельзя ничем. Крестик — то же, чем отменяют загрузку.
-            _IconButton(
-              icon: CupertinoIcons.xmark,
-              onPressed: () => _bridge.hudAction('abort'),
-            ),
-          ],
+          const SizedBox(
+            width: 24,
+            height: 28,
+            child: Center(child: ProgressCircle(radius: 7)),
+          ),
+          const SizedBox(width: Gap.control),
+          Text(l10n.hudTranscribing, style: _label, maxLines: 1),
+          if (_queueCount > 0) _queueButton(l10n),
+          const Spacer(),
+          // Часовая запись считается минутами, и выйти из этого иначе
+          // нельзя ничем. Крестик — то же, чем отменяют загрузку.
+          _IconButton(
+            icon: CupertinoIcons.xmark,
+            onPressed: () => _action('abort'),
+          ),
+        ],
         HudState.cancelled => _message(
-            CupertinoIcons.xmark_circle_fill,
-            Surface.secondaryText(context),
-            l10n.hudCancelled,
-          ),
+          CupertinoIcons.xmark_circle_fill,
+          Surface.secondaryText(context),
+          l10n.hudCancelled,
+        ),
         HudState.done => _message(
-            CupertinoIcons.checkmark_circle_fill,
-            MacosColors.systemGreenColor,
-            l10n.hudDone,
-          ),
+          CupertinoIcons.checkmark_circle_fill,
+          MacosColors.systemGreenColor,
+          l10n.hudDone,
+        ),
         HudState.failed => _message(
-            CupertinoIcons.exclamationmark_triangle_fill,
-            MacosColors.systemOrangeColor,
-            l10n.hudFailed,
-          ),
+          CupertinoIcons.exclamationmark_triangle_fill,
+          MacosColors.systemOrangeColor,
+          l10n.hudFailed,
+        ),
         HudState.copied => _message(
-            CupertinoIcons.doc_on_clipboard,
-            MacosColors.systemOrangeColor,
-            l10n.hudCopied,
-          ),
+          CupertinoIcons.doc_on_clipboard,
+          MacosColors.systemOrangeColor,
+          l10n.hudCopied,
+        ),
         HudState.silent => _message(
-            CupertinoIcons.mic_slash,
-            Surface.secondaryText(context),
-            l10n.hudSilent,
-          ),
+          CupertinoIcons.mic_slash,
+          Surface.secondaryText(context),
+          l10n.hudSilent,
+        ),
         _ => [
-            _Meter(levels: _levels),
-            const SizedBox(width: Gap.control),
-            Text(_time,
-                style: _label.copyWith(
-                    fontFeatures: const [FontFeature.tabularFigures()])),
-            const Spacer(),
-            _HudButton(
-              title: l10n.hudCancel,
-              filled: false,
-              onPressed: () => _bridge.hudAction('cancel'),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: _Meter(
+                levels: _editing && _state != HudState.recording
+                    ? List.generate(22, (i) => ((i * 7) % 13 + 2) / 16)
+                    : _levels,
+              ),
             ),
-            const SizedBox(width: Gap.inner),
-            _HudButton(
-              title: l10n.hudStop,
-              filled: true,
-              onPressed: () => _bridge.hudAction('stop'),
+          ),
+          const SizedBox(width: Gap.control),
+          Text(
+            _time,
+            style: _label.copyWith(
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
-          ],
+          ),
+          if (_queueCount > 0) _queueButton(l10n),
+          const Spacer(),
+          _HudButton(
+            title: l10n.hudCancel,
+            filled: false,
+            onPressed: () => _action('cancel'),
+          ),
+          const SizedBox(width: Gap.inner),
+          _HudButton(
+            title: l10n.hudStop,
+            filled: true,
+            onPressed: () => _action('stop'),
+          ),
+        ],
       };
 
   List<Widget> _message(IconData icon, Color color, String text) => [
-        MacosIcon(icon, size: IconSize.button, color: color),
-        const SizedBox(width: Gap.control),
-        Text(text, style: _label, maxLines: 1),
-        const Spacer(),
-      ];
+    MacosIcon(icon, size: IconSize.button, color: color),
+    const SizedBox(width: Gap.control),
+    Expanded(
+      child: Text(
+        text,
+        style: _label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    ),
+  ];
+}
+
+KeyEventResult handleHudEditorKey(NativeBridge bridge, KeyEvent event) {
+  if (event is! KeyDownEvent) return KeyEventResult.ignored;
+  if (event.logicalKey == LogicalKeyboardKey.escape) {
+    bridge.changeHudLayout({'save': false});
+    return KeyEventResult.handled;
+  }
+  if (event.logicalKey == LogicalKeyboardKey.enter) {
+    bridge.changeHudLayout({'save': true});
+    return KeyEventResult.handled;
+  }
+  final step = HardwareKeyboard.instance.isShiftPressed ? 10.0 : 1.0;
+  final delta = switch (event.logicalKey) {
+    LogicalKeyboardKey.arrowLeft => Offset(-step, 0),
+    LogicalKeyboardKey.arrowRight => Offset(step, 0),
+    LogicalKeyboardKey.arrowUp => Offset(0, -step),
+    LogicalKeyboardKey.arrowDown => Offset(0, step),
+    _ => null,
+  };
+  if (delta == null) return KeyEventResult.ignored;
+  bridge.changeHudLayout({'nudgeX': delta.dx, 'nudgeY': delta.dy});
+  return KeyEventResult.handled;
+}
+
+class HudEditorView extends StatefulWidget {
+  const HudEditorView({super.key, this.bridge});
+  final NativeBridge? bridge;
+  @override
+  State<HudEditorView> createState() => _HudEditorViewState();
+}
+
+class _HudEditorViewState extends State<HudEditorView> {
+  late final NativeBridge _bridge = widget.bridge ?? NativeBridge();
+  StreamSubscription<Map<String, dynamic>>? _layout;
+  IndicatorMode _mode = IndicatorMode.panel;
+  double _scale = 1;
+  @override
+  void initState() {
+    super.initState();
+    _layout = _bridge.hudLayout.listen(_update);
+    _bridge.currentHudLayout().then(_update);
+  }
+
+  void _update(Map<String, dynamic> data) {
+    if (!mounted) return;
+    setState(() {
+      _mode = IndicatorMode.fromValue(data['mode']);
+      final value = (data['scaleValue'] as num?)?.toDouble() ?? 1;
+      _scale = value.isFinite ? value.clamp(.8, 1.6) : 1;
+    });
+  }
+
+  @override
+  void dispose() {
+    _layout?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final name = switch (_mode) {
+      IndicatorMode.panel => l10n.indicatorPanel,
+      IndicatorMode.status => l10n.indicatorStatus,
+      IndicatorMode.timer => l10n.indicatorTimer,
+      IndicatorMode.off => l10n.indicatorOff,
+    };
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, event) => handleHudEditorKey(_bridge, event),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Surface.chrome(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Surface.hairline(context)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    l10n.indicatorTitle,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${_mode.index + 1} / 4',
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                _styleArrow(
+                  CupertinoIcons.chevron_left,
+                  l10n.indicatorPrevious,
+                  -1,
+                ),
+                Expanded(
+                  child: Text(
+                    name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                _styleArrow(
+                  CupertinoIcons.chevron_right,
+                  l10n.indicatorNext,
+                  1,
+                ),
+              ],
+            ),
+            if (_mode == IndicatorMode.panel || _mode == IndicatorMode.timer)
+              Row(
+                children: [
+                  Text(l10n.hudScale, style: const TextStyle(fontSize: 11)),
+                  Expanded(
+                    child: CupertinoSlider(
+                      value: _scale,
+                      min: .8,
+                      max: 1.6,
+                      divisions: 8,
+                      onChanged: (value) =>
+                          _bridge.changeHudLayout({'scaleValue': value}),
+                    ),
+                  ),
+                  Text(
+                    '${(_scale * 100).round()}%',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ],
+              )
+            else
+              Text(
+                _mode == IndicatorMode.status
+                    ? l10n.indicatorStatusHint
+                    : l10n.indicatorOffHint,
+                style: const TextStyle(fontSize: 11),
+              ),
+            Text(
+              _mode == IndicatorMode.panel || _mode == IndicatorMode.timer
+                  ? '${l10n.indicatorPreview} · ${l10n.hudLayoutHint}'
+                  : l10n.indicatorEditorHint,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10),
+            ),
+            Row(
+              children: [
+                _editorButton(l10n.hudReset, _bridge.resetHud),
+                const Spacer(),
+                _editorButton(
+                  l10n.hudCancel,
+                  () => _bridge.changeHudLayout({'save': false}),
+                ),
+                _editorButton(
+                  l10n.hudSave,
+                  () => _bridge.changeHudLayout({'save': true}),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _styleArrow(IconData icon, String label, int direction) => Semantics(
+    label: label,
+    button: true,
+    child: CupertinoButton(
+      minimumSize: const Size(28, 28),
+      padding: const EdgeInsets.all(4),
+      onPressed: () =>
+          _bridge.changeHudLayout({'mode': _mode.cycle(direction).name}),
+      child: MacosIcon(icon, size: 14),
+    ),
+  );
+  Widget _editorButton(String label, VoidCallback action) => CupertinoButton(
+    minimumSize: const Size(28, 28),
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+    onPressed: action,
+    child: Text(label, style: const TextStyle(fontSize: 11)),
+  );
 }
 
 /// Подпись на панели: те же 13 пунктов средней насыщенности, что
@@ -289,10 +676,10 @@ class _HudButtonState extends State<_HudButton> {
     final background = widget.filled
         ? (_hover ? accent.withValues(alpha: 0.9) : accent)
         : _pressed
-            ? Surface.pressed(context)
-            : _hover
-                ? Surface.hover(context)
-                : Surface.hairline(context);
+        ? Surface.pressed(context)
+        : _hover
+        ? Surface.hover(context)
+        : Surface.hairline(context);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hover = true),
@@ -319,9 +706,9 @@ class _HudButtonState extends State<_HudButton> {
             ),
             child: Text(
               widget.title,
-              style: const TextStyle(fontSize: 12).copyWith(
-                color: widget.filled ? MacosColors.white : null,
-              ),
+              style: const TextStyle(
+                fontSize: 12,
+              ).copyWith(color: widget.filled ? MacosColors.white : null),
             ),
           ),
         ),
@@ -346,28 +733,29 @@ class _IconButtonState extends State<_IconButton> {
 
   @override
   Widget build(BuildContext context) => MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: GestureDetector(
-          onTap: widget.onPressed,
-          child: Container(
-            // Кружок шире значка на [Gap.inner]: полоса низкая, и
-            // мимо мелкой цели тут промахиваются чаще всего.
-            width: IconSize.button + Gap.inner,
-            height: IconSize.button + Gap.inner,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _hover ? Surface.hover(context) : null,
-            ),
-            child: MacosIcon(
-              widget.icon,
-              size: IconSize.button,
-              color: Surface.secondaryText(context)
-                  .withValues(alpha: _hover ? 0.9 : 0.4),
-            ),
-          ),
+    cursor: SystemMouseCursors.click,
+    onEnter: (_) => setState(() => _hover = true),
+    onExit: (_) => setState(() => _hover = false),
+    child: GestureDetector(
+      onTap: widget.onPressed,
+      child: Container(
+        // Кружок шире значка на [Gap.inner]: полоса низкая, и
+        // мимо мелкой цели тут промахиваются чаще всего.
+        width: IconSize.button + Gap.inner,
+        height: IconSize.button + Gap.inner,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: _hover ? Surface.hover(context) : null,
         ),
-      );
+        child: MacosIcon(
+          widget.icon,
+          size: IconSize.button,
+          color: Surface.secondaryText(
+            context,
+          ).withValues(alpha: _hover ? 0.9 : 0.4),
+        ),
+      ),
+    ),
+  );
 }

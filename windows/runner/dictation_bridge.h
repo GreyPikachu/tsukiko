@@ -117,6 +117,12 @@ class DictationBridge {
   std::unique_ptr<SettingsWindow> settings_;
   std::unique_ptr<HudWindow> hud_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> hud_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> hud_editor_channel_;
+  flutter::EncodableMap hud_queue_;
+  flutter::EncodableMap hud_layout_labels_;
+  void SendHudLayout();
+  void UpdateTrayIndicator();
+  void NotifyHudMode();
   std::string current_hud_state_ = "hidden";
 
   void SetHudState(const std::string& state);
@@ -165,6 +171,7 @@ class DictationBridge {
       flutter::EncodableValue fallback);
   NOTIFYICONDATAW tray_data_ = {};
   bool tray_installed_ = false;
+  HICON recording_icon_ = nullptr;
   HHOOK keyboard_hook_ = nullptr;
 
   // Состояние хоткеев

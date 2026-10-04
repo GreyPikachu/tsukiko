@@ -47,6 +47,21 @@ static const ULONG_PTR kOurInput = 0x7375'6B69;  // 'suki'
 
 namespace {
 
+bool BoolArgument(const flutter::EncodableMap& map, const char* key) {
+  auto found = map.find(flutter::EncodableValue(key));
+  if (found == map.end()) return false;
+  const auto* value = std::get_if<bool>(&found->second);
+  return value && *value;
+}
+
+int64_t IntArgument(const flutter::EncodableMap& map, const char* key) {
+  auto found = map.find(flutter::EncodableValue(key));
+  if (found == map.end()) return 0;
+  if (const auto* value = std::get_if<int32_t>(&found->second)) return *value;
+  if (const auto* value = std::get_if<int64_t>(&found->second)) return *value;
+  return 0;
+}
+
 std::wstring Utf8ToWide(const std::string& str) {
   if (str.empty()) return std::wstring();
   int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), static_cast<int>(str.size()), nullptr, 0);
@@ -569,6 +584,17 @@ void DictationBridge::RegisterHandler(
     } else if (method == "hud") {
       const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
       if (args) {
+        for (const auto* key : {"pending", "processing"}) {
+          auto value = args->find(flutter::EncodableValue(key));
+          if (value != args->end()) hud_queue_[flutter::EncodableValue(key)] = value->second;
+        }
+        if (hud_channel_) hud_channel_->InvokeMethod("hudQueue",
+            std::make_unique<flutter::EncodableValue>(hud_queue_));
+        PrewarmHud();
+        if (hud_) hud_->SetQueue(IntArgument(hud_queue_, "pending") > 0 || BoolArgument(hud_queue_, "processing"));
+        auto mode = args->find(flutter::EncodableValue("mode"));
+        if (hud_ && mode != args->end()) if (const auto* value = std::get_if<std::string>(&mode->second)) hud_->SetMode(*value);
+        SendHudLayout();
         auto it = args->find(flutter::EncodableValue("state"));
         if (it != args->end()) {
           if (const auto* st = std::get_if<std::string>(&it->second)) {
@@ -577,8 +603,96 @@ void DictationBridge::RegisterHandler(
         }
       }
       result->Success();
+    } else if (method == "getHudQueue") {
+      result->Success(flutter::EncodableValue(hud_queue_));
     } else if (method == "getHudState") {
       result->Success(flutter::EncodableValue(current_hud_state_));
+    } else if (method == "configureHud") {
+      PrewarmHud();
+      if (const auto* labels = std::get_if<flutter::EncodableMap>(call.arguments())) hud_layout_labels_ = *labels;
+      if (hud_ && !hud_->editing() && project_) {
+        auto mode = hud_layout_labels_.find(flutter::EncodableValue("mode"));
+        if (mode != hud_layout_labels_.end()) if (const auto* value = std::get_if<std::string>(&mode->second)) hud_->SetMode(*value);
+        hud_->on_editor_closed = [this]() {
+          hud_->FinishEditing(false); NotifyHudMode(); SetHudState(current_hud_state_); SendHudLayout();
+          PostMessageW(main_window_, WM_APP + 66, 0, 0);
+        };
+        hud_->Configure(*project_, [this](flutter::BinaryMessenger* messenger) {
+          hud_editor_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+            messenger, "tsukiko/dictation", &flutter::StandardMethodCodec::GetInstance());
+          RegisterHandler(hud_editor_channel_.get());
+          SendHudLayout();
+        });
+      }
+      UpdateTrayIndicator();
+      SendHudLayout();
+      result->Success();
+    } else if (method == "resetHud") {
+      PrewarmHud();
+      if (hud_) hud_->ResetPosition();
+      SendHudLayout(); result->Success();
+    } else if (method == "getHudLayout") {
+      flutter::EncodableMap layout = hud_layout_labels_;
+      layout[flutter::EncodableValue("editing")] = flutter::EncodableValue(hud_ && hud_->editing());
+      layout[flutter::EncodableValue("scaleValue")] = flutter::EncodableValue(hud_ ? hud_->scale() : 1.0);
+      layout[flutter::EncodableValue("mode")] = flutter::EncodableValue(hud_ ? hud_->mode() : "panel");
+      result->Success(flutter::EncodableValue(layout));
+    } else if (method == "hudLayout") {
+      const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+      if (args && hud_) {
+        auto number = [&](const char* key, double fallback) {
+          auto value = args->find(flutter::EncodableValue(key));
+          if (value != args->end()) if (const auto* n = std::get_if<double>(&value->second)) return *n;
+          return fallback;
+        };
+        if (args->count(flutter::EncodableValue("mode"))) {
+          const auto* mode = std::get_if<std::string>(&args->at(flutter::EncodableValue("mode")));
+          if (mode) { hud_->SetMode(*mode); NotifyHudMode(); SetHudState(current_hud_state_); }
+        } else if (args->count(flutter::EncodableValue("nudgeX"))) {
+          hud_->Nudge(number("nudgeX", 0), number("nudgeY", 0));
+        } else if (args->count(flutter::EncodableValue("dx"))) {
+          hud_->Move(number("dx", 0), number("dy", 0),
+              BoolArgument(*args, "end"));
+        } else if (args->count(flutter::EncodableValue("scaleValue"))) {
+          hud_->SetScale(number("scaleValue", 1));
+        } else if (args->count(flutter::EncodableValue("save"))) {
+          bool save = BoolArgument(*args, "save");
+          hud_->FinishEditing(save);
+          if (!save) NotifyHudMode();
+          SetHudState(current_hud_state_);
+          PostMessageW(main_window_, WM_APP + 66, 0, 0);
+        }
+      }
+      SendHudLayout(); result->Success();
+    } else if (method == "hudQueueMenu") {
+      HMENU menu = CreatePopupMenu();
+      const auto* labels = std::get_if<flutter::EncodableMap>(call.arguments());
+      const char* actions[] = {"record", "abort", "clearQueue"};
+      for (int i = 0; i < 3; ++i) {
+        bool enabled = i == 0 ? current_hud_state_ != "recording" :
+            i == 1 ? BoolArgument(hud_queue_, "processing") :
+            IntArgument(hud_queue_, "pending") > 0;
+        if (enabled && labels) {
+          auto value = labels->find(flutter::EncodableValue(actions[i]));
+          if (value != labels->end()) {
+            if (const auto* label = std::get_if<std::string>(&value->second)) {
+              AppendMenuW(menu, MF_STRING, i + 1, Utf8ToWide(*label).c_str());
+            }
+          }
+        }
+      }
+      POINT at; GetCursorPos(&at);
+      HWND previous = GetForegroundWindow();
+      HWND owner = hud_ ? hud_->handle() : main_window_;
+      SetForegroundWindow(owner);
+      int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY,
+          at.x, at.y, 0, owner, nullptr);
+      DestroyMenu(menu);
+      if (previous && IsWindow(previous)) SetForegroundWindow(previous);
+      if (command >= 1 && command <= 3 && panel_channel_) {
+        panel_channel_->InvokeMethod("hud", std::make_unique<flutter::EncodableValue>(actions[command - 1]));
+      }
+      result->Success();
     } else if (method == "hudAction") {
       // Нажали кнопку на плавающей панели. Рисует её свой изолят, а
       // делает дело — диктовка: переправляем ей.
@@ -654,10 +768,51 @@ void DictationBridge::SetupTrayIcon() {
   tray_installed_ = true;
 }
 
+void DictationBridge::UpdateTrayIndicator() {
+  if (!tray_installed_) return;
+  bool active = hud_ && hud_->mode() == "status" && (current_hud_state_ == "recording" || hud_->editing());
+  if (active && !recording_icon_) {
+    int size = GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForWindow(main_window_));
+    size = std::max(16, size);
+    BITMAPINFO info = {}; info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = size; info.bmiHeader.biHeight = -size;
+    info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32;
+    void* pixels = nullptr;
+    HDC dc = CreateCompatibleDC(nullptr);
+    HBITMAP color = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &pixels, nullptr, 0);
+    if (color && pixels) {
+      ZeroMemory(pixels, size * size * 4);
+      auto previous = SelectObject(dc, color);
+      auto point = [size](int value) { return value * size / 18; };
+      HBRUSH brush = CreateSolidBrush(RGB(235, 55, 65));
+      HPEN pen = CreatePen(PS_SOLID, std::max(1, size / 9), RGB(235, 55, 65));
+      auto old_brush = SelectObject(dc, brush), old_pen = SelectObject(dc, pen);
+      RoundRect(dc, point(6), point(1), point(12), point(11), point(5), point(5));
+      Arc(dc, point(3), point(3), point(15), point(14), point(3), point(8), point(15), point(8));
+      MoveToEx(dc, point(9), point(13), nullptr); LineTo(dc, point(9), point(17));
+      MoveToEx(dc, point(5), point(17), nullptr); LineTo(dc, point(13), point(17));
+      SelectObject(dc, old_brush); SelectObject(dc, old_pen); DeleteObject(brush); DeleteObject(pen);
+      auto* rgba = static_cast<DWORD*>(pixels);
+      for (int i = 0; i < size * size; ++i) if (rgba[i] & 0xffffff) rgba[i] |= 0xff000000;
+      HBITMAP mask = CreateBitmap(size, size, 1, 1, nullptr);
+      ICONINFO icon = {}; icon.fIcon = TRUE; icon.hbmColor = color; icon.hbmMask = mask;
+      recording_icon_ = CreateIconIndirect(&icon);
+      DeleteObject(mask); SelectObject(dc, previous);
+    }
+    if (color) DeleteObject(color);
+    DeleteDC(dc);
+  }
+  tray_data_.uFlags = NIF_ICON | NIF_TIP;
+  tray_data_.hIcon = active && recording_icon_ ? recording_icon_ : LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(101));
+  wcscpy_s(tray_data_.szTip, active ? L"tsukiko — идёт запись" : L"tsukiko — диктовка и расшифровка");
+  Shell_NotifyIconW(NIM_MODIFY, &tray_data_);
+}
+
 void DictationBridge::RemoveTrayIcon() {
   if (!tray_installed_) return;
   Shell_NotifyIconW(NIM_DELETE, &tray_data_);
   tray_installed_ = false;
+  if (recording_icon_) { DestroyIcon(recording_icon_); recording_icon_ = nullptr; }
 }
 
 namespace {
@@ -778,9 +933,13 @@ void DictationBridge::ShowContextMenu() {
 }
 
 bool DictationBridge::HandleWindowMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+  if (message == WM_APP + 66) {
+    if (hud_ && !hud_->editing()) { hud_editor_channel_.reset(); hud_->ReleaseEditor(); }
+    return true;
+  }
   if (message == WM_TIMER && wparam == ID_HUD_TIMER) {
     KillTimer(main_window_, ID_HUD_TIMER);
-    if (hud_) hud_->Hide();
+    if (current_hud_state_ != "recording" && current_hud_state_ != "transcribing") SetHudState("hidden");
     return true;
   }
   if (message == WM_TIMER && wparam == ID_PREWARM_TIMER) {
@@ -1185,6 +1344,20 @@ void DictationBridge::ShowSettings(const std::string& tab) {
 ///
 /// Движок под неё поднимается при первом показе: панель приходит только
 /// во время диктовки, а до тех пор держать ради неё сто мегабайт незачем.
+void DictationBridge::SendHudLayout() {
+  flutter::EncodableMap layout = hud_layout_labels_;
+  layout[flutter::EncodableValue("editing")] = flutter::EncodableValue(hud_ && hud_->editing());
+  layout[flutter::EncodableValue("scaleValue")] = flutter::EncodableValue(hud_ ? hud_->scale() : 1.0);
+  layout[flutter::EncodableValue("mode")] = flutter::EncodableValue(hud_ ? hud_->mode() : "panel");
+  for (auto* channel : {hud_channel_.get(), hud_editor_channel_.get()}) if (channel) {
+    channel->InvokeMethod("hudLayout", std::make_unique<flutter::EncodableValue>(layout));
+  }
+}
+
+void DictationBridge::NotifyHudMode() {
+  if (hud_) DictationChannel()->InvokeMethod("hudMode", std::make_unique<flutter::EncodableValue>(hud_->mode()));
+}
+
 void DictationBridge::PrewarmHud() {
   if (!project_ || hud_) return;
   hud_ = std::make_unique<HudWindow>();
@@ -1194,6 +1367,7 @@ void DictationBridge::PrewarmHud() {
             messenger, "tsukiko/dictation",
             &flutter::StandardMethodCodec::GetInstance());
     RegisterHandler(hud_channel_.get());
+    SendHudLayout();
     if (current_hud_state_ != "hidden") {
       hud_channel_->InvokeMethod(
           "hudState",
@@ -1203,38 +1377,22 @@ void DictationBridge::PrewarmHud() {
 }
 
 void DictationBridge::SetHudState(const std::string& state) {
-  current_hud_state_ = state;
-  if (state == "hidden") {
-    if (hud_) hud_->Hide();
-    return;
+  // The argument can alias current_hud_state_; keep a value before modifying it.
+  std::string next = state;
+  current_hud_state_ = next;
+  PrewarmHud();
+  if (hud_channel_) hud_channel_->InvokeMethod("hudState", std::make_unique<flutter::EncodableValue>(next));
+  if (hud_ && project_) {
+    if ((hud_->editing() || next != "hidden") && hud_->floating()) hud_->Show(*project_, [this](flutter::BinaryMessenger*) {});
+    else hud_->Hide();
   }
-  if (!project_) return;
-  if (!hud_) hud_ = std::make_unique<HudWindow>();
-  hud_->Show(*project_, [this](flutter::BinaryMessenger* messenger) {
-    hud_channel_ =
-        std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-            messenger, "tsukiko/dictation",
-            &flutter::StandardMethodCodec::GetInstance());
-    RegisterHandler(hud_channel_.get());
-    if (current_hud_state_ != "hidden") {
-      hud_channel_->InvokeMethod(
-          "hudState",
-          std::make_unique<flutter::EncodableValue>(current_hud_state_));
-    }
-  });
-  if (hud_channel_) {
-    hud_channel_->InvokeMethod(
-        "hudState", std::make_unique<flutter::EncodableValue>(state));
-  }
-
-  // Итоговые состояния держатся ровно столько же, сколько на macOS:
-  // подтверждение мелькает, а беду надо успеть прочитать.
+  UpdateTrayIndicator();
   KillTimer(main_window_, ID_HUD_TIMER);
   UINT linger = 0;
-  if (state == "done") linger = 700;
-  if (state == "cancelled") linger = 2200;
-  if (state == "failed" || state == "copied") linger = 2600;
-  if (state == "silent") linger = 1800;
+  if (next == "done") linger = 700;
+  if (next == "cancelled") linger = 2200;
+  if (next == "failed" || next == "copied") linger = 2600;
+  if (next == "silent") linger = 1800;
   if (linger) SetTimer(main_window_, ID_HUD_TIMER, linger, nullptr);
 }
 
@@ -1261,7 +1419,8 @@ std::string DictationBridge::StartAudioRecording() {
   wchar_t tempPath[MAX_PATH];
   GetTempPathW(MAX_PATH, tempPath);
   auto now = std::chrono::system_clock::now().time_since_epoch().count();
-  std::wstring fileW = std::wstring(tempPath) + L"tsukiko_record_" + std::to_wstring(now) + L".wav";
+  static uint64_t sequence = 0;
+  std::wstring fileW = std::wstring(tempPath) + L"tsukiko_record_" + std::to_wstring(now) + L"_" + std::to_wstring(++sequence) + L".wav";
   current_record_path_ = WideToUtf8(fileW);
 
   auto* encoder = new ma_encoder();
@@ -1446,6 +1605,8 @@ bool OpenClipboardPatiently(HWND owner) {
 /// Текст остаётся в буфере обмена (CF_UNICODETEXT), чтобы целевые
 /// приложения успели его прочитать и пользователь мог использовать его повторно.
 bool DictationBridge::PasteText(const std::string& text) {
+  if (hud_ && hud_->editing()) return false;
+  if (hud_ && hud_->editing()) return false;
   if (text.empty()) return true;
 
   if (!OpenClipboardPatiently(main_window_)) return false;
@@ -1498,8 +1659,7 @@ bool DictationBridge::PasteText(const std::string& text) {
   key('V', true);
   key(VK_CONTROL, true);
 
-  SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
-  return true;
+  return SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT)) == inputs.size();
 }
 
 void DictationBridge::RestoreClipboard() {

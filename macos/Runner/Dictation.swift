@@ -351,7 +351,11 @@ final class DictationBridge: NSObject {
     let hud = RecordingHUD(
       onCancel: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "cancel") },
       onStop: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "stop") },
-      onAbort: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "abort") })
+      onAbort: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "abort") },
+      onClearQueue: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "clearQueue") },
+      onRecord: { [weak self] in self?.channel?.invokeMethod("hud", arguments: "record") })
+    hud.onModeChanged = { [weak self] mode in self?.channel?.invokeMethod("hudMode", arguments: mode) }
+    hud.onStatusChanged = { [weak self] active in self?.panel.setRecordingIndicator(active) }
     hud.levelSource = { [weak self] in self?.currentLevel() ?? 0 }
     return hud
   }()
@@ -549,7 +553,15 @@ final class DictationBridge: NSObject {
       // нечем и некуда: надиктованный текст пропадал вместе с буфером,
       // который через 0,4 с возвращался к прежнему содержимому.
       reply(paste((args?["text"] as? String) ?? ""))
+    case "configureHud":
+      hud.configure(labels: (call.arguments as? [String: String]) ?? [:])
+      reply(nil)
+    case "resetHud":
+      hud.resetPosition()
+      reply(nil)
     case "hud":
+      hud.setMode((args?["mode"] as? String) ?? "panel")
+      hud.updateQueue(pending: (args?["pending"] as? Int) ?? 0, processing: (args?["processing"] as? Bool) ?? false, labels: (args?["labels"] as? [String: String]) ?? [:])
       switch (args?["state"] as? String) ?? "" {
       case "recording": hud.show()
       case "transcribing": hud.transcribing()
@@ -900,7 +912,7 @@ final class DictationBridge: NSObject {
   private func beginRecording() -> String? {
     stopRecorder()
     let url = URL(fileURLWithPath: NSTemporaryDirectory())
-      .appendingPathComponent("tsukiko-\(UInt64(Date().timeIntervalSince1970 * 1000)).wav")
+      .appendingPathComponent("tsukiko-\(UUID().uuidString).wav")
     let settings: [String: Any] = [
       AVFormatIDKey: Int(kAudioFormatLinearPCM),
       AVSampleRateKey: 16000.0,
@@ -992,6 +1004,7 @@ final class DictationBridge: NSObject {
   /// показать неудачу и оставить текст хотя бы в буфере обмена.
   @discardableResult
   private func paste(_ text: String) -> Bool {
+    guard !hud.isEditing else { return false }
     guard !text.isEmpty else { return false }
     // Без «Универсального доступа» событие клавиши не доходит никуда.
     // Проверяем до того, как трогать буфер: иначе мы бы затёрли чужую
@@ -1009,6 +1022,7 @@ final class DictationBridge: NSObject {
 
     pb.clearContents()
     pb.setString(text, forType: .string)
+    let change = pb.changeCount
     let sent = sendCommandV()
 
     // Вернуть буфер сразу нельзя: приложение-получатель читает его уже
@@ -1017,6 +1031,7 @@ final class DictationBridge: NSObject {
     // в буфере правильно: вызывающая сторона на это и рассчитывает.
     guard sent else { return false }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+      guard pb.changeCount == change else { return }
       pb.clearContents()
       guard !saved.isEmpty else { return }
       let items = saved.map { bag -> NSPasteboardItem in
