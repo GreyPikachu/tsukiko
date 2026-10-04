@@ -440,6 +440,53 @@ void main() {
     ),
   );
 
+  testWidgets('короткие и многострочные расшифровки имеют общий левый край', (
+    tester,
+  ) async {
+    final history = [
+      DictationEntry(
+        id: 'aligned-latest',
+        text: 'Короткая запись',
+        createdAt: DateTime(2026, 10, 4, 12, 35),
+      ),
+      DictationEntry(
+        id: 'aligned-older',
+        text:
+            'Длинная предыдущая расшифровка, которая переносится на несколько строк.',
+        createdAt: DateTime(2026, 10, 4, 12, 32),
+      ),
+      DictationEntry(
+        id: 'aligned-short',
+        text: 'Да',
+        createdAt: DateTime(2026, 10, 4, 12, 28),
+      ),
+    ];
+    cubit.overrideState(cubit.state.copyWith(history: history));
+    await pumpPanel(tester);
+    await tester.binding.setSurfaceSize(const Size(320, 700));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Предыдущие записи (2)'));
+    await tester.pumpAndSettle();
+
+    final left = tester.getTopLeft(find.text('Последняя расшифровка')).dx;
+    for (final text in [
+      'Предыдущие записи (2)',
+      ...history.map((entry) => entry.text),
+      '12:35',
+      '12:32',
+      '12:28',
+    ]) {
+      expect(tester.getTopLeft(find.text(text)).dx, left, reason: text);
+    }
+    for (final entry in history) {
+      expect(
+        tester.widget<Text>(find.text(entry.text)).textAlign,
+        TextAlign.left,
+      );
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'раскрытие и быстрое повторное сворачивание меняют нативную высоту',
     (tester) async {

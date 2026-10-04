@@ -543,7 +543,7 @@ class _HistoryState extends State<_History> {
         vertical: Gap.item,
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
@@ -592,6 +592,7 @@ class _HistoryState extends State<_History> {
               expanded: _expanded,
               child: _PanelQuietButton(
                 label: l10n.previousTranscriptsCount(older.length),
+                padding: const EdgeInsets.symmetric(vertical: Gap.hint),
                 onPressed: () => setState(() => _expanded = !_expanded),
                 child: Row(
                   children: [
@@ -670,10 +671,11 @@ class _HistoryTranscript extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
           entry.text,
+          textAlign: TextAlign.left,
           maxLines: latest ? 3 : 2,
           overflow: TextOverflow.ellipsis,
           style: latest ? Type.control : Type.caption.copyWith(height: 1.35),
@@ -802,10 +804,12 @@ class _PanelQuietButton extends StatefulWidget {
     required this.label,
     required this.child,
     required this.onPressed,
+    this.padding = const EdgeInsets.all(Gap.hint),
   });
   final String label;
   final Widget child;
   final VoidCallback? onPressed;
+  final EdgeInsets padding;
   @override
   State<_PanelQuietButton> createState() => _PanelQuietButtonState();
 }
@@ -822,7 +826,7 @@ class _PanelQuietButtonState extends State<_PanelQuietButton> {
       onExit: (_) => setState(() => _hover = false),
       child: CupertinoButton(
         minimumSize: const Size(28, 28),
-        padding: const EdgeInsets.all(Gap.hint),
+        padding: widget.padding,
         borderRadius: const BorderRadius.all(Radius.circular(5)),
         color: _focused
             ? Surface.pressed(context)
