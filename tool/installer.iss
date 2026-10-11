@@ -120,8 +120,10 @@ english.WelcomeLabel2=Setup will install {#MyAppName} {#MyAppVersion} on your co
 [CustomMessages]
 russian.AlreadyInstalledTitle=Обнаружена установленная версия
 russian.AlreadyInstalledHeading=tsukiko уже присутствует на этом компьютере
-russian.AlreadyInstalledPrompt=На этом компьютере уже установлена tsukiko (версия %1).%nВерсия в мастере установки: %2.%n%nВыберите, что вы хотите сделать:
-russian.AlreadyInstalledPath=Папка: %1
+russian.AlreadyInstalledPrompt=На этом компьютере уже установлена tsukiko (версия %1).
+russian.AlreadyInstalledPath=Установлена в папку: %1
+russian.AlreadyInstalledSetupVersion=Версия в мастере установки: %1.
+russian.AlreadyInstalledChoose=Выберите, что вы хотите сделать:
 russian.AlreadyInstalledReinstall=Переустановить или обновить tsukiko (обновит файлы программы)
 russian.AlreadyInstalledUninstall=Удалить tsukiko (запустит мастер удаления)
 russian.UninstallConfirm=Запустить мастер удаления tsukiko с этого компьютера?
@@ -133,8 +135,10 @@ russian.AppStillRunning=tsukiko сейчас запущена. Пожалуйс�
 
 english.AlreadyInstalledTitle=Existing Installation Detected
 english.AlreadyInstalledHeading=tsukiko is already installed on this computer
-english.AlreadyInstalledPrompt=tsukiko is already installed on this computer (version %1).%nVersion in this setup: %2.%n%nChoose what you want to do:
-english.AlreadyInstalledPath=Folder: %1
+english.AlreadyInstalledPrompt=tsukiko is already installed on this computer (version %1).
+english.AlreadyInstalledPath=Installed in: %1
+english.AlreadyInstalledSetupVersion=Version in this setup: %1.
+english.AlreadyInstalledChoose=Choose what you want to do:
 english.AlreadyInstalledReinstall=Reinstall or update tsukiko (updates program files)
 english.AlreadyInstalledUninstall=Uninstall tsukiko (launches the uninstaller)
 english.UninstallConfirm=Launch the uninstaller to remove tsukiko from this computer?
@@ -291,9 +295,14 @@ begin
     VerStr := '0.0.0';
   PathStr := GetInstalledPath();
 
-  PromptText := ExpandConstant(FmtMessage(CustomMessage('AlreadyInstalledPrompt'), [VerStr, '{#MyAppVersion}']));
+  { Сначала всё про установленную копию — версия и папка, — потом версия
+    мастера, и только в конце вопрос: он стоит прямо над вариантами ответа. }
+  PromptText := FmtMessage(CustomMessage('AlreadyInstalledPrompt'), [VerStr]);
   if PathStr <> '' then
-    PromptText := PromptText + #13#10 + ExpandConstant(FmtMessage(CustomMessage('AlreadyInstalledPath'), [PathStr]));
+    PromptText := PromptText + #13#10 + FmtMessage(CustomMessage('AlreadyInstalledPath'), [PathStr]);
+  PromptText := PromptText + #13#10 +
+    FmtMessage(CustomMessage('AlreadyInstalledSetupVersion'), ['{#MyAppVersion}']) + #13#10#13#10 +
+    CustomMessage('AlreadyInstalledChoose');
 
   AlreadyInstalledPage := CreateInputOptionPage(
     wpWelcome,
