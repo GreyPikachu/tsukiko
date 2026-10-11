@@ -94,6 +94,10 @@ class MacOs implements Os {
   @override
   Future<Map<String, String>?> engineEnvironment() async => null;
 
+  /// На macOS за сиротами следит подметание по меткам (`sweepOurServers`).
+  @override
+  void bindToApp(int pid) {}
+
   /// Ничего не делаем: `execve` берёт байты довода как есть, и UTF-8
   /// доезжает до чужой программы целым. Преобразовывать здесь нечего.
   @override

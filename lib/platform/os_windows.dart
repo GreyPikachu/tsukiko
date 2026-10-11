@@ -235,6 +235,55 @@ class WindowsOs implements Os {
     }
   }
 
+  /// Задание Windows (job object) с «убить всех при закрытии».
+  ///
+  /// В задание кладём только движки, а не всё приложение: иначе вместе
+  /// с tsukiko закрывались бы и окна проводника или браузер, открытые
+  /// из него. Дескриптор задания не закрываем никогда — его закроет сама
+  /// система, когда процесс приложения кончится любым путём, и тогда же
+  /// погасит всё, что в задании лежит. Своё задание у каждого изолята:
+  /// они живут в одном процессе и кончаются вместе.
+  @override
+  void bindToApp(int pid) {
+    if (pid <= 0) return;
+    try {
+      final job = _killOnCloseJob ??= _createKillOnCloseJob();
+      if (job == null || job == nullptr) return;
+      final process =
+          _openProcess(_processSetQuota | _processTerminate, 0, pid);
+      if (process == nullptr) return;
+      try {
+        _assignProcessToJobObject(job, process);
+      } finally {
+        _closeHandle(process);
+      }
+    } catch (e) {
+      Log.warn('Engine', 'Could not bind engine process $pid to the app', e);
+    }
+  }
+
+  static Pointer<Void>? _killOnCloseJob;
+
+  static Pointer<Void>? _createKillOnCloseJob() {
+    final job = _createJobObject(nullptr, nullptr);
+    if (job == nullptr) return null;
+    // JOBOBJECT_EXTENDED_LIMIT_INFORMATION (x64): LimitFlags лежит
+    // в BasicLimitInformation по смещению 16.
+    final info = calloc<Uint8>(_extendedLimitInfoSize);
+    try {
+      (info + 16).cast<Uint32>().value = _jobKillOnClose;
+      if (_setInformationJobObject(
+              job, _jobExtendedLimitInformation, info.cast(), _extendedLimitInfoSize) ==
+          0) {
+        _closeHandle(job);
+        return null;
+      }
+    } finally {
+      calloc.free(info);
+    }
+    return job;
+  }
+
   // ── путь для чужой программы ──────────────────────────────────────────────
 
   /// Короткое имя Windows для пути: `C:\Users\Роман\…` →
@@ -309,6 +358,10 @@ class WindowsOs implements Os {
   // ── процессы через kernel32 ───────────────────────────────────────────────
 
   static const _processTerminate = 0x0001;
+  static const _processSetQuota = 0x0100;
+  static const _jobKillOnClose = 0x2000;
+  static const _jobExtendedLimitInformation = 9;
+  static const _extendedLimitInfoSize = 144;
   static const _processQueryLimitedInformation = 0x1000;
   static const _stillActive = 259;
   static const _memoryCountersSize = 72;
@@ -330,6 +383,18 @@ class WindowsOs implements Os {
   static final _terminateProcess = _kernel32.lookupFunction<
       Int32 Function(Pointer<Void>, Uint32),
       int Function(Pointer<Void>, int)>('TerminateProcess');
+
+  static final _createJobObject = _kernel32.lookupFunction<
+      Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>),
+      Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>)>('CreateJobObjectW');
+
+  static final _setInformationJobObject = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>, Int32, Pointer<Void>, Uint32),
+      int Function(Pointer<Void>, int, Pointer<Void>, int)>('SetInformationJobObject');
+
+  static final _assignProcessToJobObject = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>, Pointer<Void>),
+      int Function(Pointer<Void>, Pointer<Void>)>('AssignProcessToJobObject');
 
   static final _getProcessMemoryInfo = _kernel32.lookupFunction<
       Int32 Function(Pointer<Void>, Pointer<Void>, Uint32),

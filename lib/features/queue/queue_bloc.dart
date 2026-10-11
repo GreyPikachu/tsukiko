@@ -1457,6 +1457,7 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       environment: await os.engineEnvironment(),
     );
     _proc = proc;
+    os.bindToApp(proc.pid);
     Log.info(
       'Queue',
       'Recognizer process launched: PID=${proc.pid} ($processName)',

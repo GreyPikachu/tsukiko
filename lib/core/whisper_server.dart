@@ -461,6 +461,7 @@ class WhisperServer {
         return;
       }
       _proc = proc;
+      os.bindToApp(proc.pid);
       Log.info('Engine', 'Server process launched: PID=${proc.pid}');
       // Сохраняем начальный вывод сервера: если процесс завершится со сбоем
       // на старте или во время waitReady, в диагностических логах и

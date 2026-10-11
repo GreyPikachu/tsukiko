@@ -328,6 +328,7 @@ Future<Transcript> transcribeHere(
         args,
         environment: await os.engineEnvironment(),
       );
+      os.bindToApp(proc.pid);
       var yielded = false;
 
       void onLine(String line) {

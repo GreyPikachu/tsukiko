@@ -112,6 +112,9 @@ class _TempOs implements Os {
   Future<Map<String, String>?> engineEnvironment() async => null;
 
   @override
+  void bindToApp(int pid) {}
+
+  @override
   bool get hasWindowMaterial => _real.hasWindowMaterial;
 
   @override
