@@ -499,6 +499,16 @@ final class DictationBridge: NSObject {
       reply(nil)
     case "initialTab":
       reply(settings.tab)
+    case "windowTheme":
+      // Тема из настроек: рамка, материал окон, панель в строке меню и
+      // плашка записи берут оформление у NSApp, а не у Flutter. nil — как
+      // в системе.
+      switch call.arguments as? String {
+      case "light": NSApp.appearance = NSAppearance(named: .aqua)
+      case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+      default: NSApp.appearance = nil
+      }
+      reply(nil)
     case "permissions":
       // Разрешение одно: «Универсальный доступ». Наш tap поглощает события
       // (fn+пробел не должен вставить пробел в чужое поле), а такому tap'у
