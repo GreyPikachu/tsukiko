@@ -280,6 +280,20 @@ void DictationBridge::Shutdown() {
   // диктовка держит модель между фразами, очередь — пока считает.
   KillDictationServer();
   KillRecognizer();
+
+  // Свои окна и каналы отпускаем сейчас, пока жив главный движок Flutter.
+  // Мост — синглтон и умирает последним, при выходе из процесса; если
+  // держать их до тех пор, панель записи и окно настроек разбирались бы
+  // уже после движков, на чьих мессенджерах сидят их каналы, — и выход
+  // кончался падением в flutter_windows.dll.
+  hud_editor_channel_.reset();
+  hud_channel_.reset();
+  hud_.reset();
+  settings_channel_.reset();
+  settings_.reset();
+  panel_channel_.reset();
+  channel_.reset();
+  panel_ = nullptr;
 }
 
 /// Погасить движок расшифровки, если очередь как раз считала.

@@ -70,6 +70,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::DispatchMessage(&msg);
   }
 
+  // Разобрать окно явно, пока объект цел. Деструктор Win32Window тоже зовёт
+  // Destroy, но из деструктора базового класса виртуальный OnDestroy
+  // попадает в пустую базовую версию: FlutterWindow::OnDestroy — а с ним
+  // и DictationBridge::Shutdown, который гасит движок, — не вызывались
+  // вовсе. Движки Flutter разбирались в случайном порядке, процесс падал
+  // на выходе, и сервер диктовки с моделью оставался висеть сиротой.
+  window.Destroy();
+
   if (hMutex) {
     ::ReleaseMutex(hMutex);
     ::CloseHandle(hMutex);
