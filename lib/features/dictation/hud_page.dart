@@ -37,6 +37,21 @@ Future<void> runHud({bool editor = false}) async {
   runApp(HudApp(editor: editor));
 }
 
+/// Подложка панели записи.
+///
+/// На macOS панель — прозрачное окно, и скругление со светлой рамкой
+/// рисует сам Flutter. На Windows окно непрозрачное: всё, что Flutter
+/// оставил за скруглением, выходило чёрными уголками и полосами по бокам.
+/// Там углы скругляет и рамку рисует сама система (DWM, см.
+/// `HudWindow::Prepare`), а Flutter заливает окно целиком.
+BoxDecoration hudDecoration(BuildContext context) => Platform.isWindows
+    ? BoxDecoration(color: Surface.chrome(context))
+    : BoxDecoration(
+        color: Surface.chrome(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Surface.hairline(context)),
+      );
+
 class HudApp extends StatelessWidget {
   const HudApp({super.key, this.editor = false});
   final bool editor;
@@ -248,11 +263,7 @@ class _HudViewState extends State<HudView> {
               width: width,
               height: height,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Surface.chrome(context),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Surface.hairline(context)),
-              ),
+              decoration: hudDecoration(context),
               child: Row(children: row),
             ),
           ),
@@ -489,11 +500,7 @@ class _HudEditorViewState extends State<HudEditorView> {
       onKeyEvent: (_, event) => handleHudEditorKey(_bridge, event),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Surface.chrome(context),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Surface.hairline(context)),
-        ),
+        decoration: hudDecoration(context),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.start,
