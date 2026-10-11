@@ -82,8 +82,7 @@ class SettingsApp extends StatelessWidget {
         // Заголовок панели инструментов настоящий, локализованный —
         // системная рамка окна этот берёт только для VoiceOver и Dock.
         title: currentL10n().settingsWindowTitle,
-        theme: MacosThemeData.light(),
-        darkTheme: MacosThemeData.dark(),
+        // Тему строит сам MacosApp — см. комментарий в main.dart.
         themeMode: appThemeMode.value,
         debugShowCheckedModeBanner: false,
         localizationsDelegates: AppLocalizations.localizationsDelegates,

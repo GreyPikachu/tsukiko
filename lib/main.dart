@@ -96,8 +96,12 @@ class TsukikoApp extends StatelessWidget {
         builder: (context, _) => MacosApp(
           locale: appLocale.value,
           title: appName,
-          theme: MacosThemeData.light(),
-          darkTheme: MacosThemeData.dark(),
+          // Светлую и тёмную тему строит сам MacosApp — не передаём своих.
+          // Готовый MacosThemeData.light() приходил без isMainWindow, и
+          // macos_ui в светлой теме закрашивал включённую галку белым:
+          // от неё оставалась пустая синяя рамка, «включено» не отличалось
+          // от «выключено». Своя тема MacosApp берёт isMainWindow и цвет
+          // акцента у системы (на Windows окно всегда «главное»).
           themeMode: appThemeMode.value,
           debugShowCheckedModeBanner: false,
           localizationsDelegates: AppLocalizations.localizationsDelegates,

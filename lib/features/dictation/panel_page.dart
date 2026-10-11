@@ -66,8 +66,7 @@ class _PanelApp extends StatelessWidget {
     builder: (context, _) => MacosApp(
       locale: appLocale.value,
       title: appName,
-      theme: MacosThemeData.light(),
-      darkTheme: MacosThemeData.dark(),
+      // Тему строит сам MacosApp — см. комментарий в main.dart.
       themeMode: appThemeMode.value,
       debugShowCheckedModeBanner: false,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
