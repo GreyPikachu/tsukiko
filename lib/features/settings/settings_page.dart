@@ -9,6 +9,7 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../core/app_locale.dart';
 import '../../core/app_theme.dart';
+import '../../design/theme_fade.dart';
 import '../../core/library.dart';
 import '../../core/logger.dart';
 import '../../core/models.dart';
@@ -73,9 +74,8 @@ class SettingsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => SettingsCubit(NativeBridge()),
-    child: ListenableBuilder(
-      listenable: Listenable.merge([appLocale, appThemeMode]),
-      builder: (context, _) => MacosApp(
+    child: ThemedApp(
+    builder: (context) => MacosApp(
         locale: appLocale.value,
         // Локализованный заголовок окна недоступен здесь: builder ниже
         // ещё не построен, а MacosApp.title читается до первого кадра.

@@ -6,6 +6,7 @@ import 'package:macos_ui/macos_ui.dart';
 import 'package:macos_ui/src/layout/wallpaper_tinting_settings/global_wallpaper_tinting_settings.dart';
 import 'core/app_locale.dart';
 import 'core/app_theme.dart';
+import 'design/theme_fade.dart';
 import 'core/logger.dart';
 import 'core/settings.dart';
 import 'l10n/gen/app_localizations.dart';
@@ -66,7 +67,7 @@ Future<void> main(List<String> args) async {
   Log.info(
     'App',
     'Starting Tsukiko $appVersion (${os.platformId}, ${Platform.operatingSystemVersion}), '
-    'entrypoint: main, args: $args',
+        'entrypoint: main, args: $args',
   );
   refreshLocale();
   refreshTheme();
@@ -82,16 +83,22 @@ Future<void> main(List<String> args) async {
   // окна»: настраивать здесь нечего ровно там, где материала нет, — а
   // плагин, который это делает, на такой системе и не поднимется.
   if (os.hasWindowMaterial) {
-    await const MacosWindowUtilsConfig(toolbarStyle: NSWindowToolbarStyle.unified).apply();
+    await const MacosWindowUtilsConfig(
+      toolbarStyle: NSWindowToolbarStyle.unified,
+    ).apply();
   } else {
     GlobalWallpaperTintingSettings.disableWallpaperTinting();
   }
   // До первого findModels(): список моделей должен собираться уже
   // из своей папки. Когда переезжать нечего, это одна проверка папки.
   await migrateLegacyModels();
-  runApp(TsukikoApp(
-    initialFiles: args.where((a) => FileSystemEntity.typeSync(a) != FileSystemEntityType.notFound),
-  ));
+  runApp(
+    TsukikoApp(
+      initialFiles: args.where(
+        (a) => FileSystemEntity.typeSync(a) != FileSystemEntityType.notFound,
+      ),
+    ),
+  );
 }
 
 class TsukikoApp extends StatelessWidget {
@@ -99,23 +106,21 @@ class TsukikoApp extends StatelessWidget {
   final Iterable<String> initialFiles;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-        listenable: Listenable.merge([appLocale, appThemeMode]),
-        builder: (context, _) => MacosApp(
-          locale: appLocale.value,
-          title: appName,
-          // Светлую и тёмную тему строит сам MacosApp — не передаём своих.
-          // Готовый MacosThemeData.light() приходил без isMainWindow, и
-          // macos_ui в светлой теме закрашивал включённую галку белым:
-          // от неё оставалась пустая синяя рамка, «включено» не отличалось
-          // от «выключено». Своя тема MacosApp берёт isMainWindow и цвет
-          // акцента у системы (на Windows окно всегда «главное»).
-          themeMode: appThemeMode.value,
-          debugShowCheckedModeBanner: false,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: HomePage(initialFiles: initialFiles),
-        ),
-      );
+  Widget build(BuildContext context) => ThemedApp(
+    builder: (context) => MacosApp(
+      locale: appLocale.value,
+      title: appName,
+      // Светлую и тёмную тему строит сам MacosApp — не передаём своих.
+      // Готовый MacosThemeData.light() приходил без isMainWindow, и
+      // macos_ui в светлой теме закрашивал включённую галку белым:
+      // от неё оставалась пустая синяя рамка, «включено» не отличалось
+      // от «выключено». Своя тема MacosApp берёт isMainWindow и цвет
+      // акцента у системы (на Windows окно всегда «главное»).
+      themeMode: appThemeMode.value,
+      debugShowCheckedModeBanner: false,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: HomePage(initialFiles: initialFiles),
+    ),
+  );
 }
-

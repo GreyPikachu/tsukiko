@@ -1242,12 +1242,27 @@ final class DictationBridge: NSObject {
   /// Тема из настроек: рамка, материал окон, панель в строке меню и
   /// плашка записи берут оформление у NSApp, а не у Flutter. nil — как
   /// в системе.
+  ///
+  /// Смена на лету перетекает: каждое видимое окно получает затухание
+  /// Core Animation, и старый кадр растворяется в новом — вместе с рамкой,
+  /// материалом и Flutter, который перерисуется уже внутри перехода.
   static func applyTheme(_ id: String?) {
-    switch id {
-    case "light": NSApp.appearance = NSAppearance(named: .aqua)
-    case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
-    default: NSApp.appearance = nil
+    let target: NSAppearance? = switch id {
+    case "light": NSAppearance(named: .aqua)
+    case "dark": NSAppearance(named: .darkAqua)
+    default: nil
     }
+    guard NSApp.appearance?.name != target?.name else { return }
+    for window in NSApp.windows where window.isVisible {
+      guard let layer = window.contentView?.superview?.layer ?? window.contentView?.layer
+      else { continue }
+      let fade = CATransition()
+      fade.type = .fade
+      fade.duration = 0.35
+      fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+      layer.add(fade, forKey: "tsukiko.theme")
+    }
+    NSApp.appearance = target
   }
 
   /// Тема прямо из settings.json — до первого кадра Flutter, чтобы окно

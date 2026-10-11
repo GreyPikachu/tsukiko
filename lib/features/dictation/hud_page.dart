@@ -9,6 +9,7 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../../core/app_locale.dart';
 import '../../core/app_theme.dart';
+import '../../design/theme_fade.dart';
 import '../../core/logger.dart';
 import '../../design/design.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -58,9 +59,8 @@ class HudApp extends StatelessWidget {
   final bool editor;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([appLocale, appThemeMode]),
-    builder: (context, _) => MacosApp(
+  Widget build(BuildContext context) => ThemedApp(
+    builder: (context) => MacosApp(
       locale: appLocale.value,
       // Тему строит сам MacosApp — см. комментарий в main.dart.
       themeMode: appThemeMode.value,

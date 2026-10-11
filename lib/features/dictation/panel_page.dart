@@ -16,6 +16,7 @@ import 'dictation_history.dart';
 import 'dictation_state.dart';
 import '../../core/app_locale.dart';
 import '../../core/app_theme.dart';
+import '../../design/theme_fade.dart';
 import '../../core/models.dart';
 import '../../core/text.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -61,9 +62,8 @@ class _PanelApp extends StatelessWidget {
   const _PanelApp();
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([appLocale, appThemeMode]),
-    builder: (context, _) => MacosApp(
+  Widget build(BuildContext context) => ThemedApp(
+    builder: (context) => MacosApp(
       locale: appLocale.value,
       title: appName,
       // Тему строит сам MacosApp — см. комментарий в main.dart.

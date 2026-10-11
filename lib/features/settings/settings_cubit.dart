@@ -656,11 +656,16 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   /// Тема окон. Как и язык: своё окно сразу, соседние — по «reload».
+  ///
+  /// Системе — раньше Flutter: на macOS она вешает на окна затухание, и
+  /// перерисовка Flutter должна попасть уже внутрь него.
   void setTheme(String v) {
     final mode = parseThemeMode(v);
-    _emit(state.copyWith(theme: themeModeId(mode)));
-    appThemeMode.value = mode;
-    unawaited(_saveApp({themeSetting: themeModeId(mode)}));
+    final id = themeModeId(mode);
+    _emit(state.copyWith(theme: id));
+    unawaited(NativeBridge.setWindowTheme(id)
+        .whenComplete(() => appThemeMode.value = mode));
+    unawaited(_saveApp({themeSetting: id}));
   }
 
   /// Включить или выключить местное API.
