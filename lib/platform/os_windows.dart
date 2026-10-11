@@ -306,6 +306,35 @@ class WindowsOs implements Os {
           int Function(Pointer<Utf16>, Pointer<Utf16>, int)>(
       'GetShortPathNameW');
 
+  // ── процессы через kernel32 ───────────────────────────────────────────────
+
+  static const _processTerminate = 0x0001;
+  static const _processQueryLimitedInformation = 0x1000;
+  static const _stillActive = 259;
+  static const _memoryCountersSize = 72;
+
+  static final _kernel32 = DynamicLibrary.open('kernel32.dll');
+
+  static final _openProcess = _kernel32.lookupFunction<
+      Pointer<Void> Function(Uint32, Int32, Uint32),
+      Pointer<Void> Function(int, int, int)>('OpenProcess');
+
+  static final _closeHandle = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>),
+      int Function(Pointer<Void>)>('CloseHandle');
+
+  static final _getExitCodeProcess = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>, Pointer<Uint32>),
+      int Function(Pointer<Void>, Pointer<Uint32>)>('GetExitCodeProcess');
+
+  static final _terminateProcess = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>, Uint32),
+      int Function(Pointer<Void>, int)>('TerminateProcess');
+
+  static final _getProcessMemoryInfo = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>, Pointer<Void>, Uint32),
+      int Function(Pointer<Void>, Pointer<Void>, int)>('K32GetProcessMemoryInfo');
+
   // ── чем система рисует и что она спрашивает ───────────────────────────────
 
   @override
@@ -512,24 +541,58 @@ class WindowsOs implements Os {
 
   // ── процессы ──────────────────────────────────────────────────────────────
 
+  /// Жив ли процесс — у самой системы, а не у `tasklist`.
+  ///
+  /// Раньше здесь был `Process.runSync('tasklist')`: целая программа на
+  /// каждый вопрос, и синхронно — то есть на потоке изолята, который
+  /// рисует окно и принимает сочетания диктовки. `killForSure` задаёт этот
+  /// вопрос до двенадцати раз подряд при каждой выгрузке модели по
+  /// простою, и панель на это время замирала — нажатие сочетания в такую
+  /// секунду просто терялось. OpenProcess + GetExitCodeProcess отвечают
+  /// за микросекунды.
   @override
   bool isAlive(int pid) {
+    if (pid <= 0) return false;
     try {
-      final r = Process.runSync('tasklist', ['/FI', 'PID eq $pid', '/NH']);
-      final out = (r.stdout as String).trim();
-      return out.isNotEmpty &&
-          out.contains('$pid') &&
-          !out.contains('No tasks') &&
-          !out.contains('нет задач');
+      final handle = _openProcess(_processQueryLimitedInformation, 0, pid);
+      if (handle == nullptr) return false;
+      final code = calloc<Uint32>();
+      try {
+        return _getExitCodeProcess(handle, code) != 0 &&
+            code.value == _stillActive;
+      } finally {
+        calloc.free(code);
+        _closeHandle(handle);
+      }
     } catch (_) {
       return false;
     }
   }
 
+  /// Просьба завершиться и приказ.
+  ///
+  /// Приказ — TerminateProcess, сразу и без запуска `taskkill /F`.
+  /// Просьбу Windows умеет передать только окнам, а у движка их нет;
+  /// `taskkill` без /F оставляем ради чужих сборок с окном, но не ждём его:
+  /// раньше он шёл синхронно и стоил потоку интерфейса десятых долей
+  /// секунды на ровном месте.
   @override
   void signal(int pid, {bool force = false}) {
+    if (pid <= 0) return;
+    if (!force) {
+      Process.start('taskkill', ['/PID', '$pid'])
+          .then((p) => p.exitCode)
+          .catchError((_) => -1);
+      return;
+    }
     try {
-      Process.runSync('taskkill', [if (force) '/F', '/PID', '$pid']);
+      final handle = _openProcess(_processTerminate, 0, pid);
+      if (handle == nullptr) return;
+      try {
+        _terminateProcess(handle, 1);
+      } finally {
+        _closeHandle(handle);
+      }
     } catch (_) {}
   }
 
@@ -592,20 +655,32 @@ class WindowsOs implements Os {
     }
   }
 
+  /// Память процесса — рабочий набор, то же число, что показывал
+  /// `tasklist` в столбце «Память». Но без запуска `tasklist` раз в пять
+  /// секунд, пока открыта панель: K32GetProcessMemoryInfo отвечает сразу.
   @override
   Future<int> footprintMb(int pid) async {
+    if (pid <= 0) return 0;
     try {
-      final r = await Process.run('tasklist', ['/FI', 'PID eq $pid', '/FO', 'CSV', '/NH']);
-      final out = (r.stdout as String).trim();
-      if (out.isEmpty || !out.contains('$pid')) return 0;
-      final cols = out.split('","').map((s) => s.replaceAll('"', '').trim()).toList();
-      if (cols.length >= 5) {
-        final memStr = cols[4].replaceAll(RegExp(r'[^\d]'), '');
-        final memKb = int.tryParse(memStr) ?? 0;
-        return (memKb / 1024).round();
+      final handle = _openProcess(_processQueryLimitedInformation, 0, pid);
+      if (handle == nullptr) return 0;
+      // PROCESS_MEMORY_COUNTERS: два DWORD и восемь SIZE_T. WorkingSetSize —
+      // четвёртое поле, сразу за PeakWorkingSetSize.
+      final counters = calloc<Uint8>(_memoryCountersSize);
+      try {
+        counters.cast<Uint32>().value = _memoryCountersSize;
+        if (_getProcessMemoryInfo(handle, counters.cast(), _memoryCountersSize) == 0) {
+          return 0;
+        }
+        final workingSet = (counters + 16).cast<Uint64>().value;
+        return (workingSet / (1024 * 1024)).round();
+      } finally {
+        calloc.free(counters);
+        _closeHandle(handle);
       }
-    } catch (_) {}
-    return 0;
+    } catch (_) {
+      return 0;
+    }
   }
 
   // ── система ───────────────────────────────────────────────────────────────
