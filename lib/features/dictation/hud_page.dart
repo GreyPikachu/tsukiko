@@ -381,18 +381,17 @@ class _HudViewState extends State<HudView> {
           Surface.secondaryText(context),
           l10n.hudSilent,
         ),
+        // Размеры и шаги — как у SwiftUI-панели на macOS (RecordingHUD.swift:
+        // HStack(spacing: 9), метр 100×26). Прежде метр стоял во Flexible
+        // со сжатием, а справа — Spacer: свободное место делилось между
+        // ними пополам, и полоски ужимались почти вдвое против macOS.
         _ => [
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: _Meter(
-                levels: _editing && _state != HudState.recording
-                    ? List.generate(22, (i) => ((i * 7) % 13 + 2) / 16)
-                    : _levels,
-              ),
-            ),
+          _Meter(
+            levels: _editing && _state != HudState.recording
+                ? List.generate(22, (i) => ((i * 7) % 13 + 2) / 16)
+                : _levels,
           ),
-          const SizedBox(width: Gap.control),
+          const SizedBox(width: _hudSpacing),
           Text(
             _time,
             style: _label.copyWith(
@@ -406,7 +405,7 @@ class _HudViewState extends State<HudView> {
             filled: false,
             onPressed: () => _action('cancel'),
           ),
-          const SizedBox(width: Gap.inner),
+          const SizedBox(width: _hudSpacing),
           _HudButton(
             title: l10n.hudStop,
             filled: true,
@@ -624,6 +623,9 @@ class _HudEditorViewState extends State<HudEditorView> {
 /// и в SwiftUI-версии.
 const _label = TextStyle(fontSize: 13, fontWeight: FontWeight.w500);
 
+/// Шаг между элементами панели — тот же, что у HStack(spacing: 9) на macOS.
+const _hudSpacing = 9.0;
+
 /// Уровень сигнала полосками. Это не украшение: пока они шевелятся,
 /// видно, что микрофон действительно слышит, а не пишет тишину.
 class _Meter extends StatelessWidget {
@@ -706,7 +708,8 @@ class _HudButtonState extends State<_HudButton> {
           duration: const Duration(milliseconds: 90),
           child: Container(
             height: 26,
-            padding: const EdgeInsets.symmetric(horizontal: Gap.control),
+            // Как .padding(.horizontal, 10) у кнопки панели на macOS.
+            padding: const EdgeInsets.symmetric(horizontal: 10),
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: background,
