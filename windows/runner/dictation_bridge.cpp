@@ -1091,6 +1091,10 @@ void DictationBridge::HookThreadMain() {
 
 void DictationBridge::UninstallKeyboardHook() {
   if (hook_thread_.joinable()) {
+    // Поток мог не успеть завести очередь за две секунды ожидания при
+    // запуске: тогда WM_QUIT некуда положить, и join ждал бы вечно.
+    // Номер потока появляется ровно тогда, когда очередь уже есть.
+    while (!hook_thread_id_) Sleep(1);
     PostThreadMessageW(hook_thread_id_, WM_QUIT, 0, 0);
     hook_thread_.join();
     hook_thread_id_ = 0;
@@ -1220,11 +1224,16 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
     // набираемая буква не должна попасть в чужое поле. Отпускание
     // поглощаем у тех клавиш, чьё нажатие уже проглотили, — в том числе
     // когда захват кончился на этом самом наборе.
+    // Отпускание до хука доходит не всегда: Ctrl+Alt+Del и Win+L уводят
+    // его на защищённый рабочий стол. Поэтому новое нажатие той же
+    // клавиши вне захвата закрывает старую запись — иначе следующий
+    // обычный Ctrl+C потерял бы отпускание Ctrl, и он «залип» бы.
     static std::set<int> swallowed;
     if (isDown && bridge.capture_swallow_) {
       swallowed.insert(vk);
       return 1;
     }
+    if (isDown) swallowed.erase(vk);
     if (isUp && swallowed.erase(vk) > 0) return 1;
   }
   return CallNextHookEx(nullptr, nCode, wParam, lParam);
