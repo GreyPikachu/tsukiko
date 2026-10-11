@@ -35,6 +35,9 @@
 // Событие клавиатуры из потока хука: lparam — DictationBridge::KeyEvent*,
 // владение переходит к получателю.
 #define WM_TSUKIKO_KEY (WM_APP + 71)
+// Микрофон поднялся (или нет) в своём потоке: lparam —
+// std::shared_ptr<DictationBridge::MicStart>*, владение у получателя.
+#define WM_TSUKIKO_MIC (WM_APP + 72)
 #define ID_PREWARM_TIMER 2004
 
 /// Метка на наших же событиях клавиатуры.
@@ -269,6 +272,7 @@ void DictationBridge::AttachPanel(flutter::BinaryMessenger* messenger,
 void DictationBridge::Shutdown() {
   UninstallKeyboardHook();
   RemoveTrayIcon();
+  SettleMicStart();
   if (is_recording_) {
     StopAudioRecording();
   }
@@ -574,15 +578,18 @@ void DictationBridge::RegisterHandler(
       PostQuitMessage(0);
       result->Success();
     } else if (method == "record") {
-      std::string path = StartAudioRecording();
-      // Пустая строка в Dart выглядит как настоящий путь. Из-за этого
-      // не поднявшийся микрофон отправлял в whisper файл с именем "",
-      // а человек получал ложное «запись сохранена» вместо причины.
-      if (path.empty()) {
-        result->Success();
-      } else {
-        result->Success(flutter::EncodableValue(path));
-      }
+      std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> reply(
+          result.release());
+      StartAudioRecording([reply](const std::string& path) {
+        // Пустая строка в Dart выглядит как настоящий путь. Из-за этого
+        // не поднявшийся микрофон отправлял в whisper файл с именем "",
+        // а человек получал ложное «запись сохранена» вместо причины.
+        if (path.empty()) {
+          reply->Success();
+        } else {
+          reply->Success(flutter::EncodableValue(path));
+        }
+      });
     } else if (method == "stopRecord") {
       std::string path = StopAudioRecording();
       result->Success(flutter::EncodableValue(path));
@@ -979,6 +986,12 @@ bool DictationBridge::HandleWindowMessage(HWND hwnd, UINT message, WPARAM wparam
   }
 
 
+  if (message == WM_TSUKIKO_MIC) {
+    std::unique_ptr<std::shared_ptr<MicStart>> start(
+        reinterpret_cast<std::shared_ptr<MicStart>*>(lparam));
+    if (start && *start) CompleteMicStart(*start);
+    return true;
+  }
   if (message == WM_TSUKIKO_KEY) {
     std::unique_ptr<KeyEvent> event(reinterpret_cast<KeyEvent*>(lparam));
     if (event) ProcessKeyEvent(*event);
@@ -1536,7 +1549,9 @@ void DictationBridge::SendSystemWake() {
 
 // ── Аудио запись через miniaudio ──────────────────────────────────────────
 
-std::string DictationBridge::StartAudioRecording() {
+void DictationBridge::StartAudioRecording(
+    std::function<void(const std::string&)> done) {
+  SettleMicStart();
   if (is_recording_) {
     StopAudioRecording();
   }
@@ -1552,7 +1567,8 @@ std::string DictationBridge::StartAudioRecording() {
   ma_encoder_config encConfig = ma_encoder_config_init(ma_encoding_format_wav, ma_format_s16, 1, 16000);
   if (ma_encoder_init_file(current_record_path_.c_str(), &encConfig, encoder) != MA_SUCCESS) {
     delete encoder;
-    return "";
+    done("");
+    return;
   }
   ma_encoder_ = encoder;
 
@@ -1563,44 +1579,74 @@ std::string DictationBridge::StartAudioRecording() {
     ma_encoder_uninit(encoder);
     delete encoder;
     ma_encoder_ = nullptr;
-    return "";
+    done("");
+    return;
   }
 
-  auto* device = new ma_device();
-  ma_device_config devConfig = ma_device_config_init(ma_device_type_capture);
-  devConfig.capture.format = ma_format_s16;
-  devConfig.capture.channels = 1;
-  devConfig.sampleRate = 16000;
-  devConfig.dataCallback = AudioCaptureCallback;
-  devConfig.pUserData = this;
+  auto start = std::make_shared<MicStart>();
+  start->done = std::move(done);
+  mic_start_ = start;
+  HWND notify = main_window_;
+  mic_thread_ = std::thread([this, start, notify]() {
+    auto* device = new ma_device();
+    ma_device_config devConfig = ma_device_config_init(ma_device_type_capture);
+    devConfig.capture.format = ma_format_s16;
+    devConfig.capture.channels = 1;
+    devConfig.sampleRate = 16000;
+    devConfig.dataCallback = AudioCaptureCallback;
+    devConfig.pUserData = this;
 
-  if (ma_device_init(nullptr, &devConfig, device) != MA_SUCCESS) {
+    bool ok = ma_device_init(nullptr, &devConfig, device) == MA_SUCCESS;
+    if (ok && ma_device_start(device) != MA_SUCCESS) {
+      ma_device_uninit(device);
+      ok = false;
+    }
+    if (!ok) {
+      delete device;
+      device = nullptr;
+    }
+    start->device = device;
+    start->ok = ok;
+    auto* message = new std::shared_ptr<MicStart>(start);
+    if (!PostMessageW(notify, WM_TSUKIKO_MIC, 0,
+                      reinterpret_cast<LPARAM>(message))) {
+      delete message;
+    }
+  });
+}
+
+void DictationBridge::SettleMicStart() {
+  if (mic_thread_.joinable()) mic_thread_.join();
+  if (mic_start_) CompleteMicStart(mic_start_);
+}
+
+void DictationBridge::CompleteMicStart(const std::shared_ptr<MicStart>& start) {
+  // Сообщение из потока могло прийти уже после того, как запуск довели
+  // до конца сами (остановкой или новым запуском): второй раз не отвечаем.
+  if (start->handled) return;
+  start->handled = true;
+  if (mic_thread_.joinable()) mic_thread_.join();
+  if (mic_start_ == start) mic_start_.reset();
+  auto done = std::move(start->done);
+  if (start->ok) {
+    ma_device_ = start->device;
+    is_recording_ = true;
+    ResetLevelMeter();
+    if (done) done(current_record_path_);
+    return;
+  }
+  if (ma_encoder_) {
+    auto* encoder = static_cast<ma_encoder*>(ma_encoder_);
     ma_encoder_uninit(encoder);
     delete encoder;
     ma_encoder_ = nullptr;
-    CloseHandle(audio_ready_event_.exchange(nullptr));
-    delete device;
-    return "";
   }
-  ma_device_ = device;
-
-  if (ma_device_start(device) != MA_SUCCESS) {
-    ma_device_uninit(device);
-    delete device;
-    ma_device_ = nullptr;
-    ma_encoder_uninit(encoder);
-    delete encoder;
-    ma_encoder_ = nullptr;
-    CloseHandle(audio_ready_event_.exchange(nullptr));
-    return "";
-  }
-
-  is_recording_ = true;
-  ResetLevelMeter();
-  return current_record_path_;
+  if (HANDLE ready = audio_ready_event_.exchange(nullptr)) CloseHandle(ready);
+  if (done) done("");
 }
 
 std::string DictationBridge::StopAudioRecording() {
+  SettleMicStart();
   if (!is_recording_) return current_record_path_;
 
   // ma_device_start сообщает только о запуске устройства, не о том, что

@@ -107,8 +107,28 @@ class DictationBridge {
   void HookThreadMain();
 
   // Запись аудио
-  std::string StartAudioRecording();
+  /// Запуск микрофона в своём потоке, ответ — через [done] на главном.
+  ///
+  /// ma_device_init/ma_device_start (WASAPI) занимают сотни миллисекунд,
+  /// а шли на главном потоке — том самом, на котором Windows-движок
+  /// Flutter показывает кадры. Пока микрофон поднимался, панель записи
+  /// не могла нарисоваться и висела серой плашкой, а остальные окна
+  /// замирали. Файл и кодировщик готовятся сразу: это быстро.
+  void StartAudioRecording(std::function<void(const std::string&)> done);
   std::string StopAudioRecording();
+
+  struct MicStart {
+    void* device = nullptr;
+    bool ok = false;
+    bool handled = false;
+    std::function<void(const std::string&)> done;
+  };
+  /// Довести начатый запуск до конца прямо сейчас — перед остановкой,
+  /// новым запуском или выходом.
+  void SettleMicStart();
+  void CompleteMicStart(const std::shared_ptr<MicStart>& start);
+  std::thread mic_thread_;
+  std::shared_ptr<MicStart> mic_start_;
   double GetAudioLevel();
 
   // Вставка текста и буфер обмена

@@ -516,7 +516,31 @@ void HudWindow::ShowReady() {
     monitor_ = MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST);
   }
   ResizeAndPosition();
-  ShowWindow(window_, is_editor_ ? SW_SHOW : SW_SHOWNOACTIVATE);
+  if (is_editor_ || IsVisible() || !controller_) {
+    ShowWindow(window_, is_editor_ ? SW_SHOW : SW_SHOWNOACTIVATE);
+    return;
+  }
+  // Панель уходит с экрана между записями, и при каждом новом показе
+  // Flutter должен заново нарисовать её — с новым состоянием и, бывает,
+  // с новым размером. Покажи окно сразу — и до этого кадра на экране
+  // будет фон окна: та самая серая плашка на полсекунды при каждом
+  // нажатии. Поэтому выводим на экран вместе с кадром, а не раньше.
+  // Запасной таймер — на случай, если кадр задержится: лучше серое,
+  // чем вовсе никакой реакции на клавишу.
+  if (awaiting_frame_) return;
+  awaiting_frame_ = true;
+  controller_->engine()->SetNextFrameCallback([this]() { RevealAfterFrame(); });
+  controller_->ForceRedraw();
+  SetTimer(window_, kRevealTimer, 300, nullptr);
+}
+
+void HudWindow::RevealAfterFrame() {
+  if (!awaiting_frame_) return;
+  awaiting_frame_ = false;
+  if (window_) KillTimer(window_, kRevealTimer);
+  if (window_ && wanted_visible_ && floating()) {
+    ShowWindow(window_, SW_SHOWNOACTIVATE);
+  }
 }
 
 void HudWindow::Configure(const flutter::DartProject& base, const std::function<void(flutter::BinaryMessenger*)>& on_ready) {
@@ -679,6 +703,10 @@ LRESULT CALLBACK HudWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
     auto a = self->motion_start_, b = self->motion_target_;
     SetWindowPos(hwnd, self->above_window_ ? self->above_window_ : HWND_TOPMOST, static_cast<int>(a.x + (b.x - a.x) * progress), static_cast<int>(a.y + (b.y - a.y) * progress), 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
     if (t >= 1) { KillTimer(hwnd, 42); self->moving_ = false; }
+    return 0;
+  }
+  if (self && message == WM_TIMER && wparam == kRevealTimer) {
+    self->RevealAfterFrame();
     return 0;
   }
   if (self && message == WM_CLOSE) {

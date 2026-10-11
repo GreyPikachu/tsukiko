@@ -56,6 +56,9 @@ class HudWindow {
                                   LPARAM lparam);
 
   void ShowReady();
+  void RevealAfterFrame();
+  static constexpr UINT_PTR kRevealTimer = 43;
+  bool awaiting_frame_ = false;
   void ResizeAndPosition();
   void PositionEditor(bool animate);
   void AnimateTo(HudPoint target, bool animate);
