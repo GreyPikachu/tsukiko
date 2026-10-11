@@ -183,6 +183,58 @@ class WindowsOs implements Os {
     ];
   }
 
+  /// На ноутбуке с двумя видеокартами Vulkan первой перечисляет встроенную
+  /// (Intel Arc, Radeon Graphics), и ggml по умолчанию берёт устройство 0.
+  /// На Core Ultra 9 + RTX 4060 это стоило так: encode large-v3-turbo
+  /// 4266 мс на встроенной против 215 мс на дискретной, вся расшифровка
+  /// фразы — 6,4 с против 0,9 с.
+  ///
+  /// Какая из карт дискретная, знает только сам Vulkan, поэтому спрашиваем
+  /// его: движок, запущенный на заведомо негодной модели, успевает напечатать
+  /// список устройств (`uma: 0` — своя память, то есть дискретная) и
+  /// выходит. Делается это раз за сеанс — около двух секунд, пока поднимается
+  /// драйвер, — и только там, где устройств больше одного и есть из чего
+  /// выбрать. Если человек сам задал `GGML_VK_VISIBLE_DEVICES`, не спорим.
+  @override
+  Future<Map<String, String>?> engineEnvironment() =>
+      _engineEnvironment ??= _probeVulkanDevices();
+
+  Future<Map<String, String>?>? _engineEnvironment;
+
+  Future<Map<String, String>?> _probeVulkanDevices() async {
+    if (!_vulkanUsable) return null;
+    if (Platform.environment.containsKey('GGML_VK_VISIBLE_DEVICES')) {
+      return null;
+    }
+    final exe = join(engineDir, 'tsukiko-recognizer-vulkan.exe');
+    if (!File(exe).existsSync()) return null;
+    Directory? tmp;
+    try {
+      tmp = Directory.systemTemp.createTempSync('tsukiko-gpu-');
+      // Пустой файл годится и как «модель», и как «запись»: движок
+      // проверяет только, что запись есть, а на модели падает уже после
+      // того, как перечислил устройства.
+      final dummy = File(join(tmp.path, 'probe.bin'))..writeAsBytesSync([0]);
+      final r = await Process.run(
+        exe,
+        ['-m', dummy.path, '-f', dummy.path],
+        stdoutEncoding: const Utf8Codec(allowMalformed: true),
+        stderrEncoding: const Utf8Codec(allowMalformed: true),
+      ).timeout(const Duration(seconds: 20));
+      final device = discreteVulkanDevice('${r.stdout}\n${r.stderr}');
+      if (device == null) return null;
+      Log.info('Engine', 'Using discrete Vulkan device $device');
+      return {'GGML_VK_VISIBLE_DEVICES': '$device'};
+    } catch (e) {
+      Log.warn('Engine', 'Vulkan device probe failed', e);
+      return null;
+    } finally {
+      try {
+        tmp?.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+  }
+
   // ── путь для чужой программы ──────────────────────────────────────────────
 
   /// Короткое имя Windows для пути: `C:\Users\Роман\…` →
@@ -617,4 +669,34 @@ class WindowsOs implements Os {
       ProcessSignal.sigint.watch().listen((_) => onSignal());
     } catch (_) {}
   }
+}
+
+/// Номер дискретной видеокарты в выводе ggml-vulkan — или `null`, если
+/// выбирать не из чего.
+///
+/// Строки там такие:
+/// `ggml_vulkan: 1 = NVIDIA GeForce RTX 4060 Laptop GPU (NVIDIA) | uma: 0 | …`.
+/// `uma: 1` — память общая с процессором, то есть карта встроенная.
+/// Подсказка нужна, только когда есть и та и другая: одну карту ggml
+/// найдёт и сам, а из двух дискретных первая ничем не хуже.
+///
+/// Слои-переводчики в счёт не идут: Microsoft Dozen (Vulkan поверх D3D12)
+/// показывает ту же видеокарту ещё раз, а llvmpipe считает на процессоре.
+/// Ни тот ни другой не лучше родного драйвера.
+int? discreteVulkanDevice(String output) {
+  final devices = RegExp(r'ggml_vulkan:\s*(\d+)\s*=\s*(.*?)\|\s*uma:\s*(\d)')
+      .allMatches(output)
+      .map((m) => (
+            index: int.parse(m.group(1)!),
+            name: m.group(2)!.toLowerCase(),
+            uma: m.group(3) == '1',
+          ))
+      .where((d) =>
+          !d.name.contains('microsoft') &&
+          !d.name.contains('dozen') &&
+          !d.name.contains('llvmpipe'))
+      .toList();
+  if (!devices.any((d) => d.uma)) return null;
+  final discrete = devices.where((d) => !d.uma);
+  return discrete.isEmpty ? null : discrete.first.index;
 }

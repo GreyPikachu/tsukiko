@@ -451,6 +451,7 @@ class WhisperServer {
               ? serverArgs(o, _port,
                   noGpu: _cpuFallbackModels.contains(o.model))
               : nemoServerArgs(o, _port),
+          environment: await os.engineEnvironment(),
         );
       } catch (e, st) {
         _lastEngineError = '$e';

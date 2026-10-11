@@ -323,7 +323,11 @@ Future<Transcript> transcribeHere(
       final args = engine == RecognitionEngine.whisperCpp
           ? buildArgs(o, wav, base, from: from)
           : buildNemoArgs(o, wav, '$base.json');
-      final proc = await Process.start(exe, args);
+      final proc = await Process.start(
+        exe,
+        args,
+        environment: await os.engineEnvironment(),
+      );
       var yielded = false;
 
       void onLine(String line) {

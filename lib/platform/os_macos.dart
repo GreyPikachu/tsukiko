@@ -90,6 +90,10 @@ class MacOs implements Os {
   List<String> engineNames(String base) =>
       base == 'nemo-speech' ? [join('nemo', 'bin', base)] : [base];
 
+  /// Metal на Mac один, и выбирать устройство не из чего.
+  @override
+  Future<Map<String, String>?> engineEnvironment() async => null;
+
   /// Ничего не делаем: `execve` берёт байты довода как есть, и UTF-8
   /// доезжает до чужой программы целым. Преобразовывать здесь нечего.
   @override
