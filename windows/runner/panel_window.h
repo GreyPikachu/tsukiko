@@ -103,6 +103,8 @@ class SettingsWindow {
   void Show(const flutter::DartProject& base,
             const std::function<void(flutter::BinaryMessenger*)>& on_ready);
 
+  HWND handle() const { return window_; }
+
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam);

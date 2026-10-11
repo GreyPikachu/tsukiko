@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show stderr;
+import 'dart:io' show Platform, stderr;
 import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -302,6 +302,19 @@ class NativeBridge {
 
   Future<bool> permission() async =>
       await _channel.invokeMethod<bool>('permissions') ?? false;
+
+  /// Тема системного заголовка окон на Windows: 'light', 'dark' или пусто —
+  /// как в системе. Заголовок рисует не Flutter, а Windows, и о выбранной
+  /// в приложении теме он сам не узнает. Экземпляр моста для этого не
+  /// нужен: зовёт главный изолят, когда меняется настройка.
+  static Future<void> setWindowTheme(String id) async {
+    if (!Platform.isWindows) return;
+    try {
+      await _channel.invokeMethod('windowTheme', id);
+    } on MissingPluginException {
+      // Тестам и окнам без моста нечего красить.
+    }
+  }
 
   Future<void> requestPermission() =>
       _channel.invokeMethod('requestPermission');

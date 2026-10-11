@@ -3,6 +3,7 @@
 #include <flutter/method_result_functions.h>
 
 #include "panel_window.h"
+#include "win32_window.h"
 
 #include <shlobj.h>
 #include <tlhelp32.h>
@@ -411,6 +412,19 @@ void DictationBridge::RegisterHandler(
   target->SetMethodCallHandler([this](const auto& call, auto result) {
     const std::string& method = call.method_name();
 
+    if (method == "windowTheme") {
+      // 'light', 'dark' или пусто — как в системе. Шлёт главное окно,
+      // когда меняется настройка «Тема».
+      const auto* id = std::get_if<std::string>(call.arguments());
+      const int mode = !id ? 0 : *id == "light" ? 1 : *id == "dark" ? 2 : 0;
+      Win32Window::SetThemeOverride(mode);
+      if (main_window_) Win32Window::ApplyTitleBarTheme(main_window_);
+      if (settings_ && settings_->handle()) {
+        Win32Window::ApplyTitleBarTheme(settings_->handle());
+      }
+      result->Success();
+      return;
+    }
     if (method == "bind") {
       const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
       if (args) {
@@ -1490,6 +1504,10 @@ void DictationBridge::SendReloadSettings() {
   if (channel_) channel_->InvokeMethod("reload", nullptr);
   if (panel_channel_) panel_channel_->InvokeMethod("reload", nullptr);
   if (settings_channel_) settings_channel_->InvokeMethod("reload", nullptr);
+  // Панели записи тоже: язык и тему она берёт из тех же настроек, и без
+  // «reload» оставалась бы с прежними до перезапуска приложения.
+  if (hud_channel_) hud_channel_->InvokeMethod("reload", nullptr);
+  if (hud_editor_channel_) hud_editor_channel_->InvokeMethod("reload", nullptr);
 }
 
 void DictationBridge::SendTab(const std::string& tab) {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:macos_ui/macos_ui.dart';
@@ -13,6 +14,7 @@ import 'features/dictation/hud_page.dart' show runHud;
 import 'features/dictation/panel_page.dart' show runPanel;
 import 'features/settings/settings_page.dart' show runSettings;
 import 'features/queue/home_page.dart';
+import 'platform/bridge.dart';
 import 'platform/os.dart';
 
 void _applyLoggingSetting() {
@@ -69,6 +71,12 @@ Future<void> main(List<String> args) async {
   refreshLocale();
   refreshTheme();
   WidgetsFlutterBinding.ensureInitialized();
+  // Заголовок окна рисует система — ей тоже надо сказать, какая тема
+  // выбрана. Главный изолят узнаёт о смене из «reload», как и все.
+  void syncTitleBar() =>
+      unawaited(NativeBridge.setWindowTheme(themeModeId(appThemeMode.value)));
+  appThemeMode.addListener(syncTitleBar);
+  syncTitleBar();
   // Настоящий материал окна: содержимое во всю высоту, титульная полоса
   // прозрачная. Спрашиваем не «мы на macOS?», а «даёт ли система материал
   // окна»: настраивать здесь нечего ровно там, где материала нет, — а

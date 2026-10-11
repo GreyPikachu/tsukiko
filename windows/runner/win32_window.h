@@ -12,6 +12,12 @@
 // rendering and input handling
 class Win32Window {
  public:
+  // Тема заголовка окна: 0 — как в системе, 1 — светлая, 2 — тёмная.
+  // Задаёт её приложение (настройка «Тема»), а не только Windows.
+  static void SetThemeOverride(int mode);
+  // Перекрасить заголовок [window] под нынешнюю тему.
+  static void ApplyTitleBarTheme(HWND window);
+
   struct Point {
     unsigned int x;
     unsigned int y;

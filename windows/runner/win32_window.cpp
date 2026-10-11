@@ -272,7 +272,26 @@ void Win32Window::OnDestroy() {
   // No-op; provided for subclasses.
 }
 
+namespace {
+// Выбранная в приложении тема заголовков: 0 — как в системе.
+int g_theme_override = 0;
+}  // namespace
+
+void Win32Window::SetThemeOverride(int mode) {
+  g_theme_override = (mode == 1 || mode == 2) ? mode : 0;
+}
+
+void Win32Window::ApplyTitleBarTheme(HWND window) { UpdateTheme(window); }
+
 void Win32Window::UpdateTheme(HWND const window) {
+  // Тема выбрана в приложении — системная настройка ни при чём: иначе
+  // на тёмном содержимом висела бы светлая полоса заголовка, и наоборот.
+  if (g_theme_override != 0) {
+    BOOL enable_dark_mode = g_theme_override == 2;
+    DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                          &enable_dark_mode, sizeof(enable_dark_mode));
+    return;
+  }
   DWORD light_mode;
   DWORD light_mode_size = sizeof(light_mode);
   LSTATUS result = RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,

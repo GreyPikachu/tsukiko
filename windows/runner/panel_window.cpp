@@ -8,6 +8,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "resource.h"
+#include "win32_window.h"
 
 namespace {
 
@@ -254,6 +255,8 @@ void SettingsWindow::Show(
       WS_OVERLAPPEDWINDOW, x, y, win_width, win_height,
       nullptr, nullptr, GetModuleHandle(nullptr), this);
   if (!window_) return;
+  // Заголовок — в тон выбранной теме, как и у главного окна.
+  Win32Window::ApplyTitleBarTheme(window_);
 
   flutter::DartProject project = base;
   project.set_dart_entrypoint("settingsMain");
@@ -311,6 +314,10 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
                    new_rect->bottom - new_rect->top,
                    SWP_NOZORDER | SWP_NOACTIVATE);
       return 0;
+    }
+    if (message == WM_DWMCOLORIZATIONCOLORCHANGED ||
+        message == WM_SETTINGCHANGE) {
+      Win32Window::ApplyTitleBarTheme(hwnd);
     }
     if (message == WM_GETMINMAXINFO) {
       auto* minmax = reinterpret_cast<MINMAXINFO*>(lparam);
