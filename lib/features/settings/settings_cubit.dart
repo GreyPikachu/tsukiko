@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../../core/app_locale.dart';
+import '../../core/app_theme.dart';
 import '../../core/labels.dart';
 import '../../core/library.dart';
 import '../../core/logger.dart';
@@ -112,6 +113,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         loggingEnabled: loggingEnabled,
         libraryPath: (s['libraryPath'] as String?) ?? defaultLibraryPath,
         locale: (s[localeSetting] as String?) ?? '',
+        theme: themeModeId(parseThemeMode(s[themeSetting] as String?)),
         apiEnabled: (s[apiEnabledSetting] as bool?) ?? false,
         apiKey: (s[apiKeySetting] as String?) ?? '',
         apiPort: (s[apiPortSetting] as int?) ?? apiPort,
@@ -651,6 +653,14 @@ class SettingsCubit extends Cubit<SettingsState> {
     _emit(state.copyWith(locale: v));
     appLocale.value = v.isEmpty ? null : Locale(v);
     unawaited(_saveApp({localeSetting: v}));
+  }
+
+  /// Тема окон. Как и язык: своё окно сразу, соседние — по «reload».
+  void setTheme(String v) {
+    final mode = parseThemeMode(v);
+    _emit(state.copyWith(theme: themeModeId(mode)));
+    appThemeMode.value = mode;
+    unawaited(_saveApp({themeSetting: themeModeId(mode)}));
   }
 
   /// Включить или выключить местное API.

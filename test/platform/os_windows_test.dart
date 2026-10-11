@@ -1,4 +1,6 @@
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tsukiko/core/app_locale.dart';
 import 'package:tsukiko/platform/os_windows.dart';
 import 'package:tsukiko/core/labels.dart';
 
@@ -19,6 +21,9 @@ void main() {
     test('системные подписи и элементы интерфейса', () {
       expect(win.fileManagerName, 'Проводник');
       expect(win.appIconAreaName, 'панель задач');
+      // Область уведомлений названа на языке интерфейса.
+      appLocale.value = const Locale('ru');
+      addTearDown(() => appLocale.value = null);
       expect(win.menuBarName, 'область уведомлений');
       expect(win.settingsShortcut, 'Ctrl+,');
       expect(win.accessibilityName, 'специальные возможности');

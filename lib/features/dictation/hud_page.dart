@@ -5,10 +5,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import '../../core/indicator_mode.dart';
-import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
 
 import '../../core/app_locale.dart';
+import '../../core/app_theme.dart';
 import '../../core/logger.dart';
 import '../../design/design.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -33,22 +33,37 @@ Future<void> runHud({bool editor = false}) async {
     'runHud started on ${os.platformId} (${Platform.operatingSystemVersion}), Tsukiko $appVersion',
   );
   refreshLocale();
+  refreshTheme();
   WidgetsFlutterBinding.ensureInitialized();
   runApp(HudApp(editor: editor));
 }
+
+/// Подложка панели записи.
+///
+/// На macOS панель — прозрачное окно, и скругление со светлой рамкой
+/// рисует сам Flutter. На Windows окно непрозрачное: всё, что Flutter
+/// оставил за скруглением, выходило чёрными уголками и полосами по бокам.
+/// Там углы скругляет и рамку рисует сама система (DWM, см.
+/// `HudWindow::Prepare`), а Flutter заливает окно целиком.
+BoxDecoration hudDecoration(BuildContext context) => Platform.isWindows
+    ? BoxDecoration(color: Surface.chrome(context))
+    : BoxDecoration(
+        color: Surface.chrome(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Surface.hairline(context)),
+      );
 
 class HudApp extends StatelessWidget {
   const HudApp({super.key, this.editor = false});
   final bool editor;
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder<Locale?>(
-    valueListenable: appLocale,
-    builder: (context, locale, _) => MacosApp(
-      locale: locale,
-      theme: MacosThemeData.light(),
-      darkTheme: MacosThemeData.dark(),
-      themeMode: ThemeMode.system,
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([appLocale, appThemeMode]),
+    builder: (context, _) => MacosApp(
+      locale: appLocale.value,
+      // Тему строит сам MacosApp — см. комментарий в main.dart.
+      themeMode: appThemeMode.value,
       debugShowCheckedModeBanner: false,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
@@ -248,11 +263,7 @@ class _HudViewState extends State<HudView> {
               width: width,
               height: height,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Surface.chrome(context),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Surface.hairline(context)),
-              ),
+              decoration: hudDecoration(context),
               child: Row(children: row),
             ),
           ),
@@ -370,18 +381,17 @@ class _HudViewState extends State<HudView> {
           Surface.secondaryText(context),
           l10n.hudSilent,
         ),
+        // Размеры и шаги — как у SwiftUI-панели на macOS (RecordingHUD.swift:
+        // HStack(spacing: 9), метр 100×26). Прежде метр стоял во Flexible
+        // со сжатием, а справа — Spacer: свободное место делилось между
+        // ними пополам, и полоски ужимались почти вдвое против macOS.
         _ => [
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: _Meter(
-                levels: _editing && _state != HudState.recording
-                    ? List.generate(22, (i) => ((i * 7) % 13 + 2) / 16)
-                    : _levels,
-              ),
-            ),
+          _Meter(
+            levels: _editing && _state != HudState.recording
+                ? List.generate(22, (i) => ((i * 7) % 13 + 2) / 16)
+                : _levels,
           ),
-          const SizedBox(width: Gap.control),
+          const SizedBox(width: _hudSpacing),
           Text(
             _time,
             style: _label.copyWith(
@@ -395,7 +405,7 @@ class _HudViewState extends State<HudView> {
             filled: false,
             onPressed: () => _action('cancel'),
           ),
-          const SizedBox(width: Gap.inner),
+          const SizedBox(width: _hudSpacing),
           _HudButton(
             title: l10n.hudStop,
             filled: true,
@@ -489,11 +499,7 @@ class _HudEditorViewState extends State<HudEditorView> {
       onKeyEvent: (_, event) => handleHudEditorKey(_bridge, event),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Surface.chrome(context),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Surface.hairline(context)),
-        ),
+        decoration: hudDecoration(context),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -617,6 +623,9 @@ class _HudEditorViewState extends State<HudEditorView> {
 /// и в SwiftUI-версии.
 const _label = TextStyle(fontSize: 13, fontWeight: FontWeight.w500);
 
+/// Шаг между элементами панели — тот же, что у HStack(spacing: 9) на macOS.
+const _hudSpacing = 9.0;
+
 /// Уровень сигнала полосками. Это не украшение: пока они шевелятся,
 /// видно, что микрофон действительно слышит, а не пишет тишину.
 class _Meter extends StatelessWidget {
@@ -699,7 +708,8 @@ class _HudButtonState extends State<_HudButton> {
           duration: const Duration(milliseconds: 90),
           child: Container(
             height: 26,
-            padding: const EdgeInsets.symmetric(horizontal: Gap.control),
+            // Как .padding(.horizontal, 10) у кнопки панели на macOS.
+            padding: const EdgeInsets.symmetric(horizontal: 10),
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: background,

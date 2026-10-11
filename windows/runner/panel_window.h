@@ -56,6 +56,9 @@ class HudWindow {
                                   LPARAM lparam);
 
   void ShowReady();
+  void RevealAfterFrame();
+  static constexpr UINT_PTR kRevealTimer = 43;
+  bool awaiting_frame_ = false;
   void ResizeAndPosition();
   void PositionEditor(bool animate);
   void AnimateTo(HudPoint target, bool animate);
@@ -103,6 +106,8 @@ class SettingsWindow {
   void Show(const flutter::DartProject& base,
             const std::function<void(flutter::BinaryMessenger*)>& on_ready);
 
+  HWND handle() const { return window_; }
+
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam);
@@ -149,8 +154,10 @@ class PanelWindow {
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam);
   void PositionNearTray();
+  SIZE PhysicalSize(HMONITOR monitor) const;
 
   HWND window_ = nullptr;
+  // Высота содержимого в логических точках — её сообщает сама вёрстка.
   int height_ = 420;
   std::unique_ptr<flutter::FlutterViewController> controller_;
 };

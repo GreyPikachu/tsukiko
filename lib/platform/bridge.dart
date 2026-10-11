@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:io' show stderr;
+import 'dart:io' show Platform, stderr;
 import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 
 import '../core/app_locale.dart';
+import '../core/app_theme.dart';
 import '../core/whisper_server.dart';
 
 /// Мост к родному коду приложения: перехват клавиш, запись с микрофона,
@@ -175,9 +176,10 @@ class NativeBridge {
           ),
         );
       case 'reload':
-        // Язык интерфейса перечитываем здесь, а не в каждом блоке: окон
-        // три, а правит настройки одно, и переключиться должны все сразу.
+        // Язык и тему перечитываем здесь, а не в каждом блоке: окон
+        // несколько, а правит настройки одно, и переключиться должны все сразу.
         refreshLocale();
+        refreshTheme();
         _reload.add(null);
       case 'tab':
         _tab.add(call.arguments as String);
@@ -300,6 +302,19 @@ class NativeBridge {
 
   Future<bool> permission() async =>
       await _channel.invokeMethod<bool>('permissions') ?? false;
+
+  /// Тема системного заголовка окон на Windows: 'light', 'dark' или пусто —
+  /// как в системе. Заголовок рисует не Flutter, а Windows, и о выбранной
+  /// в приложении теме он сам не узнает. Экземпляр моста для этого не
+  /// нужен: зовёт главный изолят, когда меняется настройка.
+  static Future<void> setWindowTheme(String id) async {
+    if (!Platform.isWindows) return;
+    try {
+      await _channel.invokeMethod('windowTheme', id);
+    } on MissingPluginException {
+      // Тестам и окнам без моста нечего красить.
+    }
+  }
 
   Future<void> requestPermission() =>
       _channel.invokeMethod('requestPermission');

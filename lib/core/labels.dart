@@ -128,7 +128,9 @@ extension OsLabels on Os {
 
   /// Куда приложение уходит, оставшись без значка.
   String get menuBarName =>
-      platformId == 'macos' ? currentL10n().menuBarNameLabel : 'область уведомлений';
+      platformId == 'macos'
+          ? currentL10n().menuBarNameLabel
+          : currentL10n().trayAreaName;
 
   /// Как система зовёт разрешение, без которого нельзя ни перехватить
   /// клавишу, ни вставить текст в чужое окно.

@@ -451,6 +451,7 @@ class WhisperServer {
               ? serverArgs(o, _port,
                   noGpu: _cpuFallbackModels.contains(o.model))
               : nemoServerArgs(o, _port),
+          environment: await os.engineEnvironment(),
         );
       } catch (e, st) {
         _lastEngineError = '$e';
@@ -460,6 +461,7 @@ class WhisperServer {
         return;
       }
       _proc = proc;
+      os.bindToApp(proc.pid);
       Log.info('Engine', 'Server process launched: PID=${proc.pid}');
       // Сохраняем начальный вывод сервера: если процесс завершится со сбоем
       // на старте или во время waitReady, в диагностических логах и

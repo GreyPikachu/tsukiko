@@ -85,6 +85,7 @@ class SettingsState extends Equatable {
     this.copyFormat = 'txt',
     this.saveFormat = 'txt',
     this.locale = '',
+    this.theme = '',
     this.loggingEnabled = true,
     this.apiEnabled = false,
     this.apiKey = '',
@@ -227,6 +228,9 @@ class SettingsState extends Equatable {
   /// Язык интерфейса: 'ru', 'en' или пусто — «как в системе». Язык речи
   /// это не задаёт: его выбирают отдельно, в инспекторе записи.
   final String locale;
+
+  /// Тема окон: 'light', 'dark' или пусто — «как в системе».
+  final String theme;
   final bool loggingEnabled;
 
   // ── местное API ───────────────────────────────────────────────────────────
@@ -303,6 +307,7 @@ class SettingsState extends Equatable {
     String? copyFormat,
     String? saveFormat,
     String? locale,
+    String? theme,
     bool? loggingEnabled,
     bool? apiEnabled,
     String? apiKey,
@@ -369,6 +374,7 @@ class SettingsState extends Equatable {
     copyFormat: copyFormat ?? this.copyFormat,
     saveFormat: saveFormat ?? this.saveFormat,
     locale: locale ?? this.locale,
+    theme: theme ?? this.theme,
     loggingEnabled: loggingEnabled ?? this.loggingEnabled,
     apiEnabled: apiEnabled ?? this.apiEnabled,
     apiKey: apiKey ?? this.apiKey,
@@ -425,6 +431,7 @@ class SettingsState extends Equatable {
     copyFormat,
     saveFormat,
     locale,
+    theme,
     loggingEnabled,
     apiEnabled,
     apiKey,

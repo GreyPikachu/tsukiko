@@ -3,6 +3,7 @@
 #include <flutter/method_result_functions.h>
 
 #include "panel_window.h"
+#include "win32_window.h"
 
 #include <shlobj.h>
 #include <tlhelp32.h>
@@ -31,6 +32,12 @@
 #define ID_TRAY_QUIT 1003
 // Ожидание второго стука при назначении сочетания.
 #define ID_CAPTURE_TIMER 2001
+// Событие клавиатуры из потока хука: lparam — DictationBridge::KeyEvent*,
+// владение переходит к получателю.
+#define WM_TSUKIKO_KEY (WM_APP + 71)
+// Микрофон поднялся (или нет) в своём потоке: lparam —
+// std::shared_ptr<DictationBridge::MicStart>*, владение у получателя.
+#define WM_TSUKIKO_MIC (WM_APP + 72)
 #define ID_PREWARM_TIMER 2004
 
 /// Метка на наших же событиях клавиатуры.
@@ -265,6 +272,7 @@ void DictationBridge::AttachPanel(flutter::BinaryMessenger* messenger,
 void DictationBridge::Shutdown() {
   UninstallKeyboardHook();
   RemoveTrayIcon();
+  SettleMicStart();
   if (is_recording_) {
     StopAudioRecording();
   }
@@ -272,6 +280,20 @@ void DictationBridge::Shutdown() {
   // диктовка держит модель между фразами, очередь — пока считает.
   KillDictationServer();
   KillRecognizer();
+
+  // Свои окна и каналы отпускаем сейчас, пока жив главный движок Flutter.
+  // Мост — синглтон и умирает последним, при выходе из процесса; если
+  // держать их до тех пор, панель записи и окно настроек разбирались бы
+  // уже после движков, на чьих мессенджерах сидят их каналы, — и выход
+  // кончался падением в flutter_windows.dll.
+  hud_editor_channel_.reset();
+  hud_channel_.reset();
+  hud_.reset();
+  settings_channel_.reset();
+  settings_.reset();
+  panel_channel_.reset();
+  channel_.reset();
+  panel_ = nullptr;
 }
 
 /// Погасить движок расшифровки, если очередь как раз считала.
@@ -408,6 +430,19 @@ void DictationBridge::RegisterHandler(
   target->SetMethodCallHandler([this](const auto& call, auto result) {
     const std::string& method = call.method_name();
 
+    if (method == "windowTheme") {
+      // 'light', 'dark' или пусто — как в системе. Шлёт главное окно,
+      // когда меняется настройка «Тема».
+      const auto* id = std::get_if<std::string>(call.arguments());
+      const int mode = !id ? 0 : *id == "light" ? 1 : *id == "dark" ? 2 : 0;
+      Win32Window::SetThemeOverride(mode);
+      if (main_window_) Win32Window::ApplyTitleBarTheme(main_window_);
+      if (settings_ && settings_->handle()) {
+        Win32Window::ApplyTitleBarTheme(settings_->handle());
+      }
+      result->Success();
+      return;
+    }
     if (method == "bind") {
       const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
       if (args) {
@@ -471,6 +506,7 @@ void DictationBridge::RegisterHandler(
       result->Success();
     } else if (method == "capture") {
       is_capturing_ = true;
+      capture_swallow_ = true;
       captured_mods_.clear();
       captured_keys_.clear();
       held_keys_.clear();
@@ -482,6 +518,7 @@ void DictationBridge::RegisterHandler(
       result->Success();
     } else if (method == "cancelCapture") {
       is_capturing_ = false;
+      capture_swallow_ = false;
       has_pending_capture_ = false;
       KillTimer(main_window_, ID_CAPTURE_TIMER);
       captured_mods_.clear();
@@ -555,15 +592,18 @@ void DictationBridge::RegisterHandler(
       PostQuitMessage(0);
       result->Success();
     } else if (method == "record") {
-      std::string path = StartAudioRecording();
-      // Пустая строка в Dart выглядит как настоящий путь. Из-за этого
-      // не поднявшийся микрофон отправлял в whisper файл с именем "",
-      // а человек получал ложное «запись сохранена» вместо причины.
-      if (path.empty()) {
-        result->Success();
-      } else {
-        result->Success(flutter::EncodableValue(path));
-      }
+      std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> reply(
+          result.release());
+      StartAudioRecording([reply](const std::string& path) {
+        // Пустая строка в Dart выглядит как настоящий путь. Из-за этого
+        // не поднявшийся микрофон отправлял в whisper файл с именем "",
+        // а человек получал ложное «запись сохранена» вместо причины.
+        if (path.empty()) {
+          reply->Success();
+        } else {
+          reply->Success(flutter::EncodableValue(path));
+        }
+      });
     } else if (method == "stopRecord") {
       std::string path = StopAudioRecording();
       result->Success(flutter::EncodableValue(path));
@@ -960,6 +1000,17 @@ bool DictationBridge::HandleWindowMessage(HWND hwnd, UINT message, WPARAM wparam
   }
 
 
+  if (message == WM_TSUKIKO_MIC) {
+    std::unique_ptr<std::shared_ptr<MicStart>> start(
+        reinterpret_cast<std::shared_ptr<MicStart>*>(lparam));
+    if (start && *start) CompleteMicStart(*start);
+    return true;
+  }
+  if (message == WM_TSUKIKO_KEY) {
+    std::unique_ptr<KeyEvent> event(reinterpret_cast<KeyEvent*>(lparam));
+    if (event) ProcessKeyEvent(*event);
+    return true;
+  }
   if (message == WM_TIMER && wparam == ID_CAPTURE_TIMER) {
     KillTimer(main_window_, ID_CAPTURE_TIMER);
     OnCaptureTimeout();
@@ -1006,14 +1057,43 @@ void DictationBridge::ToggleMainWindow() {
 // ── Клавиатурный хук ────────────────────────────────────────────────────────
 
 void DictationBridge::InstallKeyboardHook() {
-  if (keyboard_hook_) return;
-  keyboard_hook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(nullptr), 0);
+  if (hook_thread_.joinable()) return;
+  HANDLE started = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  hook_thread_ = std::thread([this, started]() {
+    // Очередь сообщений потоку нужна до того, как о нём узнают снаружи:
+    // иначе WM_QUIT из UninstallKeyboardHook некуда положить.
+    MSG msg;
+    PeekMessageW(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+    hook_thread_id_ = GetCurrentThreadId();
+    SetEvent(started);
+    HookThreadMain();
+  });
+  WaitForSingleObject(started, 2000);
+  CloseHandle(started);
 }
 
-void DictationBridge::UninstallKeyboardHook() {
+void DictationBridge::HookThreadMain() {
+  // Поток только отвечает системе «пропустить или проглотить», и отвечать
+  // он должен сразу, даже когда машина нагружена.
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  keyboard_hook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc,
+                                     GetModuleHandle(nullptr), 0);
+  MSG msg;
+  while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+    TranslateMessage(&msg);
+    DispatchMessageW(&msg);
+  }
   if (keyboard_hook_) {
     UnhookWindowsHookEx(keyboard_hook_);
     keyboard_hook_ = nullptr;
+  }
+}
+
+void DictationBridge::UninstallKeyboardHook() {
+  if (hook_thread_.joinable()) {
+    PostThreadMessageW(hook_thread_id_, WM_QUIT, 0, 0);
+    hook_thread_.join();
+    hook_thread_id_ = 0;
   }
   held_keys_.clear();
 }
@@ -1072,6 +1152,7 @@ void DictationBridge::FinishCapture(const std::set<std::string>& mods,
                                     const std::vector<std::string>& keys,
                                     int taps) {
   is_capturing_ = false;
+  capture_swallow_ = false;
   has_pending_capture_ = false;
   KillTimer(main_window_, ID_CAPTURE_TIMER);
   std::vector<std::string> modsList(mods.begin(), mods.end());
@@ -1079,6 +1160,9 @@ void DictationBridge::FinishCapture(const std::set<std::string>& mods,
 }
 
 LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+  // Работает в потоке хука (см. hook_thread_). Здесь только снимок
+  // события и ответ системе; разбор сочетаний — в главном потоке,
+  // в ProcessKeyEvent, куда событие уходит сообщением.
   if (nCode == HC_ACTION) {
     auto& bridge = DictationBridge::GetInstance();
     auto* kbd = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
@@ -1095,13 +1179,6 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
       return CallNextHookEx(nullptr, nCode, wParam, lParam);
     }
 
-    auto isModifierVk = [](int k) {
-      return k == VK_CONTROL || k == VK_LCONTROL || k == VK_RCONTROL ||
-             k == VK_MENU || k == VK_LMENU || k == VK_RMENU ||
-             k == VK_SHIFT || k == VK_LSHIFT || k == VK_RSHIFT ||
-             k == VK_LWIN || k == VK_RWIN;
-    };
-
     // Зажата ли клавиша — с поправкой на само это событие.
     //
     // Отсюда росли все три беды разом: «сработало не с первого раза»,
@@ -1115,6 +1192,8 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
     // flags-снимок вместе с событием.
     //
     // Про клавишу события отвечаем сами, про остальные — как раньше.
+    // Снимаем здесь, в мгновение события: главный поток доберётся до
+    // него позже, когда клавиши могли уже отпустить.
     auto pressed = [](int k) { return (GetAsyncKeyState(k) & 0x8000) != 0; };
     auto held = [&](int k) -> bool {
       if (k != vk) return pressed(k);
@@ -1123,147 +1202,184 @@ LRESULT CALLBACK DictationBridge::LowLevelKeyboardProc(int nCode, WPARAM wParam,
       return false;
     };
 
-    std::set<std::string> currentMods;
+    auto* event = new KeyEvent();
+    event->vk = vk;
+    event->down = isDown;
+    event->up = isUp;
+    event->time = GetTickCount64();
     for (int modifier : {VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU,
                          VK_LSHIFT, VK_RSHIFT, VK_LWIN, VK_RWIN}) {
-      if (held(modifier)) currentMods.insert(ModifierName(modifier));
+      if (held(modifier)) event->mods.insert(ModifierName(modifier));
+    }
+    if (!PostMessageW(bridge.main_window_, WM_TSUKIKO_KEY, 0,
+                      reinterpret_cast<LPARAM>(event))) {
+      delete event;
     }
 
-    // В отличие от модификаторов, Windows не отдаёт снимок всех обычных
-    // клавиш. Храним их края сами: иначе одиночный Ctrl продолжал бы
-    // совпадать и внутри Ctrl+C, хотя пользователь разрешил только его.
-    if (!isModifierVk(vk)) {
-      if (isDown) bridge.held_keys_.insert(vk);
-      if (isUp) bridge.held_keys_.erase(vk);
-    }
-
-    if (bridge.is_capturing_) {
-      const ULONGLONG now = GetTickCount64();
-      if (bridge.capture_started_at_ == 0 && (isDown || !currentMods.empty())) {
-        bridge.capture_started_at_ = now;
-      }
-      if (isDown) {
-        bridge.captured_mods_.insert(currentMods.begin(), currentMods.end());
-        if (!isModifierVk(vk)) bridge.captured_keys_.insert(vk);
-        // Поглощаем: набираемая буква не должна попасть в чужое поле.
-        return 1;
-      }
-
-      // Набор кончается отпусканием, и только им: у низкоуровневого хука
-      // других событий не бывает, но полагаться на «раз не нажатие,
-      // значит отпускание» — значит однажды посчитать набранным то,
-      // чего не набирали.
-      if (!isUp) return CallNextHookEx(nullptr, nCode, wParam, lParam);
-
-      // Всё отпущено — сочетание набрано. Пока держат, набор копится.
-      const bool anythingHeld =
-          !currentMods.empty() || !bridge.held_keys_.empty();
-      if (anythingHeld ||
-          (bridge.captured_keys_.empty() && bridge.captured_mods_.empty())) {
-        return CallNextHookEx(nullptr, nCode, wParam, lParam);
-      }
-
-      std::set<std::string> mods = bridge.captured_mods_;
-      std::vector<std::string> keys;
-      for (int k : bridge.captured_keys_) keys.push_back(VkToKeyName(k));
-      std::sort(keys.begin(), keys.end());
-      const bool quick = (now - bridge.capture_started_at_) < kTapMaxHoldMs;
-      bridge.captured_mods_.clear();
-      bridge.captured_keys_.clear();
-      bridge.capture_started_at_ = 0;
-
-      // Тот же набор во второй раз и вовремя — это двойное нажатие.
-      if (bridge.has_pending_capture_ && bridge.pending_mods_ == mods &&
-          bridge.pending_keys_ == keys) {
-        bridge.FinishCapture(mods, keys, 2);
-        return 1;
-      }
-
-      // Одна клавиша тоже годится; явное согласие на глобальный бинд
-      // спрашивает окно настроек после захвата.
-      const bool alone_is_enough = !keys.empty() || !mods.empty();
-
-      // Затянувшееся нажатие вторым стуком уже не станет.
-      if (!quick) {
-        if (alone_is_enough) bridge.FinishCapture(mods, keys, 1);
-        return 1;
-      }
-
-      // Короткий стук: ждём второго.
-      bridge.has_pending_capture_ = true;
-      bridge.pending_mods_ = mods;
-      bridge.pending_keys_ = keys;
-      SetTimer(bridge.main_window_, ID_CAPTURE_TIMER,
-               static_cast<UINT>(kDoubleTapWindowMs), nullptr);
+    // Пока в настройках назначают сочетание, его нажатия поглощаются:
+    // набираемая буква не должна попасть в чужое поле. Отпускание
+    // поглощаем у тех клавиш, чьё нажатие уже проглотили, — в том числе
+    // когда захват кончился на этом самом наборе.
+    static std::set<int> swallowed;
+    if (isDown && bridge.capture_swallow_) {
+      swallowed.insert(vk);
       return 1;
     }
-
-    // Сопоставление с hold_spec_ и toggle_spec_
-    auto containsSpec = [&](const HotkeySpec& spec) -> bool {
-      if (spec.is_empty) return false;
-      return ModifiersContain(currentMods, spec.mods) &&
-             std::includes(bridge.held_keys_.begin(), bridge.held_keys_.end(),
-                           spec.keys.begin(), spec.keys.end());
-    };
-
-    auto matchSpec = [&](const HotkeySpec& spec) -> bool {
-      return containsSpec(spec) && ModifiersMatch(currentMods, spec.mods) &&
-             bridge.held_keys_ == spec.keys;
-    };
-
-    // Сочетание зажато целиком, но сверху добавили лишнее.
-    //
-    // Нажать Ctrl+Alt+Shift разом физически нельзя: по дороге набор
-    // проходит через Ctrl+Alt, и запись успевает начаться. Отпустить её
-    // как обычное окончание нельзя — человек этого сочетания не назначал
-    // и ничего не диктовал. Такое отпускание — отмена: записанное
-    // выбрасывается, и панель уходит с экрана сразу.
-    auto exceedsSpec = [&](const HotkeySpec& spec) -> bool {
-      return containsSpec(spec) && !matchSpec(spec);
-    };
-
-    // Одно правило на все случаи, как и на macOS: сочетание работает,
-    // когда зажаты ровно его модификаторы и его клавиши. Двойное
-    // нажатие разбирает TapState — до второго стука оно не включает
-    // ничего.
-    const ULONGLONG now = GetTickCount64();
-
-    if (bridge.hold_state_.Update(matchSpec(bridge.hold_spec_),
-                                  bridge.hold_spec_.is_double(),
-                                  containsSpec(bridge.hold_spec_), now)) {
-      const bool active = bridge.hold_state_.active;
-      const bool cancelled = !active && exceedsSpec(bridge.hold_spec_);
-      bridge.SendHotkeyEvent("hold", active, cancelled);
-      if (cancelled) bridge.hold_state_.SuppressUntilRelease();
-    }
-
-    // Отпускание само по себе ничего не переключает — оно лишь
-    // разрешает следующему нажатию сработать. Кроме отмены: набрали
-    // сверху лишнее — включённое той же клавишей выключается назад.
-    if (bridge.toggle_state_.Update(matchSpec(bridge.toggle_spec_),
-                                    bridge.toggle_spec_.is_double(),
-                                    containsSpec(bridge.toggle_spec_), now)) {
-      if (bridge.toggle_state_.active) {
-        bridge.SendHotkeyEvent("toggle", true);
-      } else if (exceedsSpec(bridge.toggle_spec_)) {
-        bridge.SendHotkeyEvent("toggle", false, true);
-        bridge.toggle_state_.SuppressUntilRelease();
-      }
-    }
-
-    // «Бросить начатое» — одно нажатие, отпускание ничего не значит.
-    // Не назначено — spec пуст, и matchSpec на нём всегда false.
-    if (bridge.cancel_state_.Update(matchSpec(bridge.cancel_spec_),
-                                    bridge.cancel_spec_.is_double(),
-                                    containsSpec(bridge.cancel_spec_), now)) {
-      if (bridge.cancel_state_.active) {
-        bridge.SendHotkeyEvent("cancel", true);
-      } else if (exceedsSpec(bridge.cancel_spec_)) {
-        bridge.cancel_state_.SuppressUntilRelease();
-      }
-    }
+    if (isUp && swallowed.erase(vk) > 0) return 1;
   }
   return CallNextHookEx(nullptr, nCode, wParam, lParam);
+}
+
+/// Разбор события клавиатуры — в главном потоке, где живут каналы
+/// и состояние сочетаний. Сюда приходит снимок из потока хука.
+void DictationBridge::ProcessKeyEvent(const KeyEvent& event) {
+  auto& bridge = *this;
+  const int vk = event.vk;
+  const bool isDown = event.down;
+  const bool isUp = event.up;
+
+  auto isModifierVk = [](int k) {
+    return k == VK_CONTROL || k == VK_LCONTROL || k == VK_RCONTROL ||
+           k == VK_MENU || k == VK_LMENU || k == VK_RMENU ||
+           k == VK_SHIFT || k == VK_LSHIFT || k == VK_RSHIFT ||
+           k == VK_LWIN || k == VK_RWIN;
+  };
+
+  const std::set<std::string>& currentMods = event.mods;
+
+  // В отличие от модификаторов, Windows не отдаёт снимок всех обычных
+  // клавиш. Храним их края сами: иначе одиночный Ctrl продолжал бы
+  // совпадать и внутри Ctrl+C, хотя пользователь разрешил только его.
+  if (!isModifierVk(vk)) {
+    if (isDown) bridge.held_keys_.insert(vk);
+    if (isUp) bridge.held_keys_.erase(vk);
+  }
+
+  if (bridge.is_capturing_) {
+    const ULONGLONG now = event.time;
+    if (bridge.capture_started_at_ == 0 && (isDown || !currentMods.empty())) {
+      bridge.capture_started_at_ = now;
+    }
+    if (isDown) {
+      bridge.captured_mods_.insert(currentMods.begin(), currentMods.end());
+      if (!isModifierVk(vk)) bridge.captured_keys_.insert(vk);
+      // Само нажатие уже проглотил поток хука (см. capture_swallow_).
+      return;
+    }
+
+    // Набор кончается отпусканием, и только им: у низкоуровневого хука
+    // других событий не бывает, но полагаться на «раз не нажатие,
+    // значит отпускание» — значит однажды посчитать набранным то,
+    // чего не набирали.
+    if (!isUp) return;
+
+    // Всё отпущено — сочетание набрано. Пока держат, набор копится.
+    const bool anythingHeld =
+        !currentMods.empty() || !bridge.held_keys_.empty();
+    if (anythingHeld ||
+        (bridge.captured_keys_.empty() && bridge.captured_mods_.empty())) {
+      return;
+    }
+
+    std::set<std::string> mods = bridge.captured_mods_;
+    std::vector<std::string> keys;
+    for (int k : bridge.captured_keys_) keys.push_back(VkToKeyName(k));
+    std::sort(keys.begin(), keys.end());
+    const bool quick = (now - bridge.capture_started_at_) < kTapMaxHoldMs;
+    bridge.captured_mods_.clear();
+    bridge.captured_keys_.clear();
+    bridge.capture_started_at_ = 0;
+
+    // Тот же набор во второй раз и вовремя — это двойное нажатие.
+    if (bridge.has_pending_capture_ && bridge.pending_mods_ == mods &&
+        bridge.pending_keys_ == keys) {
+      bridge.FinishCapture(mods, keys, 2);
+      return;
+    }
+
+    // Одна клавиша тоже годится; явное согласие на глобальный бинд
+    // спрашивает окно настроек после захвата.
+    const bool alone_is_enough = !keys.empty() || !mods.empty();
+
+    // Затянувшееся нажатие вторым стуком уже не станет.
+    if (!quick) {
+      if (alone_is_enough) bridge.FinishCapture(mods, keys, 1);
+      return;
+    }
+
+    // Короткий стук: ждём второго.
+    bridge.has_pending_capture_ = true;
+    bridge.pending_mods_ = mods;
+    bridge.pending_keys_ = keys;
+    SetTimer(bridge.main_window_, ID_CAPTURE_TIMER,
+             static_cast<UINT>(kDoubleTapWindowMs), nullptr);
+    return;
+  }
+
+  // Сопоставление с hold_spec_ и toggle_spec_
+  auto containsSpec = [&](const HotkeySpec& spec) -> bool {
+    if (spec.is_empty) return false;
+    return ModifiersContain(currentMods, spec.mods) &&
+           std::includes(bridge.held_keys_.begin(), bridge.held_keys_.end(),
+                         spec.keys.begin(), spec.keys.end());
+  };
+
+  auto matchSpec = [&](const HotkeySpec& spec) -> bool {
+    return containsSpec(spec) && ModifiersMatch(currentMods, spec.mods) &&
+           bridge.held_keys_ == spec.keys;
+  };
+
+  // Сочетание зажато целиком, но сверху добавили лишнее.
+  //
+  // Нажать Ctrl+Alt+Shift разом физически нельзя: по дороге набор
+  // проходит через Ctrl+Alt, и запись успевает начаться. Отпустить её
+  // как обычное окончание нельзя — человек этого сочетания не назначал
+  // и ничего не диктовал. Такое отпускание — отмена: записанное
+  // выбрасывается, и панель уходит с экрана сразу.
+  auto exceedsSpec = [&](const HotkeySpec& spec) -> bool {
+    return containsSpec(spec) && !matchSpec(spec);
+  };
+
+  // Одно правило на все случаи, как и на macOS: сочетание работает,
+  // когда зажаты ровно его модификаторы и его клавиши. Двойное
+  // нажатие разбирает TapState — до второго стука оно не включает
+  // ничего.
+  const ULONGLONG now = event.time;
+
+  if (bridge.hold_state_.Update(matchSpec(bridge.hold_spec_),
+                                bridge.hold_spec_.is_double(),
+                                containsSpec(bridge.hold_spec_), now)) {
+    const bool active = bridge.hold_state_.active;
+    const bool cancelled = !active && exceedsSpec(bridge.hold_spec_);
+    bridge.SendHotkeyEvent("hold", active, cancelled);
+    if (cancelled) bridge.hold_state_.SuppressUntilRelease();
+  }
+
+  // Отпускание само по себе ничего не переключает — оно лишь
+  // разрешает следующему нажатию сработать. Кроме отмены: набрали
+  // сверху лишнее — включённое той же клавишей выключается назад.
+  if (bridge.toggle_state_.Update(matchSpec(bridge.toggle_spec_),
+                                  bridge.toggle_spec_.is_double(),
+                                  containsSpec(bridge.toggle_spec_), now)) {
+    if (bridge.toggle_state_.active) {
+      bridge.SendHotkeyEvent("toggle", true);
+    } else if (exceedsSpec(bridge.toggle_spec_)) {
+      bridge.SendHotkeyEvent("toggle", false, true);
+      bridge.toggle_state_.SuppressUntilRelease();
+    }
+  }
+
+  // «Бросить начатое» — одно нажатие, отпускание ничего не значит.
+  // Не назначено — spec пуст, и matchSpec на нём всегда false.
+  if (bridge.cancel_state_.Update(matchSpec(bridge.cancel_spec_),
+                                  bridge.cancel_spec_.is_double(),
+                                  containsSpec(bridge.cancel_spec_), now)) {
+    if (bridge.cancel_state_.active) {
+      bridge.SendHotkeyEvent("cancel", true);
+    } else if (exceedsSpec(bridge.cancel_spec_)) {
+      bridge.cancel_state_.SuppressUntilRelease();
+    }
+  }
 }
 
 void DictationBridge::SendHotkeyEvent(const std::string& id, bool down, bool cancel) {
@@ -1415,6 +1531,10 @@ void DictationBridge::SendReloadSettings() {
   if (channel_) channel_->InvokeMethod("reload", nullptr);
   if (panel_channel_) panel_channel_->InvokeMethod("reload", nullptr);
   if (settings_channel_) settings_channel_->InvokeMethod("reload", nullptr);
+  // Панели записи тоже: язык и тему она берёт из тех же настроек, и без
+  // «reload» оставалась бы с прежними до перезапуска приложения.
+  if (hud_channel_) hud_channel_->InvokeMethod("reload", nullptr);
+  if (hud_editor_channel_) hud_editor_channel_->InvokeMethod("reload", nullptr);
 }
 
 void DictationBridge::SendTab(const std::string& tab) {
@@ -1443,7 +1563,9 @@ void DictationBridge::SendSystemWake() {
 
 // ── Аудио запись через miniaudio ──────────────────────────────────────────
 
-std::string DictationBridge::StartAudioRecording() {
+void DictationBridge::StartAudioRecording(
+    std::function<void(const std::string&)> done) {
+  SettleMicStart();
   if (is_recording_) {
     StopAudioRecording();
   }
@@ -1459,7 +1581,8 @@ std::string DictationBridge::StartAudioRecording() {
   ma_encoder_config encConfig = ma_encoder_config_init(ma_encoding_format_wav, ma_format_s16, 1, 16000);
   if (ma_encoder_init_file(current_record_path_.c_str(), &encConfig, encoder) != MA_SUCCESS) {
     delete encoder;
-    return "";
+    done("");
+    return;
   }
   ma_encoder_ = encoder;
 
@@ -1470,44 +1593,74 @@ std::string DictationBridge::StartAudioRecording() {
     ma_encoder_uninit(encoder);
     delete encoder;
     ma_encoder_ = nullptr;
-    return "";
+    done("");
+    return;
   }
 
-  auto* device = new ma_device();
-  ma_device_config devConfig = ma_device_config_init(ma_device_type_capture);
-  devConfig.capture.format = ma_format_s16;
-  devConfig.capture.channels = 1;
-  devConfig.sampleRate = 16000;
-  devConfig.dataCallback = AudioCaptureCallback;
-  devConfig.pUserData = this;
+  auto start = std::make_shared<MicStart>();
+  start->done = std::move(done);
+  mic_start_ = start;
+  HWND notify = main_window_;
+  mic_thread_ = std::thread([this, start, notify]() {
+    auto* device = new ma_device();
+    ma_device_config devConfig = ma_device_config_init(ma_device_type_capture);
+    devConfig.capture.format = ma_format_s16;
+    devConfig.capture.channels = 1;
+    devConfig.sampleRate = 16000;
+    devConfig.dataCallback = AudioCaptureCallback;
+    devConfig.pUserData = this;
 
-  if (ma_device_init(nullptr, &devConfig, device) != MA_SUCCESS) {
+    bool ok = ma_device_init(nullptr, &devConfig, device) == MA_SUCCESS;
+    if (ok && ma_device_start(device) != MA_SUCCESS) {
+      ma_device_uninit(device);
+      ok = false;
+    }
+    if (!ok) {
+      delete device;
+      device = nullptr;
+    }
+    start->device = device;
+    start->ok = ok;
+    auto* message = new std::shared_ptr<MicStart>(start);
+    if (!PostMessageW(notify, WM_TSUKIKO_MIC, 0,
+                      reinterpret_cast<LPARAM>(message))) {
+      delete message;
+    }
+  });
+}
+
+void DictationBridge::SettleMicStart() {
+  if (mic_thread_.joinable()) mic_thread_.join();
+  if (mic_start_) CompleteMicStart(mic_start_);
+}
+
+void DictationBridge::CompleteMicStart(const std::shared_ptr<MicStart>& start) {
+  // Сообщение из потока могло прийти уже после того, как запуск довели
+  // до конца сами (остановкой или новым запуском): второй раз не отвечаем.
+  if (start->handled) return;
+  start->handled = true;
+  if (mic_thread_.joinable()) mic_thread_.join();
+  if (mic_start_ == start) mic_start_.reset();
+  auto done = std::move(start->done);
+  if (start->ok) {
+    ma_device_ = start->device;
+    is_recording_ = true;
+    ResetLevelMeter();
+    if (done) done(current_record_path_);
+    return;
+  }
+  if (ma_encoder_) {
+    auto* encoder = static_cast<ma_encoder*>(ma_encoder_);
     ma_encoder_uninit(encoder);
     delete encoder;
     ma_encoder_ = nullptr;
-    CloseHandle(audio_ready_event_.exchange(nullptr));
-    delete device;
-    return "";
   }
-  ma_device_ = device;
-
-  if (ma_device_start(device) != MA_SUCCESS) {
-    ma_device_uninit(device);
-    delete device;
-    ma_device_ = nullptr;
-    ma_encoder_uninit(encoder);
-    delete encoder;
-    ma_encoder_ = nullptr;
-    CloseHandle(audio_ready_event_.exchange(nullptr));
-    return "";
-  }
-
-  is_recording_ = true;
-  ResetLevelMeter();
-  return current_record_path_;
+  if (HANDLE ready = audio_ready_event_.exchange(nullptr)) CloseHandle(ready);
+  if (done) done("");
 }
 
 std::string DictationBridge::StopAudioRecording() {
+  SettleMicStart();
   if (!is_recording_) return current_record_path_;
 
   // ma_device_start сообщает только о запуске устройства, не о том, что

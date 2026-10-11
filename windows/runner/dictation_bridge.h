@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <thread>
 #include <functional>
 
 /// Мост к родному коду Windows: глобальный перехват клавиш, запись звука,
@@ -90,9 +91,44 @@ class DictationBridge {
   void UninstallKeyboardHook();
   static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
 
+  /// Одно событие клавиатуры, снятое в потоке хука.
+  ///
+  /// Модификаторы снимаются там же, в момент события: к тому времени,
+  /// как главный поток до него доберётся, клавиши могли уже отпустить,
+  /// и GetAsyncKeyState ответил бы про другое мгновение.
+  struct KeyEvent {
+    int vk = 0;
+    bool down = false;
+    bool up = false;
+    std::set<std::string> mods;
+    ULONGLONG time = 0;
+  };
+  void ProcessKeyEvent(const KeyEvent& event);
+  void HookThreadMain();
+
   // Запись аудио
-  std::string StartAudioRecording();
+  /// Запуск микрофона в своём потоке, ответ — через [done] на главном.
+  ///
+  /// ma_device_init/ma_device_start (WASAPI) занимают сотни миллисекунд,
+  /// а шли на главном потоке — том самом, на котором Windows-движок
+  /// Flutter показывает кадры. Пока микрофон поднимался, панель записи
+  /// не могла нарисоваться и висела серой плашкой, а остальные окна
+  /// замирали. Файл и кодировщик готовятся сразу: это быстро.
+  void StartAudioRecording(std::function<void(const std::string&)> done);
   std::string StopAudioRecording();
+
+  struct MicStart {
+    void* device = nullptr;
+    bool ok = false;
+    bool handled = false;
+    std::function<void(const std::string&)> done;
+  };
+  /// Довести начатый запуск до конца прямо сейчас — перед остановкой,
+  /// новым запуском или выходом.
+  void SettleMicStart();
+  void CompleteMicStart(const std::shared_ptr<MicStart>& start);
+  std::thread mic_thread_;
+  std::shared_ptr<MicStart> mic_start_;
   double GetAudioLevel();
 
   // Вставка текста и буфер обмена
@@ -176,6 +212,21 @@ class DictationBridge {
   bool tray_installed_ = false;
   HICON recording_icon_ = nullptr;
   HHOOK keyboard_hook_ = nullptr;
+
+  /// Хук живёт в своём потоке, а не в главном.
+  ///
+  /// Главный поток держит четыре движка Flutter, поднимает микрофон и ждёт
+  /// его первого блока — всё это сотни миллисекунд. Пока он занят, Windows
+  /// ждёт ответа хука на каждое нажатие во всей системе: печать во всех
+  /// программах подтормаживала. А дольше LowLevelHooksTimeout Windows не
+  /// ждёт вовсе и, начиная с Windows 7, молча снимает такой хук — после
+  /// чего сочетания диктовки перестают работать до перезапуска.
+  /// Поток хука ничем, кроме клавиш, не занят и отвечает сразу.
+  std::thread hook_thread_;
+  std::atomic<DWORD> hook_thread_id_{0};
+  /// Идёт ли захват сочетания в настройках — его нажатия поглощаются,
+  /// и решать это приходится в самом хуке, синхронно.
+  std::atomic<bool> capture_swallow_{false};
 
   // Состояние хоткеев
   struct HotkeySpec {

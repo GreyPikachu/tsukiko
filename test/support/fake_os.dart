@@ -107,6 +107,13 @@ class _TempOs implements Os {
   @override
   List<String> engineNames(String base) => _real.engineNames(base);
 
+  /// Тестам видеокарту не ищем: проба — это настоящий запуск движка.
+  @override
+  Future<Map<String, String>?> engineEnvironment() async => null;
+
+  @override
+  void bindToApp(int pid) {}
+
   @override
   bool get hasWindowMaterial => _real.hasWindowMaterial;
 

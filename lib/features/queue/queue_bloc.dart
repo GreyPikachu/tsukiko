@@ -1451,8 +1451,13 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
 
     // Под своим именем: иначе в «Мониторинге системы» память числится
     // за безымянным whisper-cli, и чей он — не понять.
-    final proc = await Process.start(runnableEngine(exe, processName)!, args);
+    final proc = await Process.start(
+      runnableEngine(exe, processName)!,
+      args,
+      environment: await os.engineEnvironment(),
+    );
     _proc = proc;
+    os.bindToApp(proc.pid);
     Log.info(
       'Queue',
       'Recognizer process launched: PID=${proc.pid} ($processName)',

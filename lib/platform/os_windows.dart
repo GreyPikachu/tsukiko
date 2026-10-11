@@ -183,6 +183,107 @@ class WindowsOs implements Os {
     ];
   }
 
+  /// На ноутбуке с двумя видеокартами Vulkan первой перечисляет встроенную
+  /// (Intel Arc, Radeon Graphics), и ggml по умолчанию берёт устройство 0.
+  /// На Core Ultra 9 + RTX 4060 это стоило так: encode large-v3-turbo
+  /// 4266 мс на встроенной против 215 мс на дискретной, вся расшифровка
+  /// фразы — 6,4 с против 0,9 с.
+  ///
+  /// Какая из карт дискретная, знает только сам Vulkan, поэтому спрашиваем
+  /// его: движок, запущенный на заведомо негодной модели, успевает напечатать
+  /// список устройств (`uma: 0` — своя память, то есть дискретная) и
+  /// выходит. Делается это раз за сеанс — около двух секунд, пока поднимается
+  /// драйвер, — и только там, где устройств больше одного и есть из чего
+  /// выбрать. Если человек сам задал `GGML_VK_VISIBLE_DEVICES`, не спорим.
+  @override
+  Future<Map<String, String>?> engineEnvironment() =>
+      _engineEnvironment ??= _probeVulkanDevices();
+
+  Future<Map<String, String>?>? _engineEnvironment;
+
+  Future<Map<String, String>?> _probeVulkanDevices() async {
+    if (!_vulkanUsable) return null;
+    if (Platform.environment.containsKey('GGML_VK_VISIBLE_DEVICES')) {
+      return null;
+    }
+    final exe = join(engineDir, 'tsukiko-recognizer-vulkan.exe');
+    if (!File(exe).existsSync()) return null;
+    Directory? tmp;
+    try {
+      tmp = Directory.systemTemp.createTempSync('tsukiko-gpu-');
+      // Пустой файл годится и как «модель», и как «запись»: движок
+      // проверяет только, что запись есть, а на модели падает уже после
+      // того, как перечислил устройства.
+      final dummy = File(join(tmp.path, 'probe.bin'))..writeAsBytesSync([0]);
+      final r = await Process.run(
+        exe,
+        ['-m', dummy.path, '-f', dummy.path],
+        stdoutEncoding: const Utf8Codec(allowMalformed: true),
+        stderrEncoding: const Utf8Codec(allowMalformed: true),
+      ).timeout(const Duration(seconds: 20));
+      final device = discreteVulkanDevice('${r.stdout}\n${r.stderr}');
+      if (device == null) return null;
+      Log.info('Engine', 'Using discrete Vulkan device $device');
+      return {'GGML_VK_VISIBLE_DEVICES': '$device'};
+    } catch (e) {
+      Log.warn('Engine', 'Vulkan device probe failed', e);
+      return null;
+    } finally {
+      try {
+        tmp?.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+  }
+
+  /// Задание Windows (job object) с «убить всех при закрытии».
+  ///
+  /// В задание кладём только движки, а не всё приложение: иначе вместе
+  /// с tsukiko закрывались бы и окна проводника или браузер, открытые
+  /// из него. Дескриптор задания не закрываем никогда — его закроет сама
+  /// система, когда процесс приложения кончится любым путём, и тогда же
+  /// погасит всё, что в задании лежит. Своё задание у каждого изолята:
+  /// они живут в одном процессе и кончаются вместе.
+  @override
+  void bindToApp(int pid) {
+    if (pid <= 0) return;
+    try {
+      final job = _killOnCloseJob ??= _createKillOnCloseJob();
+      if (job == null || job == nullptr) return;
+      final process =
+          _openProcess(_processSetQuota | _processTerminate, 0, pid);
+      if (process == nullptr) return;
+      try {
+        _assignProcessToJobObject(job, process);
+      } finally {
+        _closeHandle(process);
+      }
+    } catch (e) {
+      Log.warn('Engine', 'Could not bind engine process $pid to the app', e);
+    }
+  }
+
+  static Pointer<Void>? _killOnCloseJob;
+
+  static Pointer<Void>? _createKillOnCloseJob() {
+    final job = _createJobObject(nullptr, nullptr);
+    if (job == nullptr) return null;
+    // JOBOBJECT_EXTENDED_LIMIT_INFORMATION (x64): LimitFlags лежит
+    // в BasicLimitInformation по смещению 16.
+    final info = calloc<Uint8>(_extendedLimitInfoSize);
+    try {
+      (info + 16).cast<Uint32>().value = _jobKillOnClose;
+      if (_setInformationJobObject(
+              job, _jobExtendedLimitInformation, info.cast(), _extendedLimitInfoSize) ==
+          0) {
+        _closeHandle(job);
+        return null;
+      }
+    } finally {
+      calloc.free(info);
+    }
+    return job;
+  }
+
   // ── путь для чужой программы ──────────────────────────────────────────────
 
   /// Короткое имя Windows для пути: `C:\Users\Роман\…` →
@@ -253,6 +354,51 @@ class WindowsOs implements Os {
           Uint32 Function(Pointer<Utf16>, Pointer<Utf16>, Uint32),
           int Function(Pointer<Utf16>, Pointer<Utf16>, int)>(
       'GetShortPathNameW');
+
+  // ── процессы через kernel32 ───────────────────────────────────────────────
+
+  static const _processTerminate = 0x0001;
+  static const _processSetQuota = 0x0100;
+  static const _jobKillOnClose = 0x2000;
+  static const _jobExtendedLimitInformation = 9;
+  static const _extendedLimitInfoSize = 144;
+  static const _processQueryLimitedInformation = 0x1000;
+  static const _stillActive = 259;
+  static const _memoryCountersSize = 72;
+
+  static final _kernel32 = DynamicLibrary.open('kernel32.dll');
+
+  static final _openProcess = _kernel32.lookupFunction<
+      Pointer<Void> Function(Uint32, Int32, Uint32),
+      Pointer<Void> Function(int, int, int)>('OpenProcess');
+
+  static final _closeHandle = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>),
+      int Function(Pointer<Void>)>('CloseHandle');
+
+  static final _getExitCodeProcess = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>, Pointer<Uint32>),
+      int Function(Pointer<Void>, Pointer<Uint32>)>('GetExitCodeProcess');
+
+  static final _terminateProcess = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>, Uint32),
+      int Function(Pointer<Void>, int)>('TerminateProcess');
+
+  static final _createJobObject = _kernel32.lookupFunction<
+      Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>),
+      Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>)>('CreateJobObjectW');
+
+  static final _setInformationJobObject = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>, Int32, Pointer<Void>, Uint32),
+      int Function(Pointer<Void>, int, Pointer<Void>, int)>('SetInformationJobObject');
+
+  static final _assignProcessToJobObject = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>, Pointer<Void>),
+      int Function(Pointer<Void>, Pointer<Void>)>('AssignProcessToJobObject');
+
+  static final _getProcessMemoryInfo = _kernel32.lookupFunction<
+      Int32 Function(Pointer<Void>, Pointer<Void>, Uint32),
+      int Function(Pointer<Void>, Pointer<Void>, int)>('K32GetProcessMemoryInfo');
 
   // ── чем система рисует и что она спрашивает ───────────────────────────────
 
@@ -460,24 +606,58 @@ class WindowsOs implements Os {
 
   // ── процессы ──────────────────────────────────────────────────────────────
 
+  /// Жив ли процесс — у самой системы, а не у `tasklist`.
+  ///
+  /// Раньше здесь был `Process.runSync('tasklist')`: целая программа на
+  /// каждый вопрос, и синхронно — то есть на потоке изолята, который
+  /// рисует окно и принимает сочетания диктовки. `killForSure` задаёт этот
+  /// вопрос до двенадцати раз подряд при каждой выгрузке модели по
+  /// простою, и панель на это время замирала — нажатие сочетания в такую
+  /// секунду просто терялось. OpenProcess + GetExitCodeProcess отвечают
+  /// за микросекунды.
   @override
   bool isAlive(int pid) {
+    if (pid <= 0) return false;
     try {
-      final r = Process.runSync('tasklist', ['/FI', 'PID eq $pid', '/NH']);
-      final out = (r.stdout as String).trim();
-      return out.isNotEmpty &&
-          out.contains('$pid') &&
-          !out.contains('No tasks') &&
-          !out.contains('нет задач');
+      final handle = _openProcess(_processQueryLimitedInformation, 0, pid);
+      if (handle == nullptr) return false;
+      final code = calloc<Uint32>();
+      try {
+        return _getExitCodeProcess(handle, code) != 0 &&
+            code.value == _stillActive;
+      } finally {
+        calloc.free(code);
+        _closeHandle(handle);
+      }
     } catch (_) {
       return false;
     }
   }
 
+  /// Просьба завершиться и приказ.
+  ///
+  /// Приказ — TerminateProcess, сразу и без запуска `taskkill /F`.
+  /// Просьбу Windows умеет передать только окнам, а у движка их нет;
+  /// `taskkill` без /F оставляем ради чужих сборок с окном, но не ждём его:
+  /// раньше он шёл синхронно и стоил потоку интерфейса десятых долей
+  /// секунды на ровном месте.
   @override
   void signal(int pid, {bool force = false}) {
+    if (pid <= 0) return;
+    if (!force) {
+      Process.start('taskkill', ['/PID', '$pid'])
+          .then((p) => p.exitCode)
+          .catchError((_) => -1);
+      return;
+    }
     try {
-      Process.runSync('taskkill', [if (force) '/F', '/PID', '$pid']);
+      final handle = _openProcess(_processTerminate, 0, pid);
+      if (handle == nullptr) return;
+      try {
+        _terminateProcess(handle, 1);
+      } finally {
+        _closeHandle(handle);
+      }
     } catch (_) {}
   }
 
@@ -540,20 +720,32 @@ class WindowsOs implements Os {
     }
   }
 
+  /// Память процесса — рабочий набор, то же число, что показывал
+  /// `tasklist` в столбце «Память». Но без запуска `tasklist` раз в пять
+  /// секунд, пока открыта панель: K32GetProcessMemoryInfo отвечает сразу.
   @override
   Future<int> footprintMb(int pid) async {
+    if (pid <= 0) return 0;
     try {
-      final r = await Process.run('tasklist', ['/FI', 'PID eq $pid', '/FO', 'CSV', '/NH']);
-      final out = (r.stdout as String).trim();
-      if (out.isEmpty || !out.contains('$pid')) return 0;
-      final cols = out.split('","').map((s) => s.replaceAll('"', '').trim()).toList();
-      if (cols.length >= 5) {
-        final memStr = cols[4].replaceAll(RegExp(r'[^\d]'), '');
-        final memKb = int.tryParse(memStr) ?? 0;
-        return (memKb / 1024).round();
+      final handle = _openProcess(_processQueryLimitedInformation, 0, pid);
+      if (handle == nullptr) return 0;
+      // PROCESS_MEMORY_COUNTERS: два DWORD и восемь SIZE_T. WorkingSetSize —
+      // четвёртое поле, сразу за PeakWorkingSetSize.
+      final counters = calloc<Uint8>(_memoryCountersSize);
+      try {
+        counters.cast<Uint32>().value = _memoryCountersSize;
+        if (_getProcessMemoryInfo(handle, counters.cast(), _memoryCountersSize) == 0) {
+          return 0;
+        }
+        final workingSet = (counters + 16).cast<Uint64>().value;
+        return (workingSet / (1024 * 1024)).round();
+      } finally {
+        calloc.free(counters);
+        _closeHandle(handle);
       }
-    } catch (_) {}
-    return 0;
+    } catch (_) {
+      return 0;
+    }
   }
 
   // ── система ───────────────────────────────────────────────────────────────
@@ -617,4 +809,34 @@ class WindowsOs implements Os {
       ProcessSignal.sigint.watch().listen((_) => onSignal());
     } catch (_) {}
   }
+}
+
+/// Номер дискретной видеокарты в выводе ggml-vulkan — или `null`, если
+/// выбирать не из чего.
+///
+/// Строки там такие:
+/// `ggml_vulkan: 1 = NVIDIA GeForce RTX 4060 Laptop GPU (NVIDIA) | uma: 0 | …`.
+/// `uma: 1` — память общая с процессором, то есть карта встроенная.
+/// Подсказка нужна, только когда есть и та и другая: одну карту ggml
+/// найдёт и сам, а из двух дискретных первая ничем не хуже.
+///
+/// Слои-переводчики в счёт не идут: Microsoft Dozen (Vulkan поверх D3D12)
+/// показывает ту же видеокарту ещё раз, а llvmpipe считает на процессоре.
+/// Ни тот ни другой не лучше родного драйвера.
+int? discreteVulkanDevice(String output) {
+  final devices = RegExp(r'ggml_vulkan:\s*(\d+)\s*=\s*(.*?)\|\s*uma:\s*(\d)')
+      .allMatches(output)
+      .map((m) => (
+            index: int.parse(m.group(1)!),
+            name: m.group(2)!.toLowerCase(),
+            uma: m.group(3) == '1',
+          ))
+      .where((d) =>
+          !d.name.contains('microsoft') &&
+          !d.name.contains('dozen') &&
+          !d.name.contains('llvmpipe'))
+      .toList();
+  if (!devices.any((d) => d.uma)) return null;
+  final discrete = devices.where((d) => !d.uma);
+  return discrete.isEmpty ? null : discrete.first.index;
 }
