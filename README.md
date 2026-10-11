@@ -111,7 +111,7 @@ Zero heavy external dependencies like Python, PyTorch, or separate CUDA runtimes
 
 ### Desktop Interface & Mascot
 - Beautiful Flutter desktop interface honoring Apple Human Interface Guidelines and modern Windows fluent designs.
-- Native light and dark themes with fluid micro-animations.
+- Light and dark themes with fluid micro-animations: follow the system or pick one in **Settings → App → Appearance**.
 - Interactive animated **Tsukiko (Moon Cat)** mascot (character design & artwork by [Feyza](https://feyzart.com/)) dynamically expressing app state (idle, listening, processing, success).
 
 ---
@@ -214,7 +214,7 @@ Tsukiko is signed with an Apple Developer certificate and distributed outside th
 ### Launch on Windows
 
 1. Run `tsukiko-setup.exe` and follow the setup wizard prompts.
-2. If an NVIDIA, AMD, or Intel GPU is present, Vulkan acceleration will automatically be engaged.
+2. If an NVIDIA, AMD, or Intel GPU is present, Vulkan acceleration will automatically be engaged. On laptops with both integrated and discrete graphics, the engine runs on the discrete GPU (set `GGML_VK_VISIBLE_DEVICES` yourself to override).
 3. Grant microphone permissions when prompted by Windows 10/11.
 
 ---
@@ -386,6 +386,10 @@ Tsukiko is released under the **[MIT License](LICENSE)**.
 
 ### Acknowledgements & Artwork
 - **Tsukiko Mascot & Character Artwork** — Created by [Feyza (feyzart.com)](https://feyzart.com/). Special thanks to the artist for the wonderful character design and expressive animations that bring Tsukiko to life!
+
+### Contributors
+- [MarieSamota](https://github.com/MarieSamota) — Windows: discrete GPU on hybrid laptops, reliable hotkeys, clean quit, HiDPI fixes, theme selection.
+- [GreyPikachu](https://github.com/GreyPikachu) — macOS: dictation hotkey survives sleep and screen lock.
 
 ---
 

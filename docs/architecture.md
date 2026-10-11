@@ -36,18 +36,19 @@ All operating system interactions that differ at the Dart level are abstracted b
 ```
 lib/platform/os.dart          Abstract contract (class Os) + dynamic instance selection
 lib/platform/os_macos.dart    macOS: ps, pgrep, afconvert, open, ~/Library
-lib/platform/os_windows.dart  Windows: tasklist, ffmpeg, explorer, %APPDATA%
+lib/platform/os_windows.dart  Windows: kernel32 (FFI), ffmpeg, explorer, %APPDATA%
 ```
 
 Key platform implementations:
 
 | Capability | macOS Implementation | Windows Implementation |
 | :--- | :--- | :--- |
-| **Process Inspection** | `pgrep -f` / `ps -axo` | `tasklist` / WMI |
+| **Process Inspection** | `pgrep -f` / `ps -axo` | `OpenProcess` + `GetExitCodeProcess`, `K32GetProcessMemoryInfo` |
 | **Audio Container Decoding** | System `afconvert` | Bundled `ffmpeg.exe` |
 | **File Manager Integration** | `open -R` | `explorer /select,` |
 | **Application Data Path** | `~/Library/Application Support/app.yuko.tsukiko` | `%APPDATA%\app.yuko.tsukiko` |
-| **Process Termination** | `kill` / `SIGTERM` | `TerminateProcess` / `taskkill` |
+| **Process Termination** | `kill` / `SIGTERM` | `TerminateProcess` / `taskkill` (polite, not awaited) |
+| **Engine Lifetime** | Orphan sweep by marks | Job object with `KILL_ON_JOB_CLOSE` |
 | **Modifiers** | `⌘`, `⌥`, `⇧` | `Ctrl`, `Alt`, `Shift` |
 
 ### 2. `lib/platform/bridge.dart` — Native Interop Boundary
@@ -65,10 +66,11 @@ Platform mapping:
 | Subsystem | macOS | Windows |
 | :--- | :--- | :--- |
 | **Menu Bar / Tray** | `NSStatusItem` + `TrayPanel` | `Shell_NotifyIcon` + `PanelWindow` |
-| **Global Hotkey** | `CGEventTap` | `WH_KEYBOARD_LL` (low-level hook) |
+| **Global Hotkey** | `CGEventTap` | `WH_KEYBOARD_LL` on a dedicated thread |
 | **Text Insertion** | Accessibility API | `SendInput` (synthesized keystrokes) |
 | **Audio Capture** | `AVAudioRecorder` | `miniaudio` (WASAPI) |
-| **Hardware GPU** | Apple Silicon Metal | Vulkan SDK / CPU fallback |
+| **Hardware GPU** | Apple Silicon Metal | Vulkan (discrete GPU preferred via `GGML_VK_VISIBLE_DEVICES`) / CPU fallback |
+| **Window Theme** | `NSApp.appearance` | `DWMWA_USE_IMMERSIVE_DARK_MODE` |
 
 ---
 
