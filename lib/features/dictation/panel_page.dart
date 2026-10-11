@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
@@ -16,6 +15,7 @@ import 'dictation_cubit.dart';
 import 'dictation_history.dart';
 import 'dictation_state.dart';
 import '../../core/app_locale.dart';
+import '../../core/app_theme.dart';
 import '../../core/models.dart';
 import '../../core/text.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -35,6 +35,7 @@ Future<void> runPanel() async {
     'runPanel started on ${os.platformId} (${Platform.operatingSystemVersion}), Tsukiko $appVersion',
   );
   refreshLocale();
+  refreshTheme();
   WidgetsFlutterBinding.ensureInitialized();
   sweepRecordings();
   // Модели прежней установки переезжают к нам до того, как кто-нибудь
@@ -60,14 +61,14 @@ class _PanelApp extends StatelessWidget {
   const _PanelApp();
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder<Locale?>(
-    valueListenable: appLocale,
-    builder: (context, locale, _) => MacosApp(
-      locale: locale,
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([appLocale, appThemeMode]),
+    builder: (context, _) => MacosApp(
+      locale: appLocale.value,
       title: appName,
       theme: MacosThemeData.light(),
       darkTheme: MacosThemeData.dark(),
-      themeMode: ThemeMode.system,
+      themeMode: appThemeMode.value,
       debugShowCheckedModeBanner: false,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,

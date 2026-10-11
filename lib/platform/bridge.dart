@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 
 import '../core/app_locale.dart';
+import '../core/app_theme.dart';
 import '../core/whisper_server.dart';
 
 /// Мост к родному коду приложения: перехват клавиш, запись с микрофона,
@@ -175,9 +176,10 @@ class NativeBridge {
           ),
         );
       case 'reload':
-        // Язык интерфейса перечитываем здесь, а не в каждом блоке: окон
-        // три, а правит настройки одно, и переключиться должны все сразу.
+        // Язык и тему перечитываем здесь, а не в каждом блоке: окон
+        // несколько, а правит настройки одно, и переключиться должны все сразу.
         refreshLocale();
+        refreshTheme();
         _reload.add(null);
       case 'tab':
         _tab.add(call.arguments as String);

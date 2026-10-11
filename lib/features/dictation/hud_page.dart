@@ -5,10 +5,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import '../../core/indicator_mode.dart';
-import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
 
 import '../../core/app_locale.dart';
+import '../../core/app_theme.dart';
 import '../../core/logger.dart';
 import '../../design/design.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -33,6 +33,7 @@ Future<void> runHud({bool editor = false}) async {
     'runHud started on ${os.platformId} (${Platform.operatingSystemVersion}), Tsukiko $appVersion',
   );
   refreshLocale();
+  refreshTheme();
   WidgetsFlutterBinding.ensureInitialized();
   runApp(HudApp(editor: editor));
 }
@@ -57,13 +58,13 @@ class HudApp extends StatelessWidget {
   final bool editor;
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder<Locale?>(
-    valueListenable: appLocale,
-    builder: (context, locale, _) => MacosApp(
-      locale: locale,
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([appLocale, appThemeMode]),
+    builder: (context, _) => MacosApp(
+      locale: appLocale.value,
       theme: MacosThemeData.light(),
       darkTheme: MacosThemeData.dark(),
-      themeMode: ThemeMode.system,
+      themeMode: appThemeMode.value,
       debugShowCheckedModeBanner: false,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,

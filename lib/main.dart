@@ -1,10 +1,10 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show ThemeMode;
 import 'package:macos_ui/macos_ui.dart';
 // ignore: implementation_imports
 import 'package:macos_ui/src/layout/wallpaper_tinting_settings/global_wallpaper_tinting_settings.dart';
 import 'core/app_locale.dart';
+import 'core/app_theme.dart';
 import 'core/logger.dart';
 import 'core/settings.dart';
 import 'l10n/gen/app_localizations.dart';
@@ -67,6 +67,7 @@ Future<void> main(List<String> args) async {
     'entrypoint: main, args: $args',
   );
   refreshLocale();
+  refreshTheme();
   WidgetsFlutterBinding.ensureInitialized();
   // Настоящий материал окна: содержимое во всю высоту, титульная полоса
   // прозрачная. Спрашиваем не «мы на macOS?», а «даёт ли система материал
@@ -90,14 +91,14 @@ class TsukikoApp extends StatelessWidget {
   final Iterable<String> initialFiles;
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder<Locale?>(
-        valueListenable: appLocale,
-        builder: (context, locale, _) => MacosApp(
-          locale: locale,
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: Listenable.merge([appLocale, appThemeMode]),
+        builder: (context, _) => MacosApp(
+          locale: appLocale.value,
           title: appName,
           theme: MacosThemeData.light(),
           darkTheme: MacosThemeData.dark(),
-          themeMode: ThemeMode.system,
+          themeMode: appThemeMode.value,
           debugShowCheckedModeBanner: false,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,

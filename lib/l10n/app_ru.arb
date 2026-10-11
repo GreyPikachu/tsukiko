@@ -1669,5 +1669,29 @@
   "indicatorPrevious": "Предыдущий стиль",
   "indicatorNext": "Следующий стиль",
   "historySaveFailed": "Не удалось сохранить историю. Проверьте доступ к папке приложения.",
-  "historyCopyFailed": "Не удалось скопировать текст."
+  "historyCopyFailed": "Не удалось скопировать текст.",
+  "sectionAppearance": "Оформление",
+  "@sectionAppearance": {},
+  "fieldTheme": "Тема",
+  "@fieldTheme": {},
+  "themeSystem": "Как в системе",
+  "@themeSystem": {},
+  "themeLight": "Светлая",
+  "@themeLight": {},
+  "themeDark": "Тёмная",
+  "@themeDark": {},
+  "hintTheme": "Как выглядят окна tsukiko. «Как в системе» — вслед за светлым или тёмным режимом системы.",
+  "@hintTheme": {},
+  "trayAreaName": "область уведомлений",
+  "@trayAreaName": {},
+  "checkShowTaskbarIcon": "Показывать значок на панели задач",
+  "@checkShowTaskbarIcon": {},
+  "hintTaskbarIcon": "Если выключить, {appName} останется доступна через область уведомлений, но исчезнет с панели задач.",
+  "@hintTaskbarIcon": {
+    "placeholders": {
+      "appName": {
+        "type": "String"
+      }
+    }
+  }
 }

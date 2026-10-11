@@ -3,12 +3,12 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart';
 
 import '../../core/app_locale.dart';
+import '../../core/app_theme.dart';
 import '../../core/library.dart';
 import '../../core/logger.dart';
 import '../../core/models.dart';
@@ -43,6 +43,7 @@ void runSettings() {
     'runSettings started on ${os.platformId} (${Platform.operatingSystemVersion}), Tsukiko $appVersion',
   );
   refreshLocale();
+  refreshTheme();
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const SettingsApp());
 }
@@ -72,10 +73,10 @@ class SettingsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => SettingsCubit(NativeBridge()),
-    child: ValueListenableBuilder<Locale?>(
-      valueListenable: appLocale,
-      builder: (context, locale, _) => MacosApp(
-        locale: locale,
+    child: ListenableBuilder(
+      listenable: Listenable.merge([appLocale, appThemeMode]),
+      builder: (context, _) => MacosApp(
+        locale: appLocale.value,
         // Локализованный заголовок окна недоступен здесь: builder ниже
         // ещё не построен, а MacosApp.title читается до первого кадра.
         // Заголовок панели инструментов настоящий, локализованный —
@@ -83,7 +84,7 @@ class SettingsApp extends StatelessWidget {
         title: currentL10n().settingsWindowTitle,
         theme: MacosThemeData.light(),
         darkTheme: MacosThemeData.dark(),
-        themeMode: ThemeMode.system,
+        themeMode: appThemeMode.value,
         debugShowCheckedModeBanner: false,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
@@ -1787,17 +1788,35 @@ class _SettingsBodyState extends State<SettingsBody>
       ),
     ),
     Hint(l10n.hintLanguage),
+    SectionTitle(l10n.sectionAppearance),
+    _Field(
+      l10n.fieldTheme,
+      MacosPopupButton<String>(
+        value: s.theme,
+        items: [
+          MacosPopupMenuItem(value: '', child: Text(l10n.themeSystem)),
+          MacosPopupMenuItem(value: 'light', child: Text(l10n.themeLight)),
+          MacosPopupMenuItem(value: 'dark', child: Text(l10n.themeDark)),
+        ],
+        onChanged: (v) => _cubit.setTheme(v ?? ''),
+      ),
+    ),
+    Hint(l10n.hintTheme),
     SectionTitle(l10n.sectionInSystem),
     Check(l10n.checkLoginItem, s.loginItem, _cubit.setLoginItem),
     Hint(l10n.hintLoginItem(os.menuBarName), under: true),
     const SizedBox(height: Gap.item),
     Check(
-      l10n.checkShowDockIcon(os.appIconAreaName),
+      os.platformId == 'windows'
+          ? l10n.checkShowTaskbarIcon
+          : l10n.checkShowDockIcon(os.appIconAreaName),
       s.dockIcon,
       _cubit.setDockIcon,
     ),
     Hint(
-      l10n.hintDockIcon(appName, os.appIconAreaName, os.menuBarName),
+      os.platformId == 'windows'
+          ? l10n.hintTaskbarIcon(appName)
+          : l10n.hintDockIcon(appName, os.appIconAreaName, os.menuBarName),
       under: true,
     ),
     ..._apiSection(s),
