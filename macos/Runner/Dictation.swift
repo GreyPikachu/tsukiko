@@ -500,14 +500,7 @@ final class DictationBridge: NSObject {
     case "initialTab":
       reply(settings.tab)
     case "windowTheme":
-      // Тема из настроек: рамка, материал окон, панель в строке меню и
-      // плашка записи берут оформление у NSApp, а не у Flutter. nil — как
-      // в системе.
-      switch call.arguments as? String {
-      case "light": NSApp.appearance = NSAppearance(named: .aqua)
-      case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
-      default: NSApp.appearance = nil
-      }
+      DictationBridge.applyTheme(call.arguments as? String)
       reply(nil)
     case "permissions":
       // Разрешение одно: «Универсальный доступ». Наш tap поглощает события
@@ -1246,6 +1239,28 @@ final class DictationBridge: NSObject {
   /// каждым открытием окна. Окно в .accessory показывается и становится
   /// ключевым, но только после явной активации — сам по себе фоновый
   /// процесс на передний план не выходит.
+  /// Тема из настроек: рамка, материал окон, панель в строке меню и
+  /// плашка записи берут оформление у NSApp, а не у Flutter. nil — как
+  /// в системе.
+  static func applyTheme(_ id: String?) {
+    switch id {
+    case "light": NSApp.appearance = NSAppearance(named: .aqua)
+    case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+    default: NSApp.appearance = nil
+    }
+  }
+
+  /// Тема прямо из settings.json — до первого кадра Flutter, чтобы окно
+  /// не появлялось сначала в системной теме и не перекрашивалось следом.
+  static func applySavedTheme() {
+    let url = URL(fileURLWithPath: NSHomeDirectory()
+      + "/Library/Application Support/app.yuko.tsukiko/settings.json")
+    guard let data = try? Data(contentsOf: url),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return }
+    applyTheme(json["theme"] as? String)
+  }
+
   static func showMainWindow() {
     NSApp.activate(ignoringOtherApps: true)
     if let window = NSApp.windows.first(where: { $0 is MainFlutterWindow }) {

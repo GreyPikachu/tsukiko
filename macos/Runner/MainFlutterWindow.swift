@@ -4,6 +4,7 @@ import macos_window_utils
 
 class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
+    DictationBridge.applySavedTheme()
     let windowFrame = self.frame
     let macOSWindowUtilsViewController = MacOSWindowUtilsViewController()
     self.contentViewController = macOSWindowUtilsViewController
