@@ -306,6 +306,16 @@ begin
   AlreadyInstalledPage.Add(CustomMessage('AlreadyInstalledReinstall'));
   AlreadyInstalledPage.Add(CustomMessage('AlreadyInstalledUninstall'));
   AlreadyInstalledPage.SelectedValueIndex := 0;
+
+  { Кружки и галочки в списках Inno рисует сам, и отступ слева у него
+    по умолчанию не растёт с масштабом экрана, а значок — растёт. На 200%
+    кружок выбора и галочка «Запустить tsukiko» вылезали за левый край и
+    обрезались, а от галочки оставался синий клин. Отступ в масштабе
+    экрана возвращает значку место целиком; на 100% это те же несколько
+    пикселей, что и были. }
+  AlreadyInstalledPage.CheckListBox.Offset := ScaleX(6);
+  WizardForm.TasksList.Offset := ScaleX(6);
+  WizardForm.RunList.Offset := ScaleX(6);
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
