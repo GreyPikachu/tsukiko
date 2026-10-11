@@ -149,8 +149,10 @@ class PanelWindow {
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam);
   void PositionNearTray();
+  SIZE PhysicalSize(HMONITOR monitor) const;
 
   HWND window_ = nullptr;
+  // Высота содержимого в логических точках — её сообщает сама вёрстка.
   int height_ = 420;
   std::unique_ptr<flutter::FlutterViewController> controller_;
 };

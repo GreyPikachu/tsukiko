@@ -22,6 +22,9 @@ HICON AppIcon() {
 namespace {
 
 constexpr wchar_t kClassName[] = L"TsukikoPanelWindow";
+// Ширина в логических точках, как у поповера на macOS. В пиксели её
+// переводит PanelWindow::PhysicalSize — под масштаб того экрана, где
+// панель открывается.
 constexpr int kWidth = 340;
 
 constexpr wchar_t kHudClassName[] = L"TsukikoHudWindow";
@@ -117,22 +120,48 @@ LRESULT CALLBACK PanelWindow::WndProc(HWND hwnd, UINT message, WPARAM wparam,
   return DefWindowProc(hwnd, message, wparam, lparam);
 }
 
+/// Размер панели в пикселях экрана [monitor].
+///
+/// Flutter меряет логическими точками, а окно Windows — пикселями. Без
+/// перевода на экране со 150–200% панель выходила вдвое уже и ниже, чем
+/// её вёрстка, и всё содержимое сплющивалось — та же беда, что раньше
+/// была у окна настроек.
+SIZE PanelWindow::PhysicalSize(HMONITOR monitor) const {
+  UINT dpi = monitor ? FlutterDesktopGetDpiForMonitor(monitor) : 96;
+  double scale = dpi > 0 ? dpi / 96.0 : 1.0;
+  return {static_cast<LONG>(kWidth * scale + 0.5),
+          static_cast<LONG>(height_ * scale + 0.5)};
+}
+
 /// У значка в области уведомлений, а не посреди экрана: панель принадлежит
 /// значку, и появляться она должна там, куда только что щёлкнули.
 void PanelWindow::PositionNearTray() {
   POINT pt;
   GetCursorPos(&pt);
+  // Рабочая область того экрана, где значок, а не главного: полоса задач
+  // может быть на втором мониторе со своим масштабом.
+  HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO info = {sizeof(info)};
   RECT work;
-  SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+  if (GetMonitorInfoW(monitor, &info)) {
+    work = info.rcWork;
+  } else {
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+  }
+  const SIZE size = PhysicalSize(monitor);
 
-  int x = pt.x - kWidth / 2;
+  int x = pt.x - size.cx / 2;
   if (x < work.left) x = work.left;
-  if (x + kWidth > work.right) x = work.right - kWidth;
+  if (x + size.cx > work.right) x = work.right - size.cx;
   // Значок обычно внизу справа, и панель встаёт над ним; если полоса
   // задач сверху — под ним.
-  int y = (pt.y > (work.top + work.bottom) / 2) ? work.bottom - height_
+  int y = (pt.y > (work.top + work.bottom) / 2) ? work.bottom - size.cy
                                                 : work.top;
-  SetWindowPos(window_, HWND_TOPMOST, x, y, kWidth, height_, SWP_NOACTIVATE);
+  SetWindowPos(window_, HWND_TOPMOST, x, y, size.cx, size.cy, SWP_NOACTIVATE);
+  if (controller_ && controller_->view()) {
+    MoveWindow(controller_->view()->GetNativeWindow(), 0, 0, size.cx, size.cy,
+               TRUE);
+  }
 }
 
 void PanelWindow::Show() {
@@ -160,13 +189,18 @@ bool PanelWindow::IsVisible() const {
 void PanelWindow::SetContentHeight(int height) {
   if (height <= 0 || height == height_) return;
   height_ = height;
+  if (IsVisible()) {
+    PositionNearTray();
+    return;
+  }
+  const SIZE size =
+      PhysicalSize(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST));
   if (controller_ && controller_->view()) {
-    MoveWindow(controller_->view()->GetNativeWindow(), 0, 0, kWidth, height_,
+    MoveWindow(controller_->view()->GetNativeWindow(), 0, 0, size.cx, size.cy,
                TRUE);
   }
-  SetWindowPos(window_, nullptr, 0, 0, kWidth, height_,
+  SetWindowPos(window_, nullptr, 0, 0, size.cx, size.cy,
                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-  if (IsVisible()) PositionNearTray();
 }
 
 
