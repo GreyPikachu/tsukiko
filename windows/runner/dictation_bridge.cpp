@@ -1601,7 +1601,13 @@ void DictationBridge::StartAudioRecording(
   start->done = std::move(done);
   mic_start_ = start;
   HWND notify = main_window_;
-  mic_thread_ = std::thread([this, start, notify]() {
+  ma_context* context = AudioContext();
+  mic_thread_ = std::thread([this, start, notify, context]() {
+    // У потока свой MTA на время запуска. Контекст общий и создан на
+    // главном потоке: иначе свой контекст устройства при ma_device_uninit
+    // (уже на главном) звал бы CoUninitialize без пары и снимал бы
+    // OleInitialize главного потока.
+    const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     auto* device = new ma_device();
     ma_device_config devConfig = ma_device_config_init(ma_device_type_capture);
     devConfig.capture.format = ma_format_s16;
@@ -1610,7 +1616,7 @@ void DictationBridge::StartAudioRecording(
     devConfig.dataCallback = AudioCaptureCallback;
     devConfig.pUserData = this;
 
-    bool ok = ma_device_init(nullptr, &devConfig, device) == MA_SUCCESS;
+    bool ok = ma_device_init(context, &devConfig, device) == MA_SUCCESS;
     if (ok && ma_device_start(device) != MA_SUCCESS) {
       ma_device_uninit(device);
       ok = false;
@@ -1626,7 +1632,18 @@ void DictationBridge::StartAudioRecording(
                       reinterpret_cast<LPARAM>(message))) {
       delete message;
     }
+    if (SUCCEEDED(com)) CoUninitialize();
   });
+}
+
+// Один контекст miniaudio на процесс, созданный на главном потоке. Там COM
+// уже STA (OleInitialize), MTA-инициализация контекста получает
+// RPC_E_CHANGED_MODE, и CoUninitialize он не зовёт ни при каком разборе.
+// nullptr — пусть устройство заводит свой, как раньше.
+ma_context* DictationBridge::AudioContext() {
+  static ma_context context;
+  static const bool ready = ma_context_init(nullptr, 0, nullptr, &context) == MA_SUCCESS;
+  return ready ? &context : nullptr;
 }
 
 void DictationBridge::SettleMicStart() {

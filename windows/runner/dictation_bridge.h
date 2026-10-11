@@ -18,6 +18,8 @@
 #include <thread>
 #include <functional>
 
+struct ma_context;
+
 /// Мост к родному коду Windows: глобальный перехват клавиш, запись звука,
 /// вставка текста, Корзина, автозапуск и значок в системном трее.
 ///
@@ -127,6 +129,7 @@ class DictationBridge {
   /// новым запуском или выходом.
   void SettleMicStart();
   void CompleteMicStart(const std::shared_ptr<MicStart>& start);
+  static ma_context* AudioContext();
   std::thread mic_thread_;
   std::shared_ptr<MicStart> mic_start_;
   double GetAudioLevel();
