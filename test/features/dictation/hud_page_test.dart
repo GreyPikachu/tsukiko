@@ -437,6 +437,10 @@ void main() {
       await layout(tester, {'mode': 'timer', 'scaleValue': 1.0});
       await send(tester, HudState.recording);
       expect(icon(CupertinoIcons.mic_fill), findsOneWidget);
+      // Красный всю запись, даже в тишине, и без времени.
+      final mic = tester.widget<MacosIcon>(icon(CupertinoIcons.mic_fill));
+      expect(mic.color, MacosColors.systemRedColor);
+      expect(find.textContaining(':'), findsNothing);
       await tester.tap(icon(CupertinoIcons.stop_fill));
       expect(calls.last.arguments, 'stop');
       await send(tester, HudState.transcribing);
@@ -444,7 +448,7 @@ void main() {
       await tester.tap(icon(CupertinoIcons.xmark));
       expect(calls.last.arguments, 'abort');
       await send(tester, HudState.done);
-      expect(find.text('Готово'), findsOneWidget);
+      expect(icon(CupertinoIcons.checkmark_circle_fill), findsOneWidget);
       expect(icon(CupertinoIcons.xmark), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },

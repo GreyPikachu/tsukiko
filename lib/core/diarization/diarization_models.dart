@@ -1,5 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
+import '../logger.dart';
 import '../models.dart' show Download, modelPathFor;
 import 'sha256.dart';
 
@@ -49,6 +53,22 @@ class DiarizationModels {
   /// Сколько мегабайт осталось скачать.
   static int downloadMb() => isInstalled ? 0 : mb;
 
+  /// Загрузка, что идёт сейчас, — одна на всё приложение: режим включили,
+  /// загрузка пошла, и первая же расшифровка ждёт её, а не качает вторую.
+  static Future<String?>? _running;
+  static Download? current;
+
+  /// Процент текущей загрузки для инспектора; null — ничего не качается.
+  static final percent = ValueNotifier<int?>(null);
+
+  /// Почему прошлая загрузка не удалась; null — не было беды.
+  static final failure = ValueNotifier<String?>(null);
+
+  /// Начать загрузку сразу, как режим включили, а не на первой записи.
+  static void prefetch() {
+    if (!isInstalled) unawaited(ensureInstalled());
+  }
+
   /// Скачать модель. Возвращает null, если всё на месте, иначе — почему
   /// не вышло (для журнала и подписи; текст движка не переводится).
   ///
@@ -58,22 +78,46 @@ class DiarizationModels {
     bool Function()? cancelled,
   }) async {
     if (isInstalled) return null;
-    final download = Download(url, path, title: file);
-    final result = await download.run(
-      onProgress: () {
-        if (cancelled?.call() ?? false) download.cancel();
-        onProgress?.call(download.percent / 100);
-      },
-    );
-    if (result == null) return download.error ?? 'download cancelled';
-    final sum = await sha256OfFile(path);
-    if (sum != sha256) {
-      try {
-        File(path).deleteSync();
-      } catch (_) {}
-      return 'sha256 mismatch for $file: $sum';
+    void forward() {
+      if (cancelled?.call() ?? false) current?.cancel();
+      if (percent.value case final p?) onProgress?.call(p / 100);
     }
-    onProgress?.call(1);
-    return null;
+
+    percent.addListener(forward);
+    try {
+      return await (_running ??= _fetch());
+    } finally {
+      percent.removeListener(forward);
+    }
+  }
+
+  static Future<String?> _fetch() async {
+    failure.value = null;
+    final download = current = Download(url, path, title: file);
+    percent.value = 0;
+    try {
+      final result = await download.run(
+        onProgress: () => percent.value = download.percent,
+      );
+      if (result == null) {
+        if (download.cancelled) return 'download cancelled';
+        return failure.value = download.error ?? 'download failed';
+      }
+      final sum = await sha256OfFile(path);
+      if (sum != sha256) {
+        try {
+          File(path).deleteSync();
+        } catch (_) {}
+        return failure.value = 'sha256 mismatch for $file: $sum';
+      }
+      return null;
+    } finally {
+      if (failure.value case final problem?) {
+        Log.error('Diarization', 'Model not installed: $problem');
+      }
+      current = null;
+      _running = null;
+      percent.value = null;
+    }
   }
 }

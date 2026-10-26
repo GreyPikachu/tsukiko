@@ -491,7 +491,7 @@ void main() {
     testWidgets('navigation to 5th tab (vocabulary) displays all main sections', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 700));
+      await tester.binding.setSurfaceSize(const Size(780, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 
@@ -524,7 +524,7 @@ void main() {
     testWidgets('quick-add bar handles button click, Enter shortcut, and duplicate warnings', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 700));
+      await tester.binding.setSurfaceSize(const Size(780, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 
@@ -586,7 +586,7 @@ void main() {
     testWidgets('filter segmented control toggles between All, Hints, and Replacements', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 700));
+      await tester.binding.setSurfaceSize(const Size(780, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 
@@ -634,7 +634,7 @@ void main() {
     testWidgets('search filtering via MacosSearchField filters items dynamically', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 900));
+      await tester.binding.setSurfaceSize(const Size(780, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 
@@ -687,7 +687,7 @@ void main() {
     testWidgets('empty state displays suggestions and clicking them adds entries', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 700));
+      await tester.binding.setSurfaceSize(const Size(780, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 
@@ -731,7 +731,7 @@ void main() {
     testWidgets('VocabularyItemRow toggling, in-place edit, deletion, and undo banner', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 700));
+      await tester.binding.setSurfaceSize(const Size(780, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 
@@ -804,7 +804,7 @@ void main() {
     testWidgets('Dictation and Transcriber tabs do not render VocabularySummaryCard (uncluttered)', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 700));
+      await tester.binding.setSurfaceSize(const Size(780, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 
@@ -841,7 +841,7 @@ void main() {
     testWidgets('VocabularySummaryCard standalone component renders and fires callbacks', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(const Size(580, 400));
+      await tester.binding.setSurfaceSize(const Size(780, 400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 
@@ -888,7 +888,7 @@ void main() {
     testWidgets(
       'Settings 5th tab (Словарь) does not show token budget card as vocabulary is purely local',
       (tester) async {
-        await tester.binding.setSurfaceSize(const Size(580, 1400));
+        await tester.binding.setSurfaceSize(const Size(780, 1400));
         addTearDown(() => tester.binding.setSurfaceSize(null));
         tester.platformDispatcher.localesTestValue = const [Locale('ru')];
 

@@ -967,6 +967,7 @@ class DictationSettings {
     Hotkey? cancel,
     this.idleSeconds = 180,
     this.insert = true,
+    this.returnToTarget = true,
     bool hud = true,
     IndicatorMode? indicatorMode,
     this.punctuate = true,
@@ -1002,6 +1003,10 @@ class DictationSettings {
   /// Вставлять готовый текст в активное окно. Выключено — текст только
   /// ложится в буфер обмена.
   bool insert;
+
+  /// Вставлять туда, где стоял курсор, когда запись остановили: вернуть
+  /// то окно вперёд, даже если человек успел уйти в другое.
+  bool returnToTarget;
 
   /// Плавающая панель записи поверх всех окон.
   IndicatorMode indicatorMode;
@@ -1049,6 +1054,7 @@ class DictationSettings {
         cancel: Hotkey.fromJson(j['cancel'], Hotkey.none),
         idleSeconds: (j['idleSeconds'] as int?) ?? 180,
         insert: (j['insert'] as bool?) ?? true,
+        returnToTarget: (j['returnToTarget'] as bool?) ?? true,
         indicatorMode: IndicatorMode.fromValue(j['indicatorMode'], legacyHud: (j['hud'] as bool?) ?? true),
         punctuate: (j['punctuate'] as bool?) ?? true,
         threads: (j['threads'] as int?) ?? 4,
@@ -1083,6 +1089,7 @@ class DictationSettings {
         'cancel': cancel.toJson(),
         'idleSeconds': idleSeconds,
         'insert': insert,
+        'returnToTarget': returnToTarget,
         'hud': hud,
         'indicatorMode': indicatorMode.name,
         'punctuate': punctuate,

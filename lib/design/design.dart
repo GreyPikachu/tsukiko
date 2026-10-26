@@ -400,7 +400,9 @@ class Check extends StatefulWidget {
   const Check(this.label, this.value, this.onChanged, {super.key});
   final String label;
   final bool value;
-  final ValueChanged<bool> onChanged;
+
+  /// null — галка видна, но недоступна.
+  final ValueChanged<bool>? onChanged;
 
   @override
   State<Check> createState() => _CheckState();
@@ -411,11 +413,13 @@ class _CheckState extends State<Check> {
 
   @override
   Widget build(BuildContext context) => MouseRegion(
-    onEnter: (_) => setState(() => _hover = true),
+    onEnter: (_) => setState(() => _hover = widget.onChanged != null),
     onExit: (_) => setState(() => _hover = false),
-    cursor: SystemMouseCursors.click,
+    cursor: widget.onChanged == null
+        ? SystemMouseCursors.basic
+        : SystemMouseCursors.click,
     child: GestureDetector(
-      onTap: () => widget.onChanged(!widget.value),
+      onTap: () => widget.onChanged?.call(!widget.value),
       child: AnimatedContainer(
         duration: Motion.dur(context, Motion.press),
         curve: Curves.easeOut,
@@ -432,7 +436,12 @@ class _CheckState extends State<Check> {
           children: [
             MacosCheckbox(value: widget.value, onChanged: widget.onChanged),
             const SizedBox(width: Gap.inner),
-            Expanded(child: Text(widget.label, style: Type.control)),
+            Expanded(
+              child: Opacity(
+                opacity: widget.onChanged == null ? .5 : 1,
+                child: Text(widget.label, style: Type.control),
+              ),
+            ),
           ],
         ),
       ),

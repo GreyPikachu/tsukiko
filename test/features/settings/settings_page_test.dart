@@ -75,7 +75,7 @@ void main() {
   testWidgets('форма добавления в словарь использует ровные поля и кнопку', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(580, 560));
+    await tester.binding.setSurfaceSize(const Size(780, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     tester.platformDispatcher.localesTestValue = const [Locale('ru')];
     final cubit = _FakeSettingsCubit(
@@ -131,7 +131,7 @@ void main() {
   testWidgets('единый редактор индикатора доступен из настроек диктовки', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(580, 560));
+    await tester.binding.setSurfaceSize(const Size(780, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     tester.platformDispatcher.localesTestValue = const [Locale('ru')];
     NativeBridge.debugReset();
@@ -178,7 +178,7 @@ void main() {
   });
 
   testWidgets('вкладка диктовки не содержит сводку словаря', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(580, 560));
+    await tester.binding.setSurfaceSize(const Size(780, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     tester.platformDispatcher.localesTestValue = const [Locale('ru')];
     final cubit = _FakeSettingsCubit(
@@ -216,7 +216,7 @@ void main() {
   });
 
   testWidgets('начало загрузки возвращает список к индикатору', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(580, 560));
+    await tester.binding.setSurfaceSize(const Size(780, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     tester.platformDispatcher.localesTestValue = const [Locale('ru')];
     final cubit = _FakeSettingsCubit();
@@ -257,9 +257,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('окно настроек рисуется на всех пяти вкладках', (tester) async {
+  testWidgets('окно настроек рисуется на всех вкладках', (tester) async {
     // Размер настоящего окна: раскладка обязана сходиться именно в нём.
-    await tester.binding.setSurfaceSize(const Size(580, 560));
+    await tester.binding.setSurfaceSize(const Size(780, 560));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     // Тестовый движок по умолчанию отдаёт en_US — тексты ниже сверены
     // с русским, поэтому закрепляем его явно.
@@ -271,12 +271,14 @@ void main() {
     // Вкладки названы по хозяину настройки: сперва два потребителя
     // моделей, потом общий склад, словарь и само приложение.
     for (final (label, marker) in [
-      ('Расшифровщик', 'Сохранять готовый текст на диск'),
+      ('Расшифровщик', 'Показывать метки времени'),
+      ('Сохранение', 'Сохранять готовый текст на диск'),
       ('Диктовка', 'Держать и говорить'),
+      ('Голос', 'ГОЛОСОВАЯ АКТИВАЦИЯ'),
       ('Модели', 'АКТИВНЫЕ МОДЕЛИ'),
       ('Словарь', 'СЛОВАРЬ И ЗАМЕНЫ'),
       (
-        'Приложение',
+        'Общие',
         os.platformId == 'windows'
             ? 'Показывать значок на панели задач'
             : 'Показывать значок в ${os.appIconAreaName}',
@@ -301,10 +303,9 @@ void main() {
     expect(find.text('Без словарных подсказок'), findsOneWidget);
     expect(tester.takeException(), isNull, reason: 'каталог моделей');
 
-    // Скилл живёт на вкладке «Приложение», ниже сгиба: список длинный,
-    // и до раздела надо доехать. Проверяем, что он там вообще есть, —
-    // иначе кнопка молча не появится ни у кого.
-    await tester.tap(find.text('Приложение'));
+    // Скилл живёт на вкладке «Интеграции». Проверяем, что он там вообще
+    // есть, — иначе кнопка молча не появится ни у кого.
+    await tester.tap(find.text('Интеграции'));
     await tester.pump();
     // Заголовки разделов рисуются прописными (SectionTitle), поэтому
     // ищем так, как оно и стоит на экране.
@@ -348,7 +349,7 @@ void main() {
     testWidgets(
       'кнопка открытия папки журналов доступна во вкладке приложения',
       (tester) async {
-        await tester.binding.setSurfaceSize(const Size(580, 600));
+        await tester.binding.setSurfaceSize(const Size(780, 600));
         addTearDown(() => tester.binding.setSurfaceSize(null));
         tester.platformDispatcher.localesTestValue = const [Locale('ru')];
         final cubit = _FakeSettingsCubit(SettingsState(tab: 'app'));
@@ -398,11 +399,11 @@ void main() {
       FileSelectorPlatform.instance = mock;
       addTearDown(() => FileSelectorPlatform.instance = prevPlatform);
 
-      await tester.binding.setSurfaceSize(const Size(580, 600));
+      await tester.binding.setSurfaceSize(const Size(780, 600));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
       final cubit = _FakeSettingsCubit(
-        SettingsState(tab: 'transcriber', libraryPath: '/non/existent/path'),
+        SettingsState(tab: 'saving', libraryPath: '/non/existent/path'),
       );
       addTearDown(cubit.close);
 
@@ -441,11 +442,11 @@ void main() {
       FileSelectorPlatform.instance = mock;
       addTearDown(() => FileSelectorPlatform.instance = prevPlatform);
 
-      await tester.binding.setSurfaceSize(const Size(580, 600));
+      await tester.binding.setSurfaceSize(const Size(780, 600));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
       final cubit = _FakeSettingsCubit(
-        SettingsState(tab: 'transcriber', libraryPath: '/old/path'),
+        SettingsState(tab: 'saving', libraryPath: '/old/path'),
       );
       addTearDown(cubit.close);
 
@@ -476,10 +477,10 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('при узком окне вкладки настроек прокручиваются горизонтально без обрезания', (
+    testWidgets('при узком окне все вкладки видны в колонке без обрезания', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(const Size(380, 500));
+      await tester.binding.setSurfaceSize(const Size(600, 480));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       tester.platformDispatcher.localesTestValue = const [Locale('ru')];
       final cubit = _FakeSettingsCubit(SettingsState(tab: 'transcriber'));
@@ -498,14 +499,18 @@ void main() {
       );
       await tester.pump();
 
-      // На узком экране (380 логических пикселей) активен SingleChildScrollView в полосе вкладок
-      expect(find.byType(SingleChildScrollView), findsOneWidget);
-      // Все 5 вкладок существуют в дереве и не вызывают переполнения (RenderFlex overflow)
-      expect(find.text('Расшифровщик'), findsOneWidget);
-      expect(find.text('Диктовка'), findsOneWidget);
-      expect(find.text('Словарь'), findsOneWidget);
-      expect(find.text('Модели'), findsOneWidget);
-      expect(find.text('Приложение'), findsOneWidget);
+      for (final tab in [
+        'Расшифровщик',
+        'Сохранение',
+        'Диктовка',
+        'Голос',
+        'Словарь',
+        'Модели',
+        'Общие',
+        'Интеграции',
+      ]) {
+        expect(find.text(tab), findsOneWidget, reason: tab);
+      }
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     });

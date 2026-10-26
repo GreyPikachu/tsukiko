@@ -19,7 +19,7 @@ final class HUDModel: ObservableObject {
     if editing { return max(2, outstanding) }
     return max(0, outstanding - (state == .recording ? 0 : 1))
   }
-  var size: NSSize { mode == .timer ? NSSize(width: 176, height: 44) : NSSize(width: queueCount > 0 ? 420 : 372, height: 52) }
+  var size: NSSize { mode == .timer ? NSSize(width: 92, height: 34) : NSSize(width: queueCount > 0 ? 420 : 372, height: 52) }
   @Published var elapsed: TimeInterval = 0
   /// Микрофон уже отдаёт звук. Пока нет, панель говорит «включаю», а не «записываю».
   @Published var live = true
@@ -36,15 +36,8 @@ final class HUDModel: ObservableObject {
   var onClearQueue: () -> Void = {}
   var onRecord: () -> Void = {}
   func label(_ key: String, _ fallback: String) -> String { labels[key] ?? fallback }
-  /// Говорит ли человек: уровень уже отсчитан от фона комнаты, ноль — тишина
-  /// или дыхание. Хвост 0,4 с не даёт микрофону мигать между словами.
   var warming: Bool { !editing && state == .recording && !live }
-  var voiceUntil = Date.distantPast
-  var voice: Bool { Date() < voiceUntil }
-  func push(level: Double) {
-    levels.removeFirst(); levels.append(level)
-    if level > 0.15 { voiceUntil = Date().addingTimeInterval(0.4) }
-  }
+  func push(level: Double) { levels.removeFirst(); levels.append(level) }
 }
 
 struct HUDView: View {
@@ -79,19 +72,20 @@ struct HUDView: View {
   var body: some View {
     Group {
       if model.mode == .timer {
-        HStack(spacing: 9) {
+        // Только значок и две кнопки: время и уровень живут в большой плашке.
+        HStack(spacing: 4) {
           if displayState == .recording || displayState == .transcribing {
             let recording = displayState == .recording
-            // Слева и справа по одной ширине, чтобы время встало по центру.
-            ZStack(alignment: .leading) {
-              if recording {
-                Image(systemName: model.warming ? "mic" : "mic.fill")
-                  .foregroundColor(model.warming ? .secondary : model.voice || model.editing ? .red : .primary)
-              } else { ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 14) }
-            }.frame(width: recording && !model.warming ? 53 : 22, alignment: .leading)
-            Text(model.warming ? "Включаю…" : recording ? time : "Распознаю…")
-              .font(.system(size: 13, weight: .medium).monospacedDigit()).lineLimit(1)
-              .frame(maxWidth: .infinity, alignment: recording && !model.warming ? .center : .leading)
+            // Серый — пока микрофон открывается, дальше красный всю запись.
+            if recording {
+              Image(systemName: model.warming ? "mic" : "mic.fill")
+                .foregroundColor(model.warming ? .secondary : .red).frame(width: 18)
+                .accessibilityLabel(model.warming ? "Включаю микрофон" : "Идёт запись")
+            } else {
+              ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 18)
+                .accessibilityLabel("Распознаю")
+            }
+            Spacer(minLength: 0)
             if recording {
               Button { action(model.onCancel) } label: {
                 Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
@@ -106,11 +100,11 @@ struct HUDView: View {
               .accessibilityLabel(recording ? "Остановить запись" : "Отменить расшифровку")
               .help(recording ? "Остановить запись" : "Отменить расшифровку")
           } else {
+            // Подписи не влезают: значок, а текст — в подсказке.
             Image(systemName: resultIcon).foregroundColor(displayState == .done ? .green : .secondary)
-            Text(resultText).font(.system(size: 12)).lineLimit(1).help(resultText)
-            Spacer(minLength: 0)
+              .frame(maxWidth: .infinity).help(resultText).accessibilityLabel(resultText)
           }
-        }.padding(.horizontal, 13)
+        }.padding(.horizontal, 10)
       } else {
         HStack(spacing: 9) {
           if model.warming {
@@ -213,7 +207,7 @@ private struct HUDEditorView: View {
       HStack {
         Button { model.onMode(-1) } label: { Image(systemName: "chevron.left").frame(width: 28, height: 26) }.help(model.label("previous", "Предыдущий стиль")).accessibilityLabel(model.label("previous", "Предыдущий стиль"))
         Spacer()
-        Text(model.label(model.mode.rawValue, ["panel": "Плашка записи", "status": "Строка меню / трей", "timer": "Плавающий таймер", "off": "Выключено"][model.mode.rawValue]!)).font(.system(size: 12, weight: .medium))
+        Text(model.label(model.mode.rawValue, ["panel": "Плашка записи", "status": "Строка меню / трей", "timer": "Компактная плашка", "off": "Выключено"][model.mode.rawValue]!)).font(.system(size: 12, weight: .medium))
         Spacer()
         Button { model.onMode(1) } label: { Image(systemName: "chevron.right").frame(width: 28, height: 26) }.help(model.label("next", "Следующий стиль")).accessibilityLabel(model.label("next", "Следующий стиль"))
       }.buttonStyle(PlainButtonStyle())

@@ -402,7 +402,16 @@ class NativeBridge {
     }
   }
 
-  Future<bool> insert(String text) async {
+  /// Запомнить, где сейчас курсор, чтобы потом вставить именно туда.
+  Future<int?> markTarget() async {
+    try {
+      return await _channel.invokeMethod<int>('markTarget');
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  Future<bool> insert(String text, {int? target}) async {
     final previous = _pasteReady;
     final ready = Completer<void>();
     _pasteReady = ready.future;
@@ -410,7 +419,11 @@ class NativeBridge {
     var sent = false;
     try {
       sent =
-          await _channel.invokeMethod<bool>('paste', {'text': text}) ?? false;
+          await _channel.invokeMethod<bool>('paste', {
+            'text': text,
+            'target': ?target,
+          }) ??
+          false;
       return sent;
     } finally {
       if (sent) {

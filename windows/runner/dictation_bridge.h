@@ -138,6 +138,26 @@ class DictationBridge {
   // Вставка текста и буфер обмена
   bool PasteText(const std::string& text);
 
+  /// Куда вставлять: окно и его внутреннее окно с фокусом в момент, когда
+  /// запись остановили. Chromium, Electron и Teams принимают клавиши не
+  /// верхним окном, а дочерним, и без него Ctrl+V падает в пустоту.
+  struct PasteTarget { HWND top; HWND focus; };
+  std::map<int, PasteTarget> paste_targets_;
+  int last_paste_target_ = 0;
+  int MarkPasteTarget();
+  void ReturnTo(const PasteTarget& target);
+
+  /// Вставка, которая ждёт, пока окно цели выйдет вперёд.
+  struct PendingPaste {
+    HWND top;
+    std::string text;
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result;
+    int ticks = 0;
+    int settle = -1;
+  };
+  std::optional<PendingPaste> pending_paste_;
+  void FinishPendingPaste();
+
   // Корзина и автозапуск
   bool MoveToTrash(const std::string& path);
   bool GetLoginItemEnabled();

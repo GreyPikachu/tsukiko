@@ -55,6 +55,8 @@ static const ULONG_PTR kOurInput = 0x7375'6B69;  // 'suki'
 #define ID_CLIPBOARD_TIMER 2005
 // Через сколько миллисекунд после Ctrl+V его возвращать.
 #define CLIPBOARD_RESTORE_MS 1500
+// Ожидание окна цели перед вставкой, шагами по 20 мс.
+#define ID_PASTE_TIMER 2006
 
 namespace {
 
@@ -274,6 +276,8 @@ void DictationBridge::AttachPanel(flutter::BinaryMessenger* messenger,
 }
 
 void DictationBridge::Shutdown() {
+  // Начатую вставку доводим: текст уже распознан, и Dart ждёт ответа.
+  FinishPendingPaste();
   // Выходим, не дождавшись таймера, — вернуть буфер надо сейчас, иначе
   // скопированное до диктовки пропало бы вместе с приложением.
   if (clipboard_restore_pending_) {
@@ -621,12 +625,31 @@ void DictationBridge::RegisterHandler(
       result->Success(flutter::EncodableValue(GetAudioLevel()));
     } else if (method == "micLive") {
       result->Success(flutter::EncodableValue(mic_live_.load()));
+    } else if (method == "markTarget") {
+      const int id = MarkPasteTarget();
+      result->Success(id ? flutter::EncodableValue(id) : flutter::EncodableValue());
     } else if (method == "paste") {
       const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
       if (args) {
         auto textIt = args->find(flutter::EncodableValue("text"));
         if (textIt != args->end()) {
           if (const auto* text = std::get_if<std::string>(&textIt->second)) {
+            auto targetIt = args->find(flutter::EncodableValue("target"));
+            if (targetIt != args->end()) {
+              if (const auto* id = std::get_if<int32_t>(&targetIt->second)) {
+                auto found = paste_targets_.find(*id);
+                if (found != paste_targets_.end()) {
+                  // Отвечаем, когда вставим: ждать окно цели здесь же
+                  // значило бы подвесить окно приложения до секунды.
+                  FinishPendingPaste();
+                  ReturnTo(found->second);
+                  pending_paste_ = PendingPaste{found->second.top, *text, std::move(result)};
+                  paste_targets_.erase(found);
+                  SetTimer(main_window_, ID_PASTE_TIMER, 20, nullptr);
+                  return;
+                }
+              }
+            }
             result->Success(flutter::EncodableValue(PasteText(*text)));
             return;
           }
@@ -1003,6 +1026,22 @@ bool DictationBridge::HandleWindowMessage(HWND hwnd, UINT message, WPARAM wparam
   if (message == WM_TIMER && wparam == ID_HUD_TIMER) {
     KillTimer(main_window_, ID_HUD_TIMER);
     if (current_hud_state_ != "recording" && current_hud_state_ != "transcribing") SetHudState("hidden");
+    return true;
+  }
+  if (message == WM_TIMER && wparam == ID_PASTE_TIMER) {
+    if (!pending_paste_) {
+      KillTimer(main_window_, ID_PASTE_TIMER);
+      return true;
+    }
+    // Ctrl+V получает то, что впереди: ждём окно цели до секунды, потом
+    // ещё 100 мс, чтобы фокус дошёл до поля.
+    auto& paste = *pending_paste_;
+    if (paste.settle < 0) {
+      if (GetForegroundWindow() == paste.top || ++paste.ticks >= 50) paste.settle = 5;
+      return true;
+    }
+    if (paste.settle-- > 0) return true;
+    FinishPendingPaste();
     return true;
   }
   if (message == WM_TIMER && wparam == ID_CLIPBOARD_TIMER) {
@@ -1991,6 +2030,61 @@ void MarkClipboardPrivate() {
 /// что в Win+V последним остаётся прежняя копия. Если за время ожидания
 /// буфер поменял кто-то другой, ничего не возвращаем. Вторая диктовка до
 /// возврата не сохраняет «прежним» наш же текст.
+int DictationBridge::MarkPasteTarget() {
+  HWND top = GetForegroundWindow();
+  if (!top) return 0;
+  DWORD pid = 0;
+  const DWORD thread = GetWindowThreadProcessId(top, &pid);
+  // Впереди мы сами — вставлять некуда, кроме как в то, что впереди.
+  if (pid == GetCurrentProcessId()) return 0;
+  GUITHREADINFO info = {};
+  info.cbSize = sizeof(info);
+  HWND focus = GetGUIThreadInfo(thread, &info) ? info.hwndFocus : nullptr;
+  paste_targets_[++last_paste_target_] = {top, focus};
+  // Цели отменённых записей никто не заберёт — держим только свежие.
+  while (paste_targets_.size() > 16) paste_targets_.erase(paste_targets_.begin());
+  return last_paste_target_;
+}
+
+/// Вывести окно цели вперёд и вернуть фокус в его поле. Свой выбор
+/// каретки у поля остаётся при нём, так что текст ляжет туда же.
+void DictationBridge::ReturnTo(const PasteTarget& target) {
+  if (!IsWindow(target.top)) return;
+  if (GetForegroundWindow() != target.top) {
+    if (IsIconic(target.top)) ShowWindow(target.top, SW_RESTORE);
+    // Вперёд Windows пускает только того, кто получил последний ввод:
+    // пустое движение мыши делает нас таким (тот же приём у PowerToys).
+    INPUT nudge = {};
+    nudge.type = INPUT_MOUSE;
+    nudge.mi.dwExtraInfo = kOurInput;
+    SendInput(1, &nudge, sizeof(INPUT));
+    if (!SetForegroundWindow(target.top)) {
+      const DWORD self = GetCurrentThreadId();
+      const DWORD front = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
+      AttachThreadInput(self, front, TRUE);
+      BringWindowToTop(target.top);
+      SetForegroundWindow(target.top);
+      AttachThreadInput(self, front, FALSE);
+    }
+  }
+  if (target.focus && target.focus != target.top && IsWindow(target.focus)) {
+    const DWORD self = GetCurrentThreadId();
+    const DWORD owner = GetWindowThreadProcessId(target.focus, nullptr);
+    if (AttachThreadInput(self, owner, TRUE)) {
+      SetFocus(target.focus);
+      AttachThreadInput(self, owner, FALSE);
+    }
+  }
+}
+
+void DictationBridge::FinishPendingPaste() {
+  if (!pending_paste_) return;
+  KillTimer(main_window_, ID_PASTE_TIMER);
+  auto paste = std::move(*pending_paste_);
+  pending_paste_.reset();
+  paste.result->Success(flutter::EncodableValue(PasteText(paste.text)));
+}
+
 bool DictationBridge::PasteText(const std::string& text) {
   if (hud_ && hud_->editing()) return false;
   if (text.empty()) return true;

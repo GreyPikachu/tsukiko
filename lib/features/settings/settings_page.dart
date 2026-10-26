@@ -50,7 +50,8 @@ void runSettings() {
   runApp(const SettingsApp());
 }
 
-/// Вкладки названы по потребителю, а не по виду настройки.
+/// Вкладки названы по потребителю, а не по виду настройки. Их больше,
+/// а пунктов в каждой меньше: длинную вкладку не листали до конца.
 List<({String id, String label, IconData icon})> _settingsTabs(
   AppLocalizations l10n,
 ) => [
@@ -59,7 +60,9 @@ List<({String id, String label, IconData icon})> _settingsTabs(
     label: l10n.settingsTabTranscription,
     icon: CupertinoIcons.doc_text,
   ),
+  (id: 'saving', label: l10n.settingsTabSaving, icon: CupertinoIcons.folder),
   (id: 'dictation', label: l10n.settingsTabDictation, icon: CupertinoIcons.mic),
+  (id: 'voice', label: l10n.settingsTabVoice, icon: CupertinoIcons.waveform),
   (
     id: 'vocabulary',
     label: l10n.settingsTabVocabulary,
@@ -67,6 +70,11 @@ List<({String id, String label, IconData icon})> _settingsTabs(
   ),
   (id: 'models', label: l10n.settingsTabModels, icon: CupertinoIcons.cube_box),
   (id: 'app', label: l10n.settingsTabApp, icon: CupertinoIcons.gear),
+  (
+    id: 'integrations',
+    label: l10n.settingsTabIntegrations,
+    icon: CupertinoIcons.link,
+  ),
 ];
 
 class SettingsApp extends StatelessWidget {
@@ -76,7 +84,7 @@ class SettingsApp extends StatelessWidget {
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => SettingsCubit(NativeBridge()),
     child: ThemedApp(
-    builder: (context) => MacosApp(
+      builder: (context) => MacosApp(
         locale: appLocale.value,
         // Локализованный заголовок окна недоступен здесь: builder ниже
         // ещё не построен, а MacosApp.title читается до первого кадра.
@@ -346,7 +354,8 @@ class _SettingsBodyState extends State<SettingsBody>
         },
         builder: (context, s) => Container(
           color: MacosTheme.of(context).canvasColor,
-          child: Column(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _tabs(context, s),
               Expanded(
@@ -370,10 +379,16 @@ class _SettingsBodyState extends State<SettingsBody>
                     // то есть не показывалось никому.
                     if (s.problem != null) _problem(s.problem!),
                     ...switch (s.tab) {
+                      'saving' => _savingTab(s),
                       'dictation' => _dictationTab(s),
+                      'voice' => _voiceTab(s),
                       'vocabulary' => _vocabularyTab(s),
                       'models' => _modelsTab(s),
                       'app' => _appTab(s),
+                      'integrations' => [
+                        ..._apiSection(s),
+                        ..._skillSection(s),
+                      ],
                       _ => _transcriberTab(s),
                     },
                   ],
@@ -399,42 +414,25 @@ class _SettingsBodyState extends State<SettingsBody>
 
   // ── вкладки ───────────────────────────────────────────────────────────────
 
-  /// Вкладки стоят в полосе на месте панели инструментов. Полоса высокая
-  /// и вкладки в ней по центру: слева живут кнопки окна, и наезжать на них
-  /// нельзя.
+  /// Вкладки — колонкой слева, как в системных настройках: восемь
+  /// в одну строку сверху уже не помещались.
   Widget _tabs(BuildContext context, SettingsState s) => Container(
-    height: 58,
-    alignment: Alignment.center,
+    width: 184,
     decoration: BoxDecoration(
-      border: Border(bottom: BorderSide(color: Surface.hairline(context))),
+      border: Border(right: BorderSide(color: Surface.hairline(context))),
     ),
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final row = Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final t in _settingsTabs(l10n))
-              _TabButton(
-                label: t.label,
-                icon: t.icon,
-                selected: s.tab == t.id,
-                onTap: () => _cubit.setTab(t.id),
-              ),
-          ],
-        );
-        // Если окно достаточно широкое (стандартный размер 580/680),
-        // центрируем вкладки без дополнительного Scrollable.
-        // При сильном сужении окна даём горизонтальную прокрутку,
-        // чтобы ни одна вкладка не обрезалась и не терялась.
-        if (constraints.maxWidth >= 530) {
-          return row;
-        }
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.inner),
-          child: row,
-        );
-      },
+    padding: const EdgeInsets.all(Gap.inner),
+    // Колонка без прокрутки: восемь строк влезают в любое окно настроек.
+    child: Column(
+      children: [
+        for (final t in _settingsTabs(l10n))
+          _TabButton(
+            label: t.label,
+            icon: t.icon,
+            selected: s.tab == t.id,
+            onTap: () => _cubit.setTab(t.id),
+          ),
+      ],
     ),
   );
 
@@ -538,6 +536,14 @@ class _SettingsBodyState extends State<SettingsBody>
     SectionTitle(l10n.sectionAfterDictation),
     Check(l10n.checkInsertText, s.insert, _cubit.setInsert),
     Hint(l10n.hintInsertOff, under: true),
+    if (s.insert) ...[
+      Check(
+        l10n.checkReturnToTarget,
+        s.returnToTarget,
+        _cubit.setReturnToTarget,
+      ),
+      Hint(l10n.hintReturnToTarget, under: true),
+    ],
     const SizedBox(height: Gap.item),
     SectionTitle(l10n.indicatorTitle),
     Hint(l10n.indicatorEditorHint),
@@ -566,6 +572,11 @@ class _SettingsBodyState extends State<SettingsBody>
       }),
       child: Text(l10n.indicatorOpenEditor),
     ),
+  ];
+
+  // ── голос ─────────────────────────────────────────────────────────────────
+
+  List<Widget> _voiceTab(SettingsState s) => [
     SectionTitle(l10n.sectionWakeWord),
     Hint(l10n.hintWakeWordSection),
     const SizedBox(height: Gap.inner),
@@ -846,8 +857,8 @@ class _SettingsBodyState extends State<SettingsBody>
             ? l10n.ownVoiceNotRecorded
             : l10n.ownVoiceRecorded(
                 '${recorded.day.toString().padLeft(2, '0')}.'
-                    '${recorded.month.toString().padLeft(2, '0')}.'
-                    '${recorded.year}',
+                '${recorded.month.toString().padLeft(2, '0')}.'
+                '${recorded.year}',
                 (s.ownVoiceSpeechMs / 1000).round(),
               ),
         style: Type.caption.copyWith(color: Surface.secondaryText(context)),
@@ -1638,6 +1649,19 @@ class _SettingsBodyState extends State<SettingsBody>
   List<Widget> _transcriberTab(SettingsState s) => [
     SectionTitle(l10n.sectionHowToRecognize),
     Hint(l10n.hintPerRecordingSettings),
+    // Метки времени переехали сюда из «Общих»: они рисуются в окне
+    // расшифровщика и больше нигде — в диктовке текста с таймкодами
+    // нет вовсе.
+    SectionTitle(l10n.sectionInTranscriberWindow),
+    Check(l10n.checkShowTimestamps, s.timestamps, _cubit.setTimestamps),
+    Hint(l10n.hintShowTimestamps, under: true),
+    SectionTitle(l10n.sectionSpeakers),
+    Check(l10n.checkDiarizeDefault, s.diarizeDefault, _cubit.setDiarizeDefault),
+    Hint(l10n.hintDiarize, under: true),
+  ];
+
+  /// Куда и в каком виде ложится готовый текст.
+  List<Widget> _savingTab(SettingsState s) => [
     SectionTitle(l10n.sectionAutoSave),
     Check(l10n.checkSaveToDisk, s.toLibrary, _cubit.setToLibrary),
     Hint(l10n.hintSaveToDisk(appName), under: true),
@@ -1700,20 +1724,11 @@ class _SettingsBodyState extends State<SettingsBody>
       _cubit.setSaveNextToSource,
     ),
     Hint(l10n.hintSaveBesideSource, under: true),
-    // Метки времени переехали сюда из «Общих»: они рисуются в окне
-    // расшифровщика и больше нигде — в диктовке текста с таймкодами
-    // нет вовсе.
-    SectionTitle(l10n.sectionInTranscriberWindow),
-    Check(l10n.checkShowTimestamps, s.timestamps, _cubit.setTimestamps),
-    Hint(l10n.hintShowTimestamps, under: true),
-    SectionTitle(l10n.sectionSpeakers),
-    Check(l10n.checkDiarizeDefault, s.diarizeDefault, _cubit.setDiarizeDefault),
-    Hint(l10n.hintDiarize, under: true),
   ];
 
   /// Местное API: та самая галка, которой открывают дверь наружу.
   ///
-  /// Стоит на вкладке «Приложение», а не у расшифровщика: это не про то,
+  /// Стоит на вкладке «Интеграции», а не у расшифровщика: это не про то,
   /// как распознавать, а про то, кому позволено просить. Ключ показан
   /// целиком — прятать его за звёздочками бессмысленно, он нужен именно
   /// для того, чтобы его скопировать и отдать своей программе.
@@ -1910,8 +1925,6 @@ class _SettingsBodyState extends State<SettingsBody>
           : l10n.hintDockIcon(appName, os.appIconAreaName, os.menuBarName),
       under: true,
     ),
-    ..._apiSection(s),
-    ..._skillSection(s),
     // Разрешение системы — вещь macOS: там без «Универсального доступа»
     // не перехватить клавишу и не вставить текст. На Windows такого
     // разрешения нет вовсе, и раздел о нём обещал бы работу, которой
@@ -2046,11 +2059,11 @@ class _TabButtonState extends State<_TabButton> {
         child: AnimatedContainer(
           duration: Motion.dur(context, Motion.press),
           curve: Curves.easeOut,
-          // Ширины хватает самой длинной подписи («Расшифровщик»):
-          // ужатая до многоточия вкладка не называет ничего.
-          width: 96,
-          margin: const EdgeInsets.symmetric(horizontal: Gap.hint),
-          padding: const EdgeInsets.symmetric(vertical: Gap.inner),
+          margin: const EdgeInsets.only(bottom: Gap.hint),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gap.inner,
+            vertical: 6,
+          ),
           decoration: BoxDecoration(
             color: widget.selected
                 ? Surface.pressed(context)
@@ -2059,18 +2072,21 @@ class _TabButtonState extends State<_TabButton> {
                 : MacosColors.transparent,
             borderRadius: BorderRadius.circular(7),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
             children: [
-              // Ступень панели инструментов: вкладка стоит в той же
-              // полосе, что и панель в других окнах, и значок в ней
-              // держится сам, без текста рядом.
-              MacosIcon(widget.icon, size: IconSize.toolbar, color: color),
-              const SizedBox(height: Gap.hint),
-              Text(
-                widget.label,
-                maxLines: 1,
-                style: Type.caption.copyWith(color: color),
+              MacosIcon(widget.icon, size: IconSize.button, color: color),
+              const SizedBox(width: Gap.inner),
+              Expanded(
+                child: Text(
+                  widget.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Type.control.copyWith(
+                    color: widget.selected
+                        ? accent
+                        : MacosTheme.of(context).typography.body.color,
+                  ),
+                ),
               ),
             ],
           ),

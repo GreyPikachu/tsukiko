@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:macos_ui/macos_ui.dart';
 
+import '../../../core/diarization/diarization_models.dart';
+import '../../../core/models.dart' show sizeLabelMb;
 import '../../../core/text.dart' show humanDuration;
 import '../../../core/transcript.dart';
 import '../../../core/whisper.dart';
@@ -44,7 +46,9 @@ class SpeakerLabel extends StatelessWidget {
             message: AppLocalizations.of(context).speakerOverlapTooltip,
             child: Text(
               overlapMark,
-              style: Type.caption.copyWith(color: Surface.secondaryText(context)),
+              style: Type.caption.copyWith(
+                color: Surface.secondaryText(context),
+              ),
             ),
           ),
           const SizedBox(width: Gap.tight),
@@ -78,7 +82,6 @@ class SpeakersSection extends StatelessWidget {
     super.key,
     required this.options,
     required this.transcript,
-    required this.modelsMissingLabel,
     required this.onToggle,
     required this.onRename,
     required this.onMerge,
@@ -89,9 +92,6 @@ class SpeakersSection extends StatelessWidget {
 
   /// Готовая расшифровка ведущей записи — если она есть.
   final Transcript? transcript;
-
-  /// Сколько осталось скачать («46 МБ»), или null — модели на месте.
-  final String? modelsMissingLabel;
 
   final ValueChanged<bool> onToggle;
   final void Function(String id, String name) onRename;
@@ -107,18 +107,36 @@ class SpeakersSection extends StatelessWidget {
     final voices = transcript?.hasSpeakers ?? false
         ? transcript!.speakers
         : const <SpeakerInfo>[];
+    // Пока модель голосов едет, режим и разметку не трогают: выключить
+    // посреди загрузки можно её же кнопкой «Отменить».
+    return ListenableBuilder(
+      listenable: DiarizationModels.percent,
+      builder: (context, _) => _build(
+        context,
+        l10n,
+        voices,
+        downloading: DiarizationModels.current != null,
+      ),
+    );
+  }
+
+  Widget _build(
+    BuildContext context,
+    AppLocalizations l10n,
+    List<SpeakerInfo> voices, {
+    required bool downloading,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SectionTitle(l10n.sectionSpeakers),
-        Check(l10n.checkDiarize, options.diarize, onToggle),
+        Check(
+          l10n.checkDiarize,
+          options.diarize,
+          downloading ? null : onToggle,
+        ),
         Hint(l10n.hintDiarize, under: true),
-        if (options.diarize)
-          Hint(
-            modelsMissingLabel == null
-                ? l10n.speakerModelsReady
-                : l10n.speakerModelsMissing(modelsMissingLabel!),
-          ),
+        if (options.diarize) const _SpeakerModel(),
         if (voices.isNotEmpty) ...[
           SectionTitle(l10n.panelVoices),
           for (final v in voices)
@@ -135,7 +153,7 @@ class SpeakersSection extends StatelessWidget {
           PushButton(
             controlSize: ControlSize.regular,
             secondary: true,
-            onPressed: onDiarize,
+            onPressed: downloading ? null : onDiarize,
             child: Text(
               voices.isEmpty ? l10n.buttonDiarizeNow : l10n.buttonDiarizeAgain,
             ),
@@ -152,6 +170,56 @@ class SpeakersSection extends StatelessWidget {
     );
     if (name != null) onRename(voice.id, name);
   }
+}
+
+/// Модель голосов: загрузка с полоской, пока едет; беда и «Загрузить»,
+/// если не доехала; иначе одна строка, что всё на месте.
+class _SpeakerModel extends StatelessWidget {
+  const _SpeakerModel();
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([
+      DiarizationModels.percent,
+      DiarizationModels.failure,
+    ]),
+    builder: (context, _) {
+      final l10n = AppLocalizations.of(context);
+      if (DiarizationModels.current case final download?) {
+        return Padding(
+          padding: const EdgeInsets.only(top: Gap.inner),
+          child: ModelDownload(
+            title: l10n.speakerModelTitle,
+            progress: download.progressLabel,
+            percent: download.percent,
+            onCancel: download.cancel,
+          ),
+        );
+      }
+      final mb = DiarizationModels.downloadMb();
+      if (mb == 0) return Hint(l10n.speakerModelsReady);
+      final failure = DiarizationModels.failure.value;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Hint(
+            failure == null
+                ? l10n.speakerModelsMissing(sizeLabelMb(mb))
+                : l10n.speakerModelsFailedDetail(failure),
+          ),
+          const SizedBox(height: Gap.inner),
+          PushButton(
+            controlSize: ControlSize.regular,
+            secondary: true,
+            onPressed: DiarizationModels.prefetch,
+            child: Text(
+              failure == null ? l10n.buttonDownload : l10n.buttonRetry,
+            ),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 class _VoiceRow extends StatelessWidget {

@@ -4,7 +4,10 @@
   "settingsTabTranscription": "Расшифровщик",
   "settingsTabDictation": "Диктовка",
   "settingsTabModels": "Модели",
-  "settingsTabApp": "Приложение",
+  "settingsTabApp": "Общие",
+  "settingsTabSaving": "Сохранение",
+  "settingsTabVoice": "Голос",
+  "settingsTabIntegrations": "Интеграции",
   "sectionHotkeys": "Сочетания клавиш",
   "hotkeyHold": "Держать и говорить",
   "hotkeyToggle": "Нажать, ещё раз — остановить",
@@ -64,6 +67,8 @@
   "sectionAfterDictation": "Что делать с надиктованным",
   "checkInsertText": "Вставлять текст в активное окно",
   "hintInsertOff": "Без этого готовый текст только ложится в буфер обмена.",
+  "checkReturnToTarget": "Вставлять туда, где остановили запись",
+  "hintReturnToTarget": "Пока текст распознаётся, можно уйти в другое окно: потом приложение вернёт то окно и вставит текст на место курсора.",
   "checkShowHud": "Показывать панель записи",
   "hintHud": "Плавающая полоска поверх окон: видно, что вас слушают, и есть чем остановить мышью.",
   "sectionActiveModels": "Активные модели",
@@ -1664,7 +1669,7 @@
   "indicatorOpenEditor": "Настроить индикатор записи",
   "indicatorPanel": "Плашка записи",
   "indicatorStatus": "Строка меню / трей",
-  "indicatorTimer": "Плавающий таймер",
+  "indicatorTimer": "Компактная плашка",
   "indicatorOff": "Выключено",
   "indicatorStatusHint": "Положение и размер этого значка задаёт система.",
   "indicatorOffHint": "Индикатор скрыт. Запись продолжается.",
@@ -1778,7 +1783,7 @@
   "sectionSpeakers": "Несколько голосов",
   "checkDiarize": "Определять, кто говорит",
   "hintDiarize": "После расшифровки приложение разметит голоса (до восьми), подпишет реплики и отметит перебивки знаком ⇄. Всё считается на этом компьютере.",
-  "speakerModelsMissing": "Модель голосов скачается при первом запуске: {size}",
+  "speakerModelsMissing": "Модель голосов не загружена · {size}",
   "@speakerModelsMissing": {
     "placeholders": {
       "size": {
@@ -1787,6 +1792,15 @@
     }
   },
   "speakerModelsReady": "Модель голосов установлена",
+  "speakerModelTitle": "модель голосов",
+  "speakerModelsFailedDetail": "Модель голосов не загрузилась: {error}",
+  "@speakerModelsFailedDetail": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "askSpeakerModelsTitle": "Скачать модель голосов?",
   "askSpeakerModelsBody": "Режиму «Несколько голосов» нужна модель NVIDIA Nemotron — {size}. Она скачается с Hugging Face один раз и дальше работает без сети.",
   "@askSpeakerModelsBody": {

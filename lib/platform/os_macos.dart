@@ -208,6 +208,7 @@ class MacOs implements Os {
       if (r.exitCode != 0 || !File(dst).existsSync()) {
         throw StateError('afconvert не преобразовал аудио: ${r.stderr}');
       }
+      plainPcmTag(dst);
       return dst;
     } catch (error) {
       throw StateError('Не удалось подготовить звук из $src: $error');
@@ -313,4 +314,28 @@ double? cpuSeconds(String raw) {
   if (parts.length > 1) total += (int.tryParse(parts[parts.length - 2]) ?? 0) * 60;
   if (parts.length > 2) total += (int.tryParse(parts[parts.length - 3]) ?? 0) * 3600;
   return total + days * 86400;
+}
+
+/// afconvert из Opus (голосовые Telegram) пишет WAVE_FORMAT_EXTENSIBLE:
+/// внутри тот же 16-битный PCM, но метка формата 0xFFFE. whisper её
+/// читает, а `nemo-speech diarize` — нет («unsupported WAV encoding»),
+/// и голоса не размечались. Флаги раскладки каналов afconvert не
+/// помогают, поэтому меняем метку на 1 прямо в файле: блок fmt остаётся
+/// в 40 байт, лишний хвост читатели пропускают по его длине.
+void plainPcmTag(String path) {
+  final file = File(path).openSync(mode: FileMode.append);
+  try {
+    file.setPositionSync(0);
+    final head = file.readSync(46);
+    if (head.length < 46) return;
+    final fmt = String.fromCharCodes(head.sublist(12, 16));
+    final extensible = head[20] == 0xFE && head[21] == 0xFF;
+    // Первые байты GUID подформата: 1 — обычный PCM.
+    final pcm = head[44] == 1 && head[45] == 0;
+    if (fmt != 'fmt ' || !extensible || !pcm) return;
+    file.setPositionSync(20);
+    file.writeFromSync(const [1, 0]);
+  } finally {
+    file.closeSync();
+  }
 }

@@ -568,7 +568,13 @@ final class DictationBridge: NSObject {
       // всегда, и панель показывала «Готово» даже когда вставлять было
       // нечем и некуда: надиктованный текст пропадал вместе с буфером,
       // который через 0,4 с возвращался к прежнему содержимому.
-      reply(paste((args?["text"] as? String) ?? ""))
+      let text = (args?["text"] as? String) ?? ""
+      guard let id = args?["target"] as? Int, let target = targets.removeValue(forKey: id) else {
+        reply(paste(text)); return
+      }
+      returnTo(target) { [weak self] in reply(self?.paste(text) ?? false) }
+    case "markTarget":
+      reply(markTarget())
     case "configureHud":
       hud.configure(labels: (call.arguments as? [String: String]) ?? [:])
       reply(nil)
@@ -1193,6 +1199,83 @@ final class DictationBridge: NSObject {
     let tau = target > meterLevel ? 0.02 : 0.3
     meterLevel += (target - meterLevel) * (1 - exp(-dt / tau))
     return meterLevel
+  }
+
+  // MARK: куда вставлять
+
+  /// Где стоял курсор, когда запись остановили: приложение, окно, поле
+  /// и выделение. Расшифровка идёт в фоне, человек тем временем уходит
+  /// в другие окна, а текст всё равно должен лечь туда, где он говорил.
+  private struct PasteTarget {
+    let pid: pid_t
+    let window: AXUIElement?
+    let element: AXUIElement?
+    let range: CFTypeRef?
+  }
+  private var targets: [Int: PasteTarget] = [:]
+  private var lastTarget = 0
+
+  private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+    var value: CFTypeRef?
+    return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
+  }
+
+  /// Номер цели или nil, если запоминать нечего: впереди мы сами или
+  /// нет «Универсального доступа» — тогда текст уйдёт в то, что впереди.
+  private func markTarget() -> Int? {
+    guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication,
+      app.processIdentifier != getpid()
+    else { return nil }
+    let root = AXUIElementCreateApplication(app.processIdentifier)
+    let element = Self.attribute(root, kAXFocusedUIElementAttribute).map { $0 as! AXUIElement }
+    lastTarget += 1
+    targets[lastTarget] = PasteTarget(
+      pid: app.processIdentifier,
+      window: Self.attribute(root, kAXFocusedWindowAttribute).map { $0 as! AXUIElement },
+      element: element,
+      range: element.flatMap { Self.attribute($0, kAXSelectedTextRangeAttribute) })
+    // Цели отменённых записей никто не заберёт — держим только свежие.
+    targets = targets.filter { $0.key > lastTarget - 16 }
+    return lastTarget
+  }
+
+  /// Вывести приложение цели вперёд, поднять окно, вернуть фокус в поле
+  /// и курсор на место, потом [then]. ⌘V идёт тому, кто впереди, поэтому
+  /// ждём, пока приложение действительно станет активным. Уже активное
+  /// не активируем заново: Chromium от этого теряет фокус поля.
+  private func returnTo(_ target: PasteTarget, then: @escaping () -> Void) {
+    guard let app = NSRunningApplication(processIdentifier: target.pid), !app.isTerminated else {
+      return then()
+    }
+    let root = AXUIElementCreateApplication(target.pid)
+    if NSWorkspace.shared.frontmostApplication?.processIdentifier != target.pid {
+      if app.isHidden { app.unhide() }
+      // Фоновому приложению macOS 14+ обычный activate часто отказывает;
+      // через «Универсальный доступ» — нет. activate остаётся запасным.
+      AXUIElementSetAttributeValue(root, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+      app.activate(options: [])
+    }
+    func focus() {
+      if let window = target.window {
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+      }
+      if let element = target.element {
+        AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        if let range = target.range {
+          AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, range)
+        }
+      }
+      // Пауза, чтобы фокус дошёл до поля раньше нажатия.
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: then)
+    }
+    func wait(_ tries: Int) {
+      if tries == 0 || NSWorkspace.shared.frontmostApplication?.processIdentifier == target.pid {
+        return focus()
+      }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { wait(tries - 1) }
+    }
+    wait(50)
   }
 
   // MARK: вставка текста

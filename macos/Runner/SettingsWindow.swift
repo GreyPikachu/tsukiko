@@ -58,7 +58,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
       let controller = FlutterViewController(engine: engine, nibName: nil, bundle: nil)
 
       let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 580, height: 560),
+        contentRect: NSRect(x: 0, y: 0, width: 780, height: 560),
         styleMask: [.titled, .closable, .miniaturizable],
         backing: .buffered, defer: false)
       window.title = "Настройки"
@@ -67,7 +67,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
       // на этот момент ещё нулевой: окно схлопывалось в 0×32 — в одну
       // титульную полосу — и настройки просто не открывались. Размер задаём
       // после присваивания, иначе contentRect выше не значит ничего.
-      window.setContentSize(NSSize(width: 580, height: 560))
+      window.setContentSize(NSSize(width: 780, height: 560))
       window.isReleasedWhenClosed = false
       window.delegate = self
       window.center()

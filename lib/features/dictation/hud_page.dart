@@ -106,12 +106,6 @@ class _HudViewState extends State<HudView> {
   /// и не знает. Таймер записи тоже идёт отсюда, а не от нажатия.
   bool _live = true;
 
-  /// До какого момента считать, что человек говорит. Уровень уже
-  /// отсчитан от фона комнаты (см. GetAudioLevel): ноль — тишина или
-  /// дыхание. Хвост в 0,4 с не даёт микрофону мигать между словами.
-  DateTime _voiceUntil = DateTime.fromMillisecondsSinceEpoch(0);
-  static const _voiceLevel = .15;
-
   /// История уровня: полоски бегут справа налево, как настоящий сигнал.
   List<double> _levels = List.filled(_bars, 0);
   static const _bars = 22;
@@ -234,9 +228,6 @@ class _HudViewState extends State<HudView> {
           _startedAt = DateTime.now();
         }
         if (_live) _levels = [..._levels.skip(1), level];
-        if (live && level > _voiceLevel) {
-          _voiceUntil = DateTime.now().add(const Duration(milliseconds: 400));
-        }
         final started = _startedAt;
         if (started != null) _elapsed = DateTime.now().difference(started);
       });
@@ -255,8 +246,6 @@ class _HudViewState extends State<HudView> {
     return '${total ~/ 60}:${(total % 60).toString().padLeft(2, '0')}';
   }
 
-  bool get _voice => DateTime.now().isBefore(_voiceUntil);
-
   bool get _warming => !_editing && _state == HudState.recording && !_live;
 
   int get _queueCount =>
@@ -270,10 +259,9 @@ class _HudViewState extends State<HudView> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final width = MediaQuery.sizeOf(context).width / _scale;
-    final height = _mode == IndicatorMode.timer ? 44.0 : 52.0;
-    final row = _mode == IndicatorMode.timer
-        ? _timerContent(l10n)
-        : _content(l10n);
+    final compact = _mode == IndicatorMode.timer;
+    final height = compact ? 34.0 : 52.0;
+    final row = compact ? _timerContent(l10n) : _content(l10n);
     return Focus(
       autofocus: true,
       onKeyEvent: (_, event) => _editing
@@ -287,7 +275,7 @@ class _HudViewState extends State<HudView> {
             Container(
               width: width,
               height: height,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 16),
               decoration: hudDecoration(context),
               child: Row(children: row),
             ),
@@ -297,50 +285,34 @@ class _HudViewState extends State<HudView> {
     );
   }
 
+  /// Компактная плашка: значок и две кнопки, без времени и уровня.
   List<Widget> _timerContent(AppLocalizations l10n) {
     final state = _editing ? HudState.recording : _state;
     if (state != HudState.recording && state != HudState.transcribing) {
       return _content(l10n);
     }
     final recording = state == HudState.recording;
-    // Красный микрофон — только пока слышна речь; тишина и вдох — белый,
-    // а пока устройство ещё открывается — серый.
-    final mic = _warming
-        ? Surface.secondaryText(context)
-        : _voice || _editing
-        ? MacosColors.systemRedColor
-        : (Surface.isDark(context) ? MacosColors.white : MacosColors.black);
-    // Слева и справа по одной ширине, чтобы время встало точно по центру.
-    const side = (IconSize.button + Gap.inner) * 2;
     return [
       SizedBox(
-        width: recording && !_warming ? side : IconSize.button + Gap.inner,
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: recording
-              ? MacosIcon(
+        width: 18,
+        child: recording
+            // Серый — пока микрофон открывается, дальше красный всю запись.
+            ? Semantics(
+                label: _warming ? l10n.hudMicWarmupShort : null,
+                child: MacosIcon(
                   _warming ? CupertinoIcons.mic : CupertinoIcons.mic_fill,
                   size: 16,
-                  color: mic,
-                )
-              : const ProgressCircle(radius: 7),
-        ),
+                  color: _warming
+                      ? Surface.secondaryText(context)
+                      : MacosColors.systemRedColor,
+                ),
+              )
+            : Semantics(
+                label: l10n.hudTranscribing,
+                child: const ProgressCircle(radius: 7),
+              ),
       ),
-      Expanded(
-        child: Text(
-          _warming
-              ? l10n.hudMicWarmupShort
-              : recording
-              ? _time
-              : l10n.hudTranscribing,
-          style: _label.copyWith(
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
-          textAlign: recording && !_warming ? TextAlign.center : TextAlign.left,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
+      const Spacer(),
       if (recording) ...[
         _IconButton(
           icon: CupertinoIcons.xmark,
@@ -485,16 +457,29 @@ class _HudViewState extends State<HudView> {
       };
 
   List<Widget> _message(IconData icon, Color color, String text) => [
-    MacosIcon(icon, size: IconSize.button, color: color),
-    const SizedBox(width: Gap.control),
-    Expanded(
-      child: Text(
-        text,
-        style: _label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+    // В компактной плашке подпись не влезает: значок, текст — в подсказке.
+    if (_mode == IndicatorMode.timer && !_editing)
+      Expanded(
+        child: MacosTooltip(
+          message: text,
+          child: Semantics(
+            label: text,
+            child: MacosIcon(icon, size: IconSize.button, color: color),
+          ),
+        ),
+      )
+    else ...[
+      MacosIcon(icon, size: IconSize.button, color: color),
+      const SizedBox(width: Gap.control),
+      Expanded(
+        child: Text(
+          text,
+          style: _label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
-    ),
+    ],
   ];
 }
 

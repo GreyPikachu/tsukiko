@@ -63,6 +63,7 @@ class SettingsState extends Equatable {
     this.vocabularyTranscriberEnabled = true,
     this.idleSeconds = 180,
     this.insert = true,
+    this.returnToTarget = true,
     this.hud = true,
     this.indicatorMode = IndicatorMode.panel,
     this.wakeWordEnabled = false,
@@ -203,7 +204,7 @@ class SettingsState extends Equatable {
   final List<VocabularyItem> vocabulary;
   final bool vocabularyDictationEnabled, vocabularyTranscriberEnabled;
   final int idleSeconds;
-  final bool insert, hud;
+  final bool insert, returnToTarget, hud;
   final IndicatorMode indicatorMode;
   final bool wakeWordEnabled;
   final String wakeWord;
@@ -232,7 +233,6 @@ class SettingsState extends Equatable {
   /// «Несколько голосов» в новых расшифровках — то же значение, что
   /// инспектор главного окна правит, когда в очереди ничего не выбрано.
   final bool diarizeDefault;
-
 
   /// Автозапуск живёт в системе, а не в settings.json: его можно выключить
   /// в системных настройках мимо нас.
@@ -307,6 +307,7 @@ class SettingsState extends Equatable {
     bool? vocabularyTranscriberEnabled,
     int? idleSeconds,
     bool? insert,
+    bool? returnToTarget,
     bool? hud,
     IndicatorMode? indicatorMode,
     bool? wakeWordEnabled,
@@ -380,6 +381,7 @@ class SettingsState extends Equatable {
         vocabularyTranscriberEnabled ?? this.vocabularyTranscriberEnabled,
     idleSeconds: idleSeconds ?? this.idleSeconds,
     insert: insert ?? this.insert,
+    returnToTarget: returnToTarget ?? this.returnToTarget,
     hud: hud ?? this.hud,
     indicatorMode: indicatorMode ?? this.indicatorMode,
     wakeWordEnabled: wakeWordEnabled ?? this.wakeWordEnabled,
@@ -448,6 +450,7 @@ class SettingsState extends Equatable {
     vocabularyTranscriberEnabled,
     idleSeconds,
     insert,
+    returnToTarget,
     hud,
     indicatorMode,
     wakeWordEnabled,

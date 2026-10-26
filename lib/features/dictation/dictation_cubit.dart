@@ -699,6 +699,10 @@ class DictationCubit extends Cubit<DictationState> {
       final path = await bridge.stopRecording() ?? _wav;
       _wav = null;
       if (path != null && path.isNotEmpty) {
+        // Место для текста запоминаем сейчас, пока человек ещё в нём.
+        final target = _settings.insert && _settings.returnToTarget
+            ? await bridge.markTarget()
+            : null;
         job = _DictationJob(
           path,
           _options,
@@ -708,6 +712,7 @@ class DictationCubit extends Cubit<DictationState> {
           List.of(_vocabulary),
           ownVoiceOnly: _settings.ownVoiceOnly,
           ownVoiceThreshold: _settings.ownVoiceThreshold,
+          target: target,
         );
         _pending.add(job);
       }
@@ -845,7 +850,7 @@ class DictationCubit extends Cubit<DictationState> {
               await _copyResult(text);
               ok = true;
             } else {
-              ok = await bridge.insert(text);
+              ok = await bridge.insert(text, target: job.target);
               if (!ok) {
                 // Вставка не состоялась — почти всегда это отозванный
                 // «Универсальный доступ». Текст при этом уже распознан,
@@ -1406,8 +1411,13 @@ class _DictationJob {
     this.vocabulary, {
     this.ownVoiceOnly = false,
     this.ownVoiceThreshold = ownVoiceDefaultThreshold,
+    this.target,
   });
   final String path;
+
+  /// Где стоял курсор при остановке (номер у родной стороны), или null —
+  /// вставлять в то, что будет впереди.
+  final int? target;
   final bool ownVoiceOnly;
   final double ownVoiceThreshold;
   final RunOptions options;

@@ -1885,9 +1885,6 @@ class _HomeViewState extends State<_HomeView> with WidgetsBindingObserver {
         SpeakersSection(
           options: o,
           transcript: s.lead?.transcript,
-          // Файлы проверяются только при включённом режиме: инспектор
-          // перерисовывается на каждом шаге хода работы.
-          modelsMissingLabel: o.diarize ? _speakerModelsMissing() : null,
           onToggle: _toggleDiarization,
           onRename: (id, name) => _send(SpeakerRenamed(s.lead!, id, name)),
           onMerge: (from, into) => _send(SpeakersMerged(s.lead!, from, into)),

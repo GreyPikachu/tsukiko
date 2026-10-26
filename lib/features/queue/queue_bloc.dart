@@ -81,12 +81,13 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
     on<SpeakerRenamed>(_onSpeakerRenamed);
     on<SpeakersMerged>(_onSpeakersMerged);
     on<SegmentSpeakerChanged>(_onSegmentSpeakerChanged);
-    on<DiarizationToggled>(
-      (e, emit) => _onOptionsEdited(
+    on<DiarizationToggled>((e, emit) {
+      _onOptionsEdited(
         OptionsEdited((x) => x.copyWith(diarize: e.enabled)),
         emit,
-      ),
-    );
+      );
+      if (e.enabled) DiarizationModels.prefetch();
+    });
     on<DiarizationRequested>(
       _onDiarizationRequested,
       transformer: droppable(),
@@ -1727,7 +1728,6 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
       );
       if (_stopRequested) return plainWith(l10n.speakersStopped);
       if (problem != null) {
-        Log.error('Diarization', 'Model not installed: $problem');
         return plainWith(l10n.speakersModelsFailed, problem);
       }
       it = _find(it) ?? it;
@@ -2472,6 +2472,8 @@ class QueueBloc extends Bloc<QueueEvent, QueueState> {
         vocabulary: _vocabulary,
       ),
     );
+    // Галку «Несколько голосов» тоже могли поставить в окне настроек.
+    if (s['diarize'] == true) DiarizationModels.prefetch();
     // Галку API правит окно настроек, а сервер живёт здесь — узнать
     // о перемене можно только отсюда.
     unawaited(api.sync());

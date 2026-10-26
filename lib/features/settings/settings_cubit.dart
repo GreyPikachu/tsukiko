@@ -177,6 +177,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         prompt: _dictation.prompt,
         idleSeconds: _dictation.idleSeconds,
         insert: _dictation.insert,
+        returnToTarget: _dictation.returnToTarget,
         hud: _dictation.hud,
         indicatorMode: _dictation.indicatorMode,
         wakeWordEnabled: _dictation.wakeWordEnabled,
@@ -388,6 +389,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   void setIdleSeconds(int v) => _saveDictation((d) => d.idleSeconds = v);
 
   void setInsert(bool v) => _saveDictation((d) => d.insert = v);
+  void setReturnToTarget(bool v) => _saveDictation((d) => d.returnToTarget = v);
 
   void setHud(bool v) => _saveDictation((d) => d.hud = v);
 
@@ -702,8 +704,11 @@ class SettingsCubit extends Cubit<SettingsState> {
     final mode = parseThemeMode(v);
     final id = themeModeId(mode);
     _emit(state.copyWith(theme: id));
-    unawaited(NativeBridge.setWindowTheme(id)
-        .whenComplete(() => appThemeMode.value = mode));
+    unawaited(
+      NativeBridge.setWindowTheme(
+        id,
+      ).whenComplete(() => appThemeMode.value = mode),
+    );
     unawaited(_saveApp({themeSetting: id}));
   }
 
